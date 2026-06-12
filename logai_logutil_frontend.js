@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.2.0
+// @version      4.3.0
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.2.0');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.3.0');
     seal.ext.register(ext);
 }
 
@@ -831,14 +831,14 @@ cmdLogAi.solve = async (ctx, msg, cmdArgs) => {
     return await processLogTask(ctx, msg, cmdArgs, '跑团日志评分与吐槽', 'analyze'); 
 };
 ext.cmdMap['logai'] = cmdLogAi;
-// 新命令：.ai 快速AI分析（不保存配置）
-const cmdAi = seal.ext.newCmdItemInfo();
-cmdAi.name = 'ai';
-cmdAi.help = '快速AI分析，不保存配置。\n用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]\nfile格式: [file]-N（编号从0最旧到最新）\n无文件时仅发送prompt给AI。';
-cmdAi.solve = async (ctx, msg, cmdArgs) => {
+// 新命令：.aiutil 快速AI分析（不保存配置）
+const cmdAiutil = seal.ext.newCmdItemInfo();
+cmdAiutil.name = 'aiutil';
+cmdAiutil.help = '快速AI分析，不保存配置。\n用法: .aiutil [file1] …… [fileN] <prompt> [pro] [get_text]\nfile格式: [file]-N（编号从0最旧到最新）\n无文件时仅发送prompt给AI。';
+cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
     let args = cmdArgs.args;
     if (!args || args.length === 0) {
-        seal.replyToSender(ctx, msg, '用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]\n示例: .ai [file]-0 [file]-1 请总结这两个文件的内容 pro');
+        seal.replyToSender(ctx, msg, '用法: .aiutil [file1] …… [fileN] <prompt> [pro] [get_text]\n示例: .aiutil [file]-0 [file]-1 请总结这两个文件的内容 pro');
         return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -860,7 +860,7 @@ cmdAi.solve = async (ctx, msg, cmdArgs) => {
     let prompt = promptParts.join(' ').trim();
 
     if (!prompt) {
-        seal.replyToSender(ctx, msg, '❌ 请提供分析提示词(prompt)。\n用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]');
+        seal.replyToSender(ctx, msg, '❌ 请提供分析提示词(prompt)。\n用法: .aiutil [file1] …… [fileN] <prompt> [pro] [get_text]');
         return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -991,7 +991,8 @@ cmdAi.solve = async (ctx, msg, cmdArgs) => {
     }
     return seal.ext.newCmdExecuteResult(true);
 };
-ext.cmdMap['ai'] = cmdAi;
+ext.cmdMap['aiutil'] = cmdAiutil;
+ext.cmdMap['ai'] = cmdAiutil;  // .ai 作为 .aiutil 的别名（向下兼容）
 // 新命令：logutil（对接后端 /api/logutil_*）
 const cmdLogUtil = seal.ext.newCmdItemInfo();
 cmdLogUtil.name = 'logutil';
@@ -1465,6 +1466,7 @@ cmdBridge.help = fw([
     '.bridge off      // 对本群关闭桥接轮询',
     '.bridge status   // 查看当前轮询状态',
     '.bridge list     // 列出当前桥接缓存的全部文件',
+    '.bridge get N    // 获取编号为N的文件转纯文本后的txt文档下载链接',
     '.bridge rate n   // 设置轮询间隔为 n 秒（n<=0 恢复默认）',
 ].join('\n'));
 cmdBridge.solve = async (ctx, msg, cmdArgs) => {
@@ -1537,6 +1539,33 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             } else {
                 seal.replyToSender(ctx, msg, fw(`list 失败: ${JSON.stringify(data)}`));
             }
+        } else if (op === 'get') {
+            let idx = parseInt(cmdArgs.getArgN(2) || '-1', 10);
+            if (isNaN(idx) || idx < 0) {
+                seal.replyToSender(ctx, msg, fw('用法: .bridge get <编号>\n请使用 .bridge list 查看可用文件编号。'));
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            let resp = await fetch(`${host}/api/bridge_list`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            let data = await resp.json();
+            if (data.status === 'ok') {
+                let files = data.files || [];
+                if (idx >= files.length) {
+                    seal.replyToSender(ctx, msg, fw(`❌ 编号 ${idx} 超出范围 (0~${files.length - 1})。`));
+                } else {
+                    let f = files[idx];
+                    if (f.content_url) {
+                        seal.replyToSender(ctx, msg, fw(`📄 【${f.name}】 纯文本下载链接：\n${f.content_url}`));
+                    } else {
+                        seal.replyToSender(ctx, msg, fw(`❌ 文件 ${f.name} 的文本内容暂不可用。`));
+                    }
+                }
+            } else {
+                seal.replyToSender(ctx, msg, fw(`获取失败: ${JSON.stringify(data)}`));
+            }
         } else if (op === 'rate') {
             let rateVal = parseInt(cmdArgs.getArgN(2) || '0', 10);
             if (isNaN(rateVal)) {
@@ -1560,7 +1589,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 seal.replyToSender(ctx, msg, fw(`设置失败: ${JSON.stringify(data)}`));
             }
         } else {
-            seal.replyToSender(ctx, msg, fw('用法: .bridge on/off/status/list/rate'));
+            seal.replyToSender(ctx, msg, fw('用法: .bridge on/off/status/list/get/rate'));
         }
     } catch (e) {
         seal.replyToSender(ctx, msg, fw(`请求后端失败: ${e.message}`));
@@ -2176,7 +2205,7 @@ cmdRefine.solve = async (ctx, msg, cmdArgs) => {
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.2.0 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.3.0 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

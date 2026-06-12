@@ -11,7 +11,7 @@
 # ]
 # ///
 
-# LogAI 4.2.0 - TRPG Log Analysis and Illustration Server
+# LogAI 4.3.0 - TRPG Log Analysis and Illustration Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -186,7 +186,7 @@ NAPCAT_API_BASE = os.getenv("NAPCAT_API_BASE", "http://127.0.0.1:8084").rstrip("
 NAPCAT_API_BASES_RAW = os.getenv("NAPCAT_API_BASES", "").strip()
 NAPCAT_TOKEN = os.getenv("NAPCAT_TOKEN", "1")
 DOWNLOAD_TIMEOUT_SEC = int(os.getenv("DOWNLOAD_TIMEOUT_SEC", "180"))
-MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "512"))
+MAX_FILE_MB = int(os.getenv("MAX_FILE_MB", "150"))
 MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
 PULL_LATEST_ON_EMPTY = os.getenv("PULL_LATEST_ON_EMPTY", "1") == "1"
 BRIDGE_QUEUE_SIZE = max(1, int(os.getenv("BRIDGE_QUEUE_SIZE", "128")))
@@ -228,7 +228,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.2.0"
+SERVICE_VERSION = "4.3.0"
 _openai_client = None
 
 def get_openai_client():
@@ -497,9 +497,9 @@ def infer_source_by_key(key):
     # Filenames with bracket timestamps: [YYYY-MM-DD_HH-MM]xxx.ext
     if value.startswith('[') and re.search(r'^\s*\[\d{4}-\d{2}-\d{2}[_\s]', value):
         return 'bridge_file_name'
-    # Filenames with extensions that aren't URLs
+    # Filenames with extensions that aren't URLs (v4.3: 匹配任意文本类扩展名)
     if '.' in value and not value.startswith(('http://', 'https://')):
-        ext_match = re.search(r'\.(txt|log|doc|docx|pdf|json|csv)$', value, re.IGNORECASE)
+        ext_match = re.search(r'\.(\w{1,10})$', value, re.IGNORECASE)
         if ext_match:
             return 'bridge_file_name'
     if value.startswith(('http://', 'https://')):
@@ -642,18 +642,17 @@ def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=Fa
         else:
             log_text_ai = log_text
 
-        # Prompt选择
-        report_title = "TRPG 自定义分析报告"
+        # Prompt选择 (v4.3: .ai 直接文本模式使用中性prompt，不混入log评分模板)
+        report_title = "AI 分析结果"
         if custom_prompt:
             system_prompt = custom_prompt
+            report_title = "TRPG 自定义分析报告"
         elif mode == 'recap':
             report_title = "TRPG 跑团前文回顾"
             system_prompt = """你是一个专业且细致的 TRPG 跑团记录员（书记）。请阅读以下跑团 Log，为 KP 和玩家梳理一份详细的【前文回顾】..."""
         else:
-            report_title = "TRPG 跑团日志评分"
-            if is_kind: system_prompt = KIND_SYSTEM_PROMPT
-            elif is_pro: system_prompt = PRO_SYSTEM_PROMPT
-            else: system_prompt = DEFAULT_SYSTEM_PROMPT
+            # .ai 无文件模式 / 通用文本分析：使用中性系统提示
+            system_prompt = "你是一个专业且全面的AI助手。请仔细阅读用户提供的内容，给出详尽、准确的分析和回答。如有需要，请使用【分页符】进行内容分页。"
 
         if persona:
             system_prompt += f"\n\n【极其重要的扮演指令】：\n在生成上述所有评价和梳理内容时，请你完全带入以下角色人设来进行语气和口吻的渲染。...\n{persona}"
@@ -1973,7 +1972,7 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
                         one_content += chunk
                         one_downloaded += len(chunk)
                         downloaded += len(chunk)
-                        if downloaded > 50 * 1024 * 1024:
+                        if downloaded > 150 * 1024 * 1024:
                             print(f"[{job_id}] 警告：总文件体积超过 50MB，已被安全截断！")
                             break
 
@@ -2014,7 +2013,7 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
         # 2. 核心：判断是否启用 LLM 的原生多模态视觉/文档阅读能力
         ext = os.path.splitext(resolved_filename)[1].lower()
 
-        if (not is_multi_file) and ext == '.pdf' and downloaded <= 40 * 1024 * 1024:
+        if (not is_multi_file) and ext == '.pdf' and downloaded <= 150 * 1024 * 1024:
             # 【原生 PDF 阅读模式】(限制在40MB内防代理服务器 Nginx 报 413 Payload Too Large)
             print(f"[{job_id}] 启用 LLM 原生 PDF 阅读模式 (大小: {downloaded/1024/1024:.2f}MB)")
             base64_pdf = base64.b64encode(content).decode('utf-8')
@@ -6523,7 +6522,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogAI 4.2.0 - TRPG Log Analysis Server')
+    parser = argparse.ArgumentParser(description='LogAI 4.3.0 - TRPG Log Analysis Server')
     parser.add_argument('--api-key', type=str, default=None, help='OpenAI / DeepSeek API Key')
     parser.add_argument('--api-base-url', type=str, default=None, help=f'OpenAI-compatible API base URL (default: {AI_BASE_URL})')
     parser.add_argument('--ai-model', type=str, default=None, help=f'Default AI model (default: {AI_MODEL})')
