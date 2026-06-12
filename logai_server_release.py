@@ -11,7 +11,7 @@
 # ]
 # ///
 
-# LogAI 4.3.0 - TRPG Log Analysis and Illustration Server
+# LogAI 4.3.1 - TRPG Log Analysis and Illustration Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -228,7 +228,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.3.0"
+SERVICE_VERSION = "4.3.1"
 _openai_client = None
 
 def get_openai_client():
@@ -879,7 +879,10 @@ def extract_text_from_file(file_content, filename):
             pdf_document.close()
             
         else:
-            return f"[ParseError]不支持的文件格式: {ext}"
+            # v4.3.1: 未知扩展名直接当作文本解码（.py, .js, .c 等）
+            text = safe_decode(file_content)
+            if not text or not text.strip():
+                return f"[ParseError]不支持的文件格式: {ext}（且无法作文本解码）"
             
     except Exception as e:
         # 加上特殊前缀，方便外层精准拦截
@@ -1425,6 +1428,9 @@ def bridge_poll_worker_loop():
 
 
 def ensure_poll_worker_started():
+    # v4.3.1: WS模式(0)下不启动HTTP轮询，仅依赖WS实时推送
+    if NC_FILE_BRIDGE_MODE == 0:
+        return
     global BRIDGE_POLL_WORKER
 
     with STATE_LOCK:
@@ -6522,7 +6528,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogAI 4.3.0 - TRPG Log Analysis Server')
+    parser = argparse.ArgumentParser(description='LogAI 4.3.1 - TRPG Log Analysis Server')
     parser.add_argument('--api-key', type=str, default=None, help='OpenAI / DeepSeek API Key')
     parser.add_argument('--api-base-url', type=str, default=None, help=f'OpenAI-compatible API base URL (default: {AI_BASE_URL})')
     parser.add_argument('--ai-model', type=str, default=None, help=f'Default AI model (default: {AI_MODEL})')

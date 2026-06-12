@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.3.0**  
+**V4.3.1**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -212,3 +212,8 @@ logutil支持识别以下种类的消息头：
 2. 新增 `.bridge get N`：将该编号文件桥接为纯文本后的txt文档直接给出下载链接。
 3. 文件大小上限从50MB/40MB统一提升至150MB。
 4. 修复 `.aiutil` 无文件模式下混杂 `.logai` 评分prompt的bug，现使用中性AI助手系统提示。
+
+**v4.3.1**  
+1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 使用正确的含 `content_url` 的接口；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
+2. 修复 `.py`、`.js`、`.c` 等非白名单扩展名文件报"不支持的文件格式"的问题：未知扩展名现在直接当作文本解码。
+3. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题：WS模式下彻底禁用HTTP轮询。
