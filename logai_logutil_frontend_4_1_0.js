@@ -5,6 +5,7 @@
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
+// @homepageURL  https://github.com/fanmm01/logai/
 // ==/UserScript==
 
 // 此文件基于现有脚本合并而成，保留所有旧有功能，并新增 logutil 控制命令。
