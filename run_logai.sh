@@ -2,7 +2,7 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogAI 4.1.0 - TRPG Log Analysis Server"
+echo "  LogAI 4.2.0 - TRPG Log Analysis Server"
 echo "============================================"
 echo ""
 
@@ -204,4 +204,4 @@ CLI_ARGS=()
 echo "[INFO] 启动 LogAI 服务器..."
 echo ""
 cd "$SCRIPT_DIR"
-exec "$PYTHON_EXE" logai_server4_1_0_release.py "${CLI_ARGS[@]}" "$@"
+exec "$PYTHON_EXE" logai_server_release.py "${CLI_ARGS[@]}" "$@"

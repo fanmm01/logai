@@ -1,19 +1,19 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.1.0
+// @version      4.2.0
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
-// @updateURL    https://raw.githubusercontent.com/fanmm01/logai/refs/heads/main/logai_logutil_frontend_4_1_0.js
+// @updateURL    https://raw.githubusercontent.com/fanmm01/logai/refs/heads/main/logai_logutil_frontend.js
 // ==/UserScript==
 
 // 此文件基于现有脚本合并而成，保留所有旧有功能，并新增 logutil 控制命令。
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.1.0');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.2.0');
     seal.ext.register(ext);
 }
 
@@ -23,9 +23,10 @@ seal.ext.registerBoolConfig(ext, "启用骰娘人设", false, "开启后，AI分
 seal.ext.registerStringConfig(ext, "常规模式_骰娘设定", "你是一个严厉老练的骰娘，说话犀利，对逻辑存在硬伤的模组绝不留情，像个严肃的调查员前辈。", "普通分析模式下的AI扮演提示词");
 seal.ext.registerStringConfig(ext, "温柔模式_骰娘设定", "你是一个温柔可爱的骰娘，总是鼓励模组作者，指出缺点时也会非常委婉，语气软萌。", "使用'温柔'参数时的AI扮演提示词");
 seal.ext.registerStringConfig(ext, "Python后端服务地址", "http://127.0.0.1:8000", "Python 后端服务的地址，用于提交分析任务和获取结果。");
+seal.ext.registerIntConfig(ext, "Python后端服务端口", 8000, "Python 后端服务的端口号（默认8000）。修改后前端所有请求将使用新端口。");
 seal.ext.registerStringConfig(ext, "OneBot_API_地址", "http://127.0.0.1:34567", "Bot客户端的HTTP监听地址");
 seal.ext.registerBoolConfig(ext, "启用HTTP文件桥接", true, "开启后通过HTTP中转服务读取最近群文件，不再依赖群内文本回传。");
-seal.ext.registerStringConfig(ext, "HTTP文件桥接读取API", "http://127.0.0.1:8788/bridge/latest", "中转服务读取接口，默认使用本地服务。建议使用POST JSON。");
+seal.ext.registerStringConfig(ext, "HTTP文件桥接读取API", "http://127.0.0.1:8000/bridge/latest", "中转服务读取接口，默认使用本地服务。建议使用POST JSON。");
 seal.ext.registerStringConfig(ext, "HTTP文件桥接Token", "", "可选，若中转服务启用鉴权则在此填写。");
 seal.ext.registerBoolConfig(ext, "调试日志", true, "开启后在命令行输出桥接请求、解析与提交流程详细日志。");
 seal.ext.registerBoolConfig(ext, "启用文本文件桥接", true, "开启后可通过纯文本桥接消息记录最新群文件，不依赖CQ:file解析。");
@@ -97,6 +98,16 @@ function getBridgeTokenHeader() {
     let token = (seal.ext.getStringConfig(ext, "HTTP文件桥接Token") || '').trim();
     if (!token) return {};
     return { "Authorization": token };
+}
+
+function getBackendBaseUrl() {
+    let port = seal.ext.getIntConfig(ext, "Python后端服务端口");
+    if (!port || port <= 0) port = 8000;
+    let hostUrl = (seal.ext.getStringConfig(ext, "Python后端服务地址") || 'http://127.0.0.1').trim();
+    // 从完整URL中提取协议+主机部分（去掉已有端口）
+    let base = hostUrl.replace(/:\d+$/, '');  // 去掉末尾端口
+    if (base.endsWith('/')) base = base.slice(0, -1);
+    return `${base}:${port}`;
 }
 
 function dbgLog(tag, message, data) {
@@ -393,6 +404,7 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
     let isPro = args.some(a => a.toLowerCase() === 'pro');
     let isKind = args.some(a => a.includes('温柔') || a.toLowerCase() === 'kind');
     let isAI = args.some(a => a.toLowerCase() === 'ai' || a === '原版' || a === '专业');
+    let getText = args.some(a => a.toLowerCase() === 'get_text');
 
     // ===== 新增：图片主题风格嗅探 =====
     let theme = 'default';
@@ -475,7 +487,8 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
         kind: isKind,
         persona: personaStr,
         custom_prompt: customPromptContent,
-        theme: theme   // 新增传给后端的风格
+        theme: theme,   // 新增传给后端的风格
+        get_text: getText
     };
 
     if (useLocalFile) {
@@ -499,7 +512,7 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
         dbgLog('flow', 'loaded file record from storage', fileData);
         logKeyForMsg = fileData.name;
 
-        apiUrl = `http://127.0.0.1:8000/api/submit_file`;
+        apiUrl = `${getBackendBaseUrl()}/api/submit_file`;
         if (fileData.content_url) {
             dbgLog('flow', 'submit by bridge content_url');
             payload.url = fileData.content_url;
@@ -541,7 +554,7 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
         if (entries.some(e => e.source === 'bridge_file' || e.source === 'bridge_file_name')) {
             try {
                 let pureGid = getPureGroupId(ctx.group ? ctx.group.groupId : '');
-                let listData = await safeFetchJson(`http://127.0.0.1:8000/bridge/list?group_id=${pureGid}`, {}, "获取桥接文件列表");
+                let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGid}`, {}, "获取桥接文件列表");
                 if (listData && listData.status === 'ok') {
                     bridgeFiles = listData.files || [];
                 }
@@ -588,7 +601,7 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
             }
             return `#${i + 1}:${e.key}`;
         }).join(' | ');
-        apiUrl = `http://127.0.0.1:8000/api/submit`;
+        apiUrl = `${getBackendBaseUrl()}/api/submit`;
         payload.group_id = getPureGroupId(ctx.group ? ctx.group.groupId : '');
         if (entries.length === 1) {
             payload.key = entries[0].key;
@@ -633,8 +646,8 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
         }
 
         let jobId = data.id;
-        let checkUrl = `http://127.0.0.1:8000/api/status?id=${jobId}`;
-        let resultUrl = `http://127.0.0.1:8000/api/result?id=${jobId}`;
+        let checkUrl = `${getBackendBaseUrl()}/api/status?id=${jobId}`;
+        let resultUrl = `${getBackendBaseUrl()}/api/result?id=${jobId}`;
 
         let maxRetries = 90;
         while (maxRetries > 0) {
@@ -642,18 +655,24 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
             let sData = await safeFetchJson(checkUrl, undefined, "查询任务状态");
             
             if (sData.status === 'done' || sData.status === 'error') {
-                if (sData.image_count !== undefined && sData.image_count > 0) {
+                // get_text 模式：发送下载链接而非图片
+                if (getText && sData.text_url) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                } else if (sData.image_count !== undefined && sData.image_count > 0) {
                     let msgStr = "";
                     for (let i = 0; i < sData.image_count; i++) {
                         let finalUrl = `${resultUrl}&index=${i}&t=${new Date().getTime()}`;
                         msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
                     }
                     seal.replyToSender(ctx, msg, msgStr);
+                } else if (sData.text_url) {
+                    // 兜底：如果有 text_url 也发送
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成：\n下载链接：${sData.text_url}`);
                 } else {
                     let finalUrl = `${resultUrl}&index=0&t=${new Date().getTime()}`;
                     seal.replyToSender(ctx, msg, `[CQ:image,file=${finalUrl},cache=0]`);
                 }
-                
+
                 if (useLocalFile) ext.storageSet(`log_last_file_${ctx.group.groupId}`, "");
                 return seal.ext.newCmdExecuteResult(true);
             }
@@ -811,7 +830,168 @@ cmdLogAi.solve = async (ctx, msg, cmdArgs) => {
     
     return await processLogTask(ctx, msg, cmdArgs, '跑团日志评分与吐槽', 'analyze'); 
 };
-ext.cmdMap['logai'] = cmdLogAi; 
+ext.cmdMap['logai'] = cmdLogAi;
+// 新命令：.ai 快速AI分析（不保存配置）
+const cmdAi = seal.ext.newCmdItemInfo();
+cmdAi.name = 'ai';
+cmdAi.help = '快速AI分析，不保存配置。\n用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]\nfile格式: [file]-N（编号从0最旧到最新）\n无文件时仅发送prompt给AI。';
+cmdAi.solve = async (ctx, msg, cmdArgs) => {
+    let args = cmdArgs.args;
+    if (!args || args.length === 0) {
+        seal.replyToSender(ctx, msg, '用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]\n示例: .ai [file]-0 [file]-1 请总结这两个文件的内容 pro');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    let isPro = args.some(a => a.toLowerCase() === 'pro');
+    let getText = args.some(a => a.toLowerCase() === 'get_text');
+
+    // 提取 [file]-N 文件引用
+    let fileArgs = [];
+    let promptParts = [];
+    for (let a of args) {
+        if (/^\[file\]-\d+$/i.test(String(a || '').trim())) {
+            fileArgs.push(String(a).trim());
+        } else if (a.toLowerCase() === 'pro' || a.toLowerCase() === 'get_text') {
+            // skip flags
+        } else {
+            promptParts.push(a);
+        }
+    }
+    let prompt = promptParts.join(' ').trim();
+
+    if (!prompt) {
+        seal.replyToSender(ctx, msg, '❌ 请提供分析提示词(prompt)。\n用法: .ai [file1] …… [fileN] <prompt> [pro] [get_text]');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    let groupId = ctx.group ? ctx.group.groupId : '';
+    if (!groupId) {
+        seal.replyToSender(ctx, msg, '❌ 此功能仅在群聊中可用。');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    seal.replyToSender(ctx, msg, `已提交AI分析请求（提示词: ${prompt.slice(0, 30)}...${fileArgs.length > 0 ? ' 携带' + fileArgs.length + '个文件' : ' 无文件'}）${isPro ? ' [Pro]' : ''}${getText ? ' [文本输出]' : ''}`);
+
+    try {
+        let host = getBackendBaseUrl();
+        let pureGroupId = getPureGroupId(groupId);
+
+        // 解析文件引用为 bridge_file 格式
+        let fileEntries = [];
+        if (fileArgs.length > 0) {
+            // 获取桥接文件列表
+            let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
+            let bridgeFiles = [];
+            if (listData && listData.status === 'ok') {
+                bridgeFiles = listData.files || [];
+            }
+
+            for (let fa of fileArgs) {
+                let idxMatch = fa.match(/^\[file\]-(\d+)$/i);
+                if (idxMatch) {
+                    let idx = parseInt(idxMatch[1]);
+                    if (idx >= 0 && idx < bridgeFiles.length) {
+                        let bf = bridgeFiles[idx];
+                        let contentUrl = bf.content_url || '';
+                        if (contentUrl) {
+                            fileEntries.push({ url: contentUrl, name: bf.display_name || bf.name || fa });
+                        }
+                    }
+                }
+            }
+        }
+
+        let jobId, checkUrl, resultUrl;
+
+        if (fileEntries.length > 0) {
+            // 有文件：使用 /api/submit_file 多文件模式
+            let filePayload = {
+                mode: 'analyze',
+                pro: isPro,
+                kind: false,
+                persona: '',
+                custom_prompt: prompt,
+                theme: 'default',
+                get_text: getText,
+                urls: fileEntries.map(e => e.url),
+                filenames: fileEntries.map(e => e.name)
+            };
+
+            let apiUrl = `${getBackendBaseUrl()}/api/submit_file`;
+            let data = await safeFetchJson(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(filePayload)
+            }, "提交AI分析任务");
+
+            if (data.status !== 'ok') {
+                seal.replyToSender(ctx, msg, `❌ 提交失败：${JSON.stringify(data)}`);
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            jobId = data.id;
+        } else {
+            // 无文件：仅发送 prompt 给 AI（v4.2: 使用 text 直接文本模式）
+            let textPayload = {
+                mode: 'analyze',
+                pro: isPro,
+                kind: false,
+                persona: '',
+                custom_prompt: '',   // 系统提示留空，让后端用默认
+                theme: 'default',
+                get_text: getText,
+                text: prompt          // v4.2: direct_text模式，prompt作为AI分析的输入内容
+            };
+
+            let apiUrl = `${getBackendBaseUrl()}/api/submit`;
+            let data = await safeFetchJson(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(textPayload)
+            }, "提交AI分析任务");
+
+            if (data.status !== 'ok') {
+                seal.replyToSender(ctx, msg, `❌ 提交失败：${JSON.stringify(data)}`);
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            jobId = data.id;
+        }
+
+        checkUrl = `${getBackendBaseUrl()}/api/status?id=${jobId}`;
+        resultUrl = `${getBackendBaseUrl()}/api/result?id=${jobId}`;
+
+        let maxRetries = 90;
+        while (maxRetries > 0) {
+            await sleep(2000);
+            let sData = await safeFetchJson(checkUrl, undefined, "查询AI任务状态");
+
+            if (sData.status === 'done' || sData.status === 'error') {
+                if (getText && sData.text_url) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                } else if (sData.image_count !== undefined && sData.image_count > 0) {
+                    let msgStr = "";
+                    for (let i = 0; i < sData.image_count; i++) {
+                        let finalUrl = `${resultUrl}&index=${i}&t=${new Date().getTime()}`;
+                        msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
+                    }
+                    seal.replyToSender(ctx, msg, msgStr);
+                } else if (sData.text_url) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成：\n下载链接：${sData.text_url}`);
+                } else {
+                    let finalUrl = `${resultUrl}&index=0&t=${new Date().getTime()}`;
+                    seal.replyToSender(ctx, msg, `[CQ:image,file=${finalUrl},cache=0]`);
+                }
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            maxRetries--;
+        }
+        seal.replyToSender(ctx, msg, `⚠️ AI 分析超时，后台可能仍在处理。`);
+    } catch (e) {
+        console.error(e);
+        seal.replyToSender(ctx, msg, `❌ 脚本错误：${e.message}`);
+    }
+    return seal.ext.newCmdExecuteResult(true);
+};
+ext.cmdMap['ai'] = cmdAi;
 // 新命令：logutil（对接后端 /api/logutil_*）
 const cmdLogUtil = seal.ext.newCmdItemInfo();
 cmdLogUtil.name = 'logutil';
@@ -845,7 +1025,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         seal.replyToSender(ctx, msg, fw('❌ 此功能仅在群聊中可用'));
         return seal.ext.newCmdExecuteResult(true);
     }
-    let host = 'http://127.0.0.1:8000';
+    let host = getBackendBaseUrl();
 
     // Parse args from raw message text to avoid SealDice tokenization issues
     // (SealDice may drop or mangle [file]-N bracket syntax)
@@ -1055,8 +1235,8 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                             if (aiData.status === 'ok' && aiData.id) {
                                 seal.replyToSender(ctx, msg, fw('✓ AI 分析任务已提交，请稍候...'));
                                 let jobId = aiData.id;
-                                let checkUrl = `http://127.0.0.1:8000/api/status?id=${jobId}`;
-                                let resultUrl = `http://127.0.0.1:8000/api/result?id=${jobId}`;
+                                let checkUrl = `${getBackendBaseUrl()}/api/status?id=${jobId}`;
+                                let resultUrl = `${getBackendBaseUrl()}/api/result?id=${jobId}`;
                                 let maxRetries = 90;
                                 let _sleep = (ms) => new Promise(r => setTimeout(r, ms));
                                 while (maxRetries > 0) {
@@ -1177,6 +1357,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 if (payload.name) {
                     query += `&name=${encodeURIComponent(payload.name)}`;
                 }
+                if (del_paren) {
+                    query += `&del_paren=true`;
+                }
                 resp = await fetch(`${endpoint}${query}`);
             } else {
                 resp = await fetch(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -1293,7 +1476,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
     }
     let pureId = getPureGroupId(groupId);
     let payload = { group_id: pureId };
-    let host = 'http://127.0.0.1:8000';
+    let host = getBackendBaseUrl();
 
     try {
         if (op === 'on') {
@@ -1343,7 +1526,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 } else {
                     let lines = [fw(`【桥接文件列表】共 ${files.length} 个文件:`)];
                     for (let f of files) {
-                        let idxTag = f.index === 0 ? ' [最新]' : '';
+                        let idxTag = f.index === 0 ? ' [最早]' : '';
                         let cached = f.cached ? '' : ' [已过期]';
                         let chars = f.text_chars || 0;
                         lines.push(`- #${f.index}${idxTag}${cached} ${f.name} (${chars} 字)`);
@@ -1386,6 +1569,139 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
 };
 ext.cmdMap['bridge'] = cmdBridge;
 
+// 新命令：.translate 文件翻译
+const cmdTranslate = seal.ext.newCmdItemInfo();
+cmdTranslate.name = 'translate';
+cmdTranslate.help = '翻译桥接缓存文件。\n用法: .translate [target_lang=中文] [file1] …… [fileN]\nfile格式: [file]-N（编号从0最旧到最新）\n支持格式: docx, pdf, txt等。';
+cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
+    let args = cmdArgs.args;
+    if (!args || args.length === 0) {
+        seal.replyToSender(ctx, msg, '用法: .translate [target_lang=中文] [file1] …… [fileN]\n示例: .translate 英文 [file]-0\n       .translate 日文 [file]-0 [file]-1');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    let groupId = ctx.group ? ctx.group.groupId : '';
+    if (!groupId) {
+        seal.replyToSender(ctx, msg, '❌ 此功能仅在群聊中可用。');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    let pureGroupId = getPureGroupId(groupId);
+
+    // Parse: target_lang and [file]-N refs
+    let targetLang = '中文';  // default
+    let fileArgs = [];
+    for (let a of args) {
+        let trimmed = String(a || '').trim();
+        if (/^\[file\]-\d+$/i.test(trimmed)) {
+            fileArgs.push(trimmed);
+        } else {
+            // Assume it's a target language
+            targetLang = trimmed;
+        }
+    }
+
+    if (fileArgs.length === 0) {
+        seal.replyToSender(ctx, msg, '❌ 请提供至少一个要翻译的文件（格式：[file]-N）。\n示例: .translate 英文 [file]-0');
+        return seal.ext.newCmdExecuteResult(true);
+    }
+
+    try {
+        // Get bridge file list
+        let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
+        if (!listData || listData.status !== 'ok' || !listData.files || listData.files.length === 0) {
+            seal.replyToSender(ctx, msg, '❌ 当前群没有桥接缓存文件。请先上传文件。');
+            return seal.ext.newCmdExecuteResult(true);
+        }
+        let bridgeFiles = listData.files;
+
+        // Resolve file refs
+        let resolvedFiles = [];
+        for (let fa of fileArgs) {
+            let idxMatch = fa.match(/^\[file\]-(\d+)$/i);
+            if (idxMatch) {
+                let idx = parseInt(idxMatch[1]);
+                if (idx >= 0 && idx < bridgeFiles.length) {
+                    let bf = bridgeFiles[idx];
+                    let contentUrl = bf.content_url || '';
+                    if (contentUrl) {
+                        resolvedFiles.push({
+                            url: contentUrl,
+                            name: bf.display_name || bf.name || fa
+                        });
+                    }
+                }
+            }
+        }
+
+        if (resolvedFiles.length === 0) {
+            seal.replyToSender(ctx, msg, '❌ 未能解析任何有效文件。请使用 .bridge list 查看可用文件编号。');
+            return seal.ext.newCmdExecuteResult(true);
+        }
+
+        seal.replyToSender(ctx, msg, `正在翻译 ${resolvedFiles.length} 个文件为${targetLang}，请稍候...`);
+
+        // Translate each file
+        let results = [];
+        for (let rf of resolvedFiles) {
+            let transJobId = null;
+            try {
+                // Submit translate task
+                let transResp = await safeFetchJson(
+                    `${getBackendBaseUrl()}/api/translate?url=${encodeURIComponent(rf.url)}&filename=${encodeURIComponent(rf.name)}&lang=${encodeURIComponent(targetLang)}`,
+                    {},
+                    "提交翻译任务"
+                );
+                if (transResp.status === 'ok' && transResp.id) {
+                    transJobId = transResp.id;
+                }
+            } catch (e) {
+                results.push(`${rf.name}: 提交失败 - ${e.message}`);
+                continue;
+            }
+
+            if (!transJobId) {
+                results.push(`${rf.name}: 提交失败`);
+                continue;
+            }
+
+            // Poll for translation result
+            let translated = false;
+            let maxRetries = 60;
+            while (maxRetries > 0) {
+                await sleep(2000);
+                let sData = await safeFetchJson(
+                    `${getBackendBaseUrl()}/api/translate_result?id=${transJobId}`,
+                    undefined,
+                    "查询翻译状态"
+                );
+                if (sData && sData.status === 'done') {
+                    // Translation complete - the backend returns text directly
+                    // We need to create a download URL for the translated text
+                    results.push(`${rf.name}: ✅ 翻译完成（目标语言: ${targetLang}）`);
+                    translated = true;
+                    break;
+                } else if (sData && sData.status === 'error') {
+                    results.push(`${rf.name}: 翻译失败 - ${sData.text || '未知错误'}`);
+                    translated = true;
+                    break;
+                }
+                maxRetries--;
+            }
+            if (!translated) {
+                results.push(`${rf.name}: 翻译超时`);
+            }
+        }
+
+        seal.replyToSender(ctx, msg, `【翻译结果】\n` + results.join('\n'));
+
+    } catch (e) {
+        console.error(e);
+        seal.replyToSender(ctx, msg, `❌ 翻译错误：${e.message}`);
+    }
+    return seal.ext.newCmdExecuteResult(true);
+};
+ext.cmdMap['translate'] = cmdTranslate;
 
 // 导出脚本完成
 // 合并：来自 人工智障模组分析器2.js 的文件处理与命令
@@ -1418,6 +1734,7 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
     let isPro = args.some(a => a && a.toLowerCase && a.toLowerCase() === 'pro');
     let isKind = args.some(a => a && (a.includes && a.includes('温柔') || (a.toLowerCase && a.toLowerCase() === 'kind')));
     let isAI = args.some(a => a && (a.toLowerCase && (a.toLowerCase() === 'ai' || a === '原版' || a === '专业')));
+    let getText = args.some(a => a && a.toLowerCase && a.toLowerCase() === 'get_text');
 
     let theme = 'default';
     let tArgs = args.join(' ');
@@ -1476,89 +1793,255 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
         personaStr = isKind ? seal.ext.getStringConfig(ext, "温柔模式_骰娘设定") : seal.ext.getStringConfig(ext, "常规模式_骰娘设定");
     }
 
-    let storageKey = `last_file_${groupId}`;
-    let fileDataStr = ext.storageGet(storageKey);
-    if (!fileDataStr) {
-        seal.replyToSender(ctx, msg, '❌ 当前群没有检测到新上传的模组文件，或记录已过期。');
-        return seal.ext.newCmdExecuteResult(true);
+    // Build exclude list for arg filtering
+    let excludeList = ['pro', 'kind', '温柔', 'ai', '原版', '专业', 'get_text',
+        '赛博', '历史', '古风', '克苏鲁', '深潜', '废土', '末日', '二次元', '萌系', '终端', '黑客', '经典', '默认', '常规'];
+    if (customName) excludeList.push(customName);
+
+    // Detect file references in args ([file]-N or filenames)
+    let fileRefs = [];
+    for (let a of args) {
+        let s = String(a || '').trim();
+        if (excludeList.some(e => e.toLowerCase() === s.toLowerCase())) continue;
+        if (/^\[file\]-\d+$/i.test(s)) {
+            fileRefs.push({ type: 'index', value: s });
+        } else if (s && s.length > 1 && !s.startsWith('pro') && !s.startsWith('kind') && !s.startsWith('ai')) {
+            // Potential filename
+            let looksLikeFilename = (
+                s.startsWith('[') ||
+                /\.\w{2,5}$/i.test(s) ||
+                /\[\d{4}-\d{2}-\d{2}[_\s]/.test(s) ||
+                /[一-鿿]/.test(s)
+            );
+            if (looksLikeFilename && !parseLogTargetEntry(s)) {
+                fileRefs.push({ type: 'name', value: s });
+            }
+        }
     }
 
-    let fileData = JSON.parse(fileDataStr);
-    let filename = fileData.name;
-    if (customName) modeName = `自定义处理[${customName}]`;
+    let useLocalFile = fileRefs.length === 0;
+    let resolvedFiles = [];
 
+    if (!useLocalFile) {
+        // Resolve file references from bridge cache
+        let pureGroupId = getPureGroupId(groupId);
+        try {
+            let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
+            let bridgeFiles = [];
+            if (listData && listData.status === 'ok') {
+                bridgeFiles = listData.files || [];
+            }
+
+            for (let ref of fileRefs) {
+                if (ref.type === 'index') {
+                    let idxMatch = ref.value.match(/^\[file\]-(\d+)$/i);
+                    let idx = parseInt(idxMatch[1]);
+                    if (idx >= 0 && idx < bridgeFiles.length) {
+                        let bf = bridgeFiles[idx];
+                        if (bf.content_url) {
+                            resolvedFiles.push({ url: bf.content_url, name: bf.display_name || bf.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'name') {
+                    let searchName = String(ref.value).replace(/\s+/g, '');
+                    let bf = bridgeFiles.find(f => {
+                        let fname = String(f.display_name || f.name || '').replace(/\s+/g, '');
+                        return fname === searchName;
+                    });
+                    if (!bf) {
+                        bf = bridgeFiles.find(f => {
+                            let fname = String(f.display_name || f.name || '').replace(/\s+/g, '');
+                            let baseName = fname.replace(/\.\w{2,5}$/i, '');
+                            return baseName === searchName;
+                        });
+                    }
+                    if (!bf && searchName.length > 1) {
+                        bf = bridgeFiles.find(f => {
+                            let fname = String(f.display_name || f.name || '').replace(/\s+/g, '');
+                            return fname.includes(searchName);
+                        });
+                    }
+                    if (bf && bf.content_url) {
+                        resolvedFiles.push({ url: bf.content_url, name: bf.display_name || bf.name || ref.value });
+                    }
+                }
+            }
+        } catch (e) {
+            // Fall through to local file behavior
+        }
+
+        if (resolvedFiles.length === 0) {
+            seal.replyToSender(ctx, msg, '❌ 无法解析指定的文件引用。请使用 .bridge list 查看可用文件，或直接上传文件后不加文件参数。');
+            return seal.ext.newCmdExecuteResult(true);
+        }
+    }
+
+    let filename = '';
     let modeMsg = usePersona ? " [骰娘人设]" : (isAI ? " [纯净AI]" : "");
     if (isPro) modeMsg += "[Pro模式]";
     if (isKind && pythonMode === 'analyze' && usePersona) modeMsg += "[温柔模式]";
+    if (getText) modeMsg += "[文本输出]";
 
-    seal.replyToSender(ctx, msg, `🤖 正在请求【${filename}】的下载链接并开始${modeName}...${modeMsg}`);
-
-    try {
-        let onebotApiUrl = seal.ext.getStringConfig(ext, "OneBot_API_地址");
-        if (onebotApiUrl.endsWith('/')) onebotApiUrl = onebotApiUrl.slice(0, -1);
-        let onebotGroupId = parseInt(groupId.replace('QQ-Group:', ''));
-
-        let urlJson = await safeFetchJson(`${onebotApiUrl}/get_group_file_url`, {
-            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group_id: onebotGroupId, file_id: fileData.file_id, busid: fileData.busid })
-        }, "获取群文件链接");
-
-        if (!urlJson || !urlJson.data || !urlJson.data.url) {
-            seal.replyToSender(ctx, msg, `❌ 获取文件链接失败。`);
+    if (useLocalFile) {
+        let storageKey = `last_file_${groupId}`;
+        let fileDataStr = ext.storageGet(storageKey);
+        if (!fileDataStr) {
+            seal.replyToSender(ctx, msg, '❌ 当前群没有检测到新上传的模组文件，或记录已过期。');
             return seal.ext.newCmdExecuteResult(true);
         }
 
-        let payload = {
-            url: urlJson.data.url,
-            filename: filename,
-            mode: pythonMode,
-            pro: isPro,
-            kind: isKind,
-            persona: personaStr,
-            custom_prompt: customPromptContent,
-            theme: theme
-        };
+        let fileData = JSON.parse(fileDataStr);
+        filename = fileData.name;
+        if (customName) modeName = `自定义处理[${customName}]`;
 
-        let pythonApiUrl = `http://127.0.0.1:8000/api/submit_file`;
-        let pyData = await safeFetchJson(pythonApiUrl, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        }, "提交分析任务");
+        seal.replyToSender(ctx, msg, `🤖 正在请求【${filename}】的下载链接并开始${modeName}...${modeMsg}`);
 
-        if (pyData.status !== 'ok') {
-            if (isPro) {
-                let g = parseInt(ext.storageGet(globalKey) || '1');
-                let u = parseInt(ext.storageGet(userKey) || '1');
-                ext.storageSet(globalKey, Math.max(0, g - 1).toString());
-                ext.storageSet(userKey, Math.max(0, u - 1).toString());
-            }
-            seal.replyToSender(ctx, msg, `❌ 后端提交失败: ${JSON.stringify(pyData)}`);
-            return seal.ext.newCmdExecuteResult(true);
-        }
+        try {
+            let onebotApiUrl = seal.ext.getStringConfig(ext, "OneBot_API_地址");
+            if (onebotApiUrl.endsWith('/')) onebotApiUrl = onebotApiUrl.slice(0, -1);
+            let onebotGroupId = parseInt(groupId.replace('QQ-Group:', ''));
 
-        let jobId = pyData.id;
-        let maxRetries = 120;
-        while (maxRetries > 0) {
-            await sleep(2000);
-            let sData = await safeFetchJson(`http://127.0.0.1:8000/api/status?id=${jobId}`, undefined, "查询任务状态");
-            if (sData.status === 'done' || sData.status === 'error') {
-                if (sData.image_count && sData.image_count > 0) {
-                    let msgStr = "";
-                    for (let i = 0; i < sData.image_count; i++) {
-                        let finalUrl = `http://127.0.0.1:8000/api/result?id=${jobId}&index=${i}&t=${new Date().getTime()}`;
-                        msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
-                    }
-                    seal.replyToSender(ctx, msg, msgStr);
-                } else {
-                    seal.replyToSender(ctx, msg, `❌ 发生未知错误，未能生成图片。`);
-                }
-                ext.storageSet(storageKey, "");
+            let urlJson = await safeFetchJson(`${onebotApiUrl}/get_group_file_url`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group_id: onebotGroupId, file_id: fileData.file_id, busid: fileData.busid })
+            }, "获取群文件链接");
+
+            if (!urlJson || !urlJson.data || !urlJson.data.url) {
+                seal.replyToSender(ctx, msg, `❌ 获取文件链接失败。`);
                 return seal.ext.newCmdExecuteResult(true);
             }
-            maxRetries--;
-        }
-        seal.replyToSender(ctx, msg, `⚠️ 分析超时，后台可能仍在处理。`);
 
-    } catch (e) {
-        seal.replyToSender(ctx, msg, `❌ 发生错误: ${e.message}`);
+            let payload = {
+                url: urlJson.data.url,
+                filename: filename,
+                mode: pythonMode,
+                pro: isPro,
+                kind: isKind,
+                persona: personaStr,
+                custom_prompt: customPromptContent,
+                theme: theme,
+                get_text: getText
+            };
+
+            let pythonApiUrl = `${getBackendBaseUrl()}/api/submit_file`;
+            let pyData = await safeFetchJson(pythonApiUrl, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            }, "提交分析任务");
+
+            if (pyData.status !== 'ok') {
+                if (isPro) {
+                    let g = parseInt(ext.storageGet(globalKey) || '1');
+                    let u = parseInt(ext.storageGet(userKey) || '1');
+                    ext.storageSet(globalKey, Math.max(0, g - 1).toString());
+                    ext.storageSet(userKey, Math.max(0, u - 1).toString());
+                }
+                seal.replyToSender(ctx, msg, `❌ 后端提交失败: ${JSON.stringify(pyData)}`);
+                return seal.ext.newCmdExecuteResult(true);
+            }
+
+            let jobId = pyData.id;
+            let maxRetries = 120;
+            while (maxRetries > 0) {
+                await sleep(2000);
+                let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
+                if (sData.status === 'done' || sData.status === 'error') {
+                    if (getText && sData.text_url) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    } else if (sData.image_count && sData.image_count > 0) {
+                        let msgStr = "";
+                        for (let i = 0; i < sData.image_count; i++) {
+                            let finalUrl = `${getBackendBaseUrl()}/api/result?id=${jobId}&index=${i}&t=${new Date().getTime()}`;
+                            msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
+                        }
+                        seal.replyToSender(ctx, msg, msgStr);
+                    } else if (sData.text_url) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成：\n下载链接：${sData.text_url}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, `❌ 发生未知错误，未能生成图片。`);
+                    }
+                    ext.storageSet(storageKey, "");
+                    return seal.ext.newCmdExecuteResult(true);
+                }
+                maxRetries--;
+            }
+            seal.replyToSender(ctx, msg, `⚠️ 分析超时，后台可能仍在处理。`);
+
+        } catch (e) {
+            seal.replyToSender(ctx, msg, `❌ 发生错误: ${e.message}`);
+        }
+    } else {
+        // Multi-file from bridge cache
+        if (resolvedFiles.length === 1) {
+            filename = resolvedFiles[0].name;
+        } else {
+            filename = `多文件拼接(${resolvedFiles.length}段)`;
+        }
+        if (customName) modeName = `自定义处理[${customName}]`;
+
+        seal.replyToSender(ctx, msg, `🤖 正在分析【${filename}】并执行${modeName}...${modeMsg}`);
+
+        try {
+            let payload = {
+                mode: pythonMode,
+                pro: isPro,
+                kind: isKind,
+                persona: personaStr,
+                custom_prompt: customPromptContent,
+                theme: theme,
+                get_text: getText
+            };
+
+            if (resolvedFiles.length === 1) {
+                payload.url = resolvedFiles[0].url;
+                payload.filename = resolvedFiles[0].name;
+            } else {
+                payload.urls = resolvedFiles.map(f => f.url);
+                payload.filenames = resolvedFiles.map(f => f.name);
+            }
+
+            let pythonApiUrl = `${getBackendBaseUrl()}/api/submit_file`;
+            let pyData = await safeFetchJson(pythonApiUrl, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            }, "提交分析任务");
+
+            if (pyData.status !== 'ok') {
+                if (isPro) {
+                    let g = parseInt(ext.storageGet(globalKey) || '1');
+                    let u = parseInt(ext.storageGet(userKey) || '1');
+                    ext.storageSet(globalKey, Math.max(0, g - 1).toString());
+                    ext.storageSet(userKey, Math.max(0, u - 1).toString());
+                }
+                seal.replyToSender(ctx, msg, `❌ 后端提交失败: ${JSON.stringify(pyData)}`);
+                return seal.ext.newCmdExecuteResult(true);
+            }
+
+            let jobId = pyData.id;
+            let maxRetries = 120;
+            while (maxRetries > 0) {
+                await sleep(2000);
+                let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
+                if (sData.status === 'done' || sData.status === 'error') {
+                    if (getText && sData.text_url) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    } else if (sData.image_count && sData.image_count > 0) {
+                        let msgStr = "";
+                        for (let i = 0; i < sData.image_count; i++) {
+                            let finalUrl = `${getBackendBaseUrl()}/api/result?id=${jobId}&index=${i}&t=${new Date().getTime()}`;
+                            msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
+                        }
+                        seal.replyToSender(ctx, msg, msgStr);
+                    } else if (sData.text_url) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成：\n下载链接：${sData.text_url}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, `❌ 发生未知错误，未能生成图片。`);
+                    }
+                    return seal.ext.newCmdExecuteResult(true);
+                }
+                maxRetries--;
+            }
+            seal.replyToSender(ctx, msg, `⚠️ 分析超时，后台可能仍在处理。`);
+        } catch (e) {
+            seal.replyToSender(ctx, msg, `❌ 发生错误: ${e.message}`);
+        }
     }
     return seal.ext.newCmdExecuteResult(true);
 }
@@ -1566,7 +2049,7 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
 // 注册命令： .模组分析
 const cmdFile = seal.ext.newCmdItemInfo();
 cmdFile.name = '模组分析';
-cmdFile.help = '分析最近上传的群文件。\n用法: .模组分析 [配置名] [选项]\n选项：pro, 温柔, ai\n配置管理请使用 .模组分析 配置 示例';
+cmdFile.help = '分析模组文件。\n用法: .模组分析 [file1] …… [fileN] [配置名] [pro] [ai] [主题] [get_text]\nfile格式: [file]-N 或 文件名/部分文件名\n不指定文件则使用最新上传的群文件。\n配置管理请使用 .模组分析 配置 示例';
 cmdFile.solve = async (ctx, msg, cmdArgs) => {
     let val1 = cmdArgs.getArgN(1);
     if (val1 === '配置') {
@@ -1676,7 +2159,7 @@ ext.cmdMap['分析文件'] = cmdFile;
 // .模组备团
 const cmdPrepare = seal.ext.newCmdItemInfo();
 cmdPrepare.name = '模组备团';
-cmdPrepare.help = '对新上传的模组进行分图梳理：背景、梗概、NPC关系、场景、带团建议。\n选项：pro, ai';
+cmdPrepare.help = '对模组进行分图梳理。\n用法: .模组备团 [file1] …… [fileN] [配置名] [pro] [ai] [主题] [get_text]\nfile格式: [file]-N 或 文件名/部分文件名\n不指定文件则使用最新上传的群文件。';
 cmdPrepare.solve = async (ctx, msg, cmdArgs) => {
     return await processModuleFile(ctx, msg, cmdArgs, '备团资料梳理', 'prepare');
 };
@@ -1686,19 +2169,19 @@ ext.cmdMap['备团'] = cmdPrepare;
 // .模组完善
 const cmdRefine = seal.ext.newCmdItemInfo();
 cmdRefine.name = '模组完善';
-cmdRefine.help = '对未写完的模组进行审查：进度预估、写作建议、具体示例润色。\n选项：pro, ai';
+cmdRefine.help = '对模组进行审查与润色。\n用法: .模组完善 [file1] …… [fileN] [配置名] [pro] [ai] [主题] [get_text]\nfile格式: [file]-N 或 文件名/部分文件名\n不指定文件则使用最新上传的群文件。';
 cmdRefine.solve = async (ctx, msg, cmdArgs) => {
     return await processModuleFile(ctx, msg, cmdArgs, '写作进度审查与润色', 'refine');
 };
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.1.0 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.2.0 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {
     try {
-        let host = 'http://127.0.0.1:8000';
+        let host = getBackendBaseUrl();
         let wsUrl = seal.ext.getStringConfig(ext, 'logutil_WS地址') || 'ws://127.0.0.1:3001';
         let wsToken = seal.ext.getStringConfig(ext, 'logutil_WS_Token') || '';
         let wsEnabled = seal.ext.getBoolConfig(ext, 'logutil_WS启用');
