@@ -2,7 +2,7 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogAI 4.3.1 - TRPG Log Analysis Server"
+echo "  LogAI 4.3.2 - TRPG Log Analysis Server"
 echo "============================================"
 echo ""
 

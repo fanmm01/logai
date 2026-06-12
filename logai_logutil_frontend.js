@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.3.1
+// @version      4.3.2
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.3.1');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.3.2');
     seal.ext.register(ext);
 }
 
@@ -656,7 +656,20 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
             
             if (sData.status === 'done' || sData.status === 'error') {
                 // get_text 模式：发送下载链接而非图片
-                if (getText && sData.text_url) {
+                if (getText && sData.text_key) {
+                    // v4.3.2: 通过 NapCat 上传文件到群
+                    let pureId = getPureGroupId(ctx.group ? ctx.group.groupId : '');
+                    let upRes = await fetch(`${getBackendBaseUrl()}/api/send_file_to_group`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({group_id: pureId, content_key: sData.text_key, filename: sData.text_filename || 'ai_analysis.txt'})
+                    });
+                    let upData = await upRes.json();
+                    if (upData.status === 'ok' && upData.file_sent) {
+                        seal.replyToSender(ctx, msg, `✅ AI 分析完成，已发送文件：${sData.text_filename || 'ai_analysis.txt'}\n下载链接：${sData.text_url || ''}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    }
+                } else if (getText && sData.text_url) {
                     seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
                 } else if (sData.image_count !== undefined && sData.image_count > 0) {
                     let msgStr = "";
@@ -967,7 +980,20 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
             let sData = await safeFetchJson(checkUrl, undefined, "查询AI任务状态");
 
             if (sData.status === 'done' || sData.status === 'error') {
-                if (getText && sData.text_url) {
+                if (getText && sData.text_key) {
+                    // v4.3.2: 通过 NapCat 上传文件到群
+                    let pureId = getPureGroupId(ctx.group ? ctx.group.groupId : '');
+                    let upRes = await fetch(`${getBackendBaseUrl()}/api/send_file_to_group`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({group_id: pureId, content_key: sData.text_key, filename: sData.text_filename || 'ai_analysis.txt'})
+                    });
+                    let upData = await upRes.json();
+                    if (upData.status === 'ok' && upData.file_sent) {
+                        seal.replyToSender(ctx, msg, `✅ AI 分析完成，已发送文件：${sData.text_filename || 'ai_analysis.txt'}\n下载链接：${sData.text_url || ''}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    }
+                } else if (getText && sData.text_url) {
                     seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
                 } else if (sData.image_count !== undefined && sData.image_count > 0) {
                     let msgStr = "";
@@ -1560,8 +1586,21 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                     seal.replyToSender(ctx, msg, fw(`❌ 编号 ${idx} 超出范围 (0~${files.length - 1})。`));
                 } else {
                     let f = files[idx];
-                    if (f.content_url) {
-                        seal.replyToSender(ctx, msg, fw(`📄 【${f.display_name || f.name}】 纯文本下载链接：\n${f.content_url}`));
+                    let ck = f.content_key || '';
+                    if (ck) {
+                        // 通过 NapCat 上传文件到群
+                        let txtName = (f.display_name || f.name || 'file').replace(/\.[^.]+$/, '') + '.txt';
+                        let uploadResp = await fetch(`${host}/api/send_file_to_group`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({group_id: pureId, content_key: ck, filename: txtName})
+                        });
+                        let uploadData = await uploadResp.json();
+                        if (uploadData.status === 'ok' && uploadData.file_sent) {
+                            seal.replyToSender(ctx, msg, fw(`📄 【${f.display_name || f.name}】 已转为纯文本并发送：${txtName}`));
+                        } else {
+                            seal.replyToSender(ctx, msg, fw(`❌ 文件上传失败: ${uploadData.msg || JSON.stringify(uploadData)}\n下载链接：${f.content_url || ''}`));
+                        }
                     } else {
                         seal.replyToSender(ctx, msg, fw(`❌ 文件 ${f.display_name || f.name} 的文本内容暂不可用。`));
                     }
@@ -1708,9 +1747,21 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                     "查询翻译状态"
                 );
                 if (sData && sData.status === 'done') {
-                    // Translation complete - the backend returns text directly
-                    // We need to create a download URL for the translated text
-                    results.push(`${rf.name}: ✅ 翻译完成（目标语言: ${targetLang}）`);
+                    // v4.3.2: 翻译完成，通过 NapCat 上传文件到群
+                    if (sData.text_key) {
+                        let upRes = await fetch(`${getBackendBaseUrl()}/api/send_file_to_group`, {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({group_id: pureGroupId, content_key: sData.text_key, filename: sData.text_filename || `${rf.name}_${targetLang}.txt`})
+                        });
+                        let upData = await upRes.json();
+                        if (upData.status === 'ok' && upData.file_sent) {
+                            results.push(`${rf.name}: ✅ 翻译完成，已发送：${sData.text_filename || 'translated.txt'}`);
+                        } else {
+                            results.push(`${rf.name}: ✅ 翻译完成（上传失败：${upData.msg || ''}，目标语言: ${targetLang}）`);
+                        }
+                    } else {
+                        results.push(`${rf.name}: ✅ 翻译完成（目标语言: ${targetLang}）`);
+                    }
                     translated = true;
                     break;
                 } else if (sData && sData.status === 'error') {
@@ -1976,7 +2027,19 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                 await sleep(2000);
                 let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
                 if (sData.status === 'done' || sData.status === 'error') {
-                    if (getText && sData.text_url) {
+                    if (getText && sData.text_key) {
+                        let pureId = getPureGroupId(ctx.group ? ctx.group.groupId : '');
+                        let upRes = await fetch(`${getBackendBaseUrl()}/api/send_file_to_group`, {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({group_id: pureId, content_key: sData.text_key, filename: sData.text_filename || 'ai_analysis.txt'})
+                        });
+                        let upData = await upRes.json();
+                        if (upData.status === 'ok' && upData.file_sent) {
+                            seal.replyToSender(ctx, msg, `✅ 分析完成，已发送文件：${sData.text_filename || 'ai_analysis.txt'}\n下载链接：${sData.text_url || ''}`);
+                        } else {
+                            seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                        }
+                    } else if (getText && sData.text_url) {
                         seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
                     } else if (sData.image_count && sData.image_count > 0) {
                         let msgStr = "";
@@ -2052,7 +2115,19 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                 await sleep(2000);
                 let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
                 if (sData.status === 'done' || sData.status === 'error') {
-                    if (getText && sData.text_url) {
+                    if (getText && sData.text_key) {
+                        let pureId = getPureGroupId(ctx.group ? ctx.group.groupId : '');
+                        let upRes = await fetch(`${getBackendBaseUrl()}/api/send_file_to_group`, {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({group_id: pureId, content_key: sData.text_key, filename: sData.text_filename || 'ai_analysis.txt'})
+                        });
+                        let upData = await upRes.json();
+                        if (upData.status === 'ok' && upData.file_sent) {
+                            seal.replyToSender(ctx, msg, `✅ 分析完成，已发送文件：${sData.text_filename || 'ai_analysis.txt'}\n下载链接：${sData.text_url || ''}`);
+                        } else {
+                            seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                        }
+                    } else if (getText && sData.text_url) {
                         seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
                     } else if (sData.image_count && sData.image_count > 0) {
                         let msgStr = "";
@@ -2208,7 +2283,7 @@ cmdRefine.solve = async (ctx, msg, cmdArgs) => {
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.3.1 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.3.2 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

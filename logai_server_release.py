@@ -11,7 +11,7 @@
 # ]
 # ///
 
-# LogAI 4.3.1 - TRPG Log Analysis and Illustration Server
+# LogAI 4.3.2 - TRPG Log Analysis and Illustration Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -228,7 +228,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.3.1"
+SERVICE_VERSION = "4.3.2"
 _openai_client = None
 
 def get_openai_client():
@@ -692,6 +692,7 @@ def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=Fa
                 public_base = resolve_public_base_or_fallback()
                 text_url = build_content_url(text_key, public_base=public_base)
                 JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
             except Exception as e:
@@ -835,6 +836,7 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
                 public_base = resolve_public_base_or_fallback()
                 text_url = build_content_url(text_key, public_base=public_base)
                 JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
             except Exception as e:
@@ -879,7 +881,7 @@ def extract_text_from_file(file_content, filename):
             pdf_document.close()
             
         else:
-            # v4.3.1: 未知扩展名直接当作文本解码（.py, .js, .c 等）
+            # v4.3.2: 未知扩展名直接当作文本解码（.py, .js, .c 等）
             text = safe_decode(file_content)
             if not text or not text.strip():
                 return f"[ParseError]不支持的文件格式: {ext}（且无法作文本解码）"
@@ -1428,7 +1430,7 @@ def bridge_poll_worker_loop():
 
 
 def ensure_poll_worker_started():
-    # v4.3.1: WS模式(0)下不启动HTTP轮询，仅依赖WS实时推送
+    # v4.3.2: WS模式(0)下不启动HTTP轮询，仅依赖WS实时推送
     if NC_FILE_BRIDGE_MODE == 0:
         return
     global BRIDGE_POLL_WORKER
@@ -2217,6 +2219,7 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
                 public_base = resolve_public_base_or_fallback()
                 text_url = build_content_url(text_key, public_base=public_base)
                 JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
             except Exception as e:
@@ -2293,12 +2296,23 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
         )
         result_text = resp.choices[0].message.content
         
-        # 保存翻译结果
+        # 保存翻译结果到桥接缓存（以便后续上传到群）
+        ensure_bridge_cache_dir()
+        trans_key = uuid.uuid4().hex
+        trans_path = os.path.join(BRIDGE_CACHE_DIR, f"{trans_key}.txt")
+        safe_filename = re.sub(r'[\\/*?:"<>|]', '_', f"翻译_{target_lang}_{filename}")
+        with open(trans_path, 'w', encoding='utf-8') as fw:
+            fw.write(result_text or '')
+        with STATE_LOCK:
+            CONTENT_INDEX[trans_key] = trans_path
+
         JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['text'] = result_text
+        JOB_CACHE[job_id]['text_key'] = trans_key
+        JOB_CACHE[job_id]['text_filename'] = safe_filename
         JOB_CACHE[job_id]['original_filename'] = filename
         print(f"[{job_id}] 文件翻译完成")
-        
+
     except Exception as e:
         print(f"[{job_id}] 文件翻译失败: {e}")
         JOB_CACHE[job_id]['status'] = 'error'
@@ -2311,7 +2325,7 @@ def get_translate_result():
     job = JOB_CACHE.get(job_id)
     if not job or 'text' not in job:
         return jsonify({'status': 'not_found'})
-    return jsonify({'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', '')})
+    return jsonify({'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', '')})
 
 @app.route('/api/translate_and_upload', methods=['GET'])
 def translate_and_upload():
@@ -3506,6 +3520,7 @@ def check_status():
     }
     if job.get('text_url'):
         resp['text_url'] = job['text_url']
+        resp['text_key'] = job.get('text_key', '')
         resp['text_filename'] = job.get('text_filename', 'ai_analysis.txt')
     return jsonify(resp)
 
@@ -5712,6 +5727,51 @@ def api_logutil_end():
 
 # ====== NapCat 消息/文件发送 (fwlog-style logutil end) ======
 
+@app.route('/api/send_file_to_group', methods=['POST'])
+def api_send_file_to_group():
+    """通用文件上传接口：将文本内容或桥接缓存文件通过 NapCat 发送到群。
+    接受 {group_id, filename, content_key | text}"""
+    payload = request.get_json(silent=True) or {}
+    group_id = str(payload.get('group_id') or '')
+    filename = str(payload.get('filename') or 'file.txt')
+    if not group_id:
+        return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
+
+    # 方式A：通过 content_key 直接读取桥接缓存文件
+    content_key = str(payload.get('content_key') or '')
+    if content_key:
+        with STATE_LOCK:
+            path = CONTENT_INDEX.get(content_key, '')
+        if not path or not os.path.exists(path):
+            return jsonify({'status': 'error', 'msg': f'cache file not found: {content_key}'}), 404
+        file_sent, result = napcat_upload_group_file(group_id, path, filename)
+        if file_sent:
+            return jsonify({'status': 'ok', 'file_sent': True, 'filename': filename})
+        return jsonify({'status': 'error', 'file_sent': False, 'msg': str(result.get('error', str(result)))})
+
+    # 方式B：通过 text 直接上传文本内容
+    text = str(payload.get('text') or '')
+    if not text.strip():
+        return jsonify({'status': 'error', 'msg': 'missing content_key or text'}), 400
+
+    ensure_bridge_cache_dir()
+    tmp_key = uuid.uuid4().hex
+    tmp_path = os.path.join(BRIDGE_CACHE_DIR, f"{tmp_key}_upload.txt")
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as fw:
+            fw.write(text)
+        file_sent, result = napcat_upload_group_file(group_id, tmp_path, filename)
+        if file_sent:
+            return jsonify({'status': 'ok', 'file_sent': True, 'filename': filename})
+        return jsonify({'status': 'error', 'file_sent': False, 'msg': str(result.get('error', str(result)))})
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
 def napcat_send_group_msg(group_id, text):
     """通过 NapCat HTTP API 发送群消息。"""
     return napcat_json_post(
@@ -6528,7 +6588,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogAI 4.3.1 - TRPG Log Analysis Server')
+    parser = argparse.ArgumentParser(description='LogAI 4.3.2 - TRPG Log Analysis Server')
     parser.add_argument('--api-key', type=str, default=None, help='OpenAI / DeepSeek API Key')
     parser.add_argument('--api-base-url', type=str, default=None, help=f'OpenAI-compatible API base URL (default: {AI_BASE_URL})')
     parser.add_argument('--ai-model', type=str, default=None, help=f'Default AI model (default: {AI_MODEL})')
