@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.3.0
+// @version      4.3.1
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.3.0');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.3.1');
     seal.ext.register(ext);
 }
 
@@ -904,8 +904,8 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
         let jobId, checkUrl, resultUrl;
 
         if (fileEntries.length > 0) {
-            // 有文件：使用 /api/submit_file 多文件模式
-            let filePayload = {
+            // 有文件：使用 /api/submit + raw_url 源（桥接内容已是提取后的纯文本，避免重复解析）
+            let submitPayload = {
                 mode: 'analyze',
                 pro: isPro,
                 kind: false,
@@ -913,15 +913,17 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
                 custom_prompt: prompt,
                 theme: 'default',
                 get_text: getText,
-                urls: fileEntries.map(e => e.url),
-                filenames: fileEntries.map(e => e.name)
+                keys: fileEntries.map(e => e.url),
+                sources: fileEntries.map(() => 'raw_url'),
+                passwords: fileEntries.map(() => ''),
+                group_id: pureGroupId
             };
 
-            let apiUrl = `${getBackendBaseUrl()}/api/submit_file`;
+            let apiUrl = `${getBackendBaseUrl()}/api/submit`;
             let data = await safeFetchJson(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(filePayload)
+                body: JSON.stringify(submitPayload)
             }, "提交AI分析任务");
 
             if (data.status !== 'ok') {
@@ -1545,7 +1547,8 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 seal.replyToSender(ctx, msg, fw('用法: .bridge get <编号>\n请使用 .bridge list 查看可用文件编号。'));
                 return seal.ext.newCmdExecuteResult(true);
             }
-            let resp = await fetch(`${host}/api/bridge_list`, {
+            // 使用 /bridge/list 获取含 content_url 的完整文件信息
+            let resp = await fetch(`${host}/bridge/list`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -1558,9 +1561,9 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 } else {
                     let f = files[idx];
                     if (f.content_url) {
-                        seal.replyToSender(ctx, msg, fw(`📄 【${f.name}】 纯文本下载链接：\n${f.content_url}`));
+                        seal.replyToSender(ctx, msg, fw(`📄 【${f.display_name || f.name}】 纯文本下载链接：\n${f.content_url}`));
                     } else {
-                        seal.replyToSender(ctx, msg, fw(`❌ 文件 ${f.name} 的文本内容暂不可用。`));
+                        seal.replyToSender(ctx, msg, fw(`❌ 文件 ${f.display_name || f.name} 的文本内容暂不可用。`));
                     }
                 }
             } else {
@@ -2205,7 +2208,7 @@ cmdRefine.solve = async (ctx, msg, cmdArgs) => {
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.3.0 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.3.1 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {
