@@ -6,7 +6,7 @@
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
-// @updateURL    
+// @updateURL    https://raw.githubusercontent.com/fanmm01/logai/refs/heads/main/logai_logutil_frontend_4_1_0.js
 // ==/UserScript==
 
 // 此文件基于现有脚本合并而成，保留所有旧有功能，并新增 logutil 控制命令。
