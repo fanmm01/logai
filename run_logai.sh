@@ -2,14 +2,15 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogAI 4.3.2 - TRPG Log Analysis Server"
+echo "  LogAI 4.3.3 - TRPG Log Analysis Server"
 echo "============================================"
 echo ""
 
 # ============================================================
 #  配置区域
 # ============================================================
-#请将使用的AI API令牌替换下面的"sk-………"。切勿将此令牌透露给其他人！
+#可以将使用的AI API令牌替换下面的"sk-………"。切勿将此令牌透露给其他人！
+#一种替代方案见README。推荐彼替代方案，因为它可以让你在不修改此文件的情况下安全地使用环境变量来存储敏感信息。
 CFG_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxc"
 #使用的AI的相关信息，包括base url与ai模型名称
 CFG_API_BASE_URL="https://api.deepseek.com"
