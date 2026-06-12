@@ -11,7 +11,7 @@
 # ]
 # ///
 
-# LogAI 4.1.0 - TRPG Log Analysis and Illustration Server
+# LogAI 4.2.0 - TRPG Log Analysis and Illustration Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -228,7 +228,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.1.0"
+SERVICE_VERSION = "4.2.0"
 _openai_client = None
 
 def get_openai_client():
@@ -624,8 +624,89 @@ def format_raw_text(raw_text):
             clean.append(line)
     return "\n".join(clean)
 
+# --- v4.2: 直接文本处理（用于.ai无文件模式）---
+def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=False, mode='analyze', persona="", custom_prompt="", theme='default', get_text=False):
+    """后台线程：直接使用提供的文本进行AI分析（无需抓取URL）"""
+    print(f"[{job_id}] 开始直接文本分析... 文本长度: {len(direct_text)}")
+    try:
+        log_text = str(direct_text or '')
+        if not log_text.strip():
+            raise Exception("文本内容为空")
+
+        # 智能截断
+        if len(log_text) > MAX_AI_CHARS:
+            part = int(MAX_AI_CHARS * 0.4)
+            mid = log_text[part:-part].split('\n')
+            step = max(1, int(len(mid)/100))
+            log_text_ai = f"{log_text[:part]}\n...[略]...\n{chr(10).join(mid[::step])}\n{log_text[-part:]}"
+        else:
+            log_text_ai = log_text
+
+        # Prompt选择
+        report_title = "TRPG 自定义分析报告"
+        if custom_prompt:
+            system_prompt = custom_prompt
+        elif mode == 'recap':
+            report_title = "TRPG 跑团前文回顾"
+            system_prompt = """你是一个专业且细致的 TRPG 跑团记录员（书记）。请阅读以下跑团 Log，为 KP 和玩家梳理一份详细的【前文回顾】..."""
+        else:
+            report_title = "TRPG 跑团日志评分"
+            if is_kind: system_prompt = KIND_SYSTEM_PROMPT
+            elif is_pro: system_prompt = PRO_SYSTEM_PROMPT
+            else: system_prompt = DEFAULT_SYSTEM_PROMPT
+
+        if persona:
+            system_prompt += f"\n\n【极其重要的扮演指令】：\n在生成上述所有评价和梳理内容时，请你完全带入以下角色人设来进行语气和口吻的渲染。...\n{persona}"
+
+        if theme == 'default':
+            system_prompt += "\n\n【排版指令】：你可以根据当前内容的故事氛围，在回复的【最开头】加上标签以控制最终生成的图片风格。支持的标签有：【主题：经典】、【主题：克苏鲁】、【主题：赛博】、【主题：历史】、【主题：废土】、【主题：二次元】、【主题：终端】。如果你觉得不需要特殊风格，可不写此标签。"
+
+        print(f"[{job_id}] 开始请求 LLM...")
+        model = AI_MODEL_PRO if is_pro else AI_MODEL
+        resp = get_openai_client().chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": log_text_ai}],
+            temperature=1.0, max_tokens=65535
+        )
+        result_text = resp.choices[0].message.content or ""
+        token_usage = get_token_usage_suffix(resp)
+
+        result_text, final_theme = extract_theme_from_text(result_text, theme)
+
+        images_list = text_to_images(result_text, f"DirectText:{job_id[:8]}", report_title, final_theme, token_usage)
+        JOB_CACHE[job_id]['status'] = 'done'
+        JOB_CACHE[job_id]['images'] = images_list
+        JOB_CACHE[job_id]['text'] = result_text
+        print(f"[{job_id}] 直接文本处理完成")
+
+        # get_text模式：保存文本文件
+        if get_text:
+            try:
+                ensure_bridge_cache_dir()
+                text_key = uuid.uuid4().hex
+                text_path = os.path.join(BRIDGE_CACHE_DIR, f"{text_key}.txt")
+                safe_filename = re.sub(r'[\\/*?:"<>|]', '_', f"ai_analysis_{job_id[:8]}.txt")
+                with open(text_path, 'w', encoding='utf-8') as fw:
+                    fw.write(result_text)
+                with STATE_LOCK:
+                    CONTENT_INDEX[text_key] = text_path
+                public_base = resolve_public_base_or_fallback()
+                text_url = build_content_url(text_key, public_base=public_base)
+                JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_filename'] = safe_filename
+                print(f"[{job_id}] get_text 文件已保存: {text_url}")
+            except Exception as e:
+                print(f"[{job_id}] get_text 保存失败: {e}")
+
+    except Exception as e:
+        print(f"[{job_id}] 直接文本处理失败: {e}")
+        err_img_bytes = text_to_images(f"AI处理失败：\n{str(e)}", "Error")[0]
+        JOB_CACHE[job_id]['status'] = 'error'
+        JOB_CACHE[job_id]['images'] = [err_img_bytes]
+        JOB_CACHE[job_id]['text'] = f"处理失败：{str(e)}"
+
 # --- 核心处理任务 ---
-def background_process(job_id, key, password, source, is_pro=False, is_kind=False, mode='analyze', persona="", custom_prompt="", theme='default', group_id=0):
+def background_process(job_id, key, password, source, is_pro=False, is_kind=False, mode='analyze', persona="", custom_prompt="", theme='default', group_id=0, get_text=False):
     """后台线程：执行 Log 下载、分析、绘图"""
     print(f"[{job_id}] 开始处理Log... Source: {source}, Mode: {mode}")
     try:
@@ -738,7 +819,27 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
         images_list = text_to_images(result_text, f"Key:{key_for_label[:8]}", report_title, final_theme, token_usage)
         JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['images'] = images_list
+        JOB_CACHE[job_id]['text'] = result_text  # 保存原始文本供 get_text 使用
         print(f"[{job_id}] 渲染处理完成")
+
+        # 7b. 如果 get_text 模式，将文本保存为桥接文件
+        if get_text:
+            try:
+                ensure_bridge_cache_dir()
+                text_key = uuid.uuid4().hex
+                text_path = os.path.join(BRIDGE_CACHE_DIR, f"{text_key}.txt")
+                safe_filename = re.sub(r'[\\/*?:"<>|]', '_', f"ai_analysis_{job_id[:8]}.txt")
+                with open(text_path, 'w', encoding='utf-8') as fw:
+                    fw.write(result_text)
+                with STATE_LOCK:
+                    CONTENT_INDEX[text_key] = text_path
+                public_base = resolve_public_base_or_fallback()
+                text_url = build_content_url(text_key, public_base=public_base)
+                JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_filename'] = safe_filename
+                print(f"[{job_id}] get_text 文件已保存: {text_url}")
+            except Exception as e:
+                print(f"[{job_id}] get_text 保存失败: {e}")
 
         # ================= 7. 写入省流缓存 =================
         if not is_pro and hash_key:
@@ -750,6 +851,7 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
         err_img_bytes = text_to_images(f"Log处理失败：\n{str(e)}", "Error")[0]
         JOB_CACHE[job_id]['status'] = 'error'
         JOB_CACHE[job_id]['images'] = [err_img_bytes]
+        JOB_CACHE[job_id]['text'] = f"处理失败：{str(e)}"
 
 def extract_text_from_file(file_content, filename):
     """根据文件扩展名提取文本，增强容错能力"""
@@ -1833,7 +1935,7 @@ def cleanup_expired():
             except Exception:
                 pass
 
-def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=False, is_kind=False, persona="", custom_prompt="", theme='default'):
+def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=False, is_kind=False, persona="", custom_prompt="", theme='default', get_text=False):
     """后台任务：下载文件并根据模式进行分析，支持多模态原生文档阅读与输出多图"""
     print(f"[{job_id}] 开始处理文件: {filename}, Mode: {mode}")
     try:
@@ -2092,8 +2194,28 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
         # 4. 多图渲染与保存
         images_list = text_to_images(result_text, resolved_filename, report_title, final_theme, token_usage)
         JOB_CACHE[job_id]['status'] = 'done'
-        JOB_CACHE[job_id]['images'] = images_list 
+        JOB_CACHE[job_id]['images'] = images_list
+        JOB_CACHE[job_id]['text'] = result_text  # 保存原始文本供 get_text 使用
         print(f"[{job_id}] 文件分析完成，共生成 {len(images_list)} 张图")
+
+        # 5b. 如果 get_text 模式，将文本保存为桥接文件
+        if get_text:
+            try:
+                ensure_bridge_cache_dir()
+                text_key = uuid.uuid4().hex
+                text_path = os.path.join(BRIDGE_CACHE_DIR, f"{text_key}.txt")
+                safe_filename = re.sub(r'[\\/*?:"<>|]', '_', f"ai_analysis_{job_id[:8]}.txt")
+                with open(text_path, 'w', encoding='utf-8') as fw:
+                    fw.write(result_text)
+                with STATE_LOCK:
+                    CONTENT_INDEX[text_key] = text_path
+                public_base = resolve_public_base_or_fallback()
+                text_url = build_content_url(text_key, public_base=public_base)
+                JOB_CACHE[job_id]['text_url'] = text_url
+                JOB_CACHE[job_id]['text_filename'] = safe_filename
+                print(f"[{job_id}] get_text 文件已保存: {text_url}")
+            except Exception as e:
+                print(f"[{job_id}] get_text 保存失败: {e}")
 
         # ================= 5. 写入省流缓存 =================
         if not is_pro and hash_key:
@@ -2105,6 +2227,7 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
         err_img_bytes = text_to_images(f"文件处理失败：\n{str(e)}", filename)[0]
         JOB_CACHE[job_id]['status'] = 'error'
         JOB_CACHE[job_id]['images'] =[err_img_bytes]
+        JOB_CACHE[job_id]['text'] = f"处理失败：{str(e)}"
 
 TRANSLATE_SYSTEM_PROMPT = "你是一个专业的翻译助手。请准确翻译用户提供的文本，保留原文格式，只返回翻译结果，不要添加任何解释或评论。"
 
@@ -3233,8 +3356,21 @@ def submit_task():
     persona = req_data.get('persona', '')
     custom_prompt = req_data.get('custom_prompt', '')
     theme = req_data.get('theme', 'default')
+    get_text = str(req_data.get('get_text', 'false')).lower() == 'true'
+    direct_text = req_data.get('text', '')  # v4.2: 直接文本输入（用于.ai无文件模式）
 
     # 规范化并优先使用 parse_log_target_entry 的推断结果（URL 主机名优先）
+    if direct_text:
+        # v4.2: 直接文本模式 — 跳过URL抓取，直接使用提供的文本
+        job_id = str(uuid.uuid4())
+        JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
+        group_id_submit = safe_int(req_data.get('group_id', 0), 0)
+        if group_id_submit > 0:
+            BRIDGE_POLL_GROUPS.add(group_id_submit)
+            ensure_poll_worker_started()
+        executor.submit(background_process_direct_text, job_id, direct_text, is_pro, is_kind, mode, persona, custom_prompt, theme, get_text)
+        return jsonify({'status': 'ok', 'id': job_id})
+
     if isinstance(keys, list) and len(keys) > 0:
         # 多项提交：逐项解析并构建 key/source/password 列表
         parsed_keys = []
@@ -3281,7 +3417,7 @@ def submit_task():
         BRIDGE_POLL_GROUPS.add(group_id_submit)
         ensure_poll_worker_started()
     # 将所有参数（包括 theme, group_id）传入后台线程
-    executor.submit(background_process, job_id, key, password, source, is_pro, is_kind, mode, persona, custom_prompt, theme, group_id_submit)
+    executor.submit(background_process, job_id, key, password, source, is_pro, is_kind, mode, persona, custom_prompt, theme, group_id_submit, get_text)
     return jsonify({'status': 'ok', 'id': job_id})
 
 
@@ -3303,7 +3439,8 @@ def submit_file_task():
     persona = req_data.get('persona', '')
     custom_prompt = req_data.get('custom_prompt', '')
     theme = req_data.get('theme', 'default')
-    
+    get_text = str(req_data.get('get_text', 'false')).lower() == 'true'
+
     if isinstance(file_urls, list) and len(file_urls) > 0:
         file_url = [str(u or '').strip() for u in file_urls if str(u or '').strip()]
         if isinstance(filenames, list) and len(filenames) > 0:
@@ -3333,7 +3470,7 @@ def submit_file_task():
     JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
     
     # 将所有参数（包括 theme）传入后台线程
-    executor.submit(background_file_process, job_id, file_url, filename, mode, is_pro, is_kind, persona, custom_prompt, theme)
+    executor.submit(background_file_process, job_id, file_url, filename, mode, is_pro, is_kind, persona, custom_prompt, theme, get_text)
     if bridge_item:
         return jsonify({
             'status': 'ok',
@@ -3357,11 +3494,15 @@ def check_status():
     # 兼容老版只返回单图的逻辑以及新版的多图逻辑
     img_count = len(job.get('images', [])) if 'images' in job else (1 if 'image' in job else 0)
     
-    return jsonify({
+    resp = {
         'status': job['status'],
         'msg': job.get('msg', ''),
         'image_count': img_count
-    })
+    }
+    if job.get('text_url'):
+        resp['text_url'] = job['text_url']
+        resp['text_filename'] = job.get('text_filename', 'ai_analysis.txt')
+    return jsonify(resp)
 
 @app.route('/api/result', methods=['GET'])
 def get_result():
@@ -3382,10 +3523,27 @@ def get_result():
     if not img_data: return "Index out of range or not ready", 404
     
     return send_file(
-        BytesIO(img_data), 
+        BytesIO(img_data),
         mimetype='image/png',
         download_name=f'log_analysis_{job_id}_{index}.png'
     )
+
+@app.route('/api/result_text', methods=['GET'])
+def get_result_text():
+    """获取AI分析的原始文本结果（get_text模式）"""
+    job_id = request.args.get('id')
+    job = JOB_CACHE.get(job_id)
+
+    if not job: return "Result not found", 404
+
+    text_data = job.get('text', '')
+    if not text_data: return "Text not available or not ready", 404
+
+    return jsonify({
+        'status': 'ok',
+        'text': text_data,
+        'id': job_id,
+    })
 
 # --- 文本生成图片任务 ---
 import random
@@ -3933,6 +4091,9 @@ def parse_cq_params(segment_text):
     return params
 
 def strip_paren_text(text: str) -> str:
+    """删除所有括号包裹的行和括号开头的段落。
+    增强版：正确处理多行括号内容（如方括号管道格式产生的（多行内容）），
+    避免括号段落后紧跟的非括号内容被误删。"""
     if not text:
         return text
     lines = text.splitlines()
@@ -3945,17 +4106,36 @@ def strip_paren_text(text: str) -> str:
             out_lines.append(line)
             i += 1
             continue
-        # 完全由括号包裹的一行
-        if (stripped.startswith('(') and stripped.endswith(')')) or (stripped.startswith('（') and stripped.endswith('）')):
+        # 1) 完全由括号包裹的一行（中文或英文括号）：整行删除
+        if ((stripped.startswith('(') and stripped.endswith(')')) or
+            (stripped.startswith('（') and stripped.endswith('）'))):
             i += 1
             continue
-        # 段落以左括号开头：跳过直到下一个空行
+        # 2) 段落以左括号开头：尝试找到右括号闭合或空行为止
         if stripped.startswith('(') or stripped.startswith('（'):
+            is_cn = stripped.startswith('（')
+            close_char = '）' if is_cn else ')'
             j = i
-            while j < len(lines) and lines[j].strip() != '':
+            found_close = False
+            while j < len(lines):
+                cur = lines[j].strip()
+                if not cur:  # 空行：段落结束
+                    break
+                if cur.endswith(close_char):
+                    j += 1  # 包含闭合行
+                    found_close = True
+                    break
                 j += 1
-            i = j
-            continue
+            if found_close:
+                # 括号段落已闭合，跳过整个段落
+                i = j
+                continue
+            else:
+                # 未找到闭合括号，跳过直到空行（保留旧行为作为兜底）
+                while j < len(lines) and lines[j].strip() != '':
+                    j += 1
+                i = j
+                continue
         out_lines.append(line)
         i += 1
     return '\n'.join(out_lines)
@@ -5355,7 +5535,8 @@ def api_logutil_compound():
     if do_end:
         log_obj = get_logutil_log_full(group_id, results['name'])
         if log_obj and log_obj.get('items'):
-            text_filename, content_url = export_log_text(log_obj, del_paren=False)
+            del_paren_compound = bool(payload.get('del_paren'))
+            text_filename, content_url = export_log_text(log_obj, del_paren=del_paren_compound)
             now_ts = int(time.time() * 1000)
             try:
                 update_logutil_log_meta(log_obj['id'], ended=1, updated_at=now_ts)
@@ -5367,11 +5548,14 @@ def api_logutil_compound():
             log_obj['ended'] = 1
             log_obj['updated_at'] = now_ts
 
-            # Send file via NapCat
+            # Send file via NapCat — 传递 del_paren 以保持与 export_log_text 一致
             file_sent = False
             napcat_error = ''
             try:
-                file_sent, _, public_url = send_log_via_napcat(log_obj, group_id)
+                full_text = generate_log_text(log_obj)
+                if del_paren_compound:
+                    full_text = strip_paren_text(full_text)
+                file_sent, _, public_url = send_log_via_napcat(log_obj, group_id, full_text=full_text)
                 results['content_url'] = public_url
                 results['file_sent'] = file_sent
             except Exception as exc:
@@ -5415,14 +5599,19 @@ def api_logutil_get():
         return jsonify({'status': 'error', 'msg': 'empty log'}), 400
 
     # Export to text
-    text_filename, content_url = export_log_text(log_obj, del_paren=False)
+    del_paren = str(request.args.get('del_paren') or '').lower() in ('1', 'true', 'yes', 'on')
+    text_filename, content_url = export_log_text(log_obj, del_paren=del_paren)
 
     # Send txt via NapCat (fwlog-style)
     file_sent = False
     public_url = content_url
     napcat_error = ''
     try:
-        file_sent, _, public_url = send_log_via_napcat(log_obj, group_id)
+        # 传递 del_paren 以保持与 export_log_text 一致
+        full_text = generate_log_text(log_obj)
+        if del_paren:
+            full_text = strip_paren_text(full_text)
+        file_sent, _, public_url = send_log_via_napcat(log_obj, group_id, full_text=full_text)
     except Exception as exc:
         napcat_error = str(exc)
 
@@ -5488,7 +5677,11 @@ def api_logutil_end():
     public_url = content_url
     napcat_error = ''
     try:
-        file_sent, napcat_result, public_url = send_log_via_napcat(log_obj, group_id)
+        # 传递 del_paren 以保持与 export_log_text 一致
+        full_text = generate_log_text(log_obj)
+        if del_paren:
+            full_text = strip_paren_text(full_text)
+        file_sent, napcat_result, public_url = send_log_via_napcat(log_obj, group_id, full_text=full_text)
     except Exception as exc:
         napcat_error = str(exc)
 
@@ -5549,18 +5742,24 @@ def napcat_upload_group_file(group_id, file_path, name):
 
 def resolve_public_base_or_fallback():
     """返回当前请求的 public_base，若不可用则返回默认配置值。"""
-    if request:
-        host_url = (request.host_url or '').rstrip('/')
-        if host_url:
-            return host_url
+    try:
+        from flask import has_request_context
+        if has_request_context() and request:
+            host_url = (request.host_url or '').rstrip('/')
+            if host_url:
+                return host_url
+    except Exception:
+        pass
     return BRIDGE_PUBLIC_BASE
 
 
-def send_log_via_napcat(log_obj, group_id):
+def send_log_via_napcat(log_obj, group_id, full_text=None):
     """将 log_obj 生成为 txt 并通过 NapCat 上传到群。
+    若提供 full_text 则直接使用（避免重复生成，保证与 export_log_text 一致）。
     返回 (file_sent, napcat_result, public_url) 三元组。"""
-    full_text = generate_log_text(log_obj)
-    if not full_text.strip():
+    if full_text is None:
+        full_text = generate_log_text(log_obj)
+    if not full_text or not str(full_text).strip():
         raise RuntimeError("日志内容为空")
 
     # Write to temp file
@@ -5571,7 +5770,7 @@ def send_log_via_napcat(log_obj, group_id):
 
     try:
         with open(tmp_path, 'w', encoding='utf-8') as fw:
-            fw.write(full_text)
+            fw.write(str(full_text))
 
         # 1. Send via NapCat upload_group_file
         file_sent, napcat_result = napcat_upload_group_file(group_id, tmp_path, txt_name)
@@ -6324,7 +6523,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogAI 4.1.0 - TRPG Log Analysis Server')
+    parser = argparse.ArgumentParser(description='LogAI 4.2.0 - TRPG Log Analysis Server')
     parser.add_argument('--api-key', type=str, default=None, help='OpenAI / DeepSeek API Key')
     parser.add_argument('--api-base-url', type=str, default=None, help=f'OpenAI-compatible API base URL (default: {AI_BASE_URL})')
     parser.add_argument('--ai-model', type=str, default=None, help=f'Default AI model (default: {AI_MODEL})')

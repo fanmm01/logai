@@ -155,6 +155,6 @@ if not "%CFG_BRIDGE_MODE%"==""        set CLI_ARGS=%CLI_ARGS% --bridge-mode "%CF
 :: --- Launch server ---
 echo [INFO] 启动 LogAI 服务器...
 cd /d "%~dp0"
-%PYTHON_EXE% logai_server4_1_0_release.py %CLI_ARGS% %*
+%PYTHON_EXE% logai_server_release.py %CLI_ARGS% %*
 
 pause
