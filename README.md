@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.3.1**  
+**V4.3.2**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -217,3 +217,6 @@ logutil支持识别以下种类的消息头：
 1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 使用正确的含 `content_url` 的接口；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
 2. 修复 `.py`、`.js`、`.c` 等非白名单扩展名文件报"不支持的文件格式"的问题：未知扩展名现在直接当作文本解码。
 3. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题：WS模式下彻底禁用HTTP轮询。
+
+**v4.3.2**  
+1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题。现已统一使用与 `.logutil end` 相同的 NapCat `/upload_group_file` 机制，参考该处实现新增 `/api/send_file_to_group` 通用上传接口。
