@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.3.2**  
+**V4.3.3**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -20,6 +20,7 @@ fwlog功能部分原作者：@chaye2333
    （安卓请在termux内执行sh文件）
    随后，如文件对应的注释般，编辑其配置部分；
    该脚本会自动执行缺失依赖的补齐并最终启动。
+   推荐的启动脚本为（以linux为例，在cd到当前目录后）："bash ./run_logai.sh --api-key=sk-xxxxxxxxxxxxx"。这样会获得更高的安全性。
 
 ## 注意事项：
 - 本插件缺乏足够的测试，且未经检验其跨平台能力。
@@ -76,8 +77,8 @@ file1-fileN 只能是 `[file]-N` 的格式，而不能是文件名及其部分�
 ### 二、.logutil功能
 以下全部logutil均可用fwlog代替。
 
-`.logutil new [名称]`  开始新日志记录  
-`.logutil on [名称]`   继续记录已有日志  
+`.logutil new [名称] [raw]`  开始新日志记录（raw: 跳过消息头解析，直接拼接原始文本）  
+`.logutil on [名称] [raw]`   继续记录已有日志  
 `.logutil off`         暂停记录  
 `.logutil end [名称] [del_paren]`  结束并发送文件与染色器链接。del_paren参数可去除括号包裹的内容（见修饰符说明）。  
 `.logutil get [名称]`  获取当前日志文件及链接  
@@ -141,7 +142,7 @@ logutil支持识别以下种类的消息头：
 
 ### 四、其他
 `.搜模组 <关键词>`  百度网盘搜索模组  
-`.translate [target_lang=中文] [file1] …… [fileN]`  调用翻译接口，对docx/pdf/txt等格式文件进行翻译，返回翻译后的文件。file1-fileN 只能是 `[file]-N` 的格式。默认目标语言为中文。
+`.translate [target_lang=中文] [file1] …… [fileN]`  调用翻译接口，对docx/pdf/txt等格式文件进行翻译，返回翻译后的txt文件。file1-fileN 只能是 `[file]-N` 的格式。默认目标语言为中文。翻译结果同时上传到群并保留下载链接。
 
 ---
 
@@ -200,6 +201,7 @@ logutil支持识别以下种类的消息头：
 3. 增加复合命令功能。
 4. 扩大ncbridge编号系统的实用价值。将其反序。
 5. 由于bug严重，暂时不实现del_paren参数的功能。
+6. 创建win/linux系统下的启动脚本，并将api key改为在启动脚本内填写。
 
 **v4.2.0**  
 1. 新增 `.aiutil` 命令：快速AI分析，仅支持 `[file]-N` 格式文件，不保存配置。无文件时仅将提示词交给AI。
@@ -223,3 +225,7 @@ logutil支持识别以下种类的消息头：
 **v4.3.2**  
 1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题：改为后端自动调用 `napcat_upload_group_file` 上传，前端不再参与文件发送逻辑。`.translate` 同时保留下载链接作为保险机制。
 2. 新增 `raw` 修饰符（对 logutil 生效）：携带时跳过消息头解析步骤，直接把各源文本并行拼接入日志。
+
+**v4.3.3**  
+1. 修复 `raw` 修饰符无效的问题：`raw` 出现在 `logutil` 后第一或第二字段时正确识别为修饰符，不再被误当作日志名称或录入文本。
+2. `.translate` 翻译结果统一以 `.txt` 扩展名发送（因桥接已将原文统一转为纯文本，保留原扩展名无意义）。

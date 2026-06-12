@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.3.2
+// @version      4.3.3
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.3.2');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.3.3');
     seal.ext.register(ext);
 }
 
@@ -1047,7 +1047,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     let op = (tokens[0] || '').toLowerCase();
     let rawArgs = tokens.slice(1);
-    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren'].includes((a || '').toLowerCase())) || '';
+    // raw 作为修饰符应被排除在名称/内容之外（v4.3.3: 仅当 logutil 后第一个非命令字段为 raw 时生效）
+    let raw_mode = (tokens[0] || '').toLowerCase() === 'raw' || (tokens.length > 1 && (tokens[1] || '').toLowerCase() === 'raw');
+    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw'].includes((a || '').toLowerCase())) || '';
 
     let pureGroupId = getPureGroupId(groupId);
     let payload = { group_id: pureGroupId };
@@ -1122,7 +1124,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let logaiModeLower = new Set(logaiModeWords.map(w => (w || '').toLowerCase()));
             ops = ops.filter(a => {
                 let s = (a || '').toLowerCase();
-                return s !== 'new' && s !== 'end' && s !== 'logai' && !logaiModeLower.has(s);
+                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && !logaiModeLower.has(s);
             });
 
             if (ops.length === 0 && !hasEnd && !hasLogai) {
@@ -1284,7 +1286,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             if (arg2) {
                 payload.name = arg2;
             }
-            if (rawArgs.some(a => (a || '').toLowerCase() === 'raw')) {
+            if (raw_mode) {
                 payload.raw = true;
             }
             let endpoint = `${host}/api/logutil_${op}`;
@@ -2201,7 +2203,7 @@ cmdRefine.solve = async (ctx, msg, cmdArgs) => {
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.3.2 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.3.3 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

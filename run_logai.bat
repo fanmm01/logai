@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogAI 4.1.0 - TRPG Log Analysis Server
+echo   LogAI 4.3.3 - TRPG Log Analysis Server
 echo ============================================
 echo.
 
@@ -18,7 +18,7 @@ set CFG_AI_MODEL=deepseek-v4-flash
 set CFG_AI_MODEL_PRO=deepseek-v4-pro
 :: 文生图AI的API令牌。同样切勿透露！
 set CFG_IMAGE_API_KEY=pst-zzzzzzzzzzzzzzzzzzzz
-::#以下为Napcat的http/ws连接url及token。请按需修改。
+:: 以下为Napcat的http/ws连接url及token。请按需修改。
 set CFG_NAPCAT_URL=http://127.0.0.1:8084
 set CFG_NAPCAT_TOKEN=1
 set CFG_WS_URL=ws://127.0.0.1:3001
@@ -26,6 +26,7 @@ set CFG_WS_TOKEN=
 set CFG_HOST=0.0.0.0
 :: logai后端运行的端口号。如提示端口被占用请修改。但是这是不建议的行动；此处若进行了修改，则需要把前端配置进行同样的修改。
 set CFG_PORT=8000
+:: 以下可忽略，为内部参数
 set CFG_BRIDGE_TOKEN=
 set CFG_BRIDGE_PUBLIC_BASE=
 set CFG_WS_ENABLED=1
@@ -130,7 +131,7 @@ if !errorlevel! equ 0 (
     echo [OK] 依赖包准备完毕
 ) else (
     echo [WARN] 部分依赖包安装可能失败，尝试继续启动...
-    echo [TIP] 可手动运行: %PYTHON_EXE% -m pip install -r requirements.txt
+    echo [TIP] 可手动运行: %PYTHON_EXE% -m pip install flask requests pillow openai python-docx PyPDF2 pymupdf websockets
 )
 echo.
 
@@ -154,6 +155,7 @@ if not "%CFG_BRIDGE_MODE%"==""        set CLI_ARGS=%CLI_ARGS% --bridge-mode "%CF
 
 :: --- Launch server ---
 echo [INFO] 启动 LogAI 服务器...
+echo.
 cd /d "%~dp0"
 %PYTHON_EXE% logai_server_release.py %CLI_ARGS% %*
 
