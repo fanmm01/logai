@@ -625,7 +625,7 @@ def format_raw_text(raw_text):
     return "\n".join(clean)
 
 # --- v4.2: 直接文本处理（用于.ai无文件模式）---
-def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=False, mode='analyze', persona="", custom_prompt="", theme='default', get_text=False):
+def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=False, mode='analyze', persona="", custom_prompt="", theme='default', get_text=False, group_id=0):
     """后台线程：直接使用提供的文本进行AI分析（无需抓取URL）"""
     print(f"[{job_id}] 开始直接文本分析... 文本长度: {len(direct_text)}")
     try:
@@ -695,6 +695,15 @@ def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=Fa
                 JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
+                # 自动上传到群（仿 send_log_via_napcat 机制）
+                if group_id > 0:
+                    try:
+                        fs, _ = napcat_upload_group_file(group_id, text_path, safe_filename)
+                        JOB_CACHE[job_id]['text_file_sent'] = fs
+                        if fs:
+                            print(f"[{job_id}] get_text 文件已上传到群 {group_id}")
+                    except Exception as ue:
+                        print(f"[{job_id}] get_text 上传失败: {ue}")
             except Exception as e:
                 print(f"[{job_id}] get_text 保存失败: {e}")
 
@@ -839,6 +848,15 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
                 JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
+                # 自动上传到群（仿 send_log_via_napcat 机制）
+                if group_id > 0:
+                    try:
+                        fs, _ = napcat_upload_group_file(group_id, text_path, safe_filename)
+                        JOB_CACHE[job_id]['text_file_sent'] = fs
+                        if fs:
+                            print(f"[{job_id}] get_text 文件已上传到群 {group_id}")
+                    except Exception as ue:
+                        print(f"[{job_id}] get_text 上传失败: {ue}")
             except Exception as e:
                 print(f"[{job_id}] get_text 保存失败: {e}")
 
@@ -1942,7 +1960,7 @@ def cleanup_expired():
             except Exception:
                 pass
 
-def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=False, is_kind=False, persona="", custom_prompt="", theme='default', get_text=False):
+def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=False, is_kind=False, persona="", custom_prompt="", theme='default', get_text=False, group_id=0):
     """后台任务：下载文件并根据模式进行分析，支持多模态原生文档阅读与输出多图"""
     print(f"[{job_id}] 开始处理文件: {filename}, Mode: {mode}")
     try:
@@ -2222,6 +2240,15 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
                 JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
                 print(f"[{job_id}] get_text 文件已保存: {text_url}")
+                # 自动上传到群
+                if group_id > 0:
+                    try:
+                        fs, _ = napcat_upload_group_file(group_id, text_path, safe_filename)
+                        JOB_CACHE[job_id]['text_file_sent'] = fs
+                        if fs:
+                            print(f"[{job_id}] get_text 文件已上传到群 {group_id}")
+                    except Exception as ue:
+                        print(f"[{job_id}] get_text 上传失败: {ue}")
             except Exception as e:
                 print(f"[{job_id}] get_text 保存失败: {e}")
 
@@ -2248,18 +2275,19 @@ def translate_task():
     filename = request.args.get('filename', 'unknown')
     target_lang = request.args.get('lang', 'zh-CN')
     is_pro = request.args.get('pro', 'false').lower() == 'true'
-    
+    group_id = safe_int(request.args.get('group_id', 0), 0)
+
     if not file_url:
         return jsonify({'status': 'error', 'msg': '缺少文件URL'})
-    
+
     job_id = str(uuid.uuid4())
     JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
-    
-    executor.submit(background_translate_process, job_id, file_url, filename, target_lang, is_pro)
+
+    executor.submit(background_translate_process, job_id, file_url, filename, target_lang, is_pro, group_id)
     
     return jsonify({'status': 'ok', 'id': job_id, 'msg': f'正在翻译为 {target_lang}...'})
 
-def background_translate_process(job_id, file_url, filename, target_lang='zh-CN', is_pro=False):
+def background_translate_process(job_id, file_url, filename, target_lang='zh-CN', is_pro=False, group_id=0):
     """后台线程：下载并翻译文件"""
     print(f"[{job_id}] 开始翻译文件: {filename} -> {target_lang}")
     try:
@@ -2296,7 +2324,7 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
         )
         result_text = resp.choices[0].message.content
         
-        # 保存翻译结果到桥接缓存（以便后续上传到群）
+        # 保存翻译结果到桥接缓存（以便后续上传和下载）
         ensure_bridge_cache_dir()
         trans_key = uuid.uuid4().hex
         trans_path = os.path.join(BRIDGE_CACHE_DIR, f"{trans_key}.txt")
@@ -2305,13 +2333,25 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
             fw.write(result_text or '')
         with STATE_LOCK:
             CONTENT_INDEX[trans_key] = trans_path
+        public_base = resolve_public_base_or_fallback()
+        trans_url = build_content_url(trans_key, public_base=public_base)
 
         JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['text'] = result_text
         JOB_CACHE[job_id]['text_key'] = trans_key
+        JOB_CACHE[job_id]['text_url'] = trans_url
         JOB_CACHE[job_id]['text_filename'] = safe_filename
         JOB_CACHE[job_id]['original_filename'] = filename
-        print(f"[{job_id}] 文件翻译完成")
+        print(f"[{job_id}] 文件翻译完成，下载链接: {trans_url}")
+        # 自动上传到群
+        if group_id > 0:
+            try:
+                fs, _ = napcat_upload_group_file(group_id, trans_path, safe_filename)
+                JOB_CACHE[job_id]['text_file_sent'] = fs
+                if fs:
+                    print(f"[{job_id}] 翻译文件已上传到群 {group_id}")
+            except Exception as ue:
+                print(f"[{job_id}] 翻译上传失败: {ue}")
 
     except Exception as e:
         print(f"[{job_id}] 文件翻译失败: {e}")
@@ -2325,7 +2365,7 @@ def get_translate_result():
     job = JOB_CACHE.get(job_id)
     if not job or 'text' not in job:
         return jsonify({'status': 'not_found'})
-    return jsonify({'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', '')})
+    return jsonify({'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', ''), 'text_url': job.get('text_url', '')})
 
 @app.route('/api/translate_and_upload', methods=['GET'])
 def translate_and_upload():
@@ -3387,7 +3427,7 @@ def submit_task():
         if group_id_submit > 0:
             BRIDGE_POLL_GROUPS.add(group_id_submit)
             ensure_poll_worker_started()
-        executor.submit(background_process_direct_text, job_id, direct_text, is_pro, is_kind, mode, persona, custom_prompt, theme, get_text)
+        executor.submit(background_process_direct_text, job_id, direct_text, is_pro, is_kind, mode, persona, custom_prompt, theme, get_text, group_id_submit)
         return jsonify({'status': 'ok', 'id': job_id})
 
     if isinstance(keys, list) and len(keys) > 0:
@@ -3489,7 +3529,7 @@ def submit_file_task():
     JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
     
     # 将所有参数（包括 theme）传入后台线程
-    executor.submit(background_file_process, job_id, file_url, filename, mode, is_pro, is_kind, persona, custom_prompt, theme, get_text)
+    executor.submit(background_file_process, job_id, file_url, filename, mode, is_pro, is_kind, persona, custom_prompt, theme, get_text, group_id)
     if bridge_item:
         return jsonify({
             'status': 'ok',
@@ -4645,6 +4685,11 @@ def init_logutil_db():
         c.execute('ALTER TABLE groups ADD COLUMN baseline_file_id TEXT DEFAULT \'\'')
     except sqlite3.OperationalError:
         pass  # column already exists
+    # v4.3.1: add raw_recording column
+    try:
+        c.execute('ALTER TABLE groups ADD COLUMN raw_recording INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
     c.execute('''
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5216,6 +5261,7 @@ def api_logutil_new():
     payload = request.get_json(silent=True) or {}
     group_id = str(payload.get('group_id') or request.args.get('group_id') or '').strip()
     name = str(payload.get('name') or '').strip() or generate_default_log_name()
+    raw_mode = str(payload.get('raw') or '').lower() in ('1', 'true', 'yes', 'on')
     print(f"[logutil_new] payload={payload} group_id={group_id!r} name={name!r}")
     if not group_id:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
@@ -5230,11 +5276,12 @@ def api_logutil_new():
     with STATE_LOCK:
         LOG_IMPORTED_FILES.pop(log_id_str, None)
     update_logutil_log_meta(log_obj['id'], ended=0)
-    update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1)
+    update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1,
+                                raw_recording=1 if raw_mode else 0)
     # Capture the currently latest file as baseline — it won't be auto-imported
     # until a different (newer) file appears
     capture_baseline_file_id(group_id)
-    print(f"[logutil_new] created log={log_obj['name']!r} current_log_name set for group={group_id}")
+    print(f"[logutil_new] created log={log_obj['name']!r} raw={raw_mode} current_log_name set for group={group_id}")
     return jsonify({'status': 'ok', 'group_id': group_id, 'name': log_obj['name'], 'saved': 0})
 
 
@@ -5243,6 +5290,7 @@ def api_logutil_on():
     payload = request.get_json(silent=True) or {}
     group_id = str(payload.get('group_id') or request.args.get('group_id') or '').strip()
     name = str(payload.get('name') or '').strip()
+    raw_mode = str(payload.get('raw') or '').lower() in ('1', 'true', 'yes', 'on')
     if not group_id:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
     gid_int = safe_int(group_id, 0)
@@ -5253,7 +5301,8 @@ def api_logutil_on():
     if not name:
         name = state.get('current_log_name') or generate_default_log_name()
     log_obj = ensure_logutil_log(group_id, name)
-    update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1)
+    update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1,
+                                raw_recording=1 if raw_mode else 0)
     update_logutil_log_meta(log_obj['id'], ended=0)
     # Capture the currently latest file as baseline — it won't be auto-imported
     # until a different (newer) file appears
@@ -5727,49 +5776,36 @@ def api_logutil_end():
 
 # ====== NapCat 消息/文件发送 (fwlog-style logutil end) ======
 
-@app.route('/api/send_file_to_group', methods=['POST'])
-def api_send_file_to_group():
-    """通用文件上传接口：将文本内容或桥接缓存文件通过 NapCat 发送到群。
-    接受 {group_id, filename, content_key | text}"""
+@app.route('/api/bridge_get', methods=['POST'])
+def api_bridge_get():
+    """.bridge get 后端：读取桥接缓存文件并通过 NapCat 上传到群。
+    接受 {group_id, index}，返回上传结果。"""
     payload = request.get_json(silent=True) or {}
-    group_id = str(payload.get('group_id') or '')
-    filename = str(payload.get('filename') or 'file.txt')
-    if not group_id:
-        return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    index = safe_int(payload.get('index', -1), -1)
+    if group_id <= 0 or index < 0:
+        return jsonify({'status': 'error', 'msg': 'missing group_id or index'}), 400
 
-    # 方式A：通过 content_key 直接读取桥接缓存文件
-    content_key = str(payload.get('content_key') or '')
-    if content_key:
-        with STATE_LOCK:
-            path = CONTENT_INDEX.get(content_key, '')
-        if not path or not os.path.exists(path):
-            return jsonify({'status': 'error', 'msg': f'cache file not found: {content_key}'}), 404
-        file_sent, result = napcat_upload_group_file(group_id, path, filename)
-        if file_sent:
-            return jsonify({'status': 'ok', 'file_sent': True, 'filename': filename})
-        return jsonify({'status': 'error', 'file_sent': False, 'msg': str(result.get('error', str(result)))})
+    with STATE_LOCK:
+        file_list = list(LATEST_FILES.get(group_id, []))
+    if index >= len(file_list):
+        return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(file_list)-1})'}), 404
 
-    # 方式B：通过 text 直接上传文本内容
-    text = str(payload.get('text') or '')
-    if not text.strip():
-        return jsonify({'status': 'error', 'msg': 'missing content_key or text'}), 400
+    item = file_list[index]
+    ck = str(item.get('content_key', ''))
+    with STATE_LOCK:
+        path = CONTENT_INDEX.get(ck, '')
+    if not path or not os.path.exists(path):
+        return jsonify({'status': 'error', 'msg': 'cached file not found on disk'}), 404
 
-    ensure_bridge_cache_dir()
-    tmp_key = uuid.uuid4().hex
-    tmp_path = os.path.join(BRIDGE_CACHE_DIR, f"{tmp_key}_upload.txt")
-    try:
-        with open(tmp_path, 'w', encoding='utf-8') as fw:
-            fw.write(text)
-        file_sent, result = napcat_upload_group_file(group_id, tmp_path, filename)
-        if file_sent:
-            return jsonify({'status': 'ok', 'file_sent': True, 'filename': filename})
-        return jsonify({'status': 'error', 'file_sent': False, 'msg': str(result.get('error', str(result)))})
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+    base_name = os.path.splitext(str(item.get('name', 'file')))[0]
+    txt_name = f"{base_name}.txt"
+    file_sent, result = napcat_upload_group_file(group_id, path, txt_name)
+    if file_sent:
+        bridge_log("bridge_get", f"uploaded group={group_id} file={txt_name}")
+        return jsonify({'status': 'ok', 'file_sent': True, 'filename': txt_name})
+    return jsonify({'status': 'error', 'file_sent': False,
+                    'msg': str(result.get('error', str(result)) if isinstance(result, dict) else result)})
 
 
 def napcat_send_group_msg(group_id, text):
@@ -6108,6 +6144,7 @@ async def handle_ws_recording_event(event):
         return
 
     log_obj = ensure_logutil_log(group_id, current_log_name)
+    raw_recording = bool(group_state.get("raw_recording"))
 
     # Sender info
     sender = event.get("sender") or {}
@@ -6117,6 +6154,17 @@ async def handle_ws_recording_event(event):
     sender_id = str(sender.get("user_id") or event.get("user_id") or "")
     event_ts = safe_int(event.get("time"), int(time.time()))
     items = []
+
+    # raw 修饰符：跳过消息头解析，直接拼接原始文本
+    if raw_recording and post_type == "message":
+        raw_text = segments_to_text(event.get("message")).strip()
+        if raw_text:
+            items = [make_log_item(sender_name, sender_id, event_ts, raw_text,
+                                   str(event.get("message_id") or f"raw:{event_ts}"))]
+        if items:
+            old_count, new_count = add_logutil_items(log_obj["id"], items)
+            ws_log(f"[raw] 已追加 {len(items)} 条 (当前共 {new_count} 条)")
+        return
 
     if post_type == "notice" and notice_type == "group_upload":
         baseline_file_id = str(group_state.get('baseline_file_id', '')).strip()

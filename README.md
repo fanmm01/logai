@@ -157,6 +157,8 @@ logutil支持识别以下种类的消息头：
 
 **`get_text`**：针对所有生成格式是一张图片的指令（如 `.logai`、`.aiutil`、模组命令）。在此修饰被带有时，输出不再以图片方式给出，而是把全部AI输出放在一个txt文件里，并发出该文件及其下载链接。
 
+**`raw`**：对 logutil 生效。携带时（如 `.logutil new raw`、`.logutil on raw`），跳过判断消息头的步骤，直接把各源文本按原始内容并行拼接入日志中。适用于导入非标准格式的纯文本日志。
+
 ---
 
 ## 更新日志：
@@ -214,9 +216,10 @@ logutil支持识别以下种类的消息头：
 4. 修复 `.aiutil` 无文件模式下混杂 `.logai` 评分prompt的bug，现使用中性AI助手系统提示。
 
 **v4.3.1**  
-1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 使用正确的含 `content_url` 的接口；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
+1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 新增专用后端接口 `/api/bridge_get`（内部直接调用 NapCat `upload_group_file`，与 `logutil end` 机制一致）；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
 2. 修复 `.py`、`.js`、`.c` 等非白名单扩展名文件报"不支持的文件格式"的问题：未知扩展名现在直接当作文本解码。
 3. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题：WS模式下彻底禁用HTTP轮询。
 
 **v4.3.2**  
-1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题。现已统一使用与 `.logutil end` 相同的 NapCat `/upload_group_file` 机制，参考该处实现新增 `/api/send_file_to_group` 通用上传接口。
+1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题：改为后端自动调用 `napcat_upload_group_file` 上传，前端不再参与文件发送逻辑。`.translate` 同时保留下载链接作为保险机制。
+2. 新增 `raw` 修饰符（对 logutil 生效）：携带时跳过消息头解析步骤，直接把各源文本并行拼接入日志。
