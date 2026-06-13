@@ -1263,6 +1263,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             };
             if (title) compoundPayload.title = title;
             if (del_paren) compoundPayload.del_paren = true;
+            if (raw_mode) compoundPayload.raw = true;
 
             try {
                 let resp = await fetch(`${host}/api/logutil_compound`, {

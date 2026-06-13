@@ -2,23 +2,13 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogAI 4.4.2 - TRPG Log Analysis Server"
+echo "  LogUtil + Bridge 4.4.2 - Log Recording & File Bridge"
 echo "============================================"
 echo ""
 
 # ============================================================
 #  配置区域
 # ============================================================
-#可以将使用的AI API令牌替换下面的"sk-………"。切勿将此令牌透露给其他人！
-#一种替代方案见README。推荐彼替代方案，因为它可以让你在不修改此文件的情况下安全地使用环境变量来存储敏感信息。
-CFG_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxc"
-#使用的AI的相关信息，包括base url与ai模型名称
-CFG_API_BASE_URL="https://api.deepseek.com"
-CFG_AI_MODEL="deepseek-v4-flash"
-CFG_AI_MODEL_PRO="deepseek-v4-pro"
-#文生图AI的API令牌。同样切勿透露！
-CFG_IMAGE_API_KEY="pst-zzzzzzzzzzzzzzzzzzzz"
-
 #以下为Napcat的http/ws连接url及token。请按需修改。
 CFG_NAPCAT_URL="http://127.0.0.1:8084"
 CFG_NAPCAT_TOKEN="1"
@@ -26,13 +16,16 @@ CFG_WS_URL="ws://127.0.0.1:3001"
 CFG_WS_TOKEN=""
 
 CFG_HOST="0.0.0.0"
-#logai后端运行的端口号。如提示端口被占用请修改。但是这是不建议的行动；此处若进行了修改，则需要把前端配置进行同样的修改。
+#logutil后端运行的端口号。如提示端口被占用请修改。但是这是不建议的行动；此处若进行了修改，则需要把前端配置进行同样的修改。
 CFG_PORT="8000"
 #以下可忽略，为内部参数
 CFG_BRIDGE_TOKEN=""
 CFG_BRIDGE_PUBLIC_BASE=""
 CFG_WS_ENABLED="1"
 CFG_BRIDGE_MODE="0"
+# Story Painter (log coloring) 上传配置
+CFG_STORY_PAINTER_URL=""
+CFG_STORY_PAINTER_TOKEN=""
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -180,18 +173,13 @@ fi
 
 $PYTHON_EXE -m pip install --quiet --disable-pip-version-check \
     ${PIP_INDEX} \
-    flask requests pillow openai python-docx PyPDF2 pymupdf websockets \
+    flask requests PyPDF2 pymupdf websockets \
     2>&1 | grep -v "already satisfied" || true
 
 echo "[OK] 依赖就绪"
 echo ""
 
 CLI_ARGS=()
-[ -n "$CFG_API_KEY" ]            && CLI_ARGS+=(--api-key "$CFG_API_KEY")
-[ -n "$CFG_API_BASE_URL" ]       && CLI_ARGS+=(--api-base-url "$CFG_API_BASE_URL")
-[ -n "$CFG_AI_MODEL" ]           && CLI_ARGS+=(--ai-model "$CFG_AI_MODEL")
-[ -n "$CFG_AI_MODEL_PRO" ]      && CLI_ARGS+=(--ai-model-pro "$CFG_AI_MODEL_PRO")
-[ -n "$CFG_IMAGE_API_KEY" ]     && CLI_ARGS+=(--image-api-key "$CFG_IMAGE_API_KEY")
 [ -n "$CFG_HOST" ]              && CLI_ARGS+=(--host "$CFG_HOST")
 [ -n "$CFG_PORT" ]              && CLI_ARGS+=(--port "$CFG_PORT")
 [ -n "$CFG_NAPCAT_URL" ]        && CLI_ARGS+=(--napcat-url "$CFG_NAPCAT_URL")
@@ -202,8 +190,10 @@ CLI_ARGS=()
 [ -n "$CFG_BRIDGE_PUBLIC_BASE" ]&& CLI_ARGS+=(--bridge-public-base "$CFG_BRIDGE_PUBLIC_BASE")
 [ -n "$CFG_WS_ENABLED" ]        && CLI_ARGS+=(--ws-enabled "$CFG_WS_ENABLED")
 [ -n "$CFG_BRIDGE_MODE" ]       && CLI_ARGS+=(--bridge-mode "$CFG_BRIDGE_MODE")
+[ -n "$CFG_STORY_PAINTER_URL" ] && CLI_ARGS+=(--story-painter-url "$CFG_STORY_PAINTER_URL")
+[ -n "$CFG_STORY_PAINTER_TOKEN" ] && CLI_ARGS+=(--story-painter-token "$CFG_STORY_PAINTER_TOKEN")
 
-echo "[INFO] 启动 LogAI 服务器..."
+echo "[INFO] 启动 LogUtil + Bridge 服务器..."
 echo ""
 cd "$SCRIPT_DIR"
-exec "$PYTHON_EXE" logai_server_release.py "${CLI_ARGS[@]}" "$@"
+exec "$PYTHON_EXE" backend.py "${CLI_ARGS[@]}" "$@"
