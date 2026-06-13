@@ -11,7 +11,7 @@
 # ]
 # ///
 
-# LogAI 4.3.4 - TRPG Log Analysis and Illustration Server
+# LogAI 4.4.0 - TRPG Log Analysis and Illustration Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -49,6 +49,7 @@ import zipfile
 import shutil
 import hashlib
 import datetime
+import atexit
 from docx import Document
 from websockets.legacy.client import connect as ws_connect
 
@@ -228,7 +229,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.3.4"
+SERVICE_VERSION = "4.4.0"
 _openai_client = None
 
 def get_openai_client():
@@ -242,8 +243,10 @@ def get_openai_client():
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
 JOB_CACHE = {} # 存储任务状态和结果
 
-LATEST_FILES: Dict[int, list] = {}  # group_id -> list of cached items, index 0 = latest
+LATEST_FILES: Dict[int, list] = {}  # group_id -> list of cached items, index 0 = oldest
 CONTENT_INDEX: Dict[str, str] = {}
+LINK_CACHE: Dict[int, list] = {}  # group_id -> list of link items, index 0 = oldest
+MAX_BRIDGE_LINKS_PER_GROUP = 30
 LOG_IMPORTED_FILES: Dict[str, set] = {}  # log_id_str -> set of file_id strings already imported
 LAST_ERROR_BY_GROUP: Dict[int, str] = {}
 LAST_EVENT_SUMMARY: Dict[str, Any] = {}
@@ -253,6 +256,14 @@ UPLOAD_STATES: Dict[int, Dict[str, Any]] = {}
 STATE_LOCK = threading.RLock()
 UPLOAD_QUEUE = Queue(maxsize=BRIDGE_QUEUE_SIZE)
 UPLOAD_WORKER: Optional[threading.Thread] = None
+
+# v4.4.0: Job cancellation support
+CANCEL_FLAGS: Dict[str, threading.Event] = {}
+
+# v4.4.0: History system — preserves evicted bridge items on disk
+HISTORY = []  # global history list, index 0 = newest
+MAX_HISTORY_ITEMS = 50
+HISTORY_FILE = os.path.join(BRIDGE_CACHE_DIR, "history.json")
 
 # --- WebSocket 实时监听 (logutil recording) ---
 # Create a dummy event loop just to allocate the queue; the real loop replaces it in run_ws_event_loop.
@@ -444,6 +455,11 @@ def parse_log_target_entry(raw, password=None, source=None):
     if file_idx_match:
         return {'key': file_idx_match.group(1), 'source': 'bridge_file', 'password': ''}
 
+    # v4.4.0: [link]-N pattern: reference bridge-cached link text by index
+    link_idx_match = re.match(r'^\[link\]-(\d+)(?:\s|$)', value, re.IGNORECASE)
+    if link_idx_match:
+        return {'key': link_idx_match.group(1), 'source': 'bridge_link', 'password': ''}
+
     # Bare file name: look like filenames (not URLs, not known key patterns)
     # Examples: "[2026-06-11_11-25]8月23日营地.txt", "8月23日营地.txt", "8月23日营地"
     if not re.match(r'^https?://', value, re.IGNORECASE) and '://' not in value:
@@ -537,16 +553,38 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
     resolved_source = normalize_query_key_source(target.get('source') or infer_source_by_key(resolved_key))
 
     # --- fwlog-compatible sources ---
+    # v4.4.0: cache fetched link text to bridge
+    gid_for_cache = safe_int(group_id, 0) if group_id else 0
     if resolved_source == "kokona":
-        return format_raw_text(fetch_kokona(resolved_key))
+        raw_text = fetch_kokona(resolved_key)
+        result = format_raw_text(raw_text)
+        if result and gid_for_cache > 0:
+            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+        return result
     if resolved_source == "trpgbot":
-        return format_raw_text(fetch_trpgbot(resolved_key))
+        raw_text = fetch_trpgbot(resolved_key)
+        result = format_raw_text(raw_text)
+        if result and gid_for_cache > 0:
+            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+        return result
     if resolved_source == "raw_url":
-        return format_raw_text(fetch_raw_url(resolved_key))
+        raw_text = fetch_raw_url(resolved_key)
+        result = format_raw_text(raw_text)
+        if result and gid_for_cache > 0:
+            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+        return result
     if resolved_source == "dice_zone":
-        return format_weizaima_text(fetch_dice_zone(resolved_key, resolved_password))
+        raw_text = fetch_dice_zone(resolved_key, resolved_password)
+        result = format_weizaima_text(raw_text)
+        if result and gid_for_cache > 0:
+            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+        return result
     if resolved_source == "weizaima":
-        return format_weizaima_text(fetch_weizaima(resolved_key, resolved_password))
+        raw_text = fetch_weizaima(resolved_key, resolved_password)
+        result = format_weizaima_text(raw_text)
+        if result and gid_for_cache > 0:
+            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+        return result
 
     # --- logai bridge extensions (not present in fwlog) ---
     if resolved_source == "bridge_file_name":
@@ -599,6 +637,23 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
                 file_list = list(LATEST_FILES.get(gid, []))
             if 0 <= idx < len(file_list):
                 item = file_list[idx]
+                ck = item.get('content_key', '')
+                with STATE_LOCK:
+                    path = CONTENT_INDEX.get(ck, '')
+                if path and os.path.exists(path):
+                    with open(path, 'r', encoding='utf-8') as f:
+                        return format_raw_text(f.read())
+        return ""
+
+    # v4.4.0: [link]-N support
+    if resolved_source == "bridge_link":
+        idx = safe_int(resolved_key, 0)
+        gid = safe_int(group_id, 0) if group_id else 0
+        if gid > 0:
+            with STATE_LOCK:
+                link_list = list(LINK_CACHE.get(gid, []))
+            if 0 <= idx < len(link_list):
+                item = link_list[idx]
                 ck = item.get('content_key', '')
                 with STATE_LOCK:
                     path = CONTENT_INDEX.get(ck, '')
@@ -661,6 +716,11 @@ def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=Fa
             system_prompt += "\n\n【排版指令】：你可以根据当前内容的故事氛围，在回复的【最开头】加上标签以控制最终生成的图片风格。支持的标签有：【主题：经典】、【主题：克苏鲁】、【主题：赛博】、【主题：历史】、【主题：废土】、【主题：二次元】、【主题：终端】。如果你觉得不需要特殊风格，可不写此标签。"
 
         print(f"[{job_id}] 开始请求 LLM...")
+        # v4.4.0: 检查取消标志
+        if CANCEL_FLAGS.get(job_id) and CANCEL_FLAGS[job_id].is_set():
+            JOB_CACHE[job_id]['status'] = 'cancelled'
+            JOB_CACHE[job_id]['text'] = '任务已被取消。'
+            return
         model = AI_MODEL_PRO if is_pro else AI_MODEL
         resp = get_openai_client().chat.completions.create(
             model=model,
@@ -813,6 +873,11 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
 
         # 5. 请求 AI
         print(f"[{job_id}] 未命中缓存，开始请求 LLM 消耗 Token...")
+        # v4.4.0: 检查取消标志
+        if CANCEL_FLAGS.get(job_id) and CANCEL_FLAGS[job_id].is_set():
+            JOB_CACHE[job_id]['status'] = 'cancelled'
+            JOB_CACHE[job_id]['text'] = '任务已被取消。'
+            return
         model = AI_MODEL_PRO if is_pro else AI_MODEL
         resp = get_openai_client().chat.completions.create(
             model=model,
@@ -1788,6 +1853,119 @@ def hydrate_bridge_item(item, public_base=""):
     return hydrated
 
 
+# ====== v4.4.0: History System ======
+
+def _evict_to_history(item, item_type='file'):
+    """将即将被淘汰的桥接项移入 HISTORY 列表（而非直接删除）。
+    item_type: 'file' | 'link'
+    HISTORY 索引 0 = 最新。超过 MAX_HISTORY_ITEMS 时淘汰最旧的并删除磁盘文件。"""
+    if not item:
+        return
+    entry = dict(item)
+    entry['_type'] = item_type
+    entry['_evicted_ts'] = now_ts()
+    with STATE_LOCK:
+        HISTORY.insert(0, entry)
+        while len(HISTORY) > MAX_HISTORY_ITEMS:
+            removed = HISTORY.pop()
+            removed_key = str(removed.get("content_key", ""))
+            removed_path = CONTENT_INDEX.pop(removed_key, "")
+            if removed_path and os.path.exists(removed_path):
+                try:
+                    os.remove(removed_path)
+                except Exception:
+                    pass
+
+
+def _serialize_history_item(item):
+    """将 history item 转为可 JSON 序列化的字典。"""
+    result = {}
+    for k, v in item.items():
+        if isinstance(v, (str, int, float, bool, type(None))):
+            result[k] = v
+        else:
+            result[k] = str(v)
+    return result
+
+
+def save_history():
+    """将 HISTORY 持久化到磁盘（HISTORY_FILE）。"""
+    try:
+        ensure_bridge_cache_dir()
+        with STATE_LOCK:
+            data = [_serialize_history_item(item) for item in HISTORY]
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        bridge_log("history", f"saved {len(data)} items to {HISTORY_FILE}")
+    except Exception as e:
+        print(f"[history] save failed: {e}")
+
+
+def load_history():
+    """从磁盘恢复 HISTORY 列表。会验证磁盘文件是否存在，缺失的跳过。"""
+    global HISTORY
+    if not os.path.exists(HISTORY_FILE):
+        return
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        restored = []
+        for entry in data:
+            ck = str(entry.get('content_key', ''))
+            # Reconstruct disk path from content_key
+            path = os.path.join(BRIDGE_CACHE_DIR, f"{ck}.txt")
+            if ck and os.path.exists(path):
+                with STATE_LOCK:
+                    CONTENT_INDEX[ck] = path
+                entry['_type'] = entry.get('_type', 'file')
+                restored.append(entry)
+            else:
+                print(f"[history] skip missing: ck={ck}")
+        with STATE_LOCK:
+            HISTORY = restored
+        bridge_log("history", f"loaded {len(restored)} items from {HISTORY_FILE}")
+        # Trim to MAX_HISTORY_ITEMS
+        with STATE_LOCK:
+            while len(HISTORY) > MAX_HISTORY_ITEMS:
+                removed = HISTORY.pop()
+                removed_key = str(removed.get("content_key", ""))
+                removed_path = CONTENT_INDEX.pop(removed_key, "")
+                if removed_path and os.path.exists(removed_path):
+                    try:
+                        os.remove(removed_path)
+                    except Exception:
+                        pass
+    except Exception as e:
+        print(f"[history] load failed: {e}")
+        HISTORY = []
+
+
+def _flush_all_to_history():
+    """关闭前：将所有 LATEST_FILES 和 LINK_CACHE 的内容移入 HISTORY。"""
+    with STATE_LOCK:
+        for gid, file_list in list(LATEST_FILES.items()):
+            for item in reversed(file_list):
+                _evict_to_history(item, 'file')
+            file_list.clear()
+        for gid, link_list in list(LINK_CACHE.items()):
+            for item in reversed(link_list):
+                _evict_to_history(item, 'link')
+            link_list.clear()
+    save_history()
+
+
+def shutdown_handler():
+    """进程退出时的清理回调：持久化历史记录。"""
+    print("[history] shutdown — flushing all caches to history...")
+    try:
+        _flush_all_to_history()
+    except Exception as e:
+        print(f"[history] shutdown error: {e}")
+
+
+# ========================================
+
+
 def write_text_cache(group_id, original_name, text, file_id, busid, user_id, source_ts=0, public_base=""):
     ensure_bridge_cache_dir()
 
@@ -1815,6 +1993,7 @@ def write_text_cache(group_id, original_name, text, file_id, busid, user_id, sou
         "text_filename": text_filename,
         "text_chars": len(text),
         "text_bytes": os.path.getsize(path),
+        "_type": "file",
     }
 
     with STATE_LOCK:
@@ -1839,16 +2018,65 @@ def write_text_cache(group_id, original_name, text, file_id, busid, user_id, sou
         file_list.append(item)
         CONTENT_INDEX[key] = path
 
-        # Trim to max (remove oldest entries at index 0)
+        # Trim to max — v4.4.0: evict overflow to history instead of deleting
         while len(file_list) > MAX_BRIDGE_FILES_PER_GROUP:
             removed = file_list.pop(0)
-            removed_key = str(removed.get("content_key", ""))
-            removed_path = CONTENT_INDEX.pop(removed_key, "")
-            if removed_path and os.path.exists(removed_path):
-                try:
-                    os.remove(removed_path)
-                except Exception:
-                    pass
+            _evict_to_history(removed, 'file')
+
+    return item
+
+
+def write_link_cache(group_id, url, fetched_text):
+    """v4.4.0: 将着色器链接的纯文本内容保存到桥接缓存。
+    使用 LINK_CACHE 存储（与 LATEST_FILES 分离），编号规则 [link]-N。"""
+    if not fetched_text or not str(fetched_text).strip():
+        return None
+    ensure_bridge_cache_dir()
+    key = uuid.uuid4().hex
+    path = os.path.join(BRIDGE_CACHE_DIR, f"{key}.txt")
+    cached_ts = now_ts()
+
+    with open(path, "w", encoding="utf-8") as fw:
+        fw.write(str(fetched_text))
+
+    # Truncate URL for display name
+    url_display = str(url or "")[:80]
+    item = {
+        "group_id": group_id,
+        "url": str(url or ""),
+        "name": f"[link] {url_display}",
+        "ts": cached_ts,
+        "source_ts": cached_ts,
+        "cached_ts": cached_ts,
+        "content_key": key,
+        "content_url": build_content_url(key, public_base=resolve_public_base_or_fallback()),
+        "text_chars": len(str(fetched_text)),
+        "text_bytes": os.path.getsize(path),
+        "_type": "link",
+    }
+
+    with STATE_LOCK:
+        if group_id not in LINK_CACHE:
+            LINK_CACHE[group_id] = []
+        link_list = LINK_CACHE[group_id]
+        # Dedup: skip if same URL already cached
+        for i, old_item in enumerate(link_list):
+            if str(old_item.get("url", "")) == str(url):
+                old_key = str(old_item.get("content_key", ""))
+                old_path = CONTENT_INDEX.pop(old_key, "")
+                if old_path and os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
+                link_list.pop(i)
+                break
+        link_list.append(item)
+        CONTENT_INDEX[key] = path
+        # Trim to max — evict overflow to history
+        while len(link_list) > MAX_BRIDGE_LINKS_PER_GROUP:
+            removed = link_list.pop(0)
+            _evict_to_history(removed, 'link')
 
     return item
 
@@ -1928,10 +2156,8 @@ def cleanup_expired():
                 if ts > 0 and (now - ts) <= BRIDGE_TTL_SEC:
                     kept.append(item)
                 else:
-                    key = str(item.get("content_key", ""))
-                    path = CONTENT_INDEX.pop(key, "")
-                    if path:
-                        removed_paths.append(path)
+                    # v4.4.0: evict expired items to history instead of deleting
+                    _evict_to_history(item, 'file')
             if kept:
                 LATEST_FILES[gid] = kept
             else:
@@ -2266,26 +2492,70 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
 
 TRANSLATE_SYSTEM_PROMPT = "你是一个专业的翻译助手。请准确翻译用户提供的文本，保留原文格式，只返回翻译结果，不要添加任何解释或评论。"
 
+# v4.4.0: TextDB.online 云数据库 (用于 goal-ALL 翻译)
+TEXTDB_UPDATE_URL = "https://textdb.online/update/"
+TEXTDB_READ_URL = "https://textdb.online/{}"
+
+
+def textdb_upload(key, value):
+    """上传文本到 TextDB.online。key: 6-60 字符, value: 最多 200K 字符。"""
+    try:
+        resp = requests.post(TEXTDB_UPDATE_URL, data={
+            'key': key,
+            'value': str(value)[:200000]
+        }, timeout=30)
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"[textdb] upload failed: {e}")
+        return False
+
+
+def textdb_get_url(key):
+    return TEXTDB_READ_URL.format(key)
+
+
+def chunk_text_by_sentences(text, target_chars=2000):
+    """将文本按句子边界切分为 ~target_chars 大小的块。"""
+    chunks = []
+    current = ""
+    # 按句子边界分割
+    sentences = re.split(r'(?<=[。！？\n])(?=[^。！？\n])', text)
+    for sent in sentences:
+        if len(current) + len(sent) > target_chars and current:
+            chunks.append(current.strip())
+            current = sent
+        else:
+            current += sent
+    if current.strip():
+        chunks.append(current.strip())
+    return chunks if chunks else [text]
+
+
 @app.route('/api/translate', methods=['GET'])
 def translate_task():
-    """翻译文件任务"""
+    """翻译文件任务 (v4.4.0: 支持 goal=all 模式)"""
     if len(JOB_CACHE) > 100: JOB_CACHE.clear()
-    
+
     file_url = request.args.get('url')
     filename = request.args.get('filename', 'unknown')
     target_lang = request.args.get('lang', 'zh-CN')
     is_pro = request.args.get('pro', 'false').lower() == 'true'
     group_id = safe_int(request.args.get('group_id', 0), 0)
+    goal_all = request.args.get('goal', '').lower() == 'all'
 
     if not file_url:
         return jsonify({'status': 'error', 'msg': '缺少文件URL'})
 
     job_id = str(uuid.uuid4())
-    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
+    CANCEL_FLAGS[job_id] = threading.Event()
+    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time(), 'group_id': group_id}
 
-    executor.submit(background_translate_process, job_id, file_url, filename, target_lang, is_pro, group_id)
-    
-    return jsonify({'status': 'ok', 'id': job_id, 'msg': f'正在翻译为 {target_lang}...'})
+    if goal_all:
+        executor.submit(background_translate_goal_all, job_id, file_url, filename, target_lang, group_id)
+        return jsonify({'status': 'ok', 'id': job_id, 'mode': 'goal-all', 'msg': f'开始 goal-ALL 翻译为 {target_lang}...'})
+    else:
+        executor.submit(background_translate_process, job_id, file_url, filename, target_lang, is_pro, group_id)
+        return jsonify({'status': 'ok', 'id': job_id, 'msg': f'正在翻译为 {target_lang}...'})
 
 def background_translate_process(job_id, file_url, filename, target_lang='zh-CN', is_pro=False, group_id=0):
     """后台线程：下载并翻译文件"""
@@ -2359,6 +2629,99 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
         JOB_CACHE[job_id]['status'] = 'error'
         JOB_CACHE[job_id]['text'] = f"翻译失败：{str(e)}"
 
+
+# v4.4.0: goal-ALL 分块翻译
+def background_translate_goal_all(job_id, file_url, filename, target_lang, group_id):
+    """后台线程：分块翻译文件，每10秒上传到 TextDB.online。"""
+    print(f"[{job_id}] 开始 goal-ALL 翻译: {filename} -> {target_lang}")
+    cancel_event = CANCEL_FLAGS.get(job_id)
+    try:
+        sess = get_session()
+        resp = sess.get(file_url, timeout=120)
+        if resp.status_code != 200:
+            raise Exception(f"文件下载失败: {resp.status_code}")
+
+        source_text = safe_decode(resp.content)
+        if len(source_text) > MAX_AI_CHARS:
+            source_text = source_text[:MAX_AI_CHARS]
+
+        chunks = chunk_text_by_sentences(source_text, target_chars=2000)
+        textdb_key = f"logai-trans-{uuid.uuid4().hex[:12]}"
+        textdb_url = textdb_get_url(textdb_key)
+
+        JOB_CACHE[job_id]['mode'] = 'goal-all'
+        JOB_CACHE[job_id]['textdb_key'] = textdb_key
+        JOB_CACHE[job_id]['textdb_url'] = textdb_url
+        JOB_CACHE[job_id]['total_chunks'] = len(chunks)
+        JOB_CACHE[job_id]['completed_chunks'] = 0
+
+        accumulated = ""
+        last_upload_ts = time.time()
+
+        model = AI_MODEL
+        for i, chunk in enumerate(chunks):
+            if cancel_event and cancel_event.is_set():
+                JOB_CACHE[job_id]['status'] = 'cancelled'
+                JOB_CACHE[job_id]['text'] = f'翻译已被停止。已完成 {i}/{len(chunks)} 段。'
+                return
+
+            resp = get_openai_client().chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": TRANSLATE_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"请将以下文本翻译成{target_lang}：\n\n{chunk}"}
+                ],
+                temperature=0.5, max_tokens=4000
+            )
+            translated = resp.choices[0].message.content or ""
+            accumulated += translated + "\n\n"
+
+            JOB_CACHE[job_id]['completed_chunks'] = i + 1
+            JOB_CACHE[job_id]['accumulated_chars'] = len(accumulated)
+
+            # Upload to TextDB every 10 seconds or on last chunk
+            now = time.time()
+            if now - last_upload_ts >= 10 or i == len(chunks) - 1:
+                textdb_upload(textdb_key, accumulated)
+                last_upload_ts = now
+                print(f"[{job_id}] goal-ALL progress: {i+1}/{len(chunks)}, uploaded to TextDB")
+
+        # Final upload
+        textdb_upload(textdb_key, accumulated)
+
+        # Also save locally in bridge cache
+        ensure_bridge_cache_dir()
+        final_key = uuid.uuid4().hex
+        final_path = os.path.join(BRIDGE_CACHE_DIR, f"{final_key}.txt")
+        with open(final_path, 'w', encoding='utf-8') as fw:
+            fw.write(accumulated)
+        with STATE_LOCK:
+            CONTENT_INDEX[final_key] = final_path
+        public_base = resolve_public_base_or_fallback()
+        final_url = build_content_url(final_key, public_base=public_base)
+
+        JOB_CACHE[job_id]['status'] = 'done'
+        JOB_CACHE[job_id]['text'] = accumulated
+        JOB_CACHE[job_id]['text_key'] = final_key
+        JOB_CACHE[job_id]['text_url'] = final_url
+        JOB_CACHE[job_id]['textdb_url'] = textdb_url
+        print(f"[{job_id}] goal-ALL 翻译完成: {textdb_url}")
+
+        # Auto-upload to group
+        if group_id > 0:
+            try:
+                safe_name = re.sub(r'[\\/*?:"<>|]', '_', f"翻译_{target_lang}_{filename}.txt")
+                fs, _ = napcat_upload_group_file(group_id, final_path, safe_name)
+                JOB_CACHE[job_id]['text_file_sent'] = fs
+            except Exception as ue:
+                print(f"[{job_id}] goal-ALL 上传失败: {ue}")
+
+    except Exception as e:
+        print(f"[{job_id}] goal-ALL 翻译失败: {e}")
+        JOB_CACHE[job_id]['status'] = 'error'
+        JOB_CACHE[job_id]['text'] = f"goal-ALL翻译失败：{str(e)}"
+
+
 @app.route('/api/translate_result', methods=['GET'])
 def get_translate_result():
     """获取翻译结果"""
@@ -2366,7 +2729,16 @@ def get_translate_result():
     job = JOB_CACHE.get(job_id)
     if not job or 'text' not in job:
         return jsonify({'status': 'not_found'})
-    return jsonify({'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', ''), 'text_url': job.get('text_url', '')})
+    resp = {'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', ''), 'text_url': job.get('text_url', '')}
+    # v4.4.0: goal-ALL fields
+    if job.get('mode') == 'goal-all':
+        resp['mode'] = 'goal-all'
+        resp['textdb_key'] = job.get('textdb_key', '')
+        resp['textdb_url'] = job.get('textdb_url', '')
+        resp['total_chunks'] = job.get('total_chunks', 0)
+        resp['completed_chunks'] = job.get('completed_chunks', 0)
+        resp['accumulated_chars'] = job.get('accumulated_chars', 0)
+    return jsonify(resp)
 
 @app.route('/api/translate_and_upload', methods=['GET'])
 def translate_and_upload():
@@ -3396,6 +3768,43 @@ def resolve_bridge_file_for_analysis(group_id, public_base="", index=0):
 
     return hydrate_bridge_item(item, public_base=public_base) or dict(item)
 
+@app.route('/api/halt', methods=['POST'])
+def api_halt():
+    """v4.4.0: 强制停止指定群内所有进行中的AI生成任务。"""
+    payload = request.get_json(silent=True) or {}
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    if group_id <= 0:
+        return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
+
+    halted = []
+    with STATE_LOCK:
+        for jid, job in list(JOB_CACHE.items()):
+            j_group = safe_int(job.get('group_id', 0), 0)
+            if j_group == group_id and job.get('status') == 'processing':
+                if jid in CANCEL_FLAGS:
+                    CANCEL_FLAGS[jid].set()
+                job['status'] = 'cancelled'
+                job['text'] = '任务已被停止。'
+                halted.append(jid)
+
+    # Clean up stale cancel flags (已取消超过3600秒的)
+    now = time.time()
+    stale = []
+    for jid, flag in list(CANCEL_FLAGS.items()):
+        if flag.is_set():
+            job = JOB_CACHE.get(jid)
+            if job:
+                job_created = job.get('created', 0)
+                if now - job_created > 3600:
+                    stale.append(jid)
+            else:
+                stale.append(jid)
+    for jid in stale:
+        CANCEL_FLAGS.pop(jid, None)
+
+    return jsonify({'status': 'ok', 'halted': halted, 'count': len(halted)})
+
+
 @app.route('/api/submit', methods=['GET', 'POST'])
 def submit_task():
     """提交日志分析任务 (统一且安全的参数提取)"""
@@ -3423,8 +3832,9 @@ def submit_task():
     if direct_text:
         # v4.2: 直接文本模式 — 跳过URL抓取，直接使用提供的文本
         job_id = str(uuid.uuid4())
-        JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
         group_id_submit = safe_int(req_data.get('group_id', 0), 0)
+        CANCEL_FLAGS[job_id] = threading.Event()
+        JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time(), 'group_id': group_id_submit}
         if group_id_submit > 0:
             BRIDGE_POLL_GROUPS.add(group_id_submit)
             ensure_poll_worker_started()
@@ -3469,9 +3879,10 @@ def submit_task():
                 source = infer_source_by_key(key)
 
     job_id = str(uuid.uuid4())
-    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
-
     group_id_submit = safe_int(req_data.get('group_id', 0), 0)
+    CANCEL_FLAGS[job_id] = threading.Event()
+    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time(), 'group_id': group_id_submit}
+
     # Register for polling if using bridge services
     if group_id_submit > 0:
         BRIDGE_POLL_GROUPS.add(group_id_submit)
@@ -3527,8 +3938,9 @@ def submit_file_task():
         return jsonify({'status': 'error', 'msg': 'Missing url or filename'})
 
     job_id = str(uuid.uuid4())
-    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time()}
-    
+    CANCEL_FLAGS[job_id] = threading.Event()
+    JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time(), 'group_id': group_id}
+
     # 将所有参数（包括 theme）传入后台线程
     executor.submit(background_file_process, job_id, file_url, filename, mode, is_pro, is_kind, persona, custom_prompt, theme, get_text, group_id)
     if bridge_item:
@@ -3935,6 +4347,7 @@ def bridge_list():
     public_base = request.host_url.rstrip('/')
     with STATE_LOCK:
         file_list = [snapshot_item(f) for f in LATEST_FILES.get(group_id, [])]
+        link_list = [snapshot_item(l) for l in LINK_CACHE.get(group_id, [])]
 
     files = []
     for idx, item in enumerate(file_list):
@@ -3943,10 +4356,20 @@ def bridge_list():
             h['_index'] = idx
             # Use the real file name in output
             h['display_name'] = h.get('name', '')
+            h['_type'] = 'file'
             files.append(h)
 
-    bridge_log('list', f"group={group_id} count={len(files)}")
-    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'count': len(files)})
+    links = []
+    for idx, item in enumerate(link_list):
+        h = hydrate_bridge_item(item, public_base=public_base)
+        if h:
+            h['_index'] = idx
+            h['display_name'] = h.get('url', h.get('name', ''))
+            h['_type'] = 'link'
+            links.append(h)
+
+    bridge_log('list', f"group={group_id} files={len(files)} links={len(links)}")
+    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'links': links, 'count': len(files)})
 
 
 @app.route('/bridge/content/<content_key>', methods=['GET'])
@@ -3964,6 +4387,139 @@ def bridge_content(content_key):
 
     bridge_log('content', f'serve key={content_key} path={path}')
     return send_file(path, mimetype='text/plain')
+
+
+# ====== v4.4.0: Web GUI ======
+
+_BRIDGE_GUI_HTML = r'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>LogAI Bridge Manager</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px;max-width:1200px;margin:0 auto}
+h1{color:#e94560;margin-bottom:10px}
+h2{color:#e94560;margin:20px 0 10px}
+.group-select{margin-bottom:20px}
+.group-select select,.group-select input{padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0}
+table{width:100%;border-collapse:collapse;margin-bottom:30px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #333;font-size:13px}
+th{background:#16213e;color:#e94560;position:sticky;top:0}
+td a{color:#4fc3f7;text-decoration:none}
+td a:hover{text-decoration:underline}
+tr:hover{background:#16213e}
+.cmd-box{margin:20px 0;display:flex;gap:8px}
+.cmd-box input[type=text]{flex:1;padding:10px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0}
+.cmd-box button{padding:10px 20px;font-size:14px;border-radius:4px;border:none;background:#e94560;color:#fff;cursor:pointer}
+.cmd-box button:hover{background:#c73a52}
+.result{background:#16213e;padding:12px;border-radius:4px;margin:10px 0;white-space:pre-wrap;font-size:13px;max-height:300px;overflow-y:auto}
+preview{color:#888;font-size:12px}
+</style>
+</head>
+<body>
+<h1>LogAI Bridge Manager v4.4.0</h1>
+<div class="group-select">
+  群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
+  <button onclick="loadData()">刷新</button>
+</div>
+
+<h2>【文件】Files</h2>
+<div id="fileTable"></div>
+
+<h2>【链接】Links</h2>
+<div id="linkTable"></div>
+
+<h2>【历史】History</h2>
+<div id="historyTable"></div>
+
+<h2>命令输入</h2>
+<div class="cmd-box">
+  <input type="text" id="cmdInput" placeholder="输入命令，如: .logai [file]-0 pro">
+  <button onclick="sendCommand()">发送</button>
+</div>
+<div class="result" id="cmdResult"></div>
+
+<script>
+async function loadData(){
+  const gid=document.getElementById('groupInput').value.trim();
+  if(!gid){return}
+  const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
+  const data=await resp.json();
+  renderTable('fileTable',data.files||[],['#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`);
+  renderTable('linkTable',data.links||[],['#','URL','字数','保存时间'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`);
+  renderTable('historyTable',data.history||[],['#','类型','名称','字数'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`);
+}
+function renderTable(id,items,cols,nameFn){
+  if(!items.length){document.getElementById(id).innerHTML='<p style="color:#888">（无数据）</p>';return}
+  let h=`<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
+  items.forEach((r,i)=>{
+    const preview=(r.name||r.url||'').slice(0,12);
+    const ts=r.ts?new Date(r.ts*1000).toLocaleString():'-';
+    h+=`<tr><td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
+  });
+  h+='</table>';
+  document.getElementById(id).innerHTML=h;
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function sendCommand(){
+  const gid=document.getElementById('groupInput').value.trim();
+  const cmd=document.getElementById('cmdInput').value.trim();
+  if(!gid||!cmd){return}
+  document.getElementById('cmdResult').textContent='处理中...';
+  const resp=await fetch('/api/bridge_gui_command',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({group_id:parseInt(gid),command:cmd})
+  });
+  const data=await resp.json();
+  document.getElementById('cmdResult').textContent=JSON.stringify(data,null,2);
+}
+loadData();
+</script>
+</body>
+</html>'''
+
+
+@app.route('/bridge/gui', methods=['GET'])
+def bridge_gui():
+    """v4.4.0: 桥接管理 Web GUI（通用入口，需手动输入群号）。"""
+    return _BRIDGE_GUI_HTML.replace('{{GROUP_ID}}', '')
+
+
+@app.route('/bridge/gui/<int:group_id>', methods=['GET'])
+def bridge_gui_group(group_id):
+    """v4.4.0: 桥接管理 Web GUI（指定群号）。"""
+    return _BRIDGE_GUI_HTML.replace('{{GROUP_ID}}', str(group_id))
+
+
+@app.route('/api/bridge_gui_data', methods=['GET'])
+def api_bridge_gui_data():
+    """v4.4.0: Web GUI 数据接口。"""
+    group_id = safe_int(request.args.get('group_id', 0), 0)
+    if group_id <= 0:
+        return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
+
+    with STATE_LOCK:
+        files = [snapshot_item(f) for f in LATEST_FILES.get(group_id, [])]
+        links = [snapshot_item(l) for l in LINK_CACHE.get(group_id, [])]
+        history = [snapshot_item(h) for h in HISTORY]
+
+    return jsonify({'status': 'ok', 'files': files, 'links': links, 'history': history})
+
+
+@app.route('/api/bridge_gui_command', methods=['POST'])
+def api_bridge_gui_command():
+    """v4.4.0: Web GUI 命令输入接口（转发给后端处理）。"""
+    payload = request.get_json(silent=True) or {}
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    command = str(payload.get('command', '')).strip()
+    if group_id <= 0 or not command:
+        return jsonify({'status': 'error', 'msg': 'missing group_id or command'}), 400
+
+    # 简单解析命令并模拟处理
+    # 此处仅提供基本桥接，完整功能仍需通过QQ/SealDice
+    return jsonify({'status': 'ok', 'msg': f'命令已接收: {command[:100]}', 'note': 'Web GUI命令功能为辅助性质，完整功能请通过QQ使用。'})
 
 
 @app.route('/api/bridge_poll_on', methods=['POST'])
@@ -4025,32 +4581,88 @@ def api_bridge_list():
 
     payload = request.get_json(silent=True) or {}
     group_id = safe_int(payload.get('group_id') or request.args.get('group_id', 0), 0)
+    filter_type = str(payload.get('filter') or request.args.get('filter', 'all')).lower()
     if group_id <= 0:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
 
-    with STATE_LOCK:
-        file_list = list(LATEST_FILES.get(group_id, []))
+    show_files = filter_type in ('all', 'file')
+    show_links = filter_type in ('all', 'link')
+    show_history = filter_type == 'history'
 
-    items = []
+    file_items = []
+    link_items = []
+    history_items = []
+
+    with STATE_LOCK:
+        if show_files:
+            file_list = list(LATEST_FILES.get(group_id, []))
+        else:
+            file_list = []
+        if show_links:
+            link_list = list(LINK_CACHE.get(group_id, []))
+        else:
+            link_list = []
+        if show_history:
+            hist_list = list(HISTORY)
+        else:
+            hist_list = []
+
     for idx, item in enumerate(file_list):
         ck = item.get('content_key', '')
-        path = CONTENT_INDEX.get(ck, '')
-        items.append({
+        path_cached = CONTENT_INDEX.get(ck, '')
+        file_items.append({
             'index': idx,
             'file_id': str(item.get('file_id', '')),
             'name': str(item.get('name', '')),
             'text_chars': safe_int(item.get('text_chars', 0), 0),
             'text_bytes': safe_int(item.get('text_bytes', 0), 0),
             'ts': safe_int(item.get('ts', 0), 0),
-            'cached': bool(path and os.path.exists(path)),
+            'cached': bool(path_cached and os.path.exists(path_cached)),
             'content_key': ck,
+            'content_url': item.get('content_url', ''),
+            '_type': 'file',
+        })
+
+    for idx, item in enumerate(link_list):
+        ck = item.get('content_key', '')
+        path_cached = CONTENT_INDEX.get(ck, '')
+        link_items.append({
+            'index': idx,
+            'url': str(item.get('url', '')),
+            'name': str(item.get('name', '')),
+            'text_chars': safe_int(item.get('text_chars', 0), 0),
+            'text_bytes': safe_int(item.get('text_bytes', 0), 0),
+            'ts': safe_int(item.get('ts', 0), 0),
+            'cached': bool(path_cached and os.path.exists(path_cached)),
+            'content_key': ck,
+            'content_url': item.get('content_url', ''),
+            '_type': 'link',
+        })
+
+    for idx, item in enumerate(hist_list):
+        ck = item.get('content_key', '')
+        path_cached = CONTENT_INDEX.get(ck, '')
+        history_items.append({
+            'index': idx,
+            'name': str(item.get('name', '')),
+            'url': str(item.get('url', '')),
+            'text_chars': safe_int(item.get('text_chars', 0), 0),
+            'ts': safe_int(item.get('_evicted_ts', item.get('ts', 0)), 0),
+            'cached': bool(path_cached and os.path.exists(path_cached)),
+            'content_key': ck,
+            'content_url': item.get('content_url', ''),
+            '_type': item.get('_type', 'file'),
         })
 
     return jsonify({
         'status': 'ok',
         'group_id': group_id,
-        'total': len(items),
-        'files': items,
+        'total': len(file_items),
+        'files': file_items,
+        'links': link_items,
+        'link_count': len(link_items),
+        'history': history_items,
+        'history_count': len(history_items),
         'poll_active': group_id in BRIDGE_POLL_GROUPS,
     })
 
@@ -5122,35 +5734,7 @@ def export_log_text(log_obj, del_paren=False):
     group_id_int = safe_int(group_id_str, 0) if group_id_str else 0
     with STATE_LOCK:
         CONTENT_INDEX[key] = out_path
-        # Also register in bridge file list so .logai can discover exported logs
-        if group_id_int > 0:
-            bridge_item = {
-                "group_id": group_id_int,
-                "file_id": f"logutil-export-{key[:8]}",
-                "busid": 0,
-                "name": f"{log_obj.get('name', 'log')} (logutil export)",
-                "user_id": 0,
-                "ts": cached_ts,
-                "source_ts": cached_ts,
-                "cached_ts": cached_ts,
-                "content_key": key,
-                "content_url": content_url,
-                "text_filename": text_filename,
-                "text_chars": len(full_text),
-                "text_bytes": os.path.getsize(out_path),
-            }
-            if group_id_int not in LATEST_FILES:
-                LATEST_FILES[group_id_int] = []
-            LATEST_FILES[group_id_int].append(bridge_item)
-            while len(LATEST_FILES[group_id_int]) > MAX_BRIDGE_FILES_PER_GROUP:
-                removed = LATEST_FILES[group_id_int].pop(0)
-                removed_key = str(removed.get("content_key", ""))
-                removed_path = CONTENT_INDEX.pop(removed_key, "")
-                if removed_path and os.path.exists(removed_path):
-                    try:
-                        os.remove(removed_path)
-                    except Exception:
-                        pass
+    # v4.4.0: export_log_text 不再注册到 LATEST_FILES 中（避免与 send_log_via_napcat 重复）
     return text_filename, content_url
 
 
@@ -5777,22 +6361,53 @@ def api_logutil_end():
 
 # ====== NapCat 消息/文件发送 (fwlog-style logutil end) ======
 
+def _parse_bridge_ref(ref_str):
+    """v4.4.0: 解析 '[file]-3', '[link]-1', '[history]-5' 为 ('file', 3) 等。"""
+    m = re.match(r'^\[(file|link|history)\]-(\d+)$', str(ref_str).strip(), re.I)
+    if m:
+        return m.group(1).lower(), int(m.group(2))
+    return None, -1
+
+
 @app.route('/api/bridge_get', methods=['POST'])
 def api_bridge_get():
-    """.bridge get 后端：读取桥接缓存文件并通过 NapCat 上传到群。
-    接受 {group_id, index}，返回上传结果。"""
+    """v4.4.0: .bridge get 后端：支持 [file]-N/[link]-N/[history]-N 格式。
+    接受 {group_id, ref 或 index, type}，返回上传结果。"""
     payload = request.get_json(silent=True) or {}
     group_id = safe_int(payload.get('group_id', 0), 0)
+    ref_str = str(payload.get('ref') or '').strip()
     index = safe_int(payload.get('index', -1), -1)
+    ref_type = str(payload.get('type', 'file')).lower()
+
+    # Parse ref if provided (e.g. "[file]-3")
+    if ref_str:
+        parsed_type, parsed_idx = _parse_bridge_ref(ref_str)
+        if parsed_type:
+            ref_type = parsed_type
+            index = parsed_idx
+
     if group_id <= 0 or index < 0:
-        return jsonify({'status': 'error', 'msg': 'missing group_id or index'}), 400
+        return jsonify({'status': 'error', 'msg': 'missing group_id or ref'}), 400
 
-    with STATE_LOCK:
-        file_list = list(LATEST_FILES.get(group_id, []))
-    if index >= len(file_list):
-        return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(file_list)-1})'}), 404
+    if ref_type == 'history':
+        with STATE_LOCK:
+            hist_list = list(HISTORY)
+        if index >= len(hist_list):
+            return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(hist_list)-1})'}), 404
+        item = hist_list[index]
+    elif ref_type == 'link':
+        with STATE_LOCK:
+            link_list = list(LINK_CACHE.get(group_id, []))
+        if index >= len(link_list):
+            return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(link_list)-1})'}), 404
+        item = link_list[index]
+    else:
+        with STATE_LOCK:
+            file_list = list(LATEST_FILES.get(group_id, []))
+        if index >= len(file_list):
+            return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(file_list)-1})'}), 404
+        item = file_list[index]
 
-    item = file_list[index]
     ck = str(item.get('content_key', ''))
     with STATE_LOCK:
         path = CONTENT_INDEX.get(ck, '')
@@ -5803,10 +6418,80 @@ def api_bridge_get():
     txt_name = f"{base_name}.txt"
     file_sent, result = napcat_upload_group_file(group_id, path, txt_name)
     if file_sent:
-        bridge_log("bridge_get", f"uploaded group={group_id} file={txt_name}")
+        bridge_log("bridge_get", f"uploaded type={ref_type} group={group_id} file={txt_name}")
         return jsonify({'status': 'ok', 'file_sent': True, 'filename': txt_name})
     return jsonify({'status': 'error', 'file_sent': False,
                     'msg': str(result.get('error', str(result)) if isinstance(result, dict) else result)})
+
+
+@app.route('/api/bridge_del', methods=['POST'])
+def api_bridge_del():
+    """v4.4.0: .bridge del 后端：删除指定桥接项。
+    接受 {group_id, targets: ["[file]-3", "[link]-1", "[history]-5"]}。
+    从后向前处理目标以保证索引正确。"""
+    if not check_auth_with_query(request):
+        return jsonify({'status': 'unauthorized'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    targets = payload.get('targets', [])
+    if group_id <= 0 or not targets:
+        return jsonify({'status': 'error', 'msg': 'missing group_id or targets'}), 400
+
+    deleted = []
+    errors = []
+
+    with STATE_LOCK:
+        file_list = LATEST_FILES.get(group_id, [])
+        link_list = LINK_CACHE.get(group_id, [])
+        hist_list = list(HISTORY)
+
+        # Sort targets by index descending (highest first) for safe deletion
+        parsed_targets = []
+        for t in targets:
+            ptype, pidx = _parse_bridge_ref(str(t).strip())
+            if ptype:
+                parsed_targets.append((ptype, pidx, str(t).strip()))
+            else:
+                errors.append(f'{t}: 无效的引用格式（应为 [file]-N / [link]-N / [history]-N）')
+        parsed_targets.sort(key=lambda x: x[1], reverse=True)
+
+        for ptype, pidx, raw_ref in parsed_targets:
+            if ptype == 'file':
+                if 0 <= pidx < len(file_list):
+                    item = file_list.pop(pidx)
+                    ck = str(item.get('content_key', ''))
+                    CONTENT_INDEX.pop(ck, '')
+                    deleted.append(raw_ref)
+                else:
+                    errors.append(f'{raw_ref}: 索引超出范围 (0~{len(file_list)-1})')
+            elif ptype == 'link':
+                if 0 <= pidx < len(link_list):
+                    item = link_list.pop(pidx)
+                    ck = str(item.get('content_key', ''))
+                    CONTENT_INDEX.pop(ck, '')
+                    deleted.append(raw_ref)
+                else:
+                    errors.append(f'{raw_ref}: 索引超出范围 (0~{len(link_list)-1})')
+            elif ptype == 'history':
+                if 0 <= pidx < len(hist_list):
+                    item = hist_list.pop(pidx)
+                    ck = str(item.get('content_key', ''))
+                    CONTENT_INDEX.pop(ck, '')
+                    deleted.append(raw_ref)
+                else:
+                    errors.append(f'{raw_ref}: 索引超出范围 (0~{len(hist_list)-1})')
+
+        # Apply changes back to HISTORY
+        HISTORY[:] = hist_list
+
+    # Clean up disk files (outside lock)
+    for ptype, pidx, raw_ref in parsed_targets:
+        if raw_ref in deleted:
+            # disk cleanup already handled by CONTENT_INDEX removal
+            pass
+
+    return jsonify({'status': 'ok', 'deleted': deleted, 'errors': errors})
 
 
 def napcat_send_group_msg(group_id, text):
@@ -5905,20 +6590,16 @@ def send_log_via_napcat(log_obj, group_id, full_text=None):
                 "text_filename": txt_name,
                 "text_chars": len(content),
                 "text_bytes": os.path.getsize(out_path),
+                "_type": "file",
             }
             with STATE_LOCK:
                 if group_id_int not in LATEST_FILES:
                     LATEST_FILES[group_id_int] = []
                 LATEST_FILES[group_id_int].append(bridge_item)
+                # v4.4.0: evict overflow to history
                 while len(LATEST_FILES[group_id_int]) > MAX_BRIDGE_FILES_PER_GROUP:
                     removed = LATEST_FILES[group_id_int].pop(0)
-                    removed_key = str(removed.get("content_key", ""))
-                    removed_path = CONTENT_INDEX.pop(removed_key, "")
-                    if removed_path and os.path.exists(removed_path):
-                        try:
-                            os.remove(removed_path)
-                        except Exception:
-                            pass
+                    _evict_to_history(removed, 'file')
 
         return file_sent, napcat_result, public_url
 
@@ -6583,6 +7264,96 @@ async def process_ws_messages():
                             else:
                                 ws_log(f"[file]-N ignored: group not recording, group_id={group_id}")
                         continue
+                    # --- v4.4.0: [link]-N command: append bridge-cached link text to current log ---
+                    link_idx_match = re.match(r'^\[link\]-(\d+)\s*$', text, re.IGNORECASE)
+                    if link_idx_match:
+                        group_id = str(msg.get("group_id") or "")
+                        if group_id:
+                            gs = ensure_logutil_group_state(group_id)
+                            if gs.get("recording") and gs.get("current_log_name"):
+                                link_idx = int(link_idx_match.group(1))
+                                with STATE_LOCK:
+                                    link_list = list(LINK_CACHE.get(safe_int(group_id, 0), []))
+                                if 0 <= link_idx < len(link_list):
+                                    link_item = link_list[link_idx]
+                                    ck = link_item.get("content_key", "")
+                                    with STATE_LOCK:
+                                        disk_path = CONTENT_INDEX.get(ck, "")
+                                    if disk_path and os.path.exists(disk_path):
+                                        try:
+                                            with open(disk_path, "r", encoding="utf-8") as f:
+                                                file_text = f.read()
+                                            sender_name = (
+                                                (msg.get("sender") or {}).get("card")
+                                                or (msg.get("sender") or {}).get("nickname")
+                                                or f"QQ:{msg.get('sender', {}).get('user_id', '')}"
+                                                or "Unknown"
+                                            )
+                                            sender_id = str((msg.get("sender") or {}).get("user_id") or msg.get("user_id") or "")
+                                            event_ts = safe_int(msg.get("time"), int(time.time()))
+                                            items = await extract_items_from_text_chunk(
+                                                file_text,
+                                                sender_name,
+                                                sender_id,
+                                                event_ts,
+                                                f"link-cmd:{link_idx}:{link_item.get('url', '')}",
+                                                group_id,
+                                            )
+                                            if items:
+                                                log_obj = ensure_logutil_log(group_id, gs["current_log_name"])
+                                                _, new_n = add_logutil_items(log_obj["id"], items)
+                                                ws_log(
+                                                    f"[link]-{link_idx} 追加 {len(items)} 条, "
+                                                    f"当前 {new_n} 条, url={link_item.get('url', '')[:60]}"
+                                                )
+                                                napcat_json_post(
+                                                    "send_group_msg",
+                                                    {
+                                                        "group_id": int(group_id),
+                                                        "message": f"[link]-{link_idx} 已追加 {len(items)} 条: {link_item.get('url', '')[:50]} (当前共 {new_n} 条)",
+                                                    },
+                                                    timeout_sec=10,
+                                                )
+                                            else:
+                                                napcat_json_post(
+                                                    "send_group_msg",
+                                                    {
+                                                        "group_id": int(group_id),
+                                                        "message": f"[link]-{link_idx} 文件中未提取到可用条目: {link_item.get('url', '')[:50]}",
+                                                    },
+                                                    timeout_sec=10,
+                                                )
+                                        except Exception as e:
+                                            ws_log(f"[link]-{link_idx} 读取失败: {e}")
+                                            napcat_json_post(
+                                                "send_group_msg",
+                                                {
+                                                    "group_id": int(group_id),
+                                                    "message": f"[link]-{link_idx} 读取失败: {e}",
+                                                },
+                                                timeout_sec=10,
+                                            )
+                                    else:
+                                        napcat_json_post(
+                                            "send_group_msg",
+                                            {
+                                                "group_id": int(group_id),
+                                                "message": f"[link]-{link_idx} 缓存文件不存在",
+                                            },
+                                            timeout_sec=10,
+                                        )
+                                else:
+                                    napcat_json_post(
+                                        "send_group_msg",
+                                        {
+                                            "group_id": int(group_id),
+                                            "message": f"[link]-{link_idx} 超出范围 (当前缓存 0~{len(link_list)-1})",
+                                        },
+                                        timeout_sec=10,
+                                    )
+                            else:
+                                ws_log(f"[link]-N ignored: group not recording, group_id={group_id}")
+                        continue
                     await handle_ws_recording_event(msg)
         except Exception as e:
             ws_log(f"处理消息时发生错误: {e}")
@@ -6637,7 +7408,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogAI 4.3.4 - TRPG Log Analysis Server')
+    parser = argparse.ArgumentParser(description='LogAI 4.4.0 - TRPG Log Analysis Server')
     parser.add_argument('--api-key', type=str, default=None, help='OpenAI / DeepSeek API Key')
     parser.add_argument('--api-base-url', type=str, default=None, help=f'OpenAI-compatible API base URL (default: {AI_BASE_URL})')
     parser.add_argument('--ai-model', type=str, default=None, help=f'Default AI model (default: {AI_MODEL})')
@@ -6696,6 +7467,10 @@ if __name__ == '__main__':
     disable_quick_edit()
     if not os.path.exists("./fonts"): os.makedirs("./fonts")
     ensure_bridge_cache_dir()
+    # v4.4.0: 恢复历史桥接记录
+    load_history()
+    # v4.4.0: 注册退出回调 — 将所有缓存移入历史
+    atexit.register(shutdown_handler)
     ensure_worker_started()
     ensure_poll_worker_started()
     if LOGUTIL_WS_ENABLED:
