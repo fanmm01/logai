@@ -2,7 +2,7 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogAI 4.3.3 - TRPG Log Analysis Server"
+echo "  LogAI 4.3.4 - TRPG Log Analysis Server"
 echo "============================================"
 echo ""
 
@@ -45,6 +45,7 @@ PBS_REPO="astral-sh/python-build-standalone"
 
 USE_MIRROR=1
 MIRROR_URLS=(
+    "https://gitee.com/masx200/python-build-standalone/releases/download"
     "https://ghproxy.cc/https://github.com/${PBS_REPO}/releases/download"
     "https://mirror.ghproxy.com/https://github.com/${PBS_REPO}/releases/download"
 )

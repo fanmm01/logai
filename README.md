@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.3.3**  
+**V4.3.4**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -27,8 +27,8 @@ fwlog功能部分原作者：@chaye2333
 - 测试中使用linux环境，故windows下可能存在未经发现的漏洞。
 - 可能有任何bug出现，届时请在github上进行反应。
 - 修改时为vibe coding，可能含有ai创作的差代码。
-- 本插件已知适用于napcat分离部署架构。
-  对于其余架构，如llob等，其可用性未知，可能需要自行修改插件源码。
+- 本插件已知适用于napcat分离部署架构。确认了LLBot下的可用性。
+  对于其余架构，其可用性未知，可能需要自行修改插件源码。
 
 ---
 
@@ -65,8 +65,7 @@ b) 文件编号/名称。目前，支持的包括：
 将桥接缓存中的文件提交给AI进行分析，提示词为输入的`prompt`。支持任何可展开为文本的文件格式（.py, .c, .js, .txt, .log 等）。  
 file1-fileN 只能是 `[file]-N` 的格式，而不能是文件名及其部分。  
 在不提供任何文件时，仅把prompt交给AI，不携带文件。  
-等价于 `.logai 配置 新建 test prompt` + `.logai test [file1] …… [fileN]`，但该临时配置不会被保存。  
-（`.ai` 作为别名保留，向下兼容。）
+等价于 `.logai 配置 新建 test prompt` + `.logai test [file1] …… [fileN]`，但该临时配置不会被保存。
 
 `.模组分析 [file1] …… [fileN] [配置名] [pro] [ai] [主题] [get_text]`  
 分析模组文件。支持 `[file]-N` 编号、文件名及其部分匹配。不指定文件时默认使用最新群文件。
@@ -232,3 +231,9 @@ logutil支持识别以下种类的消息头：
 **v4.3.3**  
 1. 修复 `raw` 修饰符无效的问题：`raw` 出现在 `logutil` 后第一或第二字段时正确识别为修饰符，不再被误当作日志名称或录入文本。
 2. `.translate` 翻译结果统一以 `.txt` 扩展名发送（因桥接已将原文统一转为纯文本，保留原扩展名无意义）。
+
+**v4.3.4**  
+1. 移除 `.ai` 作为 `.aiutil` 的别名，避免与其他插件命名冲突。
+2. 修复 Windows 启动脚本 `run_logai.bat` 的编码、Python 路径嵌套、依赖安装失败等问题。
+3. Python 下载源新增 Gitee 镜像（`https://gitee.com/masx200/python-build-standalone`）作为首选。
+4. 确认 LLBot 架构下的可用性。

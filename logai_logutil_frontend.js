@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.3.3
+// @version      4.3.4
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.3.3');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.3.4');
     seal.ext.register(ext);
 }
 
@@ -994,7 +994,6 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
     return seal.ext.newCmdExecuteResult(true);
 };
 ext.cmdMap['aiutil'] = cmdAiutil;
-ext.cmdMap['ai'] = cmdAiutil;  // .ai 作为 .aiutil 的别名（向下兼容）
 // 新命令：logutil（对接后端 /api/logutil_*）
 const cmdLogUtil = seal.ext.newCmdItemInfo();
 cmdLogUtil.name = 'logutil';
@@ -1047,7 +1046,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     let op = (tokens[0] || '').toLowerCase();
     let rawArgs = tokens.slice(1);
-    // raw 作为修饰符应被排除在名称/内容之外（v4.3.3: 仅当 logutil 后第一个非命令字段为 raw 时生效）
+    // raw 作为修饰符应被排除在名称/内容之外（v4.3.4: 仅当 logutil 后第一个非命令字段为 raw 时生效）
     let raw_mode = (tokens[0] || '').toLowerCase() === 'raw' || (tokens.length > 1 && (tokens[1] || '').toLowerCase() === 'raw');
     let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw'].includes((a || '').toLowerCase())) || '';
 
@@ -2203,7 +2202,7 @@ cmdRefine.solve = async (ctx, msg, cmdArgs) => {
 ext.cmdMap['模组完善'] = cmdRefine;
 ext.cmdMap['完善模组'] = cmdRefine;
 
-console.log('用户脚本：log-analyzer v4.3.3 loaded (with module-analyzer merged)');
+console.log('用户脚本：log-analyzer v4.3.4 loaded (with module-analyzer merged)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {
