@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogAI 4.4.0 - TRPG Log Analysis Server
+echo   LogAI 4.4.2 - TRPG Log Analysis Server
 echo ============================================
 echo.
 
@@ -150,9 +150,7 @@ if not "%CFG_WS_ENABLED%"==""         set CLI_ARGS=%CLI_ARGS% --ws-enabled "%CFG
 if not "%CFG_BRIDGE_MODE%"==""        set CLI_ARGS=%CLI_ARGS% --bridge-mode "%CFG_BRIDGE_MODE%"
 
 :: --- Launch server ---
-echo [INFO] Starting LogAI server...
+echo [INFO] Starting LogAI server (Ctrl+C to stop)...
 echo.
 cd /d "%~dp0"
-%PYTHON_EXE% logai_server_release.py %CLI_ARGS% %*
-
-pause
+<NUL ( %PYTHON_EXE% logai_server_release.py %CLI_ARGS% %* )
