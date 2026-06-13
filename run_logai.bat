@@ -44,7 +44,7 @@ set MIRROR2=https://mirror.ghproxy.com/https://github.com/%PBS_REPO%/releases/do
 set DIRECT_URL=https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
 
 :: --- Locate or install Python ---
-set PYTHON_DIR=%~dp0python\python
+set PYTHON_DIR=%~dp0python
 set PYTHON_EXE=%PYTHON_DIR%\python.exe
 
 if exist "%PYTHON_EXE%" (
@@ -88,7 +88,8 @@ if !DOWNLOAD_SUCCESS! equ 0 (
 )
 
 echo [INFO] Extracting Python to %PYTHON_DIR% ...
-tar -xf "%PYTHON_ARCHIVE%" -C "%PYTHON_DIR%" 2>nul
+:: --strip-components=1 removes the top-level directory inside the archive (matching .sh behavior)
+tar -xf "%PYTHON_ARCHIVE%" -C "%PYTHON_DIR%" --strip-components=1 2>nul
 if !errorlevel! neq 0 (
     powershell -Command "Expand-Archive -Path '%PYTHON_ARCHIVE%' -DestinationPath '%PYTHON_DIR%' -Force" 2>nul
 )
@@ -115,10 +116,11 @@ echo [INFO] Python version:
 echo.
 
 echo [INFO] Installing dependencies (using Tsinghua mirror)...
-%PYTHON_EXE% -m pip install -q --disable-pip-version-check ^
+%PYTHON_EXE% -m ensurepip --upgrade 2>nul
+%PYTHON_EXE% -m pip install --disable-pip-version-check ^
     -i https://pypi.tuna.tsinghua.edu.cn/simple/ ^
     --trusted-host pypi.tuna.tsinghua.edu.cn ^
-    flask requests pillow openai python-docx PyPDF2 pymupdf websockets 2>nul
+    flask requests pillow openai python-docx PyPDF2 pymupdf websockets
 
 if !errorlevel! equ 0 (
     echo [OK] Dependencies ready
