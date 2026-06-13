@@ -44,7 +44,7 @@ set MIRROR2=https://mirror.ghproxy.com/https://github.com/%PBS_REPO%/releases/do
 set DIRECT_URL=https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
 
 :: --- Locate or install Python ---
-set PYTHON_DIR=%~dp0python
+set PYTHON_DIR=%~dp0python\python
 set PYTHON_EXE=%PYTHON_DIR%\python.exe
 
 if exist "%PYTHON_EXE%" (
