@@ -1,4 +1,4 @@
-# LogAI v4.3.4 — 全功能架构流程图
+# LogAI v4.4.0 — 全功能架构流程图
 
 ## 一、系统总览
 
@@ -20,10 +20,14 @@
 │  命令入口:                            │
 │  ├─ .logai     日志分析              │
 │  ├─ .aiutil    快速AI (v4.2新增)     │
+│  ├─ .halt      停止AI生成 (v4.4新增) │
 │  ├─ .logutil   日志录制管理           │
 │  ├─ .bridge    群文件桥接控制         │
-│  │   └─ .bridge get N (v4.3新增)     │
+│  │   ├─ .bridge get [file]-N/[link]-N/[history]-N │
+│  │   ├─ .bridge del [file]-N ... (v4.4新增)       │
+│  │   └─ .bridge list [file|link|history] (v4.4)   │
 │  ├─ .translate 文件翻译 (v4.2新增)    │
+│  │   └─ goal-ALL 模式 (v4.4新增)     │
 │  ├─ .模组分析  模组评价              │
 │  ├─ .模组备团  备团梳理              │
 │  ├─ .模组完善  模组润色              │
@@ -45,15 +49,21 @@
 │  ├─ AI分析 (DeepSeek API)            │
 │  ├─ 图片渲染 (PIL/NovaAI)            │
 │  ├─ 文件桥接 (NapCat File Bridge)     │
+│  ├─ 链接缓存 (LINK_CACHE, v4.4新增)  │
+│  ├─ 历史记录 (HISTORY, v4.4新增)      │
+│  ├─ 任务取消 (CANCEL_FLAGS, v4.4新增) │
 │  ├─ 日志管理 (logutil SQLite)         │
-│  ├─ 翻译服务                          │
+│  ├─ 翻译服务 (含 goal-ALL, v4.4)      │
+│  ├─ Web GUI (v4.4新增)               │
 │  ├─ 百度网盘搜索                      │
 │  └─ WebSocket实时监听                 │
 │                                      │
 │  关键参数:                            │
 │  ├─ MAX_FILE_MB = 150                │
+│  ├─ MAX_BRIDGE_FILES_PER_GROUP = 20  │
+│  ├─ MAX_BRIDGE_LINKS_PER_GROUP = 30  │
+│  ├─ MAX_HISTORY_ITEMS = 50           │
 │  ├─ MAX_AI_CHARS = 3,000,000         │
-│  ├─ MAX_LOG_ENTRIES = 20,000         │
 │  └─ NC_FILE_BRIDGE_MODE (0/1)        │
 └──────────────────────────────────────┘
 ```
@@ -619,3 +629,16 @@ Python便携环境 (python-build-standalone):
 | 4.3.4 | 13 | .bat修复 | 编码/Python路径嵌套/依赖安装/注释编码 |
 | 4.3.4 | 14 | Gitee镜像 | Python下载首选Gitee镜像 |
 | 4.3.4 | 15 | LLBot兼容 | 确认LLBot架构下可用性 |
+| 4.4.0 | 1 | 防刷屏机制 | 滑动窗口限速，可配置时限(60s)与上限(6次)，仅限.logai/.aiutil |
+| 4.4.0 | 2 | 链接缓存 [link]-N | 着色器链接文本自动保存至桥接，独立编号，上限30 |
+| 4.4.0 | 3 | Web GUI | `/bridge/gui/<group_id>` 表格展示file/link/history，含命令输入框 |
+| 4.4.0 | 4 | 历史记录系统 | 溢出项/关闭前移入HISTORY，持久化history.json，上限50 |
+| 4.4.0 | 5 | `.bridge del` | 删除指定[file]-N/[link]-N/[history]-N，索引自动顺延 |
+| 4.4.0 | 6 | `.bridge get` 格式 | 支持[file]-N/[link]-N/[history]-N格式 |
+| 4.4.0 | 7 | 短别名 F14/L0/H23 | 等价于[file]-14/[link]-0/[history]-23 |
+| 4.4.0 | 8 | `.halt` 命令 | 强制停止群内所有进行中AI任务（仅骰主） |
+| 4.4.0 | 9 | logutil end去重 | export_log_text不再注册到LATEST_FILES，避免双条目 |
+| 4.4.0 | 10 | bridge list 分列 | file/link分两条消息显示，支持filter参数 |
+| 4.4.0 | 11 | "仅骰主可用"标注 | 所有下载链接后追加提示 |
+| 4.4.0 | 12 | goal-ALL翻译 | 分块逐句翻译，每10s上传至TextDB.online |
+| 4.4.0 | 13 | 文档更新 | README与ARCHITECTURE更新至v4.4.0 |
