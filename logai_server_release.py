@@ -6179,6 +6179,7 @@ def api_logutil_compound():
     do_new = bool(payload.get('new'))
     do_end = bool(payload.get('end'))
     do_logai = bool(payload.get('logai'))
+    raw_mode = bool(payload.get('raw'))
     title = str(payload.get('title') or '').strip()
     ops = payload.get('ops') or []
     if not isinstance(ops, list):
@@ -6195,7 +6196,8 @@ def api_logutil_compound():
         with STATE_LOCK:
             LOG_IMPORTED_FILES.pop(log_id_str, None)
         update_logutil_log_meta(log_obj['id'], ended=0)
-        update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1)
+        update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1,
+                                   raw_recording=1 if raw_mode else 0)
         capture_baseline_file_id(group_id)
         # Register for polling
         gid_int = safe_int(group_id, 0)
@@ -6218,7 +6220,8 @@ def api_logutil_compound():
             with STATE_LOCK:
                 LOG_IMPORTED_FILES.pop(log_id_str, None)
             update_logutil_log_meta(log_obj['id'], ended=0)
-            update_logutil_group_state(group_id, current_log_name=name, recording=1)
+            update_logutil_group_state(group_id, current_log_name=name, recording=1,
+                                       raw_recording=1 if raw_mode else 0)
             capture_baseline_file_id(group_id)
             gid_int = safe_int(group_id, 0)
             if gid_int > 0:
@@ -6632,12 +6635,12 @@ def napcat_upload_group_file(group_id, file_path, name):
 
 
 def resolve_public_base_or_fallback():
-    """返回当前请求的 public_base，若不可用则返回默认配置值。"""
+    """返回当前请求的 public_base，若不可用或为 loopback 则返回 LAN IP 默认值。"""
     try:
         from flask import has_request_context
         if has_request_context() and request:
             host_url = (request.host_url or '').rstrip('/')
-            if host_url:
+            if host_url and not is_loopback_base(host_url):
                 return host_url
     except Exception:
         pass
