@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogAI 4.3.3 - TRPG Log Analysis Server
+echo   LogAI 4.3.4 - TRPG Log Analysis Server
 echo ============================================
 echo.
 
@@ -39,8 +39,9 @@ set PBS_REPO=astral-sh/python-build-standalone
 set PBS_FILENAME=cpython-3.11.14+%PBS_TAG%-x86_64-pc-windows-msvc-install_only.tar.gz
 
 :: Mirror URLs (tried in order)
-set MIRROR1=https://ghproxy.cc/https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
-set MIRROR2=https://mirror.ghproxy.com/https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
+set MIRROR1=https://gitee.com/masx200/python-build-standalone/releases/download/%PBS_TAG%/%PBS_FILENAME%
+set MIRROR2=https://ghproxy.cc/https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
+set MIRROR3=https://mirror.ghproxy.com/https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
 set DIRECT_URL=https://github.com/%PBS_REPO%/releases/download/%PBS_TAG%/%PBS_FILENAME%
 
 :: --- Locate or install Python ---
@@ -61,7 +62,7 @@ set PYTHON_ARCHIVE=%TEMP%\python-portable.tar.gz
 if not exist "%PYTHON_DIR%" mkdir "%PYTHON_DIR%"
 
 set DOWNLOAD_SUCCESS=0
-for %%M in ("%MIRROR1%" "%MIRROR2%" "%DIRECT_URL%") do (
+for %%M in ("%MIRROR1%" "%MIRROR2%" "%MIRROR3%" "%DIRECT_URL%") do (
     if !DOWNLOAD_SUCCESS! equ 0 (
         echo [INFO] Trying: %%~M
         powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%%~M' -OutFile '%PYTHON_ARCHIVE%'}" 2>nul
