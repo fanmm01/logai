@@ -16,18 +16,18 @@ fwlog功能部分原作者：@chaye2333
 2. 将前端 `logai_logutil_frontend.js` 文件导入海豹插件列表中；
 3. 找到后端的启动器：
    - linux/Mac: `run_logai.sh`
-   - windows: `run_logai.bat`（未经过测试）
+   - windows: `run_logai.bat`
    （安卓请在termux内执行sh文件）
    随后，如文件对应的注释般，编辑其配置部分；
    该脚本会自动执行缺失依赖的补齐并最终启动。
-   推荐的启动脚本为（以linux为例，在cd到当前目录后）："bash ./run_logai.sh --api-key=sk-xxxxxxxxxxxxx"。这样会获得更高的安全性。
+   推荐的启动脚本为（以linux为例，在cd到当前目录后）："bash ./run_logai.sh --api-key=sk-xxxxxxxxxxxxx"。这样会获得更高的安全性和分发的灵活性。
 
 ## 注意事项：
-- 本插件缺乏足够的测试，且未经检验其跨平台能力。
-- 测试中使用linux环境，故windows下可能存在未经发现的漏洞。
-- 可能有任何bug出现，届时请在github上进行反应。
+- 本插件缺乏足够且全面的测试，且未经检验其跨平台能力。
+- 大部分测试中使用linux环境、napcat分离部署。故windows下以及LLBot下可能存在未经发现的漏洞。
+- 可能有任何bug出现，届时请在github上进行反映。
 - 修改时为vibe coding，可能含有ai创作的差代码。
-- 本插件已知适用于napcat分离部署架构。确认了LLBot下的可用性。
+- 本插件已知适用于napcat分离部署架构。确认了LLBot下基础功能的可用性。
   对于其余架构，其可用性未知，可能需要自行修改插件源码。
 
 ---
