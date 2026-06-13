@@ -24,6 +24,7 @@ import base64
 import zlib
 import re
 import uuid
+import socket
 import platform
 import ctypes
 import threading
@@ -178,11 +179,51 @@ BAIDU_TOKEN_FILE = "baidu_token.json"    # 用于持久化保存token的文件
 LOGAI_HOST = os.getenv("LOGAI_HOST", "0.0.0.0")
 LOGAI_PORT = int(os.getenv("LOGAI_PORT", "8000"))
 
+
+def get_lan_ip():
+    """Detect the server's LAN IP address. Falls back to 127.0.0.1."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        s.connect(('8.8.8.8', 53))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith('127.'):
+            return ip
+    except Exception:
+        pass
+    # Fallback: iterate interfaces
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            ip_str = str(ip)                # 强制转 str，消除类型歧义
+            if ip_str and not ip_str.startswith('127.'):
+                return ip_str
+    except Exception:
+        pass
+    return '127.0.0.1'
+
+
+def sanitize_body_for_log(body):
+    """Replace base64 blobs with truncated markers for safe logging."""
+    if not isinstance(body, dict):
+        return str(body)
+    safe = {}
+    for k, v in body.items():
+        s = str(v)
+        if s.startswith('base64://') and len(s) > 200:
+            safe[k] = f'base64://<...{len(s)-9} chars truncated...>'
+        else:
+            safe[k] = v
+    return safe
+
+
 BRIDGE_TOKEN = os.getenv("BRIDGE_TOKEN", "")
 BRIDGE_TTL_SEC = int(os.getenv("BRIDGE_TTL_SEC", "86400"))
 MAX_BRIDGE_FILES_PER_GROUP = int(os.getenv("MAX_BRIDGE_FILES_PER_GROUP", "10"))
 BRIDGE_CACHE_DIR = os.getenv("BRIDGE_CACHE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance", "napcat_file_bridge"))
-BRIDGE_PUBLIC_BASE = os.getenv("BRIDGE_PUBLIC_BASE", f"http://127.0.0.1:{LOGAI_PORT}").rstrip("/")
+BRIDGE_PUBLIC_BASE = os.getenv("BRIDGE_PUBLIC_BASE", f"http://{get_lan_ip()}:{LOGAI_PORT}").rstrip("/")
 NAPCAT_API_BASE = os.getenv("NAPCAT_API_BASE", "http://127.0.0.1:8084").rstrip("/")
 NAPCAT_API_BASES_RAW = os.getenv("NAPCAT_API_BASES", "").strip()
 NAPCAT_TOKEN = os.getenv("NAPCAT_TOKEN", "1")
@@ -229,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.0"
+SERVICE_VERSION = "4.4.2"
 _openai_client = None
 
 def get_openai_client():
@@ -559,31 +600,31 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
         raw_text = fetch_kokona(resolved_key)
         result = format_raw_text(raw_text)
         if result and gid_for_cache > 0:
-            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+            write_link_cache(gid_for_cache, resolved_key, result)
         return result
     if resolved_source == "trpgbot":
         raw_text = fetch_trpgbot(resolved_key)
         result = format_raw_text(raw_text)
         if result and gid_for_cache > 0:
-            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+            write_link_cache(gid_for_cache, resolved_key, result)
         return result
     if resolved_source == "raw_url":
         raw_text = fetch_raw_url(resolved_key)
         result = format_raw_text(raw_text)
         if result and gid_for_cache > 0:
-            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+            write_link_cache(gid_for_cache, resolved_key, result)
         return result
     if resolved_source == "dice_zone":
         raw_text = fetch_dice_zone(resolved_key, resolved_password)
         result = format_weizaima_text(raw_text)
         if result and gid_for_cache > 0:
-            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+            write_link_cache(gid_for_cache, resolved_key, result)
         return result
     if resolved_source == "weizaima":
         raw_text = fetch_weizaima(resolved_key, resolved_password)
         result = format_weizaima_text(raw_text)
         if result and gid_for_cache > 0:
-            write_link_cache(gid_for_cache, resolved_key, raw_text or result)
+            write_link_cache(gid_for_cache, resolved_key, result)
         return result
 
     # --- logai bridge extensions (not present in fwlog) ---
@@ -750,11 +791,9 @@ def background_process_direct_text(job_id, direct_text, is_pro=False, is_kind=Fa
                 with STATE_LOCK:
                     CONTENT_INDEX[text_key] = text_path
                 public_base = resolve_public_base_or_fallback()
-                text_url = build_content_url(text_key, public_base=public_base)
-                JOB_CACHE[job_id]['text_url'] = text_url
                 JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
-                print(f"[{job_id}] get_text 文件已保存: {text_url}")
+                print(f"[{job_id}] get_text 文件已保存: {safe_filename}")
                 # 自动上传到群（仿 send_log_via_napcat 机制）
                 if group_id > 0:
                     try:
@@ -908,11 +947,9 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
                 with STATE_LOCK:
                     CONTENT_INDEX[text_key] = text_path
                 public_base = resolve_public_base_or_fallback()
-                text_url = build_content_url(text_key, public_base=public_base)
-                JOB_CACHE[job_id]['text_url'] = text_url
                 JOB_CACHE[job_id]['text_key'] = text_key
                 JOB_CACHE[job_id]['text_filename'] = safe_filename
-                print(f"[{job_id}] get_text 文件已保存: {text_url}")
+                print(f"[{job_id}] get_text 文件已保存: {safe_filename}")
                 # 自动上传到群（仿 send_log_via_napcat 机制）
                 if group_id > 0:
                     try:
@@ -1651,7 +1688,7 @@ def napcat_json_post(path, body, timeout_sec):
             data = resp.json()
             LAST_NAPCAT_BASE = base
             LAST_NAPCAT_ERROR = ""
-            bridge_log("napcat", f"ok base={base} path=/{path.lstrip('/')} body={body}")
+            bridge_log("napcat", f"ok base={base} path=/{path.lstrip('/')} body={sanitize_body_for_log(body)}")
             return data
         except Exception as exc:
             last_err = exc
@@ -1840,6 +1877,21 @@ def build_content_url(content_key, public_base=""):
     if BRIDGE_TOKEN:
         content_url = f"{content_url}?token={urllib.parse.quote(BRIDGE_TOKEN, safe='')}"
     return content_url
+
+
+def get_content_preview(content_key, chars=12):
+    """Read first `chars` characters from a cached file for link preview."""
+    if not content_key:
+        return ''
+    with STATE_LOCK:
+        path = CONTENT_INDEX.get(content_key, '')
+    if not path or not os.path.exists(path):
+        return ''
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read(chars).replace('\n', ' ').replace('\r', '')
+    except Exception:
+        return ''
 
 
 def hydrate_bridge_item(item, public_base=""):
@@ -2492,26 +2544,59 @@ def background_file_process(job_id, file_url, filename, mode='analyze', is_pro=F
 
 TRANSLATE_SYSTEM_PROMPT = "你是一个专业的翻译助手。请准确翻译用户提供的文本，保留原文格式，只返回翻译结果，不要添加任何解释或评论。"
 
-# v4.4.0: TextDB.online 云数据库 (用于 goal-ALL 翻译)
+# v4.4.1: TextDB.online 云数据库 (用于 goal-ALL 翻译)
+# API: GET/POST https://textdb.online/update/?key=...&value=...
+# 注意: POST body (data=) 不被接受，必须使用 URL query params 发送
+# 读取: GET https://textdb.online/{key} (始终返回200，不存在则内容为空)
+# 成功判定: 响应 JSON 中 status==1 (不能依赖 HTTP 状态码)
+# URL 长度限制: 约12KB (Cloudflare 414)，value 需截断
 TEXTDB_UPDATE_URL = "https://textdb.online/update/"
-TEXTDB_READ_URL = "https://textdb.online/{}"
+TEXTDB_MAX_VALUE_CHARS = 2500  # URL-safe 上限 (~22KB URL)，实测 414 出现在 ~3000 chars (~27KB)
 
 
 def textdb_upload(key, value):
-    """上传文本到 TextDB.online。key: 6-60 字符, value: 最多 200K 字符。"""
+    """上传文本到 TextDB.online。使用 GET + query params 发送。
+    值超过 TEXTDB_MAX_VALUE_CHARS 时自动截断（保留头部+尾部标记）。"""
     try:
-        resp = requests.post(TEXTDB_UPDATE_URL, data={
-            'key': key,
-            'value': str(value)[:200000]
+        v = str(value)
+        if len(v) > TEXTDB_MAX_VALUE_CHARS:
+            head = v[:TEXTDB_MAX_VALUE_CHARS // 2]
+            tail = v[-(TEXTDB_MAX_VALUE_CHARS // 2 - 20):]
+            v = f"{head}\n\n... [中间省略 {len(value) - TEXTDB_MAX_VALUE_CHARS} 字符] ...\n\n{tail}"
+        # 使用 POST + query params（文档建议 POST 方法；POST body 不可用）
+        resp = requests.post(TEXTDB_UPDATE_URL, params={
+            'key': str(key),
+            'value': v
         }, timeout=30)
-        return resp.status_code == 200
+        # TextDB 永远返回 200 (成功) 或 414 (URL过长)；检测 JSON 中 status==1
+        data = {}
+        if resp.text and resp.text.strip():
+            try:
+                data = resp.json()
+            except Exception:
+                data = {}
+        ok = isinstance(data, dict) and data.get('status') == 1
+        if not ok:
+            print(f"[textdb] write failed: http={resp.status_code} status={data.get('status')} key={key[:20]}")
+        return ok
     except Exception as e:
         print(f"[textdb] upload failed: {e}")
         return False
 
 
 def textdb_get_url(key):
-    return TEXTDB_READ_URL.format(key)
+    """返回 TextDB 在线查看链接：https://textdb.online/{key}"""
+    return f"https://textdb.online/{key}"
+
+
+def textdb_read(key):
+    """从 TextDB.online 读取翻译进度（用于验证）。始终返回200，不存在则内容为空。"""
+    try:
+        resp = requests.get(f"https://textdb.online/{key}", timeout=30)
+        return resp.text if resp.status_code == 200 else ''
+    except Exception as e:
+        print(f"[textdb] read failed: {e}")
+        return ''
 
 
 def chunk_text_by_sentences(text, target_chars=2000):
@@ -2551,8 +2636,15 @@ def translate_task():
     JOB_CACHE[job_id] = {'status': 'processing', 'created': time.time(), 'group_id': group_id}
 
     if goal_all:
-        executor.submit(background_translate_goal_all, job_id, file_url, filename, target_lang, group_id)
-        return jsonify({'status': 'ok', 'id': job_id, 'mode': 'goal-all', 'msg': f'开始 goal-ALL 翻译为 {target_lang}...'})
+        textdb_key = f"logai-trans-{uuid.uuid4().hex[:12]}"
+        textdb_url = textdb_get_url(textdb_key)
+        JOB_CACHE[job_id]['mode'] = 'goal-all'
+        JOB_CACHE[job_id]['textdb_key'] = textdb_key
+        JOB_CACHE[job_id]['textdb_url'] = textdb_url
+        executor.submit(background_translate_goal_all, job_id, file_url, filename, target_lang, group_id, textdb_key)
+        return jsonify({'status': 'ok', 'id': job_id, 'mode': 'goal-all',
+                        'textdb_key': textdb_key, 'textdb_url': textdb_url,
+                        'msg': f'开始 goal-ALL 翻译为 {target_lang}...\n在线查看进度: {textdb_url}'})
     else:
         executor.submit(background_translate_process, job_id, file_url, filename, target_lang, is_pro, group_id)
         return jsonify({'status': 'ok', 'id': job_id, 'msg': f'正在翻译为 {target_lang}...'})
@@ -2594,7 +2686,7 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
         )
         result_text = resp.choices[0].message.content
         
-        # 保存翻译结果到桥接缓存（以便后续上传和下载）
+        # 保存翻译结果到桥接缓存（用于上传到群）
         ensure_bridge_cache_dir()
         trans_key = uuid.uuid4().hex
         trans_path = os.path.join(BRIDGE_CACHE_DIR, f"{trans_key}.txt")
@@ -2604,16 +2696,13 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
             fw.write(result_text or '')
         with STATE_LOCK:
             CONTENT_INDEX[trans_key] = trans_path
-        public_base = resolve_public_base_or_fallback()
-        trans_url = build_content_url(trans_key, public_base=public_base)
 
         JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['text'] = result_text
         JOB_CACHE[job_id]['text_key'] = trans_key
-        JOB_CACHE[job_id]['text_url'] = trans_url
         JOB_CACHE[job_id]['text_filename'] = safe_filename
         JOB_CACHE[job_id]['original_filename'] = filename
-        print(f"[{job_id}] 文件翻译完成，下载链接: {trans_url}")
+        print(f"[{job_id}] 文件翻译完成: {filename}")
         # 自动上传到群
         if group_id > 0:
             try:
@@ -2631,7 +2720,7 @@ def background_translate_process(job_id, file_url, filename, target_lang='zh-CN'
 
 
 # v4.4.0: goal-ALL 分块翻译
-def background_translate_goal_all(job_id, file_url, filename, target_lang, group_id):
+def background_translate_goal_all(job_id, file_url, filename, target_lang, group_id, textdb_key=None):
     """后台线程：分块翻译文件，每10秒上传到 TextDB.online。"""
     print(f"[{job_id}] 开始 goal-ALL 翻译: {filename} -> {target_lang}")
     cancel_event = CANCEL_FLAGS.get(job_id)
@@ -2646,7 +2735,8 @@ def background_translate_goal_all(job_id, file_url, filename, target_lang, group
             source_text = source_text[:MAX_AI_CHARS]
 
         chunks = chunk_text_by_sentences(source_text, target_chars=2000)
-        textdb_key = f"logai-trans-{uuid.uuid4().hex[:12]}"
+        if not textdb_key:
+            textdb_key = f"logai-trans-{uuid.uuid4().hex[:12]}"
         textdb_url = textdb_get_url(textdb_key)
 
         JOB_CACHE[job_id]['mode'] = 'goal-all'
@@ -2697,13 +2787,10 @@ def background_translate_goal_all(job_id, file_url, filename, target_lang, group
             fw.write(accumulated)
         with STATE_LOCK:
             CONTENT_INDEX[final_key] = final_path
-        public_base = resolve_public_base_or_fallback()
-        final_url = build_content_url(final_key, public_base=public_base)
 
         JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['text'] = accumulated
         JOB_CACHE[job_id]['text_key'] = final_key
-        JOB_CACHE[job_id]['text_url'] = final_url
         JOB_CACHE[job_id]['textdb_url'] = textdb_url
         print(f"[{job_id}] goal-ALL 翻译完成: {textdb_url}")
 
@@ -2729,7 +2816,7 @@ def get_translate_result():
     job = JOB_CACHE.get(job_id)
     if not job or 'text' not in job:
         return jsonify({'status': 'not_found'})
-    resp = {'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', ''), 'text_url': job.get('text_url', '')}
+    resp = {'status': job['status'], 'text': job.get('text', ''), 'filename': job.get('original_filename', ''), 'text_key': job.get('text_key', ''), 'text_filename': job.get('text_filename', '')}
     # v4.4.0: goal-ALL fields
     if job.get('mode') == 'goal-all':
         resp['mode'] = 'goal-all'
@@ -3971,8 +4058,7 @@ def check_status():
         'msg': job.get('msg', ''),
         'image_count': img_count
     }
-    if job.get('text_url'):
-        resp['text_url'] = job['text_url']
+    if job.get('text_key'):
         resp['text_key'] = job.get('text_key', '')
         resp['text_filename'] = job.get('text_filename', 'ai_analysis.txt')
     return jsonify(resp)
@@ -4357,6 +4443,8 @@ def bridge_list():
             # Use the real file name in output
             h['display_name'] = h.get('name', '')
             h['_type'] = 'file'
+            ck = h.get('content_key', '')
+            h['preview'] = get_content_preview(ck, 12)
             files.append(h)
 
     links = []
@@ -4366,6 +4454,8 @@ def bridge_list():
             h['_index'] = idx
             h['display_name'] = h.get('url', h.get('name', ''))
             h['_type'] = 'link'
+            ck = h.get('content_key', '')
+            h['preview'] = get_content_preview(ck, 12)
             links.append(h)
 
     bridge_log('list', f"group={group_id} files={len(files)} links={len(links)}")
@@ -4418,7 +4508,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.0</h1>
+<h1>LogAI Bridge Manager v4.4.2</h1>
 <div class="group-select">
   群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
   <button onclick="loadData()">刷新</button>
@@ -4447,14 +4537,14 @@ async function loadData(){
   const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
   const data=await resp.json();
   renderTable('fileTable',data.files||[],['#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`);
-  renderTable('linkTable',data.links||[],['#','URL','字数','保存时间'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`);
-  renderTable('historyTable',data.history||[],['#','类型','名称','字数'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`);
+  renderTable('linkTable',data.links||[],['#','URL','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`);
+  renderTable('historyTable',data.history||[],['#','类型','名称','字数','开头'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`);
 }
 function renderTable(id,items,cols,nameFn){
   if(!items.length){document.getElementById(id).innerHTML='<p style="color:#888">（无数据）</p>';return}
   let h=`<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
   items.forEach((r,i)=>{
-    const preview=(r.name||r.url||'').slice(0,12);
+    const preview=(r.preview||r.name||r.url||'').slice(0,12);
     const ts=r.ts?new Date(r.ts*1000).toLocaleString():'-';
     h+=`<tr><td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
   });
@@ -4479,6 +4569,18 @@ loadData();
 </script>
 </body>
 </html>'''
+
+
+@app.route('/api/bridge_master', methods=['POST', 'GET'])
+def api_bridge_master():
+    """v4.4.1: .bridge master 命令 - 返回 Web UI 地址。"""
+    payload = request.get_json(silent=True) or {}
+    group_id = safe_int(payload.get('group_id') or request.args.get('group_id', 0), 0)
+    if group_id <= 0:
+        return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
+    public_base = resolve_public_base_or_fallback()
+    gui_url = f"{public_base}/bridge/gui/{group_id}"
+    return jsonify({'status': 'ok', 'gui_url': gui_url})
 
 
 @app.route('/bridge/gui', methods=['GET'])
@@ -4620,6 +4722,7 @@ def api_bridge_list():
             'cached': bool(path_cached and os.path.exists(path_cached)),
             'content_key': ck,
             'content_url': item.get('content_url', ''),
+            'preview': get_content_preview(ck, 12),
             '_type': 'file',
         })
 
@@ -4636,6 +4739,7 @@ def api_bridge_list():
             'cached': bool(path_cached and os.path.exists(path_cached)),
             'content_key': ck,
             'content_url': item.get('content_url', ''),
+            'preview': get_content_preview(ck, 12),
             '_type': 'link',
         })
 
@@ -6808,6 +6912,57 @@ class LogutilBotClient:
             await asyncio.sleep(3)
 
 
+def _auto_cache_urls_from_message(msg, text):
+    """v4.4.1: 自动检测消息中的染色器链接，拉取并缓存到 LINK_CACHE。
+    仅在链接尚未缓存时执行（按 URL 去重）。"""
+    if not text:
+        return
+    group_id = safe_int(msg.get("group_id", 0), 0)
+    if group_id <= 0:
+        return
+    # 提取消息中所有 URL
+    urls = URL_RE.findall(text)
+    if not urls:
+        return
+    for url in urls:
+        url = url.strip().rstrip(')').rstrip(']').rstrip('"').rstrip("'")
+        if not url or not url.startswith(('http://', 'https://')):
+            continue
+        target = parse_log_target_entry(url)
+        if not target:
+            continue
+        source = target.get('source', '')
+        # 只处理已知的染色器源
+        if source not in ('weizaima', 'dice_zone', 'kokona', 'trpgbot', 'raw_url'):
+            continue
+        # 去重：已在 LINK_CACHE 中则跳过
+        with STATE_LOCK:
+            link_list = LINK_CACHE.get(group_id, [])
+            already = any(str(item.get('url', '')) == url for item in link_list)
+        if already:
+            continue
+        # 异步拉取并缓存（在线程中执行以免阻塞 WS 循环）
+        try:
+            executor.submit(_fetch_and_cache_link, group_id, url, target)
+        except Exception:
+            pass  # 线程池满时静默跳过
+
+
+def _fetch_and_cache_link(group_id, url, target):
+    """后台拉取染色器链接并写入 LINK_CACHE。"""
+    try:
+        text = fetch_log_text_by_source(
+            target['key'],
+            password=target.get('password', ''),
+            source=target.get('source'),
+            group_id=group_id,
+        )
+        if text:
+            ws_log(f"auto-cached link: group={group_id} url={url[:60]}")
+    except Exception as e:
+        ws_log(f"auto-cache link failed: {e}")
+
+
 async def handle_ws_recording_event(event):
     """Process a group message or file upload event, extracting items and adding
     them to the current logutil recording.  Mirrors fwlog's handle_recording_event
@@ -7171,6 +7326,9 @@ async def process_ws_messages():
                 text = segments_to_text(msg.get("message")).strip()
                 normalized = normalize_logutil_prefix(text)
 
+                # v4.4.1: 自动缓存消息中的染色器链接
+                _auto_cache_urls_from_message(msg, text)
+
                 if normalized.startswith(".logutil"):
                     ws_log(f"检测到 logutil 指令 (WS端跳过，由HTTP处理): {text[:80]}")
                 else:
@@ -7459,7 +7617,7 @@ if __name__ == '__main__':
         NC_FILE_BRIDGE_MODE = args.bridge_mode
     # Re-derive configs that depend on LOGAI_PORT
     if args.port is not None and args.bridge_public_base is None:
-        BRIDGE_PUBLIC_BASE = f"http://127.0.0.1:{LOGAI_PORT}"
+        BRIDGE_PUBLIC_BASE = f"http://{get_lan_ip()}:{LOGAI_PORT}"
     # Re-derive NAPCAT_WS_TOKEN if napcat-token changed but ws-token not set
     if args.napcat_token is not None and args.ws_token is None:
         NAPCAT_WS_TOKEN = NAPCAT_TOKEN or ""

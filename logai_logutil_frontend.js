@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.4.0
+// @version      4.4.2
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.0');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.2');
     seal.ext.register(ext);
 }
 
@@ -96,6 +96,12 @@ function getPureGroupId(groupId) {
     if (!s) return '';
     let m = s.match(/(\d+)/);
     return m ? m[1] : '';
+}
+
+function getDigits(str) {
+    if (!str) return '';
+    const m = String(str).match(/\d+/g);
+    return m ? m.join('') : '';
 }
 
 function getBridgeTokenHeader() {
@@ -708,9 +714,9 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
             let sData = await safeFetchJson(checkUrl, undefined, "查询任务状态");
             
             if (sData.status === 'done' || sData.status === 'error') {
-                // get_text 模式：发送下载链接而非图片
-                if (getText && sData.text_url) {
-                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接（仅骰主可用）：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                // get_text 模式：文件已自动上传到群
+                if (getText && sData.text_key) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果已发送到群（${sData.text_filename || 'ai_analysis.txt'}）`);
                 } else if (sData.image_count !== undefined && sData.image_count > 0) {
                     let msgStr = "";
                     for (let i = 0; i < sData.image_count; i++) {
@@ -718,9 +724,9 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
                         msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
                     }
                     seal.replyToSender(ctx, msg, msgStr);
-                } else if (sData.text_url) {
-                    // 兜底：如果有 text_url 也发送
-                    seal.replyToSender(ctx, msg, `✅ AI 分析完成：\n下载链接（仅骰主可用）：${sData.text_url}`);
+                } else if (sData.text_key) {
+                    // 兜底：文件已自动上传到群
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果已发送到群`);
                 } else {
                     let finalUrl = `${resultUrl}&index=0&t=${new Date().getTime()}`;
                     seal.replyToSender(ctx, msg, `[CQ:image,file=${finalUrl},cache=0]`);
@@ -891,19 +897,14 @@ cmdLogAi.solve = async (ctx, msg, cmdArgs) => {
     return await processLogTask(ctx, msg, cmdArgs, '跑团日志评分与吐槽', 'analyze'); 
 };
 ext.cmdMap['logai'] = cmdLogAi;
-// v4.4.0: .halt 强制停止AI生成
+// v4.4.1: .halt 强制停止AI生成（所有用户可用）
 const cmdHalt = seal.ext.newCmdItemInfo();
 cmdHalt.name = 'halt';
-cmdHalt.help = '强制停止当前群内所有进行中的AI生成任务。\n用法: .halt（仅骰主可用）';
+cmdHalt.help = '强制停止当前群内所有进行中的AI生成任务。\n用法: .halt';
 cmdHalt.solve = async (ctx, msg, cmdArgs) => {
     let groupId = ctx.group ? ctx.group.groupId : '';
     if (!groupId) {
         seal.replyToSender(ctx, msg, '❌ 此功能仅在群聊中可用。');
-        return seal.ext.newCmdExecuteResult(true);
-    }
-    // 仅骰主可用
-    if (ctx.privilegeLevel < 100) {
-        seal.replyToSender(ctx, msg, '❌ 仅骰主可用。');
         return seal.ext.newCmdExecuteResult(true);
     }
     try {
@@ -1081,8 +1082,8 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
             let sData = await safeFetchJson(checkUrl, undefined, "查询AI任务状态");
 
             if (sData.status === 'done' || sData.status === 'error') {
-                if (getText && sData.text_url) {
-                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果：\n下载链接（仅骰主可用）：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                if (getText && sData.text_key) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果已发送到群（${sData.text_filename || 'ai_analysis.txt'}）`);
                 } else if (sData.image_count !== undefined && sData.image_count > 0) {
                     let msgStr = "";
                     for (let i = 0; i < sData.image_count; i++) {
@@ -1090,8 +1091,8 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
                         msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
                     }
                     seal.replyToSender(ctx, msg, msgStr);
-                } else if (sData.text_url) {
-                    seal.replyToSender(ctx, msg, `✅ AI 分析完成：\n下载链接（仅骰主可用）：${sData.text_url}`);
+                } else if (sData.text_key) {
+                    seal.replyToSender(ctx, msg, `✅ AI 分析完成，文本结果已发送到群`);
                 } else {
                     let finalUrl = `${resultUrl}&index=0&t=${new Date().getTime()}`;
                     seal.replyToSender(ctx, msg, `[CQ:image,file=${finalUrl},cache=0]`);
@@ -1288,7 +1289,6 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
                     if (endIdx >= 0) {
                         replyParts.push(fw('【已结束记录】'));
-                        if (data.content_url) replyParts.push(fw(`下载链接（仅骰主可用）：${data.content_url}`));
                         if (data.dye_link) {
                             replyParts.push(fw('【染色器链接】'));
                             replyParts.push(data.dye_link);
@@ -1496,9 +1496,6 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 } else if (data.napcat_error) {
                     parts.push(fw(`【发送失败】 日志文件发送失败: ${data.napcat_error}`));
                 }
-                if (data.content_url) {
-                    parts.push(fw(`下载链接（仅骰主可用）：${data.content_url}`));
-                }
                 if (data.dye_link) {
                     parts.push(fw('【染色器链接】 已上传至染色器'));
                     parts.push(data.dye_link);
@@ -1588,6 +1585,7 @@ cmdBridge.help = fw([
     '.bridge off      // 对本群关闭桥接轮询',
     '.bridge status   // 查看当前轮询状态',
     '.bridge list [file|link|history]  // 列出桥接缓存（默认 file+link）',
+    '.bridge master  // 查看 Web 管理界面地址',
     '.bridge get [file]-N/[link]-N/[history]-N  // 获取编号文件并发送到群',
     '.bridge del [file]-N [link]-N ...  // 删除指定编号的桥接项(v4.4)',
     '.bridge rate n   // 设置轮询间隔为 n 秒（n<=0 恢复默认）',
@@ -1659,9 +1657,8 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 let showFiles = (filterArg === 'all' || filterArg === 'file');
                 let showLinks = (filterArg === 'all' || filterArg === 'link');
                 let showHistory = (filterArg === 'history');
-                let guiUrl = `${host}/bridge/gui/${pureId}`;
 
-                // History display
+                // History display (simple message)
                 if (showHistory) {
                     let histItems = data.history || [];
                     if (histItems.length === 0) {
@@ -1679,44 +1676,92 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                     return seal.ext.newCmdExecuteResult(true);
                 }
 
-                // File display (Message 1)
-                if (showFiles) {
-                    if (files.length === 0) {
-                        seal.replyToSender(ctx, msg, fw('【文件】暂无缓存文件。'));
-                    } else {
-                        let lines = [fw(`【文件】共 ${files.length} 个文件。`)];
-                        for (let f of files) {
-                            let chars = f.text_chars || 0;
-                            let preview = (f.name || '').slice(0, 10);
-                            lines.push(`#${f.index} [file] ${f.name} (${chars}字) ${preview}`);
-                        }
-                        lines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
-                        lines.push(fw(`使用 .bridge list history 查看历史记录。`));
-                        seal.replyToSender(ctx, msg, lines.join('\n'));
+                // v4.4.1: Use merged chat record format for file+link list
+                let msgNodes = [];
+                if (showFiles && files.length > 0) {
+                    let fileLines = [fw(`【文件】共 ${files.length} 个文件。`)];
+                    for (let f of files) {
+                        let chars = f.text_chars || 0;
+                        let preview = (f.preview || f.name || '').slice(0, 12);
+                        fileLines.push(`#${f.index} [file] ${f.name} (${chars}字) | ${preview}`);
                     }
+                    fileLines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
+                    fileLines.push(fw('使用 .bridge list history 查看历史记录。使用 .bridge master 查看 Web 管理界面。'));
+                    msgNodes.push(fileLines.join('\n'));
+                } else if (showFiles && files.length === 0) {
+                    msgNodes.push(fw('【文件】暂无缓存文件。'));
                 }
 
-                // Link display (Message 2)
-                if (showLinks) {
-                    let linkItems = links || [];
-                    if (linkItems.length === 0) {
-                        if (!showFiles) {
-                            seal.replyToSender(ctx, msg, fw('【链接】暂无缓存链接。'));
+                if (showLinks && links.length > 0) {
+                    let linkLines = [fw(`【链接】共 ${links.length} 个链接。`)];
+                    for (let l of links) {
+                        let chars = l.text_chars || 0;
+                        let preview = l.preview || (l.url || l.name || '').slice(0, 30);
+                        linkLines.push(`#${l.index} [link] ${(l.url||'').slice(0,50)} (${chars}字) | ${preview}`);
+                    }
+                    linkLines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
+                    msgNodes.push(linkLines.join('\n'));
+                } else if (showLinks && links.length === 0 && !showFiles) {
+                    msgNodes.push(fw('【链接】暂无缓存链接。'));
+                }
+
+                if (msgNodes.length === 0) {
+                    seal.replyToSender(ctx, msg, fw('暂无桥接缓存数据。'));
+                } else {
+                    // Send as merged chat record (ref: getSong_v2.js sendForwardMessage)
+                    let sentForward = false;
+                    try {
+                        if (typeof http !== 'undefined' && http && typeof http.getData === 'function') {
+                            const epId = (ctx && ctx.endPoint && ctx.endPoint.userId) || '';
+                            const userId = getDigits(epId) || '10000';
+                            const nickname = seal.formatTmpl ? seal.formatTmpl(ctx, '核心:骰子名字') || '骰娘' : '骰娘';
+                            const messages = msgNodes.map(t => ({
+                                type: 'node',
+                                data: {
+                                    user_id: userId,
+                                    nickname: nickname,
+                                    content: { type: 'text', data: { text: String(t || '') } }
+                                }
+                            }));
+                            const title = fw(`桥接列表 - ${showFiles ? '文件' : ''}${showFiles && showLinks ? ' + ' : ''}${showLinks ? '链接' : ''}`);
+                            const forwardData = {
+                                messages: messages,
+                                news: [{ text: title }],
+                                prompt: title,
+                                summary: `查看${messages.length}条消息`,
+                                source: fw(`${nickname}桥接列表`),
+                            };
+                            if (ctx.isPrivate) {
+                                const uid = getDigits(ctx.player && ctx.player.userId);
+                                if (uid) forwardData.user_id = uid;
+                            } else {
+                                const gid = getDigits(ctx.group && ctx.group.groupId);
+                                if (gid) forwardData.group_id = gid;
+                            }
+                            http.getData(epId, 'send_forward_msg', forwardData);
+                            sentForward = true;
                         }
-                    } else {
-                        let lines = [fw(`【链接】共 ${linkItems.length} 个链接。`)];
-                        for (let l of linkItems) {
-                            let chars = l.text_chars || 0;
-                            let preview = (l.url || l.name || '').slice(0, 30);
-                            lines.push(`#${l.index} [link] ${preview} (${chars}字)`);
-                        }
-                        lines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
-                        lines.push(fw(`网页管理界面: ${guiUrl}`));
-                        seal.replyToSender(ctx, msg, lines.join('\n'));
+                    } catch (e) {
+                        // fallback to plain text below
+                    }
+                    if (!sentForward) {
+                        seal.replyToSender(ctx, msg, msgNodes.join('\n\n'));
                     }
                 }
             } else {
                 seal.replyToSender(ctx, msg, fw(`list 失败: ${JSON.stringify(data)}`));
+            }
+        } else if (op === 'master') {
+            let resp = await fetch(`${host}/api/bridge_master`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({group_id: pureId})
+            });
+            let data = await resp.json();
+            if (data.status === 'ok' && data.gui_url) {
+                seal.replyToSender(ctx, msg, fw(`Web 管理界面: ${data.gui_url}`));
+            } else {
+                seal.replyToSender(ctx, msg, fw(`获取失败: ${JSON.stringify(data)}`));
             }
         } else if (op === 'get') {
             // v4.4.0: 接受 [file]-N / [link]-N / [history]-N 格式
@@ -1794,15 +1839,15 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
 };
 ext.cmdMap['bridge'] = cmdBridge;
 
-// 新命令：.translate 文件翻译
+// v4.4.1: .translate 文件翻译（参数顺序: [goal-ALL] [lang] file/link...）
 const cmdTranslate = seal.ext.newCmdItemInfo();
 cmdTranslate.name = 'translate';
-cmdTranslate.help = '翻译桥接缓存文件。\n用法: .translate [target_lang=中文] [file1] …… [fileN]\nfile格式: [file]-N（编号从0最旧到最新）\n支持格式: docx, pdf, txt等。';
+cmdTranslate.help = '翻译桥接缓存文件。\n用法: .translate [goal-ALL] [target_lang=中文] [file1] …… [fileN]\nfile格式: [file]-N / [link]-N\n支持格式: docx, pdf, txt等。';
 cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
     let args = cmdArgs.args;
     if (!args || args.length === 0) {
-        seal.replyToSender(ctx, msg, '用法: .translate [target_lang=中文] [file1] …… [fileN]\n示例: .translate 英文 [file]-0\n       .translate 日文 [file]-0 [file]-1');
+        seal.replyToSender(ctx, msg, '用法: .translate [goal-ALL] [target_lang=中文] [file1] …… [fileN]\n示例: .translate 英文 [file]-0\n       .translate goal-all 日文 [file]-0 [file]-1');
         return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -1814,41 +1859,45 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
 
     let pureGroupId = getPureGroupId(groupId);
 
-    // Parse: target_lang, [file]-N refs, and v4.4.0 goal-ALL flag
+    // v4.4.1: Parse: goal-ALL first, then lang, then file/link refs
     let targetLang = '中文';  // default
     let fileArgs = [];
     let isGoalAll = false;
+    let langSet = false;
     for (let a of args) {
         let trimmed = String(a || '').trim();
         if (/^\[file\]-\d+$/i.test(trimmed) || /^\[link\]-\d+$/i.test(trimmed)) {
             fileArgs.push(trimmed);
-        } else if (trimmed.toLowerCase() === 'goal-all') {
+        } else if (trimmed.toLowerCase() === 'goal-all' && !isGoalAll && !langSet) {
             isGoalAll = true;
         } else {
             targetLang = trimmed;
+            langSet = true;
         }
     }
 
     if (fileArgs.length === 0) {
-        seal.replyToSender(ctx, msg, '❌ 请提供至少一个要翻译的文件（格式：[file]-N）。\n示例: .translate 英文 [file]-0');
+        seal.replyToSender(ctx, msg, '❌ 请提供至少一个要翻译的文件（格式：[file]-N / [link]-N）。\n示例: .translate goal-all 英文 [file]-0');
         return seal.ext.newCmdExecuteResult(true);
     }
 
     try {
-        // Get bridge file list
+        // Get bridge file AND link list
         let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
-        if (!listData || listData.status !== 'ok' || !listData.files || listData.files.length === 0) {
-            seal.replyToSender(ctx, msg, '❌ 当前群没有桥接缓存文件。请先上传文件。');
+        if (!listData || listData.status !== 'ok') {
+            seal.replyToSender(ctx, msg, '❌ 当前群没有桥接缓存。请先上传文件或链接。');
             return seal.ext.newCmdExecuteResult(true);
         }
-        let bridgeFiles = listData.files;
+        let bridgeFiles = listData.files || [];
+        let bridgeLinks = listData.links || [];
 
-        // Resolve file refs
+        // Resolve file/link refs
         let resolvedFiles = [];
         for (let fa of fileArgs) {
-            let idxMatch = fa.match(/^\[file\]-(\d+)$/i);
-            if (idxMatch) {
-                let idx = parseInt(idxMatch[1]);
+            let fileMatch = fa.match(/^\[file\]-(\d+)$/i);
+            let linkMatch = fa.match(/^\[link\]-(\d+)$/i);
+            if (fileMatch) {
+                let idx = parseInt(fileMatch[1]);
                 if (idx >= 0 && idx < bridgeFiles.length) {
                     let bf = bridgeFiles[idx];
                     let contentUrl = bf.content_url || '';
@@ -1859,20 +1908,31 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                         });
                     }
                 }
+            } else if (linkMatch) {
+                let idx = parseInt(linkMatch[1]);
+                if (idx >= 0 && idx < bridgeLinks.length) {
+                    let bl = bridgeLinks[idx];
+                    let contentUrl = bl.content_url || '';
+                    if (contentUrl) {
+                        resolvedFiles.push({
+                            url: contentUrl,
+                            name: bl.display_name || bl.name || fa
+                        });
+                    }
+                }
             }
         }
 
         if (resolvedFiles.length === 0) {
-            seal.replyToSender(ctx, msg, '❌ 未能解析任何有效文件。请使用 .bridge list 查看可用文件编号。');
+            seal.replyToSender(ctx, msg, '❌ 未能解析任何有效文件。请使用 .bridge list 查看可用文件/链接编号。');
             return seal.ext.newCmdExecuteResult(true);
         }
 
-        seal.replyToSender(ctx, msg, `正在翻译 ${resolvedFiles.length} 个文件为${targetLang}，请稍候...`);
-
-        // Translate each file
+        // Submit and poll
         let results = [];
         for (let rf of resolvedFiles) {
             let transJobId = null;
+            let transTextdbUrl = '';
             try {
                 // Submit translate task
                 let transResp = await safeFetchJson(
@@ -1882,6 +1942,7 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                 );
                 if (transResp.status === 'ok' && transResp.id) {
                     transJobId = transResp.id;
+                    transTextdbUrl = transResp.textdb_url || '';
                 }
             } catch (e) {
                 results.push(`${rf.name}: 提交失败 - ${e.message}`);
@@ -1893,9 +1954,17 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                 continue;
             }
 
+            // v4.4.2: 翻译开始即发送确认消息
+            if (isGoalAll && transTextdbUrl) {
+                seal.replyToSender(ctx, msg, `${rf.name}: 开始 goal-ALL 翻译为${targetLang}\n在线查看进度: ${transTextdbUrl}`);
+            } else if (!isGoalAll) {
+                seal.replyToSender(ctx, msg, `${rf.name}: 开始翻译为${targetLang}，请稍候...`);
+            }
+
             // Poll for translation result
             let translated = false;
-            let maxRetries = 60;
+            // v4.4.1: goal-ALL no timeout; standard keeps 60*2s=120s timeout
+            let maxRetries = isGoalAll ? Number.MAX_SAFE_INTEGER : 60;
             while (maxRetries > 0) {
                 await sleep(2000);
                 let sData = await safeFetchJson(
@@ -1904,22 +1973,27 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                     "查询翻译状态"
                 );
                 if (sData && sData.status === 'done') {
-                    // 后端已自动上传到群；同时发送下载链接作为保险
-                    let dlInfo = sData.text_url ? `\n下载链接（仅骰主可用）：${sData.text_url}` : '';
                     let textdbInfo = sData.textdb_url ? `\n在线查看: ${sData.textdb_url}` : '';
-                    results.push(`${rf.name}: ✅ 翻译完成（目标语言: ${targetLang}）${textdbInfo}${dlInfo}`);
+                    if (!isGoalAll) {
+                        results.push(`${rf.name}: ✅ 翻译完成（目标语言: ${targetLang}）${textdbInfo}`);
+                    } else {
+                        results.push(`${rf.name}: ✅ goal-ALL 翻译完成（目标语言: ${targetLang}）${textdbInfo}`);
+                    }
                     translated = true;
                     break;
                 } else if (sData && sData.status === 'error') {
                     results.push(`${rf.name}: 翻译失败 - ${sData.text || '未知错误'}`);
                     translated = true;
                     break;
-                } else if (sData && sData.textdb_url && sData.completed_chunks !== undefined) {
-                    // goal-ALL progress update
-                    let pct = sData.total_chunks > 0 ? Math.round(sData.completed_chunks / sData.total_chunks * 100) : 0;
-                    results.push(`${rf.name}: goal-ALL 进度 ${pct}% (${sData.completed_chunks}/${sData.total_chunks}) - 在线查看: ${sData.textdb_url}`);
+                } else if (sData && sData.status === 'cancelled') {
+                    results.push(`${rf.name}: 翻译已被停止 - ${sData.text || ''}`);
+                    translated = true;
+                    break;
+                } else if (isGoalAll && sData && sData.textdb_url && sData.completed_chunks !== undefined) {
+                    // goal-ALL progress update (logging only, don't spam the chat)
+                    // Already shown initial TextDB link above
                 }
-                maxRetries--;
+                if (!isGoalAll) maxRetries--;
             }
             if (!translated) {
                 results.push(`${rf.name}: 翻译超时`);
@@ -2128,7 +2202,7 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
         filename = fileData.name;
         if (customName) modeName = `自定义处理[${customName}]`;
 
-        seal.replyToSender(ctx, msg, `🤖 正在请求【${filename}】的下载链接并开始${modeName}...${modeMsg}`);
+        seal.replyToSender(ctx, msg, `🤖 正在获取【${filename}】并开始${modeName}...${modeMsg}`);
 
         try {
             let onebotApiUrl = seal.ext.getStringConfig(ext, "OneBot_API_地址");
@@ -2178,8 +2252,8 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                 await sleep(2000);
                 let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
                 if (sData.status === 'done' || sData.status === 'error') {
-                    if (getText && sData.text_url) {
-                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接（仅骰主可用）：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    if (getText && sData.text_key) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果已发送到群（${sData.text_filename || 'ai_analysis.txt'}）`);
                     } else if (sData.image_count && sData.image_count > 0) {
                         let msgStr = "";
                         for (let i = 0; i < sData.image_count; i++) {
@@ -2187,8 +2261,8 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                             msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
                         }
                         seal.replyToSender(ctx, msg, msgStr);
-                    } else if (sData.text_url) {
-                        seal.replyToSender(ctx, msg, `✅ 分析完成：\n下载链接（仅骰主可用）：${sData.text_url}`);
+                    } else if (sData.text_key) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果已发送到群`);
                     } else {
                         seal.replyToSender(ctx, msg, `❌ 发生未知错误，未能生成图片。`);
                     }
@@ -2254,8 +2328,8 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                 await sleep(2000);
                 let sData = await safeFetchJson(`${getBackendBaseUrl()}/api/status?id=${jobId}`, undefined, "查询任务状态");
                 if (sData.status === 'done' || sData.status === 'error') {
-                    if (getText && sData.text_url) {
-                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果：\n下载链接（仅骰主可用）：${sData.text_url}\n文件名：${sData.text_filename || 'ai_analysis.txt'}`);
+                    if (getText && sData.text_key) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果已发送到群（${sData.text_filename || 'ai_analysis.txt'}）`);
                     } else if (sData.image_count && sData.image_count > 0) {
                         let msgStr = "";
                         for (let i = 0; i < sData.image_count; i++) {
@@ -2263,8 +2337,8 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                             msgStr += `[CQ:image,file=${finalUrl},cache=0]`;
                         }
                         seal.replyToSender(ctx, msg, msgStr);
-                    } else if (sData.text_url) {
-                        seal.replyToSender(ctx, msg, `✅ 分析完成：\n下载链接（仅骰主可用）：${sData.text_url}`);
+                    } else if (sData.text_key) {
+                        seal.replyToSender(ctx, msg, `✅ 分析完成，文本结果已发送到群`);
                     } else {
                         seal.replyToSender(ctx, msg, `❌ 发生未知错误，未能生成图片。`);
                     }

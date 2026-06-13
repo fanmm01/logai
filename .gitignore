@@ -1,2 +1,4 @@
 python/
 instance/napcat_file_bridge/
+__pycache__/
+*.pyc
