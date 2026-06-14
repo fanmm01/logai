@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.4.2-logutil
+# LogUtil + Bridge 4.4.3-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -17,8 +17,8 @@
 
 ```
 instance/logutil/
-├── backend.py          # Flask 后端服务 (5,356 行)
-├── frontend.js         # SealDice 海豹插件 (1,205 行)
+├── backend.py          # Flask 后端服务 (5,504 行)
+├── frontend.js         # SealDice 海豹插件 (1,213 行)
 ├── run_logutil.bat     # Windows 启动脚本
 ├── run_logutil.sh      # Linux/macOS 启动脚本
 └── README.md           # 本文件
@@ -94,9 +94,9 @@ bash run_logutil.sh
 
 **复合命令**：
 ```
-.logutil new [file]-0 [link]-1 end
+.logutil new [file]-0 [link]-1 [history]-2 end
 ```
-原子执行：新建 → 导入桥接文件 → 导入链接 → 结束导出。
+原子执行：新建 → 导入桥接文件 → 导入链接 → 导入历史 → 结束导出。
 
 **修饰符**：
 - `raw` — 跳过消息格式解析，记录原始文本
@@ -110,8 +110,8 @@ bash run_logutil.sh
 | `off` | `.bridge off` | 停用桥接轮询 |
 | `status` | `.bridge status` | 查看桥接状态 |
 | `list [file\|link\|history]` | `.bridge list` | 列出缓存文件/链接/历史 |
-| `get [file]-N` | `.bridge get [file]-0` | 获取指定文件并上传到群 |
-| `del [file]-N [link]-N` | `.bridge del [file]-0 [link]-1` | 删除指定缓存项 |
+| `get [file]-N / [link]-N / [history]-N` | `.bridge get [file]-0` | 获取指定文件/链接/历史记录并上传到群 |
+| `del [file]-N [link]-N [history]-N` | `.bridge del [file]-0 [link]-1 [history]-2` | 删除指定缓存项 |
 | `rate N` | `.bridge rate 10` | 设置轮询间隔（秒） |
 | `master` | `.bridge master` | 获取 Web 管理界面链接 |
 
@@ -226,3 +226,15 @@ bash run_logutil.sh
 - 原作者: Air, Gemini
 - 改编: fanmm (@fanmm01)
 - logutil 段参考: @chaye2333 的 fwlog 项目
+
+---
+
+## 更新日志
+
+**v4.4.3-logutil**
+1. `[history]-N` 全面支持：复合命令及录音中独立发送均支持 `[history]-N` 引用被淘汰的桥接历史项。
+2. 修复 `bridge_link` 在复合命令中静默失效的问题（来源白名单遗漏，导致 `[link]-N` 被当作原始文本处理）。
+3. 修复复合命令中 `raw` 修饰符未传递到后端的问题。
+4. `/api/bridge_list` 在默认模式下同时返回历史记录（按群号过滤）。
+5. `/bridge/list` 端点新增历史记录返回。
+6. 同步 LogAI v4.4.3 全部修复。

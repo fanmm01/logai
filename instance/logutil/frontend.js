@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.4.2-logutil
+// @version      4.4.3-logutil
 // @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.2-logutil');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.3-logutil');
     seal.ext.register(ext);
 }
 
@@ -255,6 +255,12 @@ function parseLogTargetEntry(raw) {
         return { key: linkIdxMatch[1], source: 'bridge_link', password: '' };
     }
 
+    // v4.4.3: [history]-N pattern: reference evicted bridge items by index
+    let historyIdxMatch = val.match(/^\[history\]-(\d+)(?:\s|$)/i);
+    if (historyIdxMatch) {
+        return { key: historyIdxMatch[1], source: 'bridge_history', password: '' };
+    }
+
     // Bare file name detection: non-URL values that look like filenames
     // Examples: "[2026-06-11_11-25]8月23日营地.txt", "8月23日营地.txt", "8月23日营地"
     if (!/^https?:\/\//i.test(val) && !val.includes('://') && !val.includes('=') && !val.includes('#') && val.length > 1) {
@@ -471,7 +477,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     // Split restText into tokens respecting quoted strings and bracket groups
     let tokens = [];
-    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
+    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:\[history\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
     let m;
     while ((m = tokenRegex.exec(restText)) !== null) {
         tokens.push(m[0]);
@@ -500,7 +506,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         let hasLogai = allArgs.some(a => (a || '').toLowerCase() === 'logai');
         let hasOps = rawArgs.some(a => {
             let s = String(a || '').trim();
-            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
+            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^\[history\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
         let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
 
@@ -529,6 +535,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                     let cand = String(allArgs[titleCandidateIdx] || '').trim();
                     let isOp = /^\[file\]-\d+$/i.test(cand) ||
                                /^\[link\]-\d+$/i.test(cand) ||
+                               /^\[history\]-\d+$/i.test(cand) ||
                                /^https?:\/\//i.test(cand) ||
                                (cand.toLowerCase() === 'end') ||
                                (cand.toLowerCase() === 'logai') ||
@@ -580,6 +587,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             };
             if (title) compoundPayload.title = title;
             if (del_paren) compoundPayload.del_paren = true;
+            if (raw_mode) compoundPayload.raw = true;
 
             try {
                 let resp = await fetch(`${host}/api/logutil_compound`, {
@@ -1165,7 +1173,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.4.2-logutil loaded (logutil + bridge only)');
+console.log('用户脚本：log-analyzer v4.4.3-logutil loaded (logutil + bridge only)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

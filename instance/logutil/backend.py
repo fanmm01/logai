@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.4.2 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.4.3 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.2-logutil"
+SERVICE_VERSION = "4.4.3-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -384,6 +384,11 @@ def parse_log_target_entry(raw, password=None, source=None):
     if link_idx_match:
         return {'key': link_idx_match.group(1), 'source': 'bridge_link', 'password': ''}
 
+    # v4.4.3: [history]-N pattern: reference evicted bridge items by index
+    history_idx_match = re.match(r'^\[history\]-(\d+)(?:\s|$)', value, re.IGNORECASE)
+    if history_idx_match:
+        return {'key': history_idx_match.group(1), 'source': 'bridge_history', 'password': ''}
+
     # Bare file name: look like filenames (not URLs, not known key patterns)
     # Examples: "[2026-06-11_11-25]8月23日营地.txt", "8月23日营地.txt", "8月23日营地"
     if not re.match(r'^https?://', value, re.IGNORECASE) and '://' not in value:
@@ -584,6 +589,21 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
                 if path and os.path.exists(path):
                     with open(path, 'r', encoding='utf-8') as f:
                         return format_raw_text(f.read())
+        return ""
+
+    # v4.4.3: [history]-N support
+    if resolved_source == "bridge_history":
+        idx = safe_int(resolved_key, 0)
+        with STATE_LOCK:
+            hist_list = list(HISTORY)
+        if 0 <= idx < len(hist_list):
+            item = hist_list[idx]
+            ck = item.get('content_key', '')
+            with STATE_LOCK:
+                path = CONTENT_INDEX.get(ck, '')
+            if path and os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    return format_raw_text(f.read())
         return ""
 
     return format_weizaima_text(fetch_weizaima(resolved_key, resolved_password))
@@ -2193,8 +2213,26 @@ def bridge_list():
             h['preview'] = get_content_preview(ck, 12)
             links.append(h)
 
-    bridge_log('list', f"group={group_id} files={len(files)} links={len(links)}")
-    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'links': links, 'count': len(files)})
+    # v4.4.3: include history items for this group
+    with STATE_LOCK:
+        hist_list = list(HISTORY)
+    history = []
+    for idx, item in enumerate(hist_list):
+        # Filter: only include items belonging to this group
+        item_gid = safe_int(item.get('group_id', 0), 0)
+        if item_gid != group_id:
+            continue
+        hydrated = hydrate_bridge_item(item, public_base=public_base)
+        if hydrated:
+            hydrated['_index'] = idx
+            hydrated['display_name'] = hydrated.get('name', hydrated.get('url', ''))
+            hydrated['_type'] = hydrated.get('_type', 'file')
+            ck = hydrated.get('content_key', '')
+            hydrated['preview'] = get_content_preview(ck, 12)
+            history.append(hydrated)
+
+    bridge_log('list', f"group={group_id} files={len(files)} links={len(links)} history={len(history)}")
+    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'links': links, 'history': history, 'count': len(files)})
 
 
 @app.route('/bridge/content/<content_key>', methods=['GET'])
@@ -2243,7 +2281,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.2</h1>
+<h1>LogAI Bridge Manager v4.4.3</h1>
 <div class="group-select">
   群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
   <button onclick="loadData()">刷新</button>
@@ -2424,7 +2462,8 @@ def api_bridge_list():
 
     show_files = filter_type in ('all', 'file')
     show_links = filter_type in ('all', 'link')
-    show_history = filter_type == 'history'
+    show_history = filter_type in ('all', 'history')
+    show_history_only = filter_type == 'history'
 
     file_items = []
     link_items = []
@@ -2479,6 +2518,9 @@ def api_bridge_list():
         })
 
     for idx, item in enumerate(hist_list):
+        # v4.4.3: filter history by group_id when not in history-only mode
+        if not show_history_only and safe_int(item.get('group_id', 0), 0) != group_id:
+            continue
         ck = item.get('content_key', '')
         path_cached = CONTENT_INDEX.get(ck, '')
         history_items.append({
@@ -3980,7 +4022,7 @@ def api_logutil_compound():
             resolved_text = None
             if target:
                 source = target.get('source', '')
-                if source in ('bridge_file', 'bridge_file_name', 'raw_url',
+                if source in ('bridge_file', 'bridge_file_name', 'bridge_link', 'bridge_history', 'raw_url',
                               'weizaima', 'kokona', 'dice_zone', 'trpgbot'):
                     try:
                         resolved_text = fetch_log_text_by_source(
@@ -5250,6 +5292,96 @@ async def process_ws_messages():
                             else:
                                 ws_log(f"[link]-N ignored: group not recording, group_id={group_id}")
                         continue
+                    # --- v4.4.3: [history]-N command: append evicted bridge item to current log ---
+                    history_idx_match = re.match(r'^\[history\]-(\d+)\s*$', text, re.IGNORECASE)
+                    if history_idx_match:
+                        group_id = str(msg.get("group_id") or "")
+                        if group_id:
+                            gs = ensure_logutil_group_state(group_id)
+                            if gs.get("recording") and gs.get("current_log_name"):
+                                hist_idx = int(history_idx_match.group(1))
+                                with STATE_LOCK:
+                                    hist_list = list(HISTORY)
+                                if 0 <= hist_idx < len(hist_list):
+                                    hist_item = hist_list[hist_idx]
+                                    ck = hist_item.get("content_key", "")
+                                    with STATE_LOCK:
+                                        disk_path = CONTENT_INDEX.get(ck, "")
+                                    if disk_path and os.path.exists(disk_path):
+                                        try:
+                                            with open(disk_path, "r", encoding="utf-8") as f:
+                                                file_text = f.read()
+                                            sender_name = (
+                                                (msg.get("sender") or {}).get("card")
+                                                or (msg.get("sender") or {}).get("nickname")
+                                                or f"QQ:{msg.get('sender', {}).get('user_id', '')}"
+                                                or "Unknown"
+                                            )
+                                            sender_id = str((msg.get("sender") or {}).get("user_id") or msg.get("user_id") or "")
+                                            event_ts = safe_int(msg.get("time"), int(time.time()))
+                                            items = await extract_items_from_text_chunk(
+                                                file_text,
+                                                sender_name,
+                                                sender_id,
+                                                event_ts,
+                                                f"history-cmd:{hist_idx}:{hist_item.get('name', hist_item.get('url', ''))}",
+                                                group_id,
+                                            )
+                                            if items:
+                                                log_obj = ensure_logutil_log(group_id, gs["current_log_name"])
+                                                _, new_n = add_logutil_items(log_obj["id"], items)
+                                                ws_log(
+                                                    f"[history]-{hist_idx} 追加 {len(items)} 条, "
+                                                    f"当前 {new_n} 条, name={hist_item.get('name', hist_item.get('url', ''))[:60]}"
+                                                )
+                                                napcat_json_post(
+                                                    "send_group_msg",
+                                                    {
+                                                        "group_id": int(group_id),
+                                                        "message": f"[history]-{hist_idx} 已追加 {len(items)} 条: {hist_item.get('name', hist_item.get('url', ''))[:50]} (当前共 {new_n} 条)",
+                                                    },
+                                                    timeout_sec=10,
+                                                )
+                                            else:
+                                                napcat_json_post(
+                                                    "send_group_msg",
+                                                    {
+                                                        "group_id": int(group_id),
+                                                        "message": f"[history]-{hist_idx} 文件中未提取到可用条目: {hist_item.get('name', hist_item.get('url', ''))[:50]}",
+                                                    },
+                                                    timeout_sec=10,
+                                                )
+                                        except Exception as e:
+                                            ws_log(f"[history]-{hist_idx} 读取失败: {e}")
+                                            napcat_json_post(
+                                                "send_group_msg",
+                                                {
+                                                    "group_id": int(group_id),
+                                                    "message": f"[history]-{hist_idx} 读取失败: {e}",
+                                                },
+                                                timeout_sec=10,
+                                            )
+                                    else:
+                                        napcat_json_post(
+                                            "send_group_msg",
+                                            {
+                                                "group_id": int(group_id),
+                                                "message": f"[history]-{hist_idx} 缓存文件不存在",
+                                            },
+                                            timeout_sec=10,
+                                        )
+                                else:
+                                    napcat_json_post(
+                                        "send_group_msg",
+                                        {
+                                            "group_id": int(group_id),
+                                            "message": f"[history]-{hist_idx} 超出范围 (当前缓存 0~{len(hist_list)-1})",
+                                        },
+                                        timeout_sec=10,
+                                    )
+                            else:
+                                ws_log(f"[history]-N ignored: group not recording, group_id={group_id}")
+                        continue
                     await handle_ws_recording_event(msg)
         except Exception as e:
             ws_log(f"处理消息时发生错误: {e}")
@@ -5304,7 +5436,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.2 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.3 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.4.2
+// @version      4.4.3
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.2');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.3');
     seal.ext.register(ext);
 }
 
@@ -296,6 +296,12 @@ function parseLogTargetEntry(raw) {
     let linkIdxMatch = val.match(/^\[link\]-(\d+)(?:\s|$)/i);
     if (linkIdxMatch) {
         return { key: linkIdxMatch[1], source: 'bridge_link', password: '' };
+    }
+
+    // v4.4.3: [history]-N pattern: reference evicted bridge items by index
+    let historyIdxMatch = val.match(/^\[history\]-(\d+)(?:\s|$)/i);
+    if (historyIdxMatch) {
+        return { key: historyIdxMatch[1], source: 'bridge_history', password: '' };
     }
 
     // Bare file name detection: non-URL values that look like filenames
@@ -951,7 +957,7 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
     let fileArgs = [];
     let promptParts = [];
     for (let a of args) {
-        if (/^\[file\]-\d+$/i.test(String(a || '').trim()) || /^\[link\]-\d+$/i.test(String(a || '').trim())) {
+        if (/^\[file\]-\d+$/i.test(String(a || '').trim()) || /^\[link\]-\d+$/i.test(String(a || '').trim()) || /^\[history\]-\d+$/i.test(String(a || '').trim())) {
             fileArgs.push(String(a).trim());
         } else if (a.toLowerCase() === 'pro' || a.toLowerCase() === 'get_text') {
             // skip flags
@@ -986,14 +992,17 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
             let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
             let bridgeFiles = [];
             let bridgeLinks = [];
+            let bridgeHistory = [];
             if (listData && listData.status === 'ok') {
                 bridgeFiles = listData.files || [];
                 bridgeLinks = listData.links || [];
+                bridgeHistory = listData.history || [];
             }
 
             for (let fa of fileArgs) {
                 let fileIdxMatch = fa.match(/^\[file\]-(\d+)$/i);
                 let linkIdxMatch = fa.match(/^\[link\]-(\d+)$/i);
+                let historyIdxMatch = fa.match(/^\[history\]-(\d+)$/i);
                 if (fileIdxMatch) {
                     let idx = parseInt(fileIdxMatch[1]);
                     if (idx >= 0 && idx < bridgeFiles.length) {
@@ -1010,6 +1019,15 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
                         let contentUrl = bl.content_url || '';
                         if (contentUrl) {
                             fileEntries.push({ url: contentUrl, name: bl.display_name || bl.name || fa });
+                        }
+                    }
+                } else if (historyIdxMatch) {
+                    let idx = parseInt(historyIdxMatch[1]);
+                    if (idx >= 0 && idx < bridgeHistory.length) {
+                        let bh = bridgeHistory[idx];
+                        let contentUrl = bh.content_url || '';
+                        if (contentUrl) {
+                            fileEntries.push({ url: contentUrl, name: bh.display_name || bh.name || fa });
                         }
                     }
                 }
@@ -1154,7 +1172,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     // Split restText into tokens respecting quoted strings and bracket groups
     let tokens = [];
-    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
+    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:\[history\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
     let m;
     while ((m = tokenRegex.exec(restText)) !== null) {
         tokens.push(m[0]);
@@ -1183,7 +1201,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         let hasLogai = allArgs.some(a => (a || '').toLowerCase() === 'logai');
         let hasOps = rawArgs.some(a => {
             let s = String(a || '').trim();
-            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
+            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^\[history\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
         let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
 
@@ -1212,6 +1230,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                     let cand = String(allArgs[titleCandidateIdx] || '').trim();
                     let isOp = /^\[file\]-\d+$/i.test(cand) ||
                                /^\[link\]-\d+$/i.test(cand) ||
+                               /^\[history\]-\d+$/i.test(cand) ||
                                /^https?:\/\//i.test(cand) ||
                                (cand.toLowerCase() === 'end') ||
                                (cand.toLowerCase() === 'logai') ||
@@ -1867,7 +1886,7 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
     let langSet = false;
     for (let a of args) {
         let trimmed = String(a || '').trim();
-        if (/^\[file\]-\d+$/i.test(trimmed) || /^\[link\]-\d+$/i.test(trimmed)) {
+        if (/^\[file\]-\d+$/i.test(trimmed) || /^\[link\]-\d+$/i.test(trimmed) || /^\[history\]-\d+$/i.test(trimmed)) {
             fileArgs.push(trimmed);
         } else if (trimmed.toLowerCase() === 'goal-all' && !isGoalAll && !langSet) {
             isGoalAll = true;
@@ -1878,7 +1897,7 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
     }
 
     if (fileArgs.length === 0) {
-        seal.replyToSender(ctx, msg, '❌ 请提供至少一个要翻译的文件（格式：[file]-N / [link]-N）。\n示例: .translate goal-all 英文 [file]-0');
+        seal.replyToSender(ctx, msg, '❌ 请提供至少一个要翻译的文件（格式：[file]-N / [link]-N / [history]-N）。\n示例: .translate goal-all 英文 [file]-0');
         return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -1891,12 +1910,14 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
         }
         let bridgeFiles = listData.files || [];
         let bridgeLinks = listData.links || [];
+        let bridgeHistory = listData.history || [];
 
-        // Resolve file/link refs
+        // Resolve file/link/history refs
         let resolvedFiles = [];
         for (let fa of fileArgs) {
             let fileMatch = fa.match(/^\[file\]-(\d+)$/i);
             let linkMatch = fa.match(/^\[link\]-(\d+)$/i);
+            let historyMatch = fa.match(/^\[history\]-(\d+)$/i);
             if (fileMatch) {
                 let idx = parseInt(fileMatch[1]);
                 if (idx >= 0 && idx < bridgeFiles.length) {
@@ -1918,6 +1939,18 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
                         resolvedFiles.push({
                             url: contentUrl,
                             name: bl.display_name || bl.name || fa
+                        });
+                    }
+                }
+            } else if (historyMatch) {
+                let idx = parseInt(historyMatch[1]);
+                if (idx >= 0 && idx < bridgeHistory.length) {
+                    let bh = bridgeHistory[idx];
+                    let contentUrl = bh.content_url || '';
+                    if (contentUrl) {
+                        resolvedFiles.push({
+                            url: contentUrl,
+                            name: bh.display_name || bh.name || fa
                         });
                     }
                 }
@@ -2107,13 +2140,17 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
         '赛博', '历史', '古风', '克苏鲁', '深潜', '废土', '末日', '二次元', '萌系', '终端', '黑客', '经典', '默认', '常规'];
     if (customName) excludeList.push(customName);
 
-    // Detect file references in args ([file]-N or filenames)
+    // Detect file references in args ([file]-N, [link]-N, [history]-N, or filenames)
     let fileRefs = [];
     for (let a of args) {
         let s = String(a || '').trim();
         if (excludeList.some(e => e.toLowerCase() === s.toLowerCase())) continue;
         if (/^\[file\]-\d+$/i.test(s)) {
-            fileRefs.push({ type: 'index', value: s });
+            fileRefs.push({ type: 'file_index', value: s });
+        } else if (/^\[link\]-\d+$/i.test(s)) {
+            fileRefs.push({ type: 'link_index', value: s });
+        } else if (/^\[history\]-\d+$/i.test(s)) {
+            fileRefs.push({ type: 'history_index', value: s });
         } else if (s && s.length > 1 && !s.startsWith('pro') && !s.startsWith('kind') && !s.startsWith('ai')) {
             // Potential filename
             let looksLikeFilename = (
@@ -2137,18 +2174,40 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
         try {
             let listData = await safeFetchJson(`${getBackendBaseUrl()}/bridge/list?group_id=${pureGroupId}`, {}, "获取桥接文件列表");
             let bridgeFiles = [];
+            let bridgeLinks = [];
+            let bridgeHistory = [];
             if (listData && listData.status === 'ok') {
                 bridgeFiles = listData.files || [];
+                bridgeLinks = listData.links || [];
+                bridgeHistory = listData.history || [];
             }
 
             for (let ref of fileRefs) {
-                if (ref.type === 'index') {
+                if (ref.type === 'file_index') {
                     let idxMatch = ref.value.match(/^\[file\]-(\d+)$/i);
                     let idx = parseInt(idxMatch[1]);
                     if (idx >= 0 && idx < bridgeFiles.length) {
                         let bf = bridgeFiles[idx];
                         if (bf.content_url) {
                             resolvedFiles.push({ url: bf.content_url, name: bf.display_name || bf.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'link_index') {
+                    let idxMatch = ref.value.match(/^\[link\]-(\d+)$/i);
+                    let idx = parseInt(idxMatch[1]);
+                    if (idx >= 0 && idx < bridgeLinks.length) {
+                        let bl = bridgeLinks[idx];
+                        if (bl.content_url) {
+                            resolvedFiles.push({ url: bl.content_url, name: bl.display_name || bl.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'history_index') {
+                    let idxMatch = ref.value.match(/^\[history\]-(\d+)$/i);
+                    let idx = parseInt(idxMatch[1]);
+                    if (idx >= 0 && idx < bridgeHistory.length) {
+                        let bh = bridgeHistory[idx];
+                        if (bh.content_url) {
+                            resolvedFiles.push({ url: bh.content_url, name: bh.display_name || bh.name || ref.value });
                         }
                     }
                 } else if (ref.type === 'name') {

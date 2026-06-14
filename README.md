@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.4.2**  
+**V4.4.3**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -284,3 +284,12 @@ v4.4.1起，通过 `.bridge master` 查看网页版管理地址（使用内网IP
 1. 删除所有用户侧的下载链接功能：AI 分析、翻译、logutil 等结果不再附带下载链接，文件直接通过群文件交付。
 2. 消息中的染色器链接自动缓存：用户发送到群内的 log 链接（weizaima/dice.zone/kokona/trpgbot 等）自动拉取纯文本并加入桥接 `[link]` 列表，无需手动指令。
 3. 更新版本号至 v4.4.2。
+
+**v4.4.3**
+1. `[history]-N` 全面支持：`.aiutil`、`.translate`、`.模组分析/备团/完善`、`.logutil` 复合命令及录音中独立发送，均支持 `[history]-N` 引用被淘汰的桥接历史项。
+2. 修复 `bridge_link` 在复合命令中静默失效的问题：`.logutil` 复合命令现在正确解析 `[link]-N` 引用（此前因来源白名单遗漏，被当作原始文本处理）。
+3. `.模组分析/备团/完善` 新增 `[link]-N` 和 `[history]-N` 引用支持。
+4. 修复独立版前端（instance/logutil/frontend.js）在复合命令中未传递 `raw` 修饰符的问题。
+5. `/api/bridge_list` 在默认 `all` 模式下同时返回历史记录（按群号过滤），前端无需额外请求。
+6. 独立版后端的 `/bridge/list` 端点新增历史记录返回。
+7. 更新版本号至 v4.4.3。
