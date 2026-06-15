@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.4.5.1-logutil
+# LogUtil + Bridge 4.5.2-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -239,9 +239,9 @@ bash run_logutil.sh
 5. `/bridge/list` 端点新增历史记录返回。
 6. 同步 LogAI v4.4.3 全部修复。
 
-**v4.4.4-logutil** （含 v4.4.4.0 + v4.4.4.1）
+**v4.4.4-logutil** （含 4.5.0.0 + 4.5.0.1）
 
-**v4.4.4.0-logutil**
+**v4.5.0.0-logutil**
 1. 修复 `.bridge get [link]-N` / `[history]-N` 返回文件名含 URL 的问题。
 2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
 3. 修复历史记录列表中 `[link]` 字样重复显示（name 字段移除 `[link] ` 前缀）。
@@ -251,17 +251,17 @@ bash run_logutil.sh
 7. 修复复合命令中 `raw` 修饰符仅在前两个位置生效的问题。
 8. 同步 LogAI v4.4.4 全部修复。
 
-**v4.4.4.1-logutil**
+**v4.5.0.1-logutil**
 1. 修复 `raw` 修饰符在复合命令中仍可能被误判为标题的问题。
 2. 修复历史记录编号错位（全局索引→顺序计数器）。
 3. 新增跨群访问语法：`L0-群号` / `[link]-0-群号` 等。
 4. `.bridge list` 全部采用合并聊天记录格式，新增 `all` 参数。
-5. 同步 LogAI v4.4.4.1 全部修复。
+5. 同步 LogAI v4.5.0.1 全部修复。
 
-**v4.4.4.2-logutil**
+**v4.5.0.2-logutil**
 1. 修复 `raw` 修饰符在复合命令与独立消息中无效的根因（三层修复：DB行确保、复合op解析、WS消息处理均检查 raw 标记）。
-2. 同步 LogAI v4.4.4.2 全部修复。
+2. 同步 LogAI v4.5.0.2 全部修复。
 
-**v4.4.5-logutil**
+**v4.5.2-logutil**
 1. 跨群访问语法全面生效：`H0-群号` 等格式在所有场景可用。
-2. 同步 LogAI v4.4.5 全部修复。
+2. 同步 LogAI v4.5.2 全部修复。

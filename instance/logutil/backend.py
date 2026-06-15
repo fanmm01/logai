@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.5.1-logutil"
+SERVICE_VERSION = "4.5.2-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -315,7 +315,9 @@ def format_weizaima_text(log_obj):
         if not isinstance(item, dict):
             continue
         nick = item.get('nickname') or item.get('nick') or item.get('sender') or item.get('user') or "?"
+        im_userid = item.get('IMUserId') or item.get('uniformId') or item.get('user_id') or nick
         msg = item.get('message') or item.get('content') or item.get('text') or item.get('msg') or ""
+        item_time = item.get('time')
         # fallback: image or attachment indicators
         if not msg:
             if str(item.get('type', '')).lower() == 'image' or item.get('file'):
@@ -331,7 +333,20 @@ def format_weizaima_text(log_obj):
         msg = re.sub(r'<[^>]+>', '', msg).strip()
         if not msg:
             continue
-        lines.append(f"{nick}: {msg}")
+        # v4.4.5.1: preserve IMUserId and time via bracket pipe format
+        if item_time and im_userid:
+            ts_str = datetime.datetime.fromtimestamp(safe_int(item_time, 0)).strftime('%Y-%m-%d %H:%M:%S')
+            if im_userid == nick:
+                # 格式 b: 玩家本人发言 → <玩家昵称|游戏外>
+                lines.append(f"[{ts_str}] <{nick}|游戏外> {msg}")
+            else:
+                # 格式 a: 角色发言 → <角色名|玩家昵称>
+                lines.append(f"[{ts_str}] <{nick}|{im_userid}> {msg}")
+        elif item_time:
+            ts_str = datetime.datetime.fromtimestamp(safe_int(item_time, 0)).strftime('%Y-%m-%d %H:%M:%S')
+            lines.append(f"[{ts_str}] <{nick}|{nick}> {msg}")
+        else:
+            lines.append(f"<{nick}|{nick}> {msg}")
     return "\n".join(lines)
 
 def fetch_trpgbot(full_id):
@@ -693,8 +708,9 @@ def extract_text_from_file(file_content, filename):
                 for p in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
                     para_text = ''.join(
                         t.text or '' for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
-                    )
-                    paragraphs.append(para_text)
+                    ).strip()
+                    if para_text:
+                        paragraphs.append(para_text)
                 text = '\n'.join(paragraphs)
             except Exception:
                 return f"[ParseError]无法解析 .docx 文件（文件可能已损坏）"
@@ -705,8 +721,10 @@ def extract_text_from_file(file_content, filename):
             pdf_document = fitz.open(stream=file_content, filetype="pdf")
             pages_text = []
             # 限制读取前300页防撑爆内存
-            for page_num in range(min(len(pdf_document), 300)): 
-                pages_text.append(pdf_document[page_num].get_text())
+            for page_num in range(min(len(pdf_document), 300)):
+                page_text = str(pdf_document[page_num].get_text() or '').strip()
+                if page_text:
+                    pages_text.append(page_text)
             text = "\n".join(pages_text)
             pdf_document.close()
             
@@ -854,7 +872,7 @@ def build_speaker_match(name, content, fallback_ts, date_text="", clock_text="",
             "name": char_name,
             "user_id": player,
             "time": ts_val,
-            "content": f"{char_name}：{content_str}" if content_str else "",
+            "content": f"{char_name}{content_str}" if content_str else "",
         }
 
     # 原 fwlog 逻辑
@@ -1544,9 +1562,13 @@ def extract_text_from_group_file(filename, data):
                 for path in targets:
                     raw = zf.read(path)
                     root = ET.fromstring(raw)
-                    for node in root.iter():
-                        if node.text and node.text.strip():
-                            texts.append(node.text.strip())
+                    # v4.5.2: aggregate text runs per paragraph (not per node)
+                    for p in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
+                        para_text = ''.join(
+                            t.text or '' for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+                        ).strip()
+                        if para_text:
+                            texts.append(para_text)
                 if texts:
                     return "\n".join(texts)
         except Exception:
@@ -2327,7 +2349,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.5.1</h1>
+<h1>LogAI Bridge Manager v4.5.2</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -5593,7 +5615,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.5.1 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.5.2 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')

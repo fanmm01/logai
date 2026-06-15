@@ -2,7 +2,7 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogUtil + Bridge 4.4.5.1 - Log Recording & File Bridge"
+echo "  LogUtil + Bridge 4.5.2 - Log Recording & File Bridge"
 echo "============================================"
 echo ""
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.4.5.1-logutil
+// @version      4.5.2-logutil
 // @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.5.1-logutil');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.5.2-logutil');
     seal.ext.register(ext);
 }
 
@@ -1010,10 +1010,10 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             }
         } else if (op === 'list') {
             // v4.4.0: 支持 filter 参数 (file/link/history/all)，默认 all 显示 file+link
-            let filterArg = (cmdArgs.getArgN(2) || 'all').toLowerCase();
+            let filterArg = (cmdArgs.getArgN(2) || '').toLowerCase();
             let validFilters = ['file', 'link', 'history', 'all'];
-            if (!validFilters.includes(filterArg)) {
-                filterArg = 'all';
+            if (filterArg && !validFilters.includes(filterArg)) {
+                filterArg = '';
             }
             payload.filter = filterArg;
 
@@ -1026,8 +1026,8 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 let files = data.files || [];
                 let links = data.links || [];
                 let history = data.history || [];
-                let showFiles = (filterArg === 'all' || filterArg === 'file');
-                let showLinks = (filterArg === 'all' || filterArg === 'link');
+                let showFiles = (!filterArg || filterArg === 'all' || filterArg === 'file');
+                let showLinks = (!filterArg || filterArg === 'all' || filterArg === 'link');
                 let showHistory = (filterArg === 'all' || filterArg === 'history');
 
                 // v4.4.4.1: always use merged chat record format
@@ -1221,7 +1221,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.4.5.1-logutil loaded (logutil + bridge only)');
+console.log('用户脚本：log-analyzer v4.5.2-logutil loaded (logutil + bridge only)');
 try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
 
 // Auto-push WS config to backend on startup (delayed to let backend start)

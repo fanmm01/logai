@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.4.5.1
+// @version      4.5.2
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.5.1');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.5.2');
     seal.ext.register(ext);
 }
 
@@ -1691,10 +1691,10 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             }
         } else if (op === 'list') {
             // v4.4.0: 支持 filter 参数 (file/link/history/all)，默认 all 显示 file+link
-            let filterArg = (cmdArgs.getArgN(2) || 'all').toLowerCase();
+            let filterArg = (cmdArgs.getArgN(2) || '').toLowerCase();
             let validFilters = ['file', 'link', 'history', 'all'];
-            if (!validFilters.includes(filterArg)) {
-                filterArg = 'all';
+            if (filterArg && !validFilters.includes(filterArg)) {
+                filterArg = '';
             }
             payload.filter = filterArg;
 
@@ -1708,8 +1708,8 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 let files = data.files || [];
                 let links = data.links || [];
                 let history = data.history || [];
-                let showFiles = (filterArg === 'all' || filterArg === 'file');
-                let showLinks = (filterArg === 'all' || filterArg === 'link');
+                let showFiles = (!filterArg || filterArg === 'all' || filterArg === 'file');
+                let showLinks = (!filterArg || filterArg === 'all' || filterArg === 'link');
                 let showHistory = (filterArg === 'all' || filterArg === 'history');
 
                 // v4.4.4.1: always use merged chat record format
