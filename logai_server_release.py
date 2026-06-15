@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.4"
+SERVICE_VERSION = "4.4.4.1"
 _openai_client = None
 
 def get_openai_client():
@@ -475,17 +475,31 @@ def fetch_raw_url(url):
     except Exception as e: print(f"RawURL Error: {e}"); return None
 
 def expand_short_alias(raw):
-    """v4.4.4: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23.
+    """v4.4.4: 短别名展開 — F14→[file]-14, L0→[link]-0, H23→[history]-23.
+    v4.4.4.1: 也支持跨群访问 F14-123456→[file]-14-123456。
     与前端 expandShortAlias 完全一致。"""
     s = str(raw or '').strip()
+    # 跨群短别名: F14-123456, L0-999888
+    m = re.match(r'^([FLH])(\d+)-(\d+)$', s, re.I)
+    if m:
+        prefix = m.group(1).upper()
+        num = m.group(2)
+        gid = m.group(3)
+        if prefix == 'F': return f'[file]-{num}-{gid}'
+        if prefix == 'L': return f'[link]-{num}-{gid}'
+        if prefix == 'H': return f'[history]-{num}-{gid}'
+    # 短别名: F14, L0, H23
     m = re.match(r'^([FLH])(\d+)$', s, re.I)
-    if not m:
-        return raw
-    prefix = m.group(1).upper()
-    num = m.group(2)
-    if prefix == 'F': return f'[file]-{num}'
-    if prefix == 'L': return f'[link]-{num}'
-    if prefix == 'H': return f'[history]-{num}'
+    if m:
+        prefix = m.group(1).upper()
+        num = m.group(2)
+        if prefix == 'F': return f'[file]-{num}'
+        if prefix == 'L': return f'[link]-{num}'
+        if prefix == 'H': return f'[history]-{num}'
+    # v4.4.4: SealDice 去括号修复 — file-0→[file]-0
+    m = re.match(r'^(file|link|history)-(\d+)$', s, re.I)
+    if m:
+        return f'[{m.group(1).lower()}]-{m.group(2)}'
     return raw
 
 
@@ -968,7 +982,6 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
 
         # 6. 绘图与返回
         images_list = text_to_images(result_text, f"Key:{key_for_label[:8]}", report_title, final_theme, token_usage)
-        JOB_CACHE[job_id]['status'] = 'done'
         JOB_CACHE[job_id]['images'] = images_list
         JOB_CACHE[job_id]['text'] = result_text  # 保存原始文本供 get_text 使用
         print(f"[{job_id}] 渲染处理完成")
@@ -999,6 +1012,9 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
                         print(f"[{job_id}] get_text 上传失败: {ue}")
             except Exception as e:
                 print(f"[{job_id}] get_text 保存失败: {e}")
+
+        # v4.4.4.1: set status done AFTER get_text to avoid race condition
+        JOB_CACHE[job_id]['status'] = 'done'
 
         # ================= 7. 写入省流缓存 =================
         if not is_pro and hash_key:
@@ -4546,7 +4562,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.4</h1>
+<h1>LogAI Bridge Manager v4.4.4.1</h1>
 <div class="group-select">
   群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
   <button onclick="loadData()">刷新</button>
@@ -4782,15 +4798,15 @@ def api_bridge_list():
             '_type': 'link',
         })
 
-    for idx, item in enumerate(hist_list):
-        # v4.4.3: filter history by group_id when not in history-only mode
+    filtered_idx = 0
+    for item in hist_list:
         # v4.4.4: always filter history by group_id for data isolation
         if safe_int(item.get('group_id', 0), 0) != group_id:
             continue
         ck = item.get('content_key', '')
         path_cached = CONTENT_INDEX.get(ck, '')
         history_items.append({
-            'index': idx,
+            'index': filtered_idx,
             'name': str(item.get('name', '')),
             'url': str(item.get('url', '')),
             'text_chars': safe_int(item.get('text_chars', 0), 0),
@@ -4800,6 +4816,7 @@ def api_bridge_list():
             'content_url': item.get('content_url', ''),
             '_type': item.get('_type', 'file'),
         })
+        filtered_idx += 1
 
     return jsonify({
         'status': 'ok',
@@ -6512,11 +6529,13 @@ def api_logutil_end():
 # ====== NapCat 消息/文件发送 (fwlog-style logutil end) ======
 
 def _parse_bridge_ref(ref_str):
-    """v4.4.0: 解析 '[file]-3', '[link]-1', '[history]-5' 为 ('file', 3) 等。"""
-    m = re.match(r'^\[(file|link|history)\]-(\d+)$', str(ref_str).strip(), re.I)
+    """v4.4.0: 解析 '[file]-3', '[link]-1', '[history]-5' 为 ('file', 3) 等。
+    v4.4.4.1: 支持跨群 '[file]-3-123456' → ('file', 3, 123456)。"""
+    m = re.match(r'^\[(file|link|history)\]-(\d+)(?:-(\d+))?$', str(ref_str).strip(), re.I)
     if m:
-        return m.group(1).lower(), int(m.group(2))
-    return None, -1
+        cross_gid = int(m.group(3)) if m.group(3) else None
+        return m.group(1).lower(), int(m.group(2)), cross_gid
+    return None, -1, None
 
 
 @app.route('/api/bridge_get', methods=['POST'])
@@ -6529,31 +6548,36 @@ def api_bridge_get():
     index = safe_int(payload.get('index', -1), -1)
     ref_type = str(payload.get('type', 'file')).lower()
 
-    # Parse ref if provided (e.g. "[file]-3")
+    # Parse ref if provided (e.g. "[file]-3" or "[file]-3-123456" for cross-group)
+    cross_group_id = None
     if ref_str:
-        parsed_type, parsed_idx = _parse_bridge_ref(ref_str)
+        parsed_type, parsed_idx, cross_gid = _parse_bridge_ref(ref_str)
         if parsed_type:
             ref_type = parsed_type
             index = parsed_idx
+            cross_group_id = cross_gid
 
     if group_id <= 0 or index < 0:
         return jsonify({'status': 'error', 'msg': 'missing group_id or ref'}), 400
 
+    # v4.4.4.1: cross-group access — use target group for lookup
+    lookup_group_id = cross_group_id if cross_group_id else group_id
+
     if ref_type == 'history':
         with STATE_LOCK:
-            hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == group_id]
+            hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == lookup_group_id]
         if index >= len(hist_list):
             return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(hist_list)-1})'}), 404
         item = hist_list[index]
     elif ref_type == 'link':
         with STATE_LOCK:
-            link_list = list(LINK_CACHE.get(group_id, []))
+            link_list = list(LINK_CACHE.get(lookup_group_id, []))
         if index >= len(link_list):
             return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(link_list)-1})'}), 404
         item = link_list[index]
     else:
         with STATE_LOCK:
-            file_list = list(LATEST_FILES.get(group_id, []))
+            file_list = list(LATEST_FILES.get(lookup_group_id, []))
         if index >= len(file_list):
             return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(file_list)-1})'}), 404
         item = file_list[index]
@@ -6604,7 +6628,7 @@ def api_bridge_del():
         # Sort targets by index descending (highest first) for safe deletion
         parsed_targets = []
         for t in targets:
-            ptype, pidx = _parse_bridge_ref(str(t).strip())
+            ptype, pidx, _ = _parse_bridge_ref(str(t).strip())
             if ptype:
                 parsed_targets.append((ptype, pidx, str(t).strip()))
             else:
