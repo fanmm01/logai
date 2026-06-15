@@ -2,6 +2,10 @@
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
+@license: Apache-2.0   
+原作者：@chaye2333  
+修改以及新建部分功能：@fanmm, GPT-5, DeepseekV4  
+
 ## 功能概述
 
 | 功能 | 说明 |

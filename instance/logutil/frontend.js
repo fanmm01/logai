@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.5.3-logutil');
+    ext = seal.ext.new('logutil', 'Air', '4.5.3-logutil');
     seal.ext.register(ext);
 }
 

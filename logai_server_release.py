@@ -4848,12 +4848,12 @@ def api_bridge_list():
 
     payload = request.get_json(silent=True) or {}
     group_id = safe_int(payload.get('group_id') or request.args.get('group_id', 0), 0)
-    filter_type = str(payload.get('filter') or request.args.get('filter', 'all')).lower()
+    filter_type = str(payload.get('filter') or request.args.get('filter', '')).lower()
     if group_id <= 0:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
 
-    show_files = filter_type in ('all', 'file')
-    show_links = filter_type in ('all', 'link')
+    show_files = (not filter_type or filter_type in ('all', 'file'))
+    show_links = (not filter_type or filter_type in ('all', 'link'))
     show_history = filter_type in ('all', 'history')
     show_history_only = filter_type == 'history'
 
