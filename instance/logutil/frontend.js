@@ -18,11 +18,11 @@ if (!ext) {
 }
 
 // 保留 logutil 与 bridge 相关配置项
-seal.ext.registerStringConfig(ext, "Python后端服务地址", "http://127.0.0.1:8000", "Python 后端服务的地址，用于提交分析任务和获取结果。");
-seal.ext.registerIntConfig(ext, "Python后端服务端口", 8000, "Python 后端服务的端口号（默认8000）。修改后前端所有请求将使用新端口。");
+seal.ext.registerStringConfig(ext, "Python后端服务地址", "http://127.0.0.1:8001", "Python 后端服务的地址，用于提交分析任务和获取结果。");
+seal.ext.registerIntConfig(ext, "Python后端服务端口", 8001, "Python 后端服务的端口号（默认8001）。修改后前端所有请求将使用新端口。");
 seal.ext.registerStringConfig(ext, "OneBot_API_地址", "http://127.0.0.1:34567", "Bot客户端的HTTP监听地址");
 seal.ext.registerBoolConfig(ext, "启用HTTP文件桥接", true, "开启后通过HTTP中转服务读取最近群文件，不再依赖群内文本回传。");
-seal.ext.registerStringConfig(ext, "HTTP文件桥接读取API", "http://127.0.0.1:8000/bridge/latest", "中转服务读取接口，默认使用本地服务。建议使用POST JSON。");
+seal.ext.registerStringConfig(ext, "HTTP文件桥接读取API", "http://127.0.0.1:8001/bridge/latest", "中转服务读取接口，默认使用本地服务。建议使用POST JSON。");
 seal.ext.registerStringConfig(ext, "HTTP文件桥接Token", "", "可选，若中转服务启用鉴权则在此填写。");
 seal.ext.registerBoolConfig(ext, "调试日志", true, "开启后在命令行输出桥接请求、解析与提交流程详细日志。");
 seal.ext.registerBoolConfig(ext, "启用文本文件桥接", true, "开启后可通过纯文本桥接消息记录最新群文件，不依赖CQ:file解析。");
@@ -132,7 +132,7 @@ function expandShortAlias(raw) {
 
 function getBackendBaseUrl() {
     let port = seal.ext.getIntConfig(ext, "Python后端服务端口");
-    if (!port || port <= 0) port = 8000;
+    if (!port || port <= 0) port = 8001;
     let hostUrl = (seal.ext.getStringConfig(ext, "Python后端服务地址") || 'http://127.0.0.1').trim();
     // 从完整URL中提取协议+主机部分（去掉已有端口）
     let base = hostUrl.replace(/:\d+$/, '');  // 去掉末尾端口
@@ -421,8 +421,27 @@ async function safeFetchJson(url, options, tag) {
     try {
         return JSON.parse(text);
     } catch (e) {
-        const preview = text.length > 160 ? (text.slice(0, 160) + "...") : text;
-        throw new Error(`${tag} 返回非JSON: ${preview}`);
+        const preview = text.length > 300 ? (text.slice(0, 300) + "...") : text;
+        throw new Error(`${tag} HTTP${resp.status} 返回非JSON: ${preview}`);
+    }
+}
+
+// 通用 JSON fetch 封装，带完整调试信息
+async function fetchJson(url, options) {
+    let resp;
+    try {
+        resp = await fetch(url, options);
+    } catch (e) {
+        throw new Error(`无法连接后端(${url}): ${e.message}`);
+    }
+    const text = await resp.text();
+    if (!resp.ok) {
+        throw new Error(`后端HTTP${resp.status}(${url}): ${text.slice(0, 200)}`);
+    }
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        throw new Error(`后端返回非JSON(${url}): ${text.slice(0, 200)}`);
     }
 }
 
@@ -440,12 +459,8 @@ cmdHalt.solve = async (ctx, msg, cmdArgs) => {
         return seal.ext.newCmdExecuteResult(true);
     }
     try {
-        let resp = await fetch(`${getBackendBaseUrl()}/api/halt`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({group_id: getPureGroupId(groupId)})
-        });
-        let data = await resp.json();
+        let url = `${getBackendBaseUrl()}/api/halt`;
+        let data = await fetchJson(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({group_id:getPureGroupId(groupId)})});
         if (data.status === 'ok') {
             seal.replyToSender(ctx, msg, `🛑 已停止 ${data.count} 个进行中的任务。`);
         } else {
@@ -792,8 +807,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         }
 
         if (op === 'list') {
-            let resp = await fetch(`${host}/api/logutil_list?group_id=${getPureGroupId(groupId)}`);
-            let data = await resp.json();
+            let data = await fetchJson(`${host}/api/logutil_list?group_id=${getPureGroupId(groupId)}`);
             if (data.status === 'ok') {
                 let lines = [fw('【日志列表】 本会话 fwlog 列表:')];
                 for (const log of data.logs || []) {
@@ -1003,12 +1017,11 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             }
             payload.filter = filterArg;
 
-            let resp = await fetch(`${host}/api/bridge_list`, {
+            let data = await fetchJson(`${host}/api/bridge_list`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
-            let data = await resp.json();
             if (data.status === 'ok') {
                 let files = data.files || [];
                 let links = data.links || [];
@@ -1132,12 +1145,11 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 seal.replyToSender(ctx, msg, fw('用法: .bridge get [file]-N / [link]-N / [history]-N\n请使用 .bridge list 查看可用编号。'));
                 return seal.ext.newCmdExecuteResult(true);
             }
-            let resp = await fetch(`${host}/api/bridge_get`, {
+            let data = await fetchJson(`${host}/api/bridge_get`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({group_id: pureId, ref: refArg})
             });
-            let data = await resp.json();
             if (data.status === 'ok' && data.file_sent) {
                 seal.replyToSender(ctx, msg, fw(`📄 已转为纯文本并发送：${data.filename}`));
             } else {
@@ -1154,12 +1166,11 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                 seal.replyToSender(ctx, msg, fw('用法: .bridge del [file]-N [link]-N [history]-N ...'));
                 return seal.ext.newCmdExecuteResult(true);
             }
-            let resp = await fetch(`${host}/api/bridge_del`, {
+            let data = await fetchJson(`${host}/api/bridge_del`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({group_id: pureId, targets: targets})
             });
-            let data = await resp.json();
             if (data.status === 'ok') {
                 let msgParts = [fw(`已删除: ${(data.deleted || []).join(', ')}`)];
                 if (data.errors && data.errors.length > 0) {
@@ -1211,6 +1222,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 // .模组完善
 
 console.log('用户脚本：log-analyzer v4.4.5.1-logutil loaded (logutil + bridge only)');
+try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {
