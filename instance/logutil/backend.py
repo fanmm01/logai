@@ -4007,6 +4007,7 @@ def api_logutil_compound():
         with STATE_LOCK:
             LOG_IMPORTED_FILES.pop(log_id_str, None)
         update_logutil_log_meta(log_obj['id'], ended=0)
+        ensure_logutil_group_state(group_id)  # ensure row exists before UPDATE
         update_logutil_group_state(group_id, current_log_name=log_obj['name'], recording=1,
                                    raw_recording=1 if raw_mode else 0)
         capture_baseline_file_id(group_id)

@@ -1285,7 +1285,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let logaiModeLower = new Set(logaiModeWords.map(w => (w || '').toLowerCase()));
             ops = ops.filter(a => {
                 let s = (a || '').toLowerCase();
-                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && !logaiModeLower.has(s);
+                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && s !== 'del_paren' && s !== 'delparen' && s !== 'del-paren' && !logaiModeLower.has(s);
             });
 
             if (ops.length === 0 && !hasEnd && !hasLogai) {
