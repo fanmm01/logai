@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.4.4.1-logutil
+// @version      4.4.4.2-logutil
 // @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4.1-logutil');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4.2-logutil');
     seal.ext.register(ext);
 }
 
@@ -1203,7 +1203,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.4.4.1-logutil loaded (logutil + bridge only)');
+console.log('用户脚本：log-analyzer v4.4.4.2-logutil loaded (logutil + bridge only)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

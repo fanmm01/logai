@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.4.1"
+SERVICE_VERSION = "4.4.4.2"
 _openai_client = None
 
 def get_openai_client():
@@ -4562,7 +4562,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.4.1</h1>
+<h1>LogAI Bridge Manager v4.4.4.2</h1>
 <div class="group-select">
   群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
   <button onclick="loadData()">刷新</button>
@@ -6320,14 +6320,22 @@ def api_logutil_compound():
             if not resolved_text:
                 resolved_text = op_text  # use as raw text
 
-            # Parse into items
-            items = parse_structured_text_to_items(
-                resolved_text,
-                sender_name=sender_name,
-                sender_id=sender_id,
-                ts=ts,
-                raw_msg_id=f"compound:{i}:{int(time.time())}",
-            )
+            # Parse into items — v4.4.4.1: respect raw_mode
+            if raw_mode:
+                raw_text = str(resolved_text or '').strip()
+                if raw_text:
+                    items = [make_log_item(sender_name, sender_id, ts, raw_text,
+                                           f"compound-raw:{i}:{int(time.time())}")]
+                else:
+                    items = []
+            else:
+                items = parse_structured_text_to_items(
+                    resolved_text,
+                    sender_name=sender_name,
+                    sender_id=sender_id,
+                    ts=ts,
+                    raw_msg_id=f"compound:{i}:{int(time.time())}",
+                )
             if items:
                 _, new_count = add_logutil_items(log_obj['id'], items)
                 results['ops'].append({
@@ -7447,14 +7455,20 @@ async def process_ws_messages():
                                             )
                                             sender_id = str((msg.get("sender") or {}).get("user_id") or msg.get("user_id") or "")
                                             event_ts = safe_int(msg.get("time"), int(time.time()))
-                                            items = await extract_items_from_text_chunk(
-                                                file_text,
-                                                sender_name,
-                                                sender_id,
-                                                event_ts,
-                                                f"file-cmd:{file_idx}:{bridge_item.get('file_id', '')}",
-                                                group_id,
-                                            )
+                                            # v4.4.4.1: respect raw_recording
+                                            if gs.get("raw_recording"):
+                                                raw_text = file_text.strip()
+                                                items = [make_log_item(sender_name, sender_id, event_ts, raw_text,
+                                                                       f"file-cmd-raw:{file_idx}")] if raw_text else []
+                                            else:
+                                                items = await extract_items_from_text_chunk(
+                                                    file_text,
+                                                    sender_name,
+                                                    sender_id,
+                                                    event_ts,
+                                                    f"file-cmd:{file_idx}:{bridge_item.get('file_id', '')}",
+                                                    group_id,
+                                                )
                                             if items:
                                                 log_obj = ensure_logutil_log(group_id, gs["current_log_name"])
                                                 _, new_n = add_logutil_items(log_obj["id"], items)
@@ -7537,14 +7551,20 @@ async def process_ws_messages():
                                             )
                                             sender_id = str((msg.get("sender") or {}).get("user_id") or msg.get("user_id") or "")
                                             event_ts = safe_int(msg.get("time"), int(time.time()))
-                                            items = await extract_items_from_text_chunk(
-                                                file_text,
-                                                sender_name,
-                                                sender_id,
-                                                event_ts,
-                                                f"link-cmd:{link_idx}:{link_item.get('url', '')}",
-                                                group_id,
-                                            )
+                                            # v4.4.4.1: respect raw_recording
+                                            if gs.get("raw_recording"):
+                                                raw_text = file_text.strip()
+                                                items = [make_log_item(sender_name, sender_id, event_ts, raw_text,
+                                                                       f"link-cmd-raw:{link_idx}")] if raw_text else []
+                                            else:
+                                                items = await extract_items_from_text_chunk(
+                                                    file_text,
+                                                    sender_name,
+                                                    sender_id,
+                                                    event_ts,
+                                                    f"link-cmd:{link_idx}:{link_item.get('url', '')}",
+                                                    group_id,
+                                                )
                                             if items:
                                                 log_obj = ensure_logutil_log(group_id, gs["current_log_name"])
                                                 _, new_n = add_logutil_items(log_obj["id"], items)
@@ -7627,14 +7647,20 @@ async def process_ws_messages():
                                             )
                                             sender_id = str((msg.get("sender") or {}).get("user_id") or msg.get("user_id") or "")
                                             event_ts = safe_int(msg.get("time"), int(time.time()))
-                                            items = await extract_items_from_text_chunk(
-                                                file_text,
-                                                sender_name,
-                                                sender_id,
-                                                event_ts,
-                                                f"history-cmd:{hist_idx}:{hist_item.get('name', hist_item.get('url', ''))}",
-                                                group_id,
-                                            )
+                                            # v4.4.4.1: respect raw_recording
+                                            if gs.get("raw_recording"):
+                                                raw_text = file_text.strip()
+                                                items = [make_log_item(sender_name, sender_id, event_ts, raw_text,
+                                                                       f"history-cmd-raw:{hist_idx}")] if raw_text else []
+                                            else:
+                                                items = await extract_items_from_text_chunk(
+                                                    file_text,
+                                                    sender_name,
+                                                    sender_id,
+                                                    event_ts,
+                                                    f"history-cmd:{hist_idx}:{hist_item.get('name', hist_item.get('url', ''))}",
+                                                    group_id,
+                                                )
                                             if items:
                                                 log_obj = ensure_logutil_log(group_id, gs["current_log_name"])
                                                 _, new_n = add_logutil_items(log_obj["id"], items)
