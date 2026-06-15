@@ -2,7 +2,7 @@
 set -uo pipefail
 
 echo "============================================"
-echo "  LogUtil + Bridge 4.4.2 - Log Recording & File Bridge"
+echo "  LogUtil + Bridge 4.4.5.1 - Log Recording & File Bridge"
 echo "============================================"
 echo ""
 
@@ -17,7 +17,7 @@ CFG_WS_TOKEN=""
 
 CFG_HOST="0.0.0.0"
 #logutil后端运行的端口号。如提示端口被占用请修改。但是这是不建议的行动；此处若进行了修改，则需要把前端配置进行同样的修改。
-CFG_PORT="8000"
+CFG_PORT="8001"
 #以下可忽略，为内部参数
 CFG_BRIDGE_TOKEN=""
 CFG_BRIDGE_PUBLIC_BASE=""
