@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.5.2
+// @version      4.5.3
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.5.2');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.5.3');
     seal.ext.register(ext);
 }
 
@@ -784,6 +784,10 @@ cmdLogAi.name = 'logai';
 cmdLogAi.help = '对跑团Log进行整体评分。\n用法: .logai [配置名] <链接1> [链接2] ...（按输入顺序拼接）\n或先发文件后输入 .logai（HTTP桥接可走全文）。\n配置管理请使用 .logai 配置 示例';
 cmdLogAi.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
+    if (cmdArgs.args[0] && String(cmdArgs.args[0]).toLowerCase() === 'help') {
+        seal.replyToSender(ctx, msg, '.logai [refs...] [pro] [温柔] [ai] [主题] [get_text]\n对TRPG日志进行AI分析评分。支持: 染色器链接、[file]-N/[link]-N/[history]-N、短别名(F14/L0/H23)、跨群(F0-群号)、文件名。\n修饰符: pro=专业模型 | 温柔=温和语气 | ai=纯AI模式 | get_text=txt文件输出\n.logai 配置 添加/删除/列表/查看  管理自定义分析配置');
+        return seal.ext.newCmdExecuteResult(true);
+    }
     // v4.4.0: 防刷屏检查
     let rateLimitMsg = checkRateLimit(ctx);
     if (rateLimitMsg) {
@@ -965,6 +969,10 @@ cmdAiutil.name = 'aiutil';
 cmdAiutil.help = '快速AI分析，不保存配置。\n用法: .aiutil [file1] …… [fileN] <prompt> [pro] [get_text]\nfile格式: [file]-N（编号从0最旧到最新）\n无文件时仅发送prompt给AI。';
 cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
+    if (cmdArgs.args[0] && String(cmdArgs.args[0]).toLowerCase() === 'help') {
+        seal.replyToSender(ctx, msg, '.aiutil [refs...] <prompt> [pro] [get_text]\n快速AI分析，不保存配置。支持: [file]-N/[link]-N/[history]-N、短别名(F14/L0/H23)、跨群(F0-群号)。无文件时仅发送prompt。\n修饰符: pro=专业模型 | get_text=txt文件输出');
+        return seal.ext.newCmdExecuteResult(true);
+    }
     // v4.4.0: 防刷屏检查
     let rateLimitMsg = checkRateLimit(ctx);
     if (rateLimitMsg) {
@@ -1208,6 +1216,10 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     tokens = tokens.map(expandShortAlias);
 
     let op = (tokens[0] || '').toLowerCase();
+    if (op === 'help') {
+        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren]  结束并导出\nlist                    列出本群日志\nget [名称]              导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end] [logai]\n修饰符: raw=跳过消息头解析直接拼接原始文本 | del_paren=删除括号包裹内容\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、短别名、跨群、染色器链接、文本'));
+        return seal.ext.newCmdExecuteResult(true);
+    }
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
@@ -1646,6 +1658,10 @@ cmdBridge.help = fw([
 cmdBridge.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
     let op = (cmdArgs.getArgN(1) || '').toLowerCase();
+    if (op === 'help') {
+        seal.replyToSender(ctx, msg, '.bridge <子命令>\non/off/status   控制桥接轮询\nrate <秒>         设置轮询间隔\nlist [file|link|history|all]  列出缓存 (无参数=file+link, all=全部)\nmaster            查看Web管理界面\nget <ref>         获取文件到群\ndel <ref>...      删除指定缓存项\n引用格式: [file]-N/[link]-N/[history]-N | 短别名 F14/L0/H23 | 跨群 F0-群号');
+        return seal.ext.newCmdExecuteResult(true);
+    }
     let groupId = ctx.group ? ctx.group.groupId : '';
     if (!groupId) {
         seal.replyToSender(ctx, msg, fw('❌ 此功能仅在群聊中可用'));
@@ -1724,7 +1740,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         fileLines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
                         msgNodes.push(fileLines.join('\n'));
-                    } else if (filterArg === 'file') {
+                    } else {
                         msgNodes.push(fw('【文件】暂无缓存文件。'));
                     }
                 }
@@ -1739,7 +1755,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         linkLines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
                         msgNodes.push(linkLines.join('\n'));
-                    } else if (filterArg === 'link') {
+                    } else {
                         msgNodes.push(fw('【链接】暂无缓存链接。'));
                     }
                 }
@@ -1754,7 +1770,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         histLines.push(fw('提示: 使用 [history]-N 引用历史记录。使用 .bridge del [history]-N 删除。'));
                         msgNodes.push(histLines.join('\n'));
-                    } else if (filterArg === 'history') {
+                    } else {
                         msgNodes.push(fw('【历史记录】暂无历史记录。'));
                     }
                 }
@@ -1903,8 +1919,8 @@ cmdTranslate.help = '翻译桥接缓存文件。\n用法: .translate [goal-ALL] 
 cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
     let args = cmdArgs.args;
-    if (!args || args.length === 0) {
-        seal.replyToSender(ctx, msg, '用法: .translate [goal-ALL] [target_lang=中文] [file1] …… [fileN]\n示例: .translate 英文 [file]-0\n       .translate goal-all 日文 [file]-0 [file]-1');
+    if (!args || args.length === 0 || (args[0] && String(args[0]).toLowerCase() === 'help')) {
+        seal.replyToSender(ctx, msg, '.translate [goal-ALL|ALL] [target_lang=中文] [refs...]\n翻译桥接缓存文件为txt。支持: [file]-N/[link]-N/[history]-N、短别名(F14/L0/H23)、跨群(F0-群号)。\n修饰符: goal-ALL(或ALL)=全量翻译+TextDB在线查看+无超时 | 默认逐段翻译\n示例: .translate 英文 [file]-0\n       .translate ALL 日文 [file]-0 [file]-1');
         return seal.ext.newCmdExecuteResult(true);
     }
 

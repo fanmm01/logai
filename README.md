@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.5.2**  
+**V4.5.3**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -376,7 +376,7 @@ logutil支持识别以下种类的消息头：
 3. 修复主后端 `/bridge/list` 未返回历史记录的问题（此前仅实例版修复），解决 `.translate` 等前端命令无法解析 `[history]-N` 的 bug。
 4. 更新版本号至 v4.5.1.1。
 
-**v4.5.2**
+**v4.5.3**
 1. 修复着色器链接分词漏洞：format_weizaima_text 改用方括号管道格式输出（保留 IMUserId/time）；格式 b 输出 <玩家|游戏外>；格式 c 星号不加冒号。
 2. DOCX/PDF 文本提取：消除无意义换行。
 3. .bridge list 无参数时不再返回历史记录（仅 file+link），all 参数仍同时显示全部。

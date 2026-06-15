@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.5.2-logutil
+# LogUtil + Bridge 4.5.3-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -263,5 +263,12 @@ bash run_logutil.sh
 2. 同步 LogAI v4.5.0.2 全部修复。
 
 **v4.5.2-logutil**
-1. 跨群访问语法全面生效：`H0-群号` 等格式在所有场景可用。
+1. 新增 .logutil help 与 .bridge help 指令。
 2. 同步 LogAI v4.5.2 全部修复。
+
+**v4.5.3-logutil**
+1. 新增 .logutil help 与 .bridge help 指令。
+2. .bridge list 无参数时空表分别提示。
+3. 同步 LogAI v4.5.3 全部修复。
+1. 跨群访问语法全面生效：`H0-群号` 等格式在所有场景可用。
+2. 同步 LogAI v4.5.3 全部修复。
