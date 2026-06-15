@@ -271,8 +271,8 @@ bash run_logutil.sh
 2. 同步 LogAI v4.5.2 全部修复。
 
 **v4.5.3-logutil**
-1. 新增 .logutil help 与 .bridge help 指令。
-2. .bridge list 无参数时空表分别提示。
-3. 同步 LogAI v4.5.3 全部修复。
-1. 跨群访问语法全面生效：`H0-群号` 等格式在所有场景可用。
-2. 同步 LogAI v4.5.3 全部修复。
+1. 新增 `.logutil help` 与 `.bridge help` 指令，返回全部参数/修饰符说明。
+2. `.bridge list` 无参数时不再返回历史记录；文件/链接表均空时分别提示。
+3. DOCX/PDF 文本提取：段落 strip 过滤，按段落聚合消除逐字换行。
+4. 默认端口改为 8001；注册名改为 `logutil` 避免冲突；前端错误输出优化。
+5. 同步 LogAI v4.5.3 全部修复。
