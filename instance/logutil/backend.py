@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.4.4.2 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.4.5 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.4.2-logutil"
+SERVICE_VERSION = "4.4.5-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -407,19 +407,29 @@ def parse_log_target_entry(raw, password=None, source=None):
         return {'key': value, 'source': 'raw_url', 'password': ''}
 
     # [file]-N pattern: reference bridge-cached files by index (0=oldest, higher=newer)
-    file_idx_match = re.match(r'^\[file\]-(\d+)(?:\s|$)', value, re.IGNORECASE)
+    # v4.4.5: also match optional cross-group suffix [file]-N-GID
+    file_idx_match = re.match(r'^\[file\]-(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
     if file_idx_match:
-        return {'key': file_idx_match.group(1), 'source': 'bridge_file', 'password': ''}
+        result = {'key': file_idx_match.group(1), 'source': 'bridge_file', 'password': ''}
+        if file_idx_match.group(2):
+            result['cross_group_id'] = file_idx_match.group(2)
+        return result
 
     # v4.4.0: [link]-N pattern: reference bridge-cached link text by index
-    link_idx_match = re.match(r'^\[link\]-(\d+)(?:\s|$)', value, re.IGNORECASE)
+    link_idx_match = re.match(r'^\[link\]-(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
     if link_idx_match:
-        return {'key': link_idx_match.group(1), 'source': 'bridge_link', 'password': ''}
+        result = {'key': link_idx_match.group(1), 'source': 'bridge_link', 'password': ''}
+        if link_idx_match.group(2):
+            result['cross_group_id'] = link_idx_match.group(2)
+        return result
 
     # v4.4.3: [history]-N pattern: reference evicted bridge items by index
-    history_idx_match = re.match(r'^\[history\]-(\d+)(?:\s|$)', value, re.IGNORECASE)
+    history_idx_match = re.match(r'^\[history\]-(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
     if history_idx_match:
-        return {'key': history_idx_match.group(1), 'source': 'bridge_history', 'password': ''}
+        result = {'key': history_idx_match.group(1), 'source': 'bridge_history', 'password': ''}
+        if history_idx_match.group(2):
+            result['cross_group_id'] = history_idx_match.group(2)
+        return result
 
     # Bare file name: look like filenames (not URLs, not known key patterns)
     # Examples: "[2026-06-11_11-25]8月23日营地.txt", "8月23日营地.txt", "8月23日营地"
@@ -512,6 +522,9 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
     resolved_key = target['key']
     resolved_password = target.get('password') or ''
     resolved_source = normalize_query_key_source(target.get('source') or infer_source_by_key(resolved_key))
+    # v4.4.5: cross-group override for bridge sources
+    cross_gid_raw = target.get('cross_group_id')
+    bridge_gid = safe_int(cross_gid_raw, 0) if cross_gid_raw else 0
 
     # --- fwlog-compatible sources ---
     # v4.4.0: cache fetched link text to bridge
@@ -549,7 +562,7 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
 
     # --- logai bridge extensions (not present in fwlog) ---
     if resolved_source == "bridge_file_name":
-        gid = safe_int(group_id, 0) if group_id else 0
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
         if gid > 0:
             with STATE_LOCK:
                 file_list = list(LATEST_FILES.get(gid, []))
@@ -592,7 +605,7 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
         return ""
     if resolved_source == "bridge_file":
         idx = safe_int(resolved_key, 0)
-        gid = safe_int(group_id, 0) if group_id else 0
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
         if gid > 0:
             with STATE_LOCK:
                 file_list = list(LATEST_FILES.get(gid, []))
@@ -609,7 +622,7 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
     # v4.4.0: [link]-N support
     if resolved_source == "bridge_link":
         idx = safe_int(resolved_key, 0)
-        gid = safe_int(group_id, 0) if group_id else 0
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
         if gid > 0:
             with STATE_LOCK:
                 link_list = list(LINK_CACHE.get(gid, []))
@@ -626,8 +639,9 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
     # v4.4.3: [history]-N support
     if resolved_source == "bridge_history":
         idx = safe_int(resolved_key, 0)
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
         with STATE_LOCK:
-            hist_list = list(HISTORY)
+            hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == gid] if gid > 0 else list(HISTORY)
         if 0 <= idx < len(hist_list):
             item = hist_list[idx]
             ck = item.get('content_key', '')
@@ -2313,10 +2327,12 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.4.2</h1>
+<h1>LogAI Bridge Manager v4.4.5</h1>
 <div class="group-select">
-  群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
+  <b>选择群组:</b>
+  <div id="groupCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
   <button onclick="loadData()">刷新</button>
+  <button onclick="clearAll()">清除</button>
 </div>
 
 <h2>【文件】Files</h2>
@@ -2331,34 +2347,69 @@ preview{color:#888;font-size:12px}
 <h2>命令输入</h2>
 <div class="cmd-box">
   <input type="text" id="cmdInput" placeholder="输入命令，如: .logai [file]-0 pro">
+  <select id="cmdGroup" style="padding:10px;background:#16213e;color:#e0e0e0;border:1px solid #333;border-radius:4px;"></select>
   <button onclick="sendCommand()">发送</button>
 </div>
 <div class="result" id="cmdResult"></div>
 
 <script>
-async function loadData(){
-  const gid=document.getElementById('groupInput').value.trim();
-  if(!gid){return}
-  const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
+let allGroups=[];
+
+async function initGroups(){
+  const resp=await fetch('/api/bridge_groups');
   const data=await resp.json();
-  renderTable('fileTable',data.files||[],['#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`);
-  renderTable('linkTable',data.links||[],['#','URL','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`);
-  renderTable('historyTable',data.history||[],['#','类型','名称','字数','开头'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`);
+  allGroups=data.groups||[];
+  let html='';
+  allGroups.forEach(g=>{
+    html+=`<label style="margin-right:12px;cursor:pointer"><input type="checkbox" value="${g}" onchange="loadData()"> ${g}</label>`;
+  });
+  document.getElementById('groupCheckboxes').innerHTML=html||'<span style="color:#888">（暂无群组数据）</span>';
+  let sel='';
+  allGroups.forEach(g=>{sel+=`<option value="${g}">${g}</option>`});
+  document.getElementById('cmdGroup').innerHTML=sel||'<option>--</option>';
 }
-function renderTable(id,items,cols,nameFn){
+
+function getSelectedGroups(){
+  const cbs=document.querySelectorAll('#groupCheckboxes input[type=checkbox]:checked');
+  return Array.from(cbs).map(cb=>cb.value);
+}
+
+async function loadData(){
+  const gids=getSelectedGroups();
+  if(!gids.length){document.getElementById('fileTable').innerHTML='';document.getElementById('linkTable').innerHTML='';document.getElementById('historyTable').innerHTML='';return}
+  let allFiles=[],allLinks=[],allHistory=[];
+  for(const gid of gids){
+    const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
+    const data=await resp.json();
+    (data.files||[]).forEach(f=>{f._group=gid;allFiles.push(f)});
+    (data.links||[]).forEach(l=>{l._group=gid;allLinks.push(l)});
+    (data.history||[]).forEach(h=>{h._group=gid;allHistory.push(h)});
+  }
+  renderTable('fileTable',allFiles,['群','#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`,true);
+  renderTable('linkTable',allLinks,['群','#','URL','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`,true);
+  renderTable('historyTable',allHistory,['群','#','类型','名称','字数','开头'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`,true);
+}
+function renderTable(id,items,cols,nameFn,showGroup){
   if(!items.length){document.getElementById(id).innerHTML='<p style="color:#888">（无数据）</p>';return}
   let h=`<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
   items.forEach((r,i)=>{
     const preview=(r.preview||r.name||r.url||'').slice(0,12);
     const ts=r.ts?new Date(r.ts*1000).toLocaleString():'-';
-    h+=`<tr><td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
+    const groupCell=showGroup?`<td>${r._group||''}</td>`:'';
+    h+=`<tr>${groupCell}<td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4||showGroup?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
   });
   h+='</table>';
   document.getElementById(id).innerHTML=h;
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function clearAll(){
+  document.querySelectorAll('#groupCheckboxes input[type=checkbox]').forEach(cb=>cb.checked=false);
+  document.getElementById('fileTable').innerHTML='';
+  document.getElementById('linkTable').innerHTML='';
+  document.getElementById('historyTable').innerHTML='';
+}
 async function sendCommand(){
-  const gid=document.getElementById('groupInput').value.trim();
+  const gid=document.getElementById('cmdGroup').value;
   const cmd=document.getElementById('cmdInput').value.trim();
   if(!gid||!cmd){return}
   document.getElementById('cmdResult').textContent='处理中...';
@@ -2370,7 +2421,7 @@ async function sendCommand(){
   const data=await resp.json();
   document.getElementById('cmdResult').textContent=JSON.stringify(data,null,2);
 }
-loadData();
+initGroups();
 </script>
 </body>
 </html>'''
@@ -2401,6 +2452,26 @@ def bridge_gui_group(group_id):
 
 
 @app.route('/api/bridge_gui_data', methods=['GET'])
+@app.route('/api/bridge_groups', methods=['GET'])
+def api_bridge_groups():
+    """v4.4.5: 返回所有存在桥接数据的群号列表。"""
+    groups = set()
+    with STATE_LOCK:
+        for gid in LATEST_FILES:
+            if LATEST_FILES.get(gid):
+                groups.add(str(gid))
+        for gid in LINK_CACHE:
+            if LINK_CACHE.get(gid):
+                groups.add(str(gid))
+        for item in HISTORY:
+            gid = str(item.get('group_id', ''))
+            if gid:
+                groups.add(gid)
+        for gid in BRIDGE_POLL_GROUPS:
+            groups.add(str(gid))
+    return jsonify({'status': 'ok', 'groups': sorted(groups, key=lambda x: int(x) if x.isdigit() else 0)})
+
+
 def api_bridge_gui_data():
     """v4.4.0: Web GUI 数据接口。"""
     group_id = safe_int(request.args.get('group_id', 0), 0)
@@ -5180,15 +5251,17 @@ async def process_ws_messages():
                     ws_log(f"检测到 logutil 指令 (WS端跳过，由HTTP处理): {text[:80]}")
                 else:
                     # --- [file]-N command: append bridge-cached file to current log ---
-                    file_idx_match = re.match(r'^\[file\]-(\d+)\s*$', text, re.IGNORECASE)
+                    file_idx_match = re.match(r'^\[file\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if file_idx_match:
                         group_id = str(msg.get("group_id") or "")
+                        xgid = file_idx_match.group(2)
+                        lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
                                 file_idx = int(file_idx_match.group(1))
                                 with STATE_LOCK:
-                                    file_list = list(LATEST_FILES.get(safe_int(group_id, 0), []))
+                                    file_list = list(LATEST_FILES.get(lookup_gid, []))
                                 if 0 <= file_idx < len(file_list):
                                     bridge_item = file_list[file_idx]
                                     ck = bridge_item.get("content_key", "")
@@ -5276,15 +5349,17 @@ async def process_ws_messages():
                                 ws_log(f"[file]-N ignored: group not recording, group_id={group_id}")
                         continue
                     # --- v4.4.0: [link]-N command: append bridge-cached link text to current log ---
-                    link_idx_match = re.match(r'^\[link\]-(\d+)\s*$', text, re.IGNORECASE)
+                    link_idx_match = re.match(r'^\[link\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if link_idx_match:
                         group_id = str(msg.get("group_id") or "")
+                        xgid = link_idx_match.group(2)
+                        lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
                                 link_idx = int(link_idx_match.group(1))
                                 with STATE_LOCK:
-                                    link_list = list(LINK_CACHE.get(safe_int(group_id, 0), []))
+                                    link_list = list(LINK_CACHE.get(lookup_gid, []))
                                 if 0 <= link_idx < len(link_list):
                                     link_item = link_list[link_idx]
                                     ck = link_item.get("content_key", "")
@@ -5372,15 +5447,17 @@ async def process_ws_messages():
                                 ws_log(f"[link]-N ignored: group not recording, group_id={group_id}")
                         continue
                     # --- v4.4.3: [history]-N command: append evicted bridge item to current log ---
-                    history_idx_match = re.match(r'^\[history\]-(\d+)\s*$', text, re.IGNORECASE)
+                    history_idx_match = re.match(r'^\[history\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if history_idx_match:
                         group_id = str(msg.get("group_id") or "")
+                        xgid = history_idx_match.group(2)
+                        lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
                                 hist_idx = int(history_idx_match.group(1))
                                 with STATE_LOCK:
-                                    hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == safe_int(group_id, 0)]
+                                    hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == lookup_gid]
                                 if 0 <= hist_idx < len(hist_list):
                                     hist_item = hist_list[hist_idx]
                                     ck = hist_item.get("content_key", "")
@@ -5521,7 +5598,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.4.2 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.5 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')

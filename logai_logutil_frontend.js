@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.4.4.2
+// @version      4.4.5
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4.2');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.5');
     seal.ext.register(ext);
 }
 
@@ -307,21 +307,28 @@ function parseLogTargetEntry(raw) {
     }
 
     // [file]-N pattern: reference bridge-cached files by index (0=latest)
-    let fileIdxMatch = val.match(/^\[file\]-(\d+)(?:\s|$)/i);
+    // v4.4.5: also match optional cross-group suffix [file]-N-GID
+    let fileIdxMatch = val.match(/^\[file\]-(\d+)(?:-(\d+))?(?:\s|$)/i);
     if (fileIdxMatch) {
-        return { key: fileIdxMatch[1], source: 'bridge_file', password: '' };
+        let r = { key: fileIdxMatch[1], source: 'bridge_file', password: '' };
+        if (fileIdxMatch[2]) r.cross_group_id = fileIdxMatch[2];
+        return r;
     }
 
     // v4.4.0: [link]-N pattern: reference bridge-cached link text by index
-    let linkIdxMatch = val.match(/^\[link\]-(\d+)(?:\s|$)/i);
+    let linkIdxMatch = val.match(/^\[link\]-(\d+)(?:-(\d+))?(?:\s|$)/i);
     if (linkIdxMatch) {
-        return { key: linkIdxMatch[1], source: 'bridge_link', password: '' };
+        let r = { key: linkIdxMatch[1], source: 'bridge_link', password: '' };
+        if (linkIdxMatch[2]) r.cross_group_id = linkIdxMatch[2];
+        return r;
     }
 
     // v4.4.3: [history]-N pattern: reference evicted bridge items by index
-    let historyIdxMatch = val.match(/^\[history\]-(\d+)(?:\s|$)/i);
+    let historyIdxMatch = val.match(/^\[history\]-(\d+)(?:-(\d+))?(?:\s|$)/i);
     if (historyIdxMatch) {
-        return { key: historyIdxMatch[1], source: 'bridge_history', password: '' };
+        let r = { key: historyIdxMatch[1], source: 'bridge_history', password: '' };
+        if (historyIdxMatch[2]) r.cross_group_id = historyIdxMatch[2];
+        return r;
     }
 
     // Bare file name detection: non-URL values that look like filenames
@@ -1918,7 +1925,7 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
         let trimmed = String(a || '').trim();
         if (/^\[file\]-\d+$/i.test(trimmed) || /^\[link\]-\d+$/i.test(trimmed) || /^\[history\]-\d+$/i.test(trimmed)) {
             fileArgs.push(trimmed);
-        } else if (trimmed.toLowerCase() === 'goal-all' && !isGoalAll && !langSet) {
+        } else if ((trimmed.toLowerCase() === 'goal-all' || trimmed.toUpperCase() === 'ALL') && !isGoalAll && !langSet) {
             isGoalAll = true;
         } else {
             targetLang = trimmed;
