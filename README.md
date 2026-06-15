@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.4.5**  
+**V4.4.5.1**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -369,3 +369,9 @@ logutil支持识别以下种类的消息头：
 2. `.translate` 新增简写：`ALL` 等价于 `goal-ALL`。
 3. Web 管理界面改造：群号输入框改为下拉框，自动列出全部有数据的群组，通过链接访问时默认打开对应群组。
 4. 更新版本号至 v4.4.5。
+
+**v4.4.5.1**
+1. 修复 WebUI 路由冲突导致无法显示数据的问题（`/api/bridge_gui_data` 装饰器错误绑定到 `api_bridge_groups`）。
+2. 修复 WebUI 与 `bridge list` 历史记录编号不一致的问题：WebUI 现在同样按 `group_id` 过滤并使用顺序编号。
+3. 修复主后端 `/bridge/list` 未返回历史记录的问题（此前仅实例版修复），解决 `.translate` 等前端命令无法解析 `[history]-N` 的 bug。
+4. 更新版本号至 v4.4.5.1。

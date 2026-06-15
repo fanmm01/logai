@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.4.5 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.4.5.1 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.5-logutil"
+SERVICE_VERSION = "4.4.5.1-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -2327,7 +2327,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.5</h1>
+<h1>LogAI Bridge Manager v4.4.5.1</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -2466,7 +2466,17 @@ def api_bridge_gui_data():
     with STATE_LOCK:
         files = [snapshot_item(f) for f in LATEST_FILES.get(group_id, [])]
         links = [snapshot_item(l) for l in LINK_CACHE.get(group_id, [])]
-        history = [snapshot_item(h) for h in HISTORY]
+        hist_all = [snapshot_item(h) for h in HISTORY]
+        history = []
+        filtered_idx = 0
+        for h in hist_all:
+            if not h:
+                continue
+            if safe_int(h.get('group_id', 0), 0) != group_id:
+                continue
+            h['_index'] = filtered_idx
+            history.append(h)
+            filtered_idx += 1
 
     return jsonify({'status': 'ok', 'files': files, 'links': links, 'history': history})
 
@@ -5583,7 +5593,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.5 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.5.1 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')

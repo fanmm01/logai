@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.5"
+SERVICE_VERSION = "4.4.5.1"
 _openai_client = None
 
 def get_openai_client():
@@ -4526,8 +4526,29 @@ def bridge_list():
             h['preview'] = get_content_preview(ck, 12)
             links.append(h)
 
-    bridge_log('list', f"group={group_id} files={len(files)} links={len(links)}")
-    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'links': links, 'count': len(files)})
+    # v4.4.5: include history items for this group (matching instance backend)
+    with STATE_LOCK:
+        hist_all = [snapshot_item(h) for h in HISTORY]
+    history = []
+    filtered_idx = 0
+    for item in hist_all:
+        if not item:
+            continue
+        item_gid = safe_int(item.get('group_id', 0), 0)
+        if item_gid != group_id:
+            continue
+        hydrated = hydrate_bridge_item(item, public_base=public_base)
+        if hydrated:
+            hydrated['_index'] = filtered_idx
+            hydrated['display_name'] = hydrated.get('name', hydrated.get('url', ''))
+            hydrated['_type'] = hydrated.get('_type', 'file')
+            ck = hydrated.get('content_key', '')
+            hydrated['preview'] = get_content_preview(ck, 12)
+            history.append(hydrated)
+            filtered_idx += 1
+
+    bridge_log('list', f"group={group_id} files={len(files)} links={len(links)} history={len(history)}")
+    return jsonify({'status': 'ok', 'group_id': group_id, 'files': files, 'links': links, 'history': history, 'count': len(files)})
 
 
 @app.route('/bridge/content/<content_key>', methods=['GET'])
@@ -4576,7 +4597,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.5</h1>
+<h1>LogAI Bridge Manager v4.4.5.1</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -4717,7 +4738,18 @@ def api_bridge_gui_data():
     with STATE_LOCK:
         files = [snapshot_item(f) for f in LATEST_FILES.get(group_id, [])]
         links = [snapshot_item(l) for l in LINK_CACHE.get(group_id, [])]
-        history = [snapshot_item(h) for h in HISTORY]
+        # v4.4.5: filter history by group_id, use sequential numbering matching api_bridge_list
+        hist_all = [snapshot_item(h) for h in HISTORY]
+        history = []
+        filtered_idx = 0
+        for h in hist_all:
+            if not h:
+                continue
+            if safe_int(h.get('group_id', 0), 0) != group_id:
+                continue
+            h['_index'] = filtered_idx
+            history.append(h)
+            filtered_idx += 1
 
     return jsonify({'status': 'ok', 'files': files, 'links': links, 'history': history})
 

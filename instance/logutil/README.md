@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.4.5-logutil
+# LogUtil + Bridge 4.4.5.1-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
