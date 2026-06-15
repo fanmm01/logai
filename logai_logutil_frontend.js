@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.4.4
+// @version      4.4.4.1
 // @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4.1');
     seal.ext.register(ext);
 }
 
@@ -112,8 +112,19 @@ function getBridgeTokenHeader() {
 
 // v4.4.0: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23
 // v4.4.4: 也修复 SealDice 去括号导致的 file-0/link-0/history-0 格式
+// v4.4.4.1: 跨群访问 F14-123456→[file]-14-123456
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
+    // 跨群短别名: F14-123456, L0-999888
+    let cm = s.match(/^([FLH])(\d+)-(\d+)$/i);
+    if (cm) {
+        let prefix = cm[1].toUpperCase();
+        let num = cm[2];
+        let gid = cm[3];
+        if (prefix === 'F') return `[file]-${num}-${gid}`;
+        if (prefix === 'L') return `[link]-${num}-${gid}`;
+        if (prefix === 'H') return `[history]-${num}-${gid}`;
+    }
     // 短别名: F14, L0, H23
     let m = s.match(/^([FLH])(\d+)$/i);
     if (m) {
@@ -1245,6 +1256,10 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                                /^https?:\/\//i.test(cand) ||
                                (cand.toLowerCase() === 'end') ||
                                (cand.toLowerCase() === 'logai') ||
+                               (cand.toLowerCase() === 'raw') ||
+                               (cand.toLowerCase() === 'del_paren') ||
+                               (cand.toLowerCase() === 'delparen') ||
+                               (cand.toLowerCase() === 'del-paren') ||
                                !!parseLogTargetEntry(cand);
                     if (!isOp && cand) {
                         title = cand;
@@ -1685,56 +1700,60 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             if (data.status === 'ok') {
                 let files = data.files || [];
                 let links = data.links || [];
+                let history = data.history || [];
                 let showFiles = (filterArg === 'all' || filterArg === 'file');
                 let showLinks = (filterArg === 'all' || filterArg === 'link');
-                let showHistory = (filterArg === 'history');
+                let showHistory = (filterArg === 'all' || filterArg === 'history');
 
-                // History display (simple message)
+                // v4.4.4.1: always use merged chat record format
+                let msgNodes = [];
+                if (showFiles) {
+                    if (files.length > 0) {
+                        let fileLines = [fw(`【文件】共 ${files.length} 个文件。`)];
+                        for (let f of files) {
+                            let chars = f.text_chars || 0;
+                            let preview = (f.preview || f.name || '').slice(0, 12);
+                            fileLines.push(`#${f.index} [file] ${f.name} (${chars}字) | ${preview}`);
+                        }
+                        fileLines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
+                        msgNodes.push(fileLines.join('\n'));
+                    } else if (filterArg === 'file') {
+                        msgNodes.push(fw('【文件】暂无缓存文件。'));
+                    }
+                }
+
+                if (showLinks) {
+                    if (links.length > 0) {
+                        let linkLines = [fw(`【链接】共 ${links.length} 个链接。`)];
+                        for (let l of links) {
+                            let chars = l.text_chars || 0;
+                            let preview = l.preview || (l.url || l.name || '').slice(0, 30);
+                            linkLines.push(`#${l.index} [link] ${(l.url||'').slice(0,50)} (${chars}字) | ${preview}`);
+                        }
+                        linkLines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
+                        msgNodes.push(linkLines.join('\n'));
+                    } else if (filterArg === 'link') {
+                        msgNodes.push(fw('【链接】暂无缓存链接。'));
+                    }
+                }
+
                 if (showHistory) {
-                    let histItems = data.history || [];
-                    if (histItems.length === 0) {
-                        seal.replyToSender(ctx, msg, fw('【历史记录】暂无历史记录。'));
-                    } else {
-                        let lines = [fw(`【历史记录】共 ${histItems.length} 条（0=最新）:`)];
-                        for (let h of histItems) {
+                    if (history.length > 0) {
+                        let histLines = [fw(`【历史记录】共 ${history.length} 条（0=最新）。`)];
+                        for (let h of history) {
                             let chars = h.text_chars || 0;
                             let preview = (h.name || h.url || '').slice(0, 30);
-                            lines.push(`- #${h.index} [${h._type || '?'}] ${preview} (${chars} 字)`);
+                            histLines.push(`#${h.index} [${h._type || '?'}] ${preview} (${chars} 字)`);
                         }
-                        lines.push(fw('提示: 使用 [history]-N 引用历史记录。使用 .bridge del [history]-N 删除。'));
-                        seal.replyToSender(ctx, msg, lines.join('\n'));
+                        histLines.push(fw('提示: 使用 [history]-N 引用历史记录。使用 .bridge del [history]-N 删除。'));
+                        msgNodes.push(histLines.join('\n'));
+                    } else if (filterArg === 'history') {
+                        msgNodes.push(fw('【历史记录】暂无历史记录。'));
                     }
-                    return seal.ext.newCmdExecuteResult(true);
                 }
 
-                // v4.4.1: Use merged chat record format for file+link list
-                let msgNodes = [];
-                if (showFiles && files.length > 0) {
-                    let fileLines = [fw(`【文件】共 ${files.length} 个文件。`)];
-                    for (let f of files) {
-                        let chars = f.text_chars || 0;
-                        let preview = (f.preview || f.name || '').slice(0, 12);
-                        fileLines.push(`#${f.index} [file] ${f.name} (${chars}字) | ${preview}`);
-                    }
-                    fileLines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
-                    fileLines.push(fw('使用 .bridge list history 查看历史记录。使用 .bridge master 查看 Web 管理界面。'));
-                    msgNodes.push(fileLines.join('\n'));
-                } else if (showFiles && files.length === 0) {
-                    msgNodes.push(fw('【文件】暂无缓存文件。'));
-                }
-
-                if (showLinks && links.length > 0) {
-                    let linkLines = [fw(`【链接】共 ${links.length} 个链接。`)];
-                    for (let l of links) {
-                        let chars = l.text_chars || 0;
-                        let preview = l.preview || (l.url || l.name || '').slice(0, 30);
-                        linkLines.push(`#${l.index} [link] ${(l.url||'').slice(0,50)} (${chars}字) | ${preview}`);
-                    }
-                    linkLines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
-                    msgNodes.push(linkLines.join('\n'));
-                } else if (showLinks && links.length === 0 && !showFiles) {
-                    msgNodes.push(fw('【链接】暂无缓存链接。'));
-                }
+                // Always show master link at end
+                msgNodes.push(fw('使用 .bridge master 查看 Web 管理界面。'));
 
                 if (msgNodes.length === 0) {
                     seal.replyToSender(ctx, msg, fw('暂无桥接缓存数据。'));
