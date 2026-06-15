@@ -4579,9 +4579,10 @@ preview{color:#888;font-size:12px}
 <h1>LogAI Bridge Manager v4.4.5</h1>
 <div class="group-select">
   <b>选择群组:</b>
-  <div id="groupCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
+  <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
+    <option value="">-- 选择群组 --</option>
+  </select>
   <button onclick="loadData()">刷新</button>
-  <button onclick="clearAll()">清除</button>
 </div>
 
 <h2>【文件】Files</h2>
@@ -4602,62 +4603,47 @@ preview{color:#888;font-size:12px}
 <div class="result" id="cmdResult"></div>
 
 <script>
-let allGroups=[];
+const defaultGroup='{{GROUP_ID}}';
 
 async function initGroups(){
   const resp=await fetch('/api/bridge_groups');
   const data=await resp.json();
-  allGroups=data.groups||[];
-  let html='';
-  allGroups.forEach(g=>{
-    html+=`<label style="margin-right:12px;cursor:pointer"><input type="checkbox" value="${g}" onchange="loadData()"> ${g}</label>`;
+  const groups=data.groups||[];
+  let opts='<option value="">-- 选择群组 --</option>';
+  groups.forEach(g=>{
+    const sel=g===defaultGroup?' selected':'';
+    opts+=`<option value="${g}"${sel}>${g}</option>`;
   });
-  document.getElementById('groupCheckboxes').innerHTML=html||'<span style="color:#888">（暂无群组数据）</span>';
-  // Populate command group selector
-  let sel='';
-  allGroups.forEach(g=>{sel+=`<option value="${g}">${g}</option>`});
-  document.getElementById('cmdGroup').innerHTML=sel||'<option>--</option>';
-}
-
-function getSelectedGroups(){
-  const cbs=document.querySelectorAll('#groupCheckboxes input[type=checkbox]:checked');
-  return Array.from(cbs).map(cb=>cb.value);
+  const gs=document.getElementById('groupSelect');
+  gs.innerHTML=opts;
+  // Sync command group selector
+  let sel2='';
+  groups.forEach(g=>{const s=g===defaultGroup?' selected':'';sel2+=`<option value="${g}"${s}>${g}</option>`});
+  document.getElementById('cmdGroup').innerHTML=sel2||'<option>--</option>';
+  if(defaultGroup) loadData();
 }
 
 async function loadData(){
-  const gids=getSelectedGroups();
-  if(!gids.length){document.getElementById('fileTable').innerHTML='';document.getElementById('linkTable').innerHTML='';document.getElementById('historyTable').innerHTML='';return}
-  let allFiles=[],allLinks=[],allHistory=[];
-  for(const gid of gids){
-    const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
-    const data=await resp.json();
-    (data.files||[]).forEach(f=>{f._group=gid;allFiles.push(f)});
-    (data.links||[]).forEach(l=>{l._group=gid;allLinks.push(l)});
-    (data.history||[]).forEach(h=>{h._group=gid;allHistory.push(h)});
-  }
-  renderTable('fileTable',allFiles,['群','#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`,true);
-  renderTable('linkTable',allLinks,['群','#','URL','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`,true);
-  renderTable('historyTable',allHistory,['群','#','类型','名称','字数','开头'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`,true);
+  const gid=document.getElementById('groupSelect').value;
+  if(!gid){document.getElementById('fileTable').innerHTML='';document.getElementById('linkTable').innerHTML='';document.getElementById('historyTable').innerHTML='';return}
+  const resp=await fetch(`/api/bridge_gui_data?group_id=${gid}`);
+  const data=await resp.json();
+  renderTable('fileTable',data.files||[],['#','名称','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc(r.name||'?')}</a>`);
+  renderTable('linkTable',data.links||[],['#','URL','字数','保存时间','开头'],(r)=>`<a href="/bridge/content/${r.content_key}">${esc((r.url||'?')).slice(0,60)}</a>`);
+  renderTable('historyTable',data.history||[],['#','类型','名称','字数','开头'],(r)=>`${r._type||'?'} ${esc((r.name||r.url||'?')).slice(0,60)}`);
 }
-function renderTable(id,items,cols,nameFn,showGroup){
+function renderTable(id,items,cols,nameFn){
   if(!items.length){document.getElementById(id).innerHTML='<p style="color:#888">（无数据）</p>';return}
   let h=`<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
   items.forEach((r,i)=>{
     const preview=(r.preview||r.name||r.url||'').slice(0,12);
     const ts=r.ts?new Date(r.ts*1000).toLocaleString():'-';
-    const groupCell=showGroup?`<td>${r._group||''}</td>`:'';
-    h+=`<tr>${groupCell}<td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4||showGroup?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
+    h+=`<tr><td>${i}</td><td>${nameFn?nameFn(r):esc(r.name||'?')}</td><td>${r.text_chars||0}</td><td>${ts}</td>${cols.length>4?`<td><preview>${esc(preview)}</preview></td>`:''}</tr>`;
   });
   h+='</table>';
   document.getElementById(id).innerHTML=h;
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function clearAll(){
-  document.querySelectorAll('#groupCheckboxes input[type=checkbox]').forEach(cb=>cb.checked=false);
-  document.getElementById('fileTable').innerHTML='';
-  document.getElementById('linkTable').innerHTML='';
-  document.getElementById('historyTable').innerHTML='';
-}
 async function sendCommand(){
   const gid=document.getElementById('cmdGroup').value;
   const cmd=document.getElementById('cmdInput').value.trim();
