@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.4.3 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.4.4 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.4.3-logutil"
+SERVICE_VERSION = "4.4.4-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -357,6 +357,21 @@ def fetch_raw_url(url):
         return safe_decode(resp.content) if resp.status_code == 200 else None
     except Exception as e: print(f"RawURL Error: {e}"); return None
 
+def expand_short_alias(raw):
+    """v4.4.4: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23。
+    与前端 expandShortAlias 完全一致。"""
+    s = str(raw or '').strip()
+    m = re.match(r'^([FLH])(\d+)$', s, re.I)
+    if not m:
+        return raw
+    prefix = m.group(1).upper()
+    num = m.group(2)
+    if prefix == 'F': return f'[file]-{num}'
+    if prefix == 'L': return f'[link]-{num}'
+    if prefix == 'H': return f'[history]-{num}'
+    return raw
+
+
 def parse_log_target_entry(raw, password=None, source=None):
     """Parse a raw log reference into a target dict {key, source, password}.
     Matches fwlog's parse_log_target_entry exactly for non-bridge sources,
@@ -364,6 +379,9 @@ def parse_log_target_entry(raw, password=None, source=None):
     value = str(raw or '').strip()
     if not value:
         return None
+
+    # v4.4.4: expand short aliases (F14→[file]-14, L0→[link]-0, H23→[history]-23)
+    value = expand_short_alias(value)
 
     url_match = URL_RE.search(value)
     if url_match:
@@ -1760,7 +1778,7 @@ def write_link_cache(group_id, url, fetched_text):
     item = {
         "group_id": group_id,
         "url": str(url or ""),
-        "name": f"[link] {url_display}",
+        "name": url_display,
         "ts": cached_ts,
         "source_ts": cached_ts,
         "cached_ts": cached_ts,
@@ -2281,7 +2299,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.4.3</h1>
+<h1>LogAI Bridge Manager v4.4.4</h1>
 <div class="group-select">
   群组ID: <input id="groupInput" type="text" placeholder="例如: 123456789" value="{{GROUP_ID}}" onchange="loadData()">
   <button onclick="loadData()">刷新</button>
@@ -2519,7 +2537,8 @@ def api_bridge_list():
 
     for idx, item in enumerate(hist_list):
         # v4.4.3: filter history by group_id when not in history-only mode
-        if not show_history_only and safe_int(item.get('group_id', 0), 0) != group_id:
+        # v4.4.4: always filter history by group_id for data isolation
+        if safe_int(item.get('group_id', 0), 0) != group_id:
             continue
         ck = item.get('content_key', '')
         path_cached = CONTENT_INDEX.get(ck, '')
@@ -4275,7 +4294,7 @@ def api_bridge_get():
 
     if ref_type == 'history':
         with STATE_LOCK:
-            hist_list = list(HISTORY)
+            hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == group_id]
         if index >= len(hist_list):
             return jsonify({'status': 'error', 'msg': f'index {index} out of range (0~{len(hist_list)-1})'}), 404
         item = hist_list[index]
@@ -4298,7 +4317,12 @@ def api_bridge_get():
     if not path or not os.path.exists(path):
         return jsonify({'status': 'error', 'msg': 'cached file not found on disk'}), 404
 
-    base_name = os.path.splitext(str(item.get('name', 'file')))[0]
+    # v4.4.4: for link-type items, build clean name (not URL-named)
+    item_name = str(item.get('name', 'file'))
+    if ref_type in ('link', 'history') and item.get('_type') == 'link':
+        # Use content_key for a clean short name
+        item_name = f"link_{ck[:8]}"
+    base_name = os.path.splitext(item_name)[0]
     txt_name = f"{base_name}.txt"
     file_sent, result = napcat_upload_group_file(group_id, path, txt_name)
     if file_sent:
@@ -4358,13 +4382,20 @@ def api_bridge_del():
                 else:
                     errors.append(f'{raw_ref}: 索引超出范围 (0~{len(link_list)-1})')
             elif ptype == 'history':
-                if 0 <= pidx < len(hist_list):
-                    item = hist_list.pop(pidx)
+                # v4.4.4: filter history by group_id for isolation
+                group_hist = [h for h in hist_list if safe_int(h.get('group_id', 0), 0) == group_id]
+                if 0 <= pidx < len(group_hist):
+                    item = group_hist[pidx]
+                    # Remove from actual hist_list by matching content_key
                     ck = str(item.get('content_key', ''))
+                    for i, h in enumerate(hist_list):
+                        if str(h.get('content_key', '')) == ck:
+                            hist_list.pop(i)
+                            break
                     CONTENT_INDEX.pop(ck, '')
                     deleted.append(raw_ref)
                 else:
-                    errors.append(f'{raw_ref}: 索引超出范围 (0~{len(hist_list)-1})')
+                    errors.append(f'{raw_ref}: 索引超出范围 (0~{len(group_hist)-1})')
 
         # Apply changes back to HISTORY
         HISTORY[:] = hist_list
@@ -4714,6 +4745,9 @@ def _auto_cache_urls_from_message(msg, text):
         source = target.get('source', '')
         # 只处理已知的染色器源
         if source not in ('weizaima', 'dice_zone', 'kokona', 'trpgbot', 'raw_url'):
+            continue
+        # v4.4.4: 黑名单 — QQ多媒体CDN链接不缓存
+        if 'multimedia.nt.qq.com.cn' in url:
             continue
         # 去重：已在 LINK_CACHE 中则跳过
         with STATE_LOCK:
@@ -5104,6 +5138,8 @@ async def process_ws_messages():
                 await handle_ws_recording_event(msg)
             else:
                 text = segments_to_text(msg.get("message")).strip()
+                # v4.4.4: expand short aliases before pattern matching
+                text = expand_short_alias(text)
                 normalized = normalize_logutil_prefix(text)
 
                 # v4.4.1: 自动缓存消息中的染色器链接
@@ -5301,7 +5337,7 @@ async def process_ws_messages():
                             if gs.get("recording") and gs.get("current_log_name"):
                                 hist_idx = int(history_idx_match.group(1))
                                 with STATE_LOCK:
-                                    hist_list = list(HISTORY)
+                                    hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == safe_int(group_id, 0)]
                                 if 0 <= hist_idx < len(hist_list):
                                     hist_item = hist_list[hist_idx]
                                     ck = hist_item.get("content_key", "")
@@ -5436,7 +5472,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.3 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.4.4 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')

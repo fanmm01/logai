@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.4.3-logutil
+// @version      4.4.4-logutil
 // @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.4.3-logutil');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.4.4-logutil');
     seal.ext.register(ext);
 }
 
@@ -98,15 +98,24 @@ function getBridgeTokenHeader() {
 }
 
 // v4.4.0: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23
+// v4.4.4: 也修复 SealDice 去括号导致的 file-0/link-0/history-0 格式
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
+    // 短别名: F14, L0, H23
     let m = s.match(/^([FLH])(\d+)$/i);
-    if (!m) return raw;
-    let prefix = m[1].toUpperCase();
-    let num = m[2];
-    if (prefix === 'F') return `[file]-${num}`;
-    if (prefix === 'L') return `[link]-${num}`;
-    if (prefix === 'H') return `[history]-${num}`;
+    if (m) {
+        let prefix = m[1].toUpperCase();
+        let num = m[2];
+        if (prefix === 'F') return `[file]-${num}`;
+        if (prefix === 'L') return `[link]-${num}`;
+        if (prefix === 'H') return `[history]-${num}`;
+    }
+    // v4.4.4: 修复 SealDice 去括号 — file-0→[file]-0, link-0→[link]-0, history-0→[history]-0
+    let bm = s.match(/^(file|link|history)-(\d+)$/i);
+    if (bm) {
+        let type = bm[1].toLowerCase();
+        return `[${type}]-${bm[2]}`;
+    }
     return raw;
 }
 
@@ -482,11 +491,13 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     while ((m = tokenRegex.exec(restText)) !== null) {
         tokens.push(m[0]);
     }
+    // v4.4.4: apply short alias expansion to re-tokenized tokens
+    tokens = tokens.map(expandShortAlias);
 
     let op = (tokens[0] || '').toLowerCase();
     let rawArgs = tokens.slice(1);
-    // raw 作为修饰符应被排除在名称/内容之外（v4.3.4: 仅当 logutil 后第一个非命令字段为 raw 时生效）
-    let raw_mode = (tokens[0] || '').toLowerCase() === 'raw' || (tokens.length > 1 && (tokens[1] || '').toLowerCase() === 'raw');
+    // v4.4.4: raw 修饰符可在任意位置生效
+    let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
     let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw'].includes((a || '').toLowerCase())) || '';
 
     let pureGroupId = getPureGroupId(groupId);
@@ -1173,7 +1184,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.4.3-logutil loaded (logutil + bridge only)');
+console.log('用户脚本：log-analyzer v4.4.4-logutil loaded (logutil + bridge only)');
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {

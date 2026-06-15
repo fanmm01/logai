@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.4.3-logutil
+# LogUtil + Bridge 4.4.4-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -238,3 +238,13 @@ bash run_logutil.sh
 4. `/api/bridge_list` 在默认模式下同时返回历史记录（按群号过滤）。
 5. `/bridge/list` 端点新增历史记录返回。
 6. 同步 LogAI v4.4.3 全部修复。
+
+**v4.4.4-logutil**
+1. 修复 `.bridge get [link]-N` / `[history]-N` 返回文件名含 URL 的问题。
+2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
+3. 修复历史记录列表中 `[link]` 字样重复显示（name 字段移除 `[link] ` 前缀）。
+4. 修复 SealDice 去括号导致 `[link]-N` / `[history]-N` 无法识别：`expandShortAlias` 新增去括号修复。
+5. 新增 URL 黑名单：QQ 多媒体 CDN 链接不再自动缓存。
+6. 修复复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
+7. 修复复合命令中 `raw` 修饰符仅在前两个位置生效的问题。
+8. 同步 LogAI v4.4.4 全部修复。

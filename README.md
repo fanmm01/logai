@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.4.3**  
+**V4.4.4**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -293,3 +293,13 @@ v4.4.1起，通过 `.bridge master` 查看网页版管理地址（使用内网IP
 5. `/api/bridge_list` 在默认 `all` 模式下同时返回历史记录（按群号过滤），前端无需额外请求。
 6. 独立版后端的 `/bridge/list` 端点新增历史记录返回。
 7. 更新版本号至 v4.4.3。
+
+**v4.4.4**
+1. 修复 `.bridge get [link]-N` / `[history]-N` 返回文件名含 URL 的问题，现使用干净文件名。
+2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
+3. 修复历史记录列表中 `[link]` 字样重复显示的问题。
+4. 修复 SealDice 去括号导致 `.aiutil` 等命令中 `[link]-N` / `[history]-N` 无法识别的问题。
+5. 新增 URL 黑名单：QQ 多媒体 CDN（`multimedia.nt.qq.com.cn`）不再被自动缓存为 bridge link。
+6. 修复 logutil 复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）的问题：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
+7. 修复 logutil 复合命令中 `raw` 修饰符仅在开头两个位置生效的问题，现可在任意位置使用。
+8. 更新版本号至 v4.4.4。
