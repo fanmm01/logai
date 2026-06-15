@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.4.4.1-logutil
+# LogUtil + Bridge 4.4.4.2-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -257,3 +257,7 @@ bash run_logutil.sh
 3. 新增跨群访问语法：`L0-群号` / `[link]-0-群号` 等。
 4. `.bridge list` 全部采用合并聊天记录格式，新增 `all` 参数。
 5. 同步 LogAI v4.4.4.1 全部修复。
+
+**v4.4.4.2-logutil**
+1. 修复 `raw` 修饰符在复合命令与独立消息中无效的根因（三层修复：DB行确保、复合op解析、WS消息处理均检查 raw 标记）。
+2. 同步 LogAI v4.4.4.2 全部修复。

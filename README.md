@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.4.4.1**  
+**V4.4.4.2**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -313,3 +313,8 @@ v4.4.1起，通过 `.bridge master` 查看网页版管理地址（使用内网IP
 4. 新增跨群访问语法：`L0-群号` / `[link]-0-群号` 等，可访问其他群的桥接缓存项。
 5. `.bridge list` 全部采用合并聊天记录格式（含单条记录时），新增 `all` 参数同时显示文件/链接/历史。
 6. 更新版本号至 v4.4.4.1。
+
+**v4.4.4.2**
+1. 修复 `raw` 修饰符在复合命令中无效的根因：`api_logutil_compound` 未在调用 `parse_structured_text_to_items` 前检查 `raw_mode`；WS 独立消息（`[file]`/`[link]`/`[history]`）处理同样未检查 `raw_recording`；新增 `ensure_logutil_group_state` 确保 DB 行存在后再 UPDATE。
+2. 修复 `del_paren` 等修饰符在复合命令中被当作文本 op 发送给后端的问题（ops filter 白名单补全）。
+3. 更新版本号至 v4.4.4.2。
