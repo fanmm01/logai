@@ -63,7 +63,7 @@ bash run_logutil.sh
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--host` | `0.0.0.0` | 服务器监听地址 |
-| `--port` | `8000` | 服务器端口 |
+| `--port` | `8001` | 服务器端口 |
 | `--napcat-url` | `http://127.0.0.1:8084` | NapCat HTTP API 地址 |
 | `--napcat-token` | `1` | NapCat 访问令牌 |
 | `--ws-url` | `ws://127.0.0.1:3001` | NapCat WebSocket 地址 |
@@ -180,8 +180,8 @@ bash run_logutil.sh
 
 | 配置名 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| Python后端服务地址 | String | `http://127.0.0.1:8000` | 后端地址 |
-| Python后端服务端口 | Int | `8000` | 后端端口 |
+| Python后端服务地址 | String | `http://127.0.0.1:8001` | 后端地址 |
+| Python后端服务端口 | Int | `8001` | 后端端口 |
 | OneBot_API_地址 | String | `http://127.0.0.1:34567` | Bot HTTP API |
 | 启用HTTP文件桥接 | Bool | true | 启用桥接 |
 | HTTP文件桥接读取API | String | `…/bridge/latest` | 桥接读取接口 |

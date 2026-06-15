@@ -91,7 +91,7 @@ ASTERISK_PIPE_SPEAKER_RE = re.compile(
 
 # --- 服务与 NapCat 桥接配置 ---
 LOGAI_HOST = os.getenv("LOGAI_HOST", "0.0.0.0")
-LOGAI_PORT = int(os.getenv("LOGAI_PORT", "8000"))
+LOGAI_PORT = int(os.getenv("LOGAI_PORT", "8001"))
 
 
 def get_lan_ip():

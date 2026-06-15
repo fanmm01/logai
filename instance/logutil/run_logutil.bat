@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogUtil + Bridge 4.4.2 - Log Recording ^& File Bridge
+echo   LogUtil + Bridge 4.4.5.1 - Log Recording ^& File Bridge
 echo ============================================
 echo.
 
@@ -17,7 +17,7 @@ set CFG_WS_URL=ws://127.0.0.1:3001
 set CFG_WS_TOKEN=
 :: Server listen address and port
 set CFG_HOST=0.0.0.0
-set CFG_PORT=8000
+set CFG_PORT=8001
 :: Internal parameters (usually leave as-is)
 set CFG_BRIDGE_TOKEN=
 set CFG_BRIDGE_PUBLIC_BASE=
