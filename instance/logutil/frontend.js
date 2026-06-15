@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.5.2-logutil
+// @version      4.5.3-logutil
 // @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.5.2-logutil');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.5.3-logutil');
     seal.ext.register(ext);
 }
 
@@ -528,6 +528,10 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     tokens = tokens.map(expandShortAlias);
 
     let op = (tokens[0] || '').toLowerCase();
+    if (op === 'help') {
+        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren]  结束并导出\nlist                    列出本群日志\nget [名称]              导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end]\n修饰符: raw=跳过消息头解析直接拼接原始文本 | del_paren=删除括号包裹内容\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、短别名、跨群、染色器链接、文本'));
+        return seal.ext.newCmdExecuteResult(true);
+    }
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
@@ -965,6 +969,10 @@ cmdBridge.help = fw([
 cmdBridge.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
     let op = (cmdArgs.getArgN(1) || '').toLowerCase();
+    if (op === 'help') {
+        seal.replyToSender(ctx, msg, fw('.bridge <子命令>\non/off/status   控制桥接轮询\nrate <秒>         设置轮询间隔\nlist [file|link|history|all]  列出缓存 (无参数=file+link, all=全部)\nmaster            查看Web管理界面\nget <ref>         获取文件到群\ndel <ref>...      删除指定缓存项\n引用格式: [file]-N/[link]-N/[history]-N | 短别名 F14/L0/H23 | 跨群 F0-群号'));
+        return seal.ext.newCmdExecuteResult(true);
+    }
     let groupId = ctx.group ? ctx.group.groupId : '';
     if (!groupId) {
         seal.replyToSender(ctx, msg, fw('❌ 此功能仅在群聊中可用'));
@@ -1042,7 +1050,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         fileLines.push(fw('提示: 使用 [file]-N 引用特定文件，编号从 0(最旧) 递增到最新。'));
                         msgNodes.push(fileLines.join('\n'));
-                    } else if (filterArg === 'file') {
+                    } else {
                         msgNodes.push(fw('【文件】暂无缓存文件。'));
                     }
                 }
@@ -1057,7 +1065,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         linkLines.push(fw('提示: 使用 [link]-N 引用特定链接文本，编号从 0(最旧) 递增到最新。'));
                         msgNodes.push(linkLines.join('\n'));
-                    } else if (filterArg === 'link') {
+                    } else {
                         msgNodes.push(fw('【链接】暂无缓存链接。'));
                     }
                 }
@@ -1072,7 +1080,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
                         }
                         histLines.push(fw('提示: 使用 [history]-N 引用历史记录。使用 .bridge del [history]-N 删除。'));
                         msgNodes.push(histLines.join('\n'));
-                    } else if (filterArg === 'history') {
+                    } else {
                         msgNodes.push(fw('【历史记录】暂无历史记录。'));
                     }
                 }
@@ -1221,7 +1229,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.5.2-logutil loaded (logutil + bridge only)');
+console.log('用户脚本：log-analyzer v4.5.3-logutil loaded (logutil + bridge only)');
 try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
