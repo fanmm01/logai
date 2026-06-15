@@ -4687,7 +4687,6 @@ def bridge_gui_group(group_id):
     return _BRIDGE_GUI_HTML.replace('{{GROUP_ID}}', str(group_id))
 
 
-@app.route('/api/bridge_gui_data', methods=['GET'])
 @app.route('/api/bridge_groups', methods=['GET'])
 def api_bridge_groups():
     """v4.4.5: 返回所有存在桥接数据的群号列表。"""
@@ -4708,6 +4707,7 @@ def api_bridge_groups():
     return jsonify({'status': 'ok', 'groups': sorted(groups, key=lambda x: int(x) if x.isdigit() else 0)})
 
 
+@app.route('/api/bridge_gui_data', methods=['GET'])
 def api_bridge_gui_data():
     """v4.4.0: Web GUI 数据接口。"""
     group_id = safe_int(request.args.get('group_id', 0), 0)
