@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.5.3**  
+**V4.5.4**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -381,5 +381,9 @@ logutil支持识别以下种类的消息头：
 2. DOCX 文本提取：`extract_text_from_group_file` 改为按段落聚合文本 run，消除逐字换行；`extract_text_from_file` 段落 strip 并过滤空段。PDF 页文本同样 strip 过滤。
 3. `.bridge list` 无参数时不再返回历史记录（仅 file+link），`all` 参数仍同时显示全部；文件/链接表均空时分别提示而非仅提示文件。
 4. 新增 `.logai help`、`.logutil help`、`.aiutil help`、`.translate help`、`.bridge help` 指令，返回各命令用法及全部参数/修饰符说明。
-5. 实例版默认端口改为 8001（与主版本 8000 分离）；前端错误输出优化（含 URL/HTTP 状态码/原始响应 show）；注册名改为 `logutil` 避免与主前端冲突。
+5. 实例版默认端口改为 8001（与主版本 8000 分离）；前端错误输出优化（含 URL/HTTP 状态码/原始响应）；注册名改为 `logutil` 避免与主前端冲突。
 6. 更新版本号至 4.5.3。
+
+**v4.5.4**
+1. 所有文件输出前自动截断超长文件名（>30字符保留扩展名）。
+2. 更新版本号至 4.5.4。

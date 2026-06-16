@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogUtil + Bridge 4.5.2 - Log Recording ^& File Bridge
+echo   LogUtil + Bridge 4.5.4 - Log Recording ^& File Bridge
 echo ============================================
 echo.
 

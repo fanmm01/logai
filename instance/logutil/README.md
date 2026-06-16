@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.5.3-logutil
+# LogUtil + Bridge 4.5.4-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -276,3 +276,7 @@ bash run_logutil.sh
 3. DOCX/PDF 文本提取：段落 strip 过滤，按段落聚合消除逐字换行。
 4. 默认端口改为 8001；注册名改为 `logutil` 避免冲突；前端错误输出优化。
 5. 同步 LogAI v4.5.3 全部修复。
+
+**v4.5.4-logutil**
+1. 文件名截断（>30字符）。
+2. 同步 LogAI v4.5.4。

@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.5.3-logutil"
+SERVICE_VERSION = "4.5.4-logutil"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -1562,7 +1562,7 @@ def extract_text_from_group_file(filename, data):
                 for path in targets:
                     raw = zf.read(path)
                     root = ET.fromstring(raw)
-                    # v4.5.3: aggregate text runs per paragraph (not per node)
+                    # v4.5.4: aggregate text runs per paragraph (not per node)
                     for p in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
                         para_text = ''.join(
                             t.text or '' for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
@@ -2349,7 +2349,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.5.3</h1>
+<h1>LogAI Bridge Manager v4.5.4</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -4541,6 +4541,11 @@ def napcat_upload_group_file(group_id, file_path, name):
     """通过 NapCat HTTP API 上传文件到群。
     将文件内容 base64 编码后作为 base64:// 参数发送。
     返回 (file_sent, result) 二元组，失败时 file_sent=False。"""
+    # v4.5.4: truncate filename >30 chars (keep extension)
+    name = str(name or 'file')
+    if len(name) > 30:
+        base, ext = os.path.splitext(name)
+        name = base[:30-len(ext)] + ext if len(ext) <= 5 else name[:30]
     try:
         with open(file_path, 'rb') as f:
             file_bytes = f.read()
@@ -5615,7 +5620,7 @@ def ensure_ws_worker_started():
 
 # ====== 继续原来启动入口 ======
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.5.3 - TRPG Log Recording & File Bridge Server')
+    parser = argparse.ArgumentParser(description='LogUtil + Bridge 4.5.4 - TRPG Log Recording & File Bridge Server')
     parser.add_argument('--story-painter-url', type=str, default=None, help=f'Story Painter upload URL (default: {STORY_PAINTER_UPLOAD_URL})')
     parser.add_argument('--story-painter-token', type=str, default=None, help='Story Painter API token')
     parser.add_argument('--host', type=str, default=None, help=f'Server host (default: {LOGAI_HOST})')
