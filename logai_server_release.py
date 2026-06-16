@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.5.3"
+SERVICE_VERSION = "4.5.4"
 _openai_client = None
 
 def get_openai_client():
@@ -1919,7 +1919,7 @@ def extract_text_from_group_file(filename, data):
                 for path in targets:
                     raw = zf.read(path)
                     root = ET.fromstring(raw)
-                    # v4.5.3: aggregate text runs per paragraph (not per node)
+                    # v4.5.4: aggregate text runs per paragraph (not per node)
                     for p in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
                         para_text = ''.join(
                             t.text or '' for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
@@ -4618,7 +4618,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.5.3</h1>
+<h1>LogAI Bridge Manager v4.5.4</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -6813,6 +6813,11 @@ def napcat_upload_group_file(group_id, file_path, name):
     """通过 NapCat HTTP API 上传文件到群。
     将文件内容 base64 编码后作为 base64:// 参数发送。
     返回 (file_sent, result) 二元组，失败时 file_sent=False。"""
+    # v4.5.4: truncate filename >30 chars (keep extension)
+    name = str(name or 'file')
+    if len(name) > 30:
+        base, ext = os.path.splitext(name)
+        name = base[:30-len(ext)] + ext if len(ext) <= 5 else name[:30]
     try:
         with open(file_path, 'rb') as f:
             file_bytes = f.read()

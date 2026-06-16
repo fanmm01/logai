@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
 echo ============================================
-echo   LogAI 4.4.3 - TRPG Log Analysis Server
+echo   LogAI 4.5.4 - TRPG Log Analysis Server
 echo ============================================
 echo.
 
