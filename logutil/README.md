@@ -396,6 +396,10 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 1. 新增 .logutil help 与 .bridge help 指令。
 2. 同步 LogAI v4.5.2 全部修复。
 
+**v4.5.4-logutil**
+1. 文件名截断（>30字符）。
+2. 同步 LogAI v4.5.4。
+
 **v4.5.3-logutil**
 1. 新增 `.logutil help` 与 `.bridge help` 指令，返回全部参数/修饰符说明。
 2. `.bridge list` 无参数时不再返回历史记录；文件/链接表均空时分别提示。
@@ -403,6 +407,8 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 4. 默认端口改为 8001；注册名改为 `logutil` 避免冲突；前端错误输出优化。
 5. 同步 LogAI v4.5.3 全部修复。
 
-**v4.5.4-logutil**
-1. 文件名截断（>30字符）。
-2. 同步 LogAI v4.5.4。
+**v4.6.1-logutil**
+1. 修复 .logutil end 被误判为复合命令的问题。
+2. 修复冒号格式对纯标点文本的误判。
+3. 同步 LogAI v4.6.1。
+
