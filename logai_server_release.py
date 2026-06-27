@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.6.0"
+SERVICE_VERSION = "4.6.1"
 _openai_client = None
 
 def get_openai_client():
@@ -1247,6 +1247,9 @@ def looks_like_speaker_name(name):
         return False
     if re.fullmatch(r"\d+", candidate):
         return False
+    # v4.6.1: must contain at least one letter/digit/Chinese char (not pure punctuation)
+    if not re.search(r'[a-zA-Z0-9一-鿿]', candidate):
+        return False
     return True
 
 
@@ -1420,11 +1423,8 @@ def match_speaker_line(line, fallback_ts=None):
     if match:
         return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
 
-    # 6) fwlog 冒号格式 Name: content
-    match = PLAIN_SPEAKER_RE.match(text)
-    if not match:
-        return None
-    return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
+    # 6) v4.6.1: 移除 PLAIN_SPEAKER_RE — 纯冒号格式易造成一般文件误判
+    return None
 
 
 def match_multiline_angle_speaker(lines, start_index, fallback_ts, pending_meta=None):
@@ -4718,7 +4718,7 @@ preview{color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>LogAI Bridge Manager v4.6.0</h1>
+<h1>LogAI Bridge Manager v4.6.1</h1>
 <div class="group-select">
   <b>选择群组:</b>
   <select id="groupSelect" onchange="loadData()" style="padding:8px;font-size:14px;border-radius:4px;border:1px solid #333;background:#16213e;color:#e0e0e0;min-width:200px;">
@@ -6452,7 +6452,7 @@ def api_logutil_compound():
     do_end = bool(payload.get('end'))
     do_logai = bool(payload.get('logai'))
     raw_mode = bool(payload.get('raw'))
-    sort_time = bool(payload.get('sort_time'))  # v4.6.0: -t 按时间戳排序
+    sort_time = bool(payload.get('sort_time'))  # v4.6.1: -t 按时间戳排序
     title = str(payload.get('title') or '').strip()
     ops = payload.get('ops') or []
     if not isinstance(ops, list):
@@ -6635,7 +6635,7 @@ def api_logutil_get():
     print(f"[logutil_get] state current_log_name={state.get('current_log_name')!r} resolved_name={name!r}")
     if not name:
         return jsonify({'status': 'error', 'msg': 'missing log name'}), 400
-    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    # v4.6.1: -t 修饰符 — 按原消息时间戳排序
     sort_time = str(request.args.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
     log_obj = get_logutil_log_full(group_id, name, sort_by_time=sort_time)
     if not log_obj:
@@ -6687,7 +6687,7 @@ def api_logutil_end():
     group_id = str(payload.get('group_id') or request.args.get('group_id') or '').strip()
     name = str(payload.get('name') or '').strip()
     del_paren = str(payload.get('del_paren') or request.args.get('del_paren') or '').lower() in ('1', 'true', 'yes', 'on')
-    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    # v4.6.1: -t 修饰符 — 按原消息时间戳排序
     sort_time = str(payload.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
     if not group_id:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
@@ -6831,7 +6831,7 @@ def api_bridge_get():
 
 @app.route('/api/bridge_upload_audio', methods=['POST'])
 def api_bridge_upload_audio():
-    """v4.6.0: 上传音频文件到指定群并等待桥接缓存，返回 content_url。
+    """v4.6.1: 上传音频文件到指定群并等待桥接缓存，返回 content_url。
     用于 getSong 等插件的音乐卡片链接生成。
     接受 {file_path, group_id, filename}。"""
     payload = request.get_json(silent=True) or {}

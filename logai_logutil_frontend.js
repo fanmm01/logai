@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.6.0
-// @description  合并 Log 分析与模组分析 v4.6.0，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
+// @version      4.6.1
+// @description  合并 Log 分析与模组分析 v4.6.1，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.6.0');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.6.1');
     seal.ext.register(ext);
 }
 
@@ -1706,7 +1706,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
-    // v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    // v4.6.1: -t 修饰符 — 按原消息时间戳排序
     let sort_time = tokens.some(t => ['t', '-t', 'sort_time'].includes((t || '').toLowerCase()));
     let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw', 't', '-t', 'sort_time'].includes((a || '').toLowerCase())) || '';
 
@@ -1729,7 +1729,8 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let s = String(a || '').trim();
             return /^\[file\][-~]\d+$/i.test(s) || /^\[link\][-~]\d+$/i.test(s) || /^\[history\][-~]\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
-        let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
+        // v4.6.1: end alone is not compound — must be paired with new or logai
+        let isCompound = ((hasEnd && hasNew) || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && !hasEnd && hasOps));
 
         if (isCompound || (!op || (op !== 'new' && op !== 'on' && op !== 'off' && op !== 'get' &&
              op !== 'end' && op !== 'list' && op !== 'clear' && op !== 'wsconfig'))) {

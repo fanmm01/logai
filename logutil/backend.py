@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.6.0 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.6.1 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.6.0"
+SERVICE_VERSION = "4.6.1"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -890,6 +890,9 @@ def looks_like_speaker_name(name):
         return False
     if re.fullmatch(r"\d+", candidate):
         return False
+    # v4.6.1: must contain at least one letter/digit/Chinese char (not pure punctuation)
+    if not re.search(r'[a-zA-Z0-9一-鿿]', candidate):
+        return False
     return True
 
 
@@ -1063,11 +1066,8 @@ def match_speaker_line(line, fallback_ts=None):
     if match:
         return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
 
-    # 6) fwlog 冒号格式 Name: content
-    match = PLAIN_SPEAKER_RE.match(text)
-    if not match:
-        return None
-    return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
+    # 6) v4.6.1: 移除 PLAIN_SPEAKER_RE — 纯冒号格式易造成一般文件误判
+    return None
 
 
 def match_multiline_angle_speaker(lines, start_index, fallback_ts, pending_meta=None):
@@ -4180,7 +4180,7 @@ def api_logutil_compound():
     do_end = bool(payload.get('end'))
     do_logai = bool(payload.get('logai'))
     raw_mode = bool(payload.get('raw'))
-    sort_time = bool(payload.get('sort_time'))  # v4.6.0: -t 按时间戳排序
+    sort_time = bool(payload.get('sort_time'))  # v4.6.1: -t 按时间戳排序
     title = str(payload.get('title') or '').strip()
     ops = payload.get('ops') or []
     if not isinstance(ops, list):
@@ -4363,7 +4363,7 @@ def api_logutil_get():
     print(f"[logutil_get] state current_log_name={state.get('current_log_name')!r} resolved_name={name!r}")
     if not name:
         return jsonify({'status': 'error', 'msg': 'missing log name'}), 400
-    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    # v4.6.1: -t 修饰符 — 按原消息时间戳排序
     sort_time = str(request.args.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
     log_obj = get_logutil_log_full(group_id, name, sort_by_time=sort_time)
     if not log_obj:
@@ -4415,7 +4415,7 @@ def api_logutil_end():
     group_id = str(payload.get('group_id') or request.args.get('group_id') or '').strip()
     name = str(payload.get('name') or '').strip()
     del_paren = str(payload.get('del_paren') or request.args.get('del_paren') or '').lower() in ('1', 'true', 'yes', 'on')
-    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    # v4.6.1: -t 修饰符 — 按原消息时间戳排序
     sort_time = str(payload.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
     if not group_id:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
@@ -4559,7 +4559,7 @@ def api_bridge_get():
 
 @app.route('/api/bridge_upload_audio', methods=['POST'])
 def api_bridge_upload_audio():
-    """v4.6.0: 上传音频文件到指定群并等待桥接缓存，返回 content_url。
+    """v4.6.1: 上传音频文件到指定群并等待桥接缓存，返回 content_url。
     用于 getSong 等插件的音乐卡片链接生成。
     接受 {file_path, group_id, filename}。"""
     payload = request.get_json(silent=True) or {}

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.6.0
-// @description  LogUtil 日志录制与 NapCat 文件桥接插件 v4.6.0，支持 .logutil 与 .bridge 命令。
+// @version      4.6.1
+// @description  LogUtil 日志录制与 NapCat 文件桥接插件 v4.6.1，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('logutil');
 if (!ext) {
-    ext = seal.ext.new('logutil', 'Air', '4.6.0');
+    ext = seal.ext.new('logutil', 'Air', '4.6.1');
     seal.ext.register(ext);
 }
 
@@ -579,7 +579,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
-    // v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    // v4.6.1: -t 修饰符 — 按原消息时间戳排序
     let sort_time = tokens.some(t => ['t', '-t', 'sort_time'].includes((t || '').toLowerCase()));
     let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw', 't', '-t', 'sort_time'].includes((a || '').toLowerCase())) || '';
 
@@ -602,7 +602,8 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let s = String(a || '').trim();
             return /^\[file\][-~]\d+$/i.test(s) || /^\[link\][-~]\d+$/i.test(s) || /^\[history\][-~]\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
-        let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
+        // v4.6.1: end alone is not compound — must be paired with new or logai
+        let isCompound = ((hasEnd && hasNew) || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && !hasEnd && hasOps));
 
         if (isCompound || (!op || (op !== 'new' && op !== 'on' && op !== 'off' && op !== 'get' &&
              op !== 'end' && op !== 'list' && op !== 'clear' && op !== 'wsconfig'))) {
@@ -1285,7 +1286,7 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：logutil v4.6.0 loaded (logutil + bridge only)');
+console.log('用户脚本：logutil v4.6.1 loaded (logutil + bridge only)');
 try { console.log('[logutil] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
