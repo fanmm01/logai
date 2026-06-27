@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         LogUtil 日志录制与文件桥接
 // @author       Air, Gemini, fanmm, chaye2333
-// @version      4.5.4-logutil
-// @description  LogUtil 日志录制与 NapCat 文件桥接插件，支持 .logutil 与 .bridge 命令。
+// @version      4.6.0
+// @description  LogUtil 日志录制与 NapCat 文件桥接插件 v4.6.0，支持 .logutil 与 .bridge 命令。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
@@ -11,9 +11,9 @@
 
 // LogUtil + Bridge 独立插件，仅包含日志录制与文件桥接功能。
 
-let ext = seal.ext.find('log-analyzer');
+let ext = seal.ext.find('logutil');
 if (!ext) {
-    ext = seal.ext.new('logutil', 'Air', '4.5.4-logutil');
+    ext = seal.ext.new('logutil', 'Air', '4.6.0');
     seal.ext.register(ext);
 }
 
@@ -100,8 +100,28 @@ function getBridgeTokenHeader() {
 // v4.4.0: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23
 // v4.4.4: 也修复 SealDice 去括号导致的 file-0/link-0/history-0 格式
 // v4.4.4.1: 跨群访问 F14-123456→[file]-14-123456
+// v4.5.5: F-1/L-1/H-1 倒数别名（-1=最新），~ 为反向索引标记
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
+    // v4.5.5: 倒数跨群别名 F-1-123456, L-2-999888
+    let revCrossMatch = s.match(/^([FLH])-(\d+)-(\d+)$/i);
+    if (revCrossMatch) {
+        let prefix = revCrossMatch[1].toUpperCase();
+        let num = revCrossMatch[2];
+        let gid = revCrossMatch[3];
+        if (prefix === 'F') return `[file]~${num}-${gid}`;
+        if (prefix === 'L') return `[link]~${num}-${gid}`;
+        if (prefix === 'H') return `[history]~${num}-${gid}`;
+    }
+    // v4.5.5: 倒数别名 F-1, L-2, H-3（-1=倒数第1即最新）
+    let revMatch = s.match(/^([FLH])-(\d+)$/i);
+    if (revMatch) {
+        let prefix = revMatch[1].toUpperCase();
+        let num = revMatch[2];
+        if (prefix === 'F') return `[file]~${num}`;
+        if (prefix === 'L') return `[link]~${num}`;
+        if (prefix === 'H') return `[history]~${num}`;
+    }
     // 跨群短别名: F14-123456, L0-999888
     let cm = s.match(/^([FLH])(\d+)-(\d+)$/i);
     if (cm) {
@@ -144,11 +164,11 @@ function dbgLog(tag, message, data) {
     if (!seal.ext.getBoolConfig(ext, "调试日志")) return;
     if (data !== undefined) {
         try {
-            console.log(`[log-analyzer][${tag}] ${message}`, data);
+            console.log(`[logutil][${tag}] ${message}`, data);
             return;
         } catch (e) {}
     }
-    console.log(`[log-analyzer][${tag}] ${message}`);
+    console.log(`[logutil][${tag}] ${message}`);
 }
 
 async function readLastLogFileFromHttpBridge(groupId) {
@@ -285,6 +305,30 @@ function parseLogTargetEntry(raw) {
     if (historyIdxMatch) {
         let r = { key: historyIdxMatch[1], source: 'bridge_history', password: '' };
         if (historyIdxMatch[2]) r.cross_group_id = historyIdxMatch[2];
+        return r;
+    }
+
+    // v4.5.5: [file]~N pattern: reverse index reference (1=newest, ~N=倒数第N个)
+    let fileRevMatch = val.match(/^\[file\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (fileRevMatch) {
+        let r = { key: fileRevMatch[1], source: 'bridge_file_rev', password: '' };
+        if (fileRevMatch[2]) r.cross_group_id = fileRevMatch[2];
+        return r;
+    }
+
+    // v4.5.5: [link]~N pattern: reverse index for links
+    let linkRevMatch = val.match(/^\[link\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (linkRevMatch) {
+        let r = { key: linkRevMatch[1], source: 'bridge_link_rev', password: '' };
+        if (linkRevMatch[2]) r.cross_group_id = linkRevMatch[2];
+        return r;
+    }
+
+    // v4.5.5: [history]~N pattern: reverse index for history
+    let historyRevMatch = val.match(/^\[history\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (historyRevMatch) {
+        let r = { key: historyRevMatch[1], source: 'bridge_history_rev', password: '' };
+        if (historyRevMatch[2]) r.cross_group_id = historyRevMatch[2];
         return r;
     }
 
@@ -519,7 +563,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     // Split restText into tokens respecting quoted strings and bracket groups
     let tokens = [];
-    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:\[history\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
+    let tokenRegex = /(?:\[file\][-~]\d+)|(?:\[link\][-~]\d+)|(?:\[history\][-~]\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
     let m;
     while ((m = tokenRegex.exec(restText)) !== null) {
         tokens.push(m[0]);
@@ -529,13 +573,15 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     let op = (tokens[0] || '').toLowerCase();
     if (op === 'help') {
-        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren]  结束并导出\nlist                    列出本群日志\nget [名称]              导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end]\n修饰符: raw=跳过消息头解析直接拼接原始文本 | del_paren=删除括号包裹内容\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、短别名、跨群、染色器链接、文本'));
+        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren] [-t]  结束并导出\nlist                    列出本群日志\nget [名称] [-t]         导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end] [-t] [logai]\n修饰符: raw=跳过消息头解析 | del_paren=删除括号 | -t=按原消息时间戳排序\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、F-1倒数别名、短别名、跨群、染色器链接、文本'));
         return seal.ext.newCmdExecuteResult(true);
     }
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
-    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw'].includes((a || '').toLowerCase())) || '';
+    // v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    let sort_time = tokens.some(t => ['t', '-t', 'sort_time'].includes((t || '').toLowerCase()));
+    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw', 't', '-t', 'sort_time'].includes((a || '').toLowerCase())) || '';
 
     let pureGroupId = getPureGroupId(groupId);
     let payload = { group_id: pureGroupId };
@@ -554,7 +600,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         let hasLogai = allArgs.some(a => (a || '').toLowerCase() === 'logai');
         let hasOps = rawArgs.some(a => {
             let s = String(a || '').trim();
-            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^\[history\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
+            return /^\[file\][-~]\d+$/i.test(s) || /^\[link\][-~]\d+$/i.test(s) || /^\[history\][-~]\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
         let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
 
@@ -581,9 +627,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 let titleCandidateIdx = newIdx + 1;
                 if (titleCandidateIdx < allArgs.length) {
                     let cand = String(allArgs[titleCandidateIdx] || '').trim();
-                    let isOp = /^\[file\]-\d+$/i.test(cand) ||
-                               /^\[link\]-\d+$/i.test(cand) ||
-                               /^\[history\]-\d+$/i.test(cand) ||
+                    let isOp = /^\[file\][-~]\d+$/i.test(cand) ||
+                               /^\[link\][-~]\d+$/i.test(cand) ||
+                               /^\[history\][-~]\d+$/i.test(cand) ||
                                /^https?:\/\//i.test(cand) ||
                                (cand.toLowerCase() === 'end') ||
                                (cand.toLowerCase() === 'logai') ||
@@ -591,6 +637,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                                (cand.toLowerCase() === 'del_paren') ||
                                (cand.toLowerCase() === 'delparen') ||
                                (cand.toLowerCase() === 'del-paren') ||
+                               (cand.toLowerCase() === 't') ||
+                               (cand.toLowerCase() === '-t') ||
+                               (cand.toLowerCase() === 'sort_time') ||
                                !!parseLogTargetEntry(cand);
                     if (!isOp && cand) {
                         title = cand;
@@ -616,7 +665,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let logaiModeLower = new Set(logaiModeWords.map(w => (w || '').toLowerCase()));
             ops = ops.filter(a => {
                 let s = (a || '').toLowerCase();
-                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && s !== 'del_paren' && s !== 'delparen' && s !== 'del-paren' && !logaiModeLower.has(s);
+                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && s !== 'del_paren' && s !== 'delparen' && s !== 'del-paren' && s !== 't' && s !== '-t' && s !== 'sort_time' && !logaiModeLower.has(s);
             });
 
             if (ops.length === 0 && !hasEnd && !hasLogai) {
@@ -640,6 +689,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             if (title) compoundPayload.title = title;
             if (del_paren) compoundPayload.del_paren = true;
             if (raw_mode) compoundPayload.raw = true;
+            if (sort_time) compoundPayload.sort_time = true;
 
             try {
                 let resp = await fetch(`${host}/api/logutil_compound`, {
@@ -849,6 +899,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             if (del_paren) {
                 payload.del_paren = true;
             }
+            if (sort_time) {
+                payload.sort_time = true;
+            }
             let endpoint = `${host}/api/logutil_${op}`;
             let resp;
             if (op === 'get') {
@@ -858,6 +911,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 }
                 if (del_paren) {
                     query += `&del_paren=true`;
+                }
+                if (sort_time) {
+                    query += `&sort_time=true`;
                 }
                 resp = await fetch(`${endpoint}${query}`);
             } else {
@@ -1229,8 +1285,8 @@ ext.cmdMap['bridge'] = cmdBridge;
 
 // .模组完善
 
-console.log('用户脚本：log-analyzer v4.5.4-logutil loaded (logutil + bridge only)');
-try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
+console.log('用户脚本：logutil v4.6.0 loaded (logutil + bridge only)');
+try { console.log('[logutil] 后端地址: ' + getBackendBaseUrl()); } catch(e) {}
 
 // Auto-push WS config to backend on startup (delayed to let backend start)
 (async function syncLogutilConfig() {
@@ -1257,7 +1313,7 @@ try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catc
                     body: JSON.stringify(payload)
                 });
                 if (resp.ok) {
-                    console.log('[log-analyzer] WS config synced to backend:', payload);
+                    console.log('[logutil] WS config synced to backend:', payload);
                     break;
                 }
             } catch (e) {
@@ -1265,6 +1321,6 @@ try { console.log('[log-analyzer] 后端地址: ' + getBackendBaseUrl()); } catc
             }
         }
     } catch (e) {
-        console.log('[log-analyzer] WS config sync failed (backend may not be running):', e.message);
+        console.log('[logutil] WS config sync failed (backend may not be running):', e.message);
     }
 })();

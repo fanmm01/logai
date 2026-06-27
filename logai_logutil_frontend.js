@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.5.4
-// @description  合并 Log 分析与模组分析，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
+// @version      4.6.0
+// @description  合并 Log 分析与模组分析 v4.6.0，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.5.4');
+    ext = seal.ext.new('log-analyzer', 'Air', '4.6.0');
     seal.ext.register(ext);
 }
 
@@ -105,8 +105,28 @@ function getBridgeTokenHeader() {
 // v4.4.0: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23
 // v4.4.4: 也修复file-0/link-0/history-0 格式
 // v4.4.4.1: 跨群访问 F14-123456→[file]-14-123456
+// v4.5.5: F-1/L-1/H-1 倒数别名（-1=最新），~ 为反向索引标记
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
+    // v4.5.5: 倒数跨群别名 F-1-123456, L-2-999888
+    let revCrossMatch = s.match(/^([FLH])-(\d+)-(\d+)$/i);
+    if (revCrossMatch) {
+        let prefix = revCrossMatch[1].toUpperCase();
+        let num = revCrossMatch[2];
+        let gid = revCrossMatch[3];
+        if (prefix === 'F') return `[file]~${num}-${gid}`;
+        if (prefix === 'L') return `[link]~${num}-${gid}`;
+        if (prefix === 'H') return `[history]~${num}-${gid}`;
+    }
+    // v4.5.5: 倒数别名 F-1, L-2, H-3（-1=倒数第1即最新）
+    let revMatch = s.match(/^([FLH])-(\d+)$/i);
+    if (revMatch) {
+        let prefix = revMatch[1].toUpperCase();
+        let num = revMatch[2];
+        if (prefix === 'F') return `[file]~${num}`;
+        if (prefix === 'L') return `[link]~${num}`;
+        if (prefix === 'H') return `[history]~${num}`;
+    }
     // 跨群短别名: F14-123456, L0-999888
     let cm = s.match(/^([FLH])(\d+)-(\d+)$/i);
     if (cm) {
@@ -323,6 +343,30 @@ function parseLogTargetEntry(raw) {
         return r;
     }
 
+    // v4.5.5: [file]~N pattern: reverse index reference (1=newest, ~N=倒数第N个)
+    let fileRevMatch = val.match(/^\[file\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (fileRevMatch) {
+        let r = { key: fileRevMatch[1], source: 'bridge_file_rev', password: '' };
+        if (fileRevMatch[2]) r.cross_group_id = fileRevMatch[2];
+        return r;
+    }
+
+    // v4.5.5: [link]~N pattern: reverse index for links
+    let linkRevMatch = val.match(/^\[link\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (linkRevMatch) {
+        let r = { key: linkRevMatch[1], source: 'bridge_link_rev', password: '' };
+        if (linkRevMatch[2]) r.cross_group_id = linkRevMatch[2];
+        return r;
+    }
+
+    // v4.5.5: [history]~N pattern: reverse index for history
+    let historyRevMatch = val.match(/^\[history\]~(\d+)(?:-(\d+))?(?:\s|$)/i);
+    if (historyRevMatch) {
+        let r = { key: historyRevMatch[1], source: 'bridge_history_rev', password: '' };
+        if (historyRevMatch[2]) r.cross_group_id = historyRevMatch[2];
+        return r;
+    }
+
     // Bare file name detection: non-URL values that look like filenames
     // Examples: "[2026-06-11_11-25]8月23日营地.txt", "8月23日营地.txt", "8月23日营地"
     if (!/^https?:\/\//i.test(val) && !val.includes('://') && !val.includes('=') && !val.includes('#') && val.length > 1) {
@@ -507,15 +551,21 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
         '赛博', '历史', '古风', '克苏鲁', '深潜', '废土', '末日', '二次元', '萌系', '终端', '黑客', '经典', '默认', '常规'];
     if (customName) excludeList.push(customName);
 
-    // Detect file references in args ([file]-N, [link]-N, [history]-N, or filenames)
+    // Detect file references in args ([file]-N, [file]~N, [link]-N, [link]~N, [history]-N, [history]~N, or filenames)
     let fileRefs = [];
     for (let a of args) {
         let s = String(a || '').trim();
         if (excludeList.some(e => e.toLowerCase() === s.toLowerCase())) continue;
-        if (/^\[file\]-\d+$/i.test(s)) {
+        if (/^\[file\]~(\d+)$/i.test(s)) {
+            fileRefs.push({ type: 'file_rev_index', value: s });
+        } else if (/^\[file\]-\d+$/i.test(s)) {
             fileRefs.push({ type: 'file_index', value: s });
+        } else if (/^\[link\]~(\d+)$/i.test(s)) {
+            fileRefs.push({ type: 'link_rev_index', value: s });
         } else if (/^\[link\]-\d+$/i.test(s)) {
             fileRefs.push({ type: 'link_index', value: s });
+        } else if (/^\[history\]~(\d+)$/i.test(s)) {
+            fileRefs.push({ type: 'history_rev_index', value: s });
         } else if (/^\[history\]-\d+$/i.test(s)) {
             fileRefs.push({ type: 'history_index', value: s });
         } else if (s && s.length > 1 && !s.startsWith('pro') && !s.startsWith('kind') && !s.startsWith('ai')) {
@@ -550,13 +600,33 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
             }
 
             for (let ref of fileRefs) {
-                if (ref.type === 'file_index') {
+                if (ref.type === 'file_rev_index') {
+                    let revMatch = ref.value.match(/^\[file\]~(\d+)$/i);
+                    let revIdx = parseInt(revMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeFiles.length) {
+                        let idx = bridgeFiles.length - revIdx;
+                        let bf = bridgeFiles[idx];
+                        if (bf.content_url) {
+                            resolvedFiles.push({ url: bf.content_url, name: bf.display_name || bf.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'file_index') {
                     let idxMatch = ref.value.match(/^\[file\]-(\d+)$/i);
                     let idx = parseInt(idxMatch[1]);
                     if (idx >= 0 && idx < bridgeFiles.length) {
                         let bf = bridgeFiles[idx];
                         if (bf.content_url) {
                             resolvedFiles.push({ url: bf.content_url, name: bf.display_name || bf.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'link_rev_index') {
+                    let revMatch = ref.value.match(/^\[link\]~(\d+)$/i);
+                    let revIdx = parseInt(revMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeLinks.length) {
+                        let idx = bridgeLinks.length - revIdx;
+                        let bl = bridgeLinks[idx];
+                        if (bl.content_url) {
+                            resolvedFiles.push({ url: bl.content_url, name: bl.display_name || bl.name || ref.value });
                         }
                     }
                 } else if (ref.type === 'link_index') {
@@ -566,6 +636,16 @@ async function processModuleFile(ctx, msg, cmdArgs, modeName, pythonMode) {
                         let bl = bridgeLinks[idx];
                         if (bl.content_url) {
                             resolvedFiles.push({ url: bl.content_url, name: bl.display_name || bl.name || ref.value });
+                        }
+                    }
+                } else if (ref.type === 'history_rev_index') {
+                    let revMatch = ref.value.match(/^\[history\]~(\d+)$/i);
+                    let revIdx = parseInt(revMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeHistory.length) {
+                        let idx = bridgeHistory.length - revIdx;
+                        let bh = bridgeHistory[idx];
+                        if (bh.content_url) {
+                            resolvedFiles.push({ url: bh.content_url, name: bh.display_name || bh.name || ref.value });
                         }
                     }
                 } else if (ref.type === 'history_index') {
@@ -1022,6 +1102,13 @@ async function processLogTask(ctx, msg, cmdArgs, modeName, pythonMode) {
                 let displayName = bf ? bf.display_name || bf.name || `[file]-${idx}` : `[file]-${idx}`;
                 return `#${i + 1}:${displayName}`;
             }
+            if (e.source === 'bridge_file_rev') {
+                let revIdx = parseInt(e.key) || 1;
+                let idx = bridgeFiles.length - revIdx;
+                let bf = (idx >= 0 && idx < bridgeFiles.length) ? bridgeFiles[idx] : null;
+                let displayName = bf ? bf.display_name || bf.name || `[file]~${revIdx}` : `[file]~${revIdx}`;
+                return `#${i + 1}:${displayName}`;
+            }
             if (e.source === 'bridge_file_name') {
                 // Try to match by normalized filename (strip all spaces)
                 let searchName = String(e.key).replace(/\s+/g, '');
@@ -1354,7 +1441,7 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
     let fileArgs = [];
     let promptParts = [];
     for (let a of args) {
-        if (/^\[file\]-\d+$/i.test(String(a || '').trim()) || /^\[link\]-\d+$/i.test(String(a || '').trim()) || /^\[history\]-\d+$/i.test(String(a || '').trim())) {
+        if (/^\[file\][-~]\d+$/i.test(String(a || '').trim()) || /^\[link\][-~]\d+$/i.test(String(a || '').trim()) || /^\[history\][-~]\d+$/i.test(String(a || '').trim())) {
             fileArgs.push(String(a).trim());
         } else if (a.toLowerCase() === 'pro' || a.toLowerCase() === 'get_text') {
             // skip flags
@@ -1397,16 +1484,40 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
             }
 
             for (let fa of fileArgs) {
+                // v4.5.5: 支持正向 -N 和反向 ~N 两种索引格式
+                let fileRevMatch = fa.match(/^\[file\]~(\d+)$/i);
                 let fileIdxMatch = fa.match(/^\[file\]-(\d+)$/i);
+                let linkRevMatch = fa.match(/^\[link\]~(\d+)$/i);
                 let linkIdxMatch = fa.match(/^\[link\]-(\d+)$/i);
+                let historyRevMatch = fa.match(/^\[history\]~(\d+)$/i);
                 let historyIdxMatch = fa.match(/^\[history\]-(\d+)$/i);
-                if (fileIdxMatch) {
+                if (fileRevMatch) {
+                    let revIdx = parseInt(fileRevMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeFiles.length) {
+                        let idx = bridgeFiles.length - revIdx;
+                        let bf = bridgeFiles[idx];
+                        let contentUrl = bf.content_url || '';
+                        if (contentUrl) {
+                            fileEntries.push({ url: contentUrl, name: bf.display_name || bf.name || fa });
+                        }
+                    }
+                } else if (fileIdxMatch) {
                     let idx = parseInt(fileIdxMatch[1]);
                     if (idx >= 0 && idx < bridgeFiles.length) {
                         let bf = bridgeFiles[idx];
                         let contentUrl = bf.content_url || '';
                         if (contentUrl) {
                             fileEntries.push({ url: contentUrl, name: bf.display_name || bf.name || fa });
+                        }
+                    }
+                } else if (linkRevMatch) {
+                    let revIdx = parseInt(linkRevMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeLinks.length) {
+                        let idx = bridgeLinks.length - revIdx;
+                        let bl = bridgeLinks[idx];
+                        let contentUrl = bl.content_url || '';
+                        if (contentUrl) {
+                            fileEntries.push({ url: contentUrl, name: bl.display_name || bl.name || fa });
                         }
                     }
                 } else if (linkIdxMatch) {
@@ -1416,6 +1527,16 @@ cmdAiutil.solve = async (ctx, msg, cmdArgs) => {
                         let contentUrl = bl.content_url || '';
                         if (contentUrl) {
                             fileEntries.push({ url: contentUrl, name: bl.display_name || bl.name || fa });
+                        }
+                    }
+                } else if (historyRevMatch) {
+                    let revIdx = parseInt(historyRevMatch[1]);
+                    if (revIdx > 0 && revIdx <= bridgeHistory.length) {
+                        let idx = bridgeHistory.length - revIdx;
+                        let bh = bridgeHistory[idx];
+                        let contentUrl = bh.content_url || '';
+                        if (contentUrl) {
+                            fileEntries.push({ url: contentUrl, name: bh.display_name || bh.name || fa });
                         }
                     }
                 } else if (historyIdxMatch) {
@@ -1569,7 +1690,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     // Split restText into tokens respecting quoted strings and bracket groups
     let tokens = [];
-    let tokenRegex = /(?:\[file\]-\d+)|(?:\[link\]-\d+)|(?:\[history\]-\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
+    let tokenRegex = /(?:\[file\][-~]\d+)|(?:\[link\][-~]\d+)|(?:\[history\][-~]\d+)|(?:https?:\/\/\S+)|(?:"[^"]*")|(?:\S+)/gi;
     let m;
     while ((m = tokenRegex.exec(restText)) !== null) {
         tokens.push(m[0]);
@@ -1579,13 +1700,15 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
 
     let op = (tokens[0] || '').toLowerCase();
     if (op === 'help') {
-        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren]  结束并导出\nlist                    列出本群日志\nget [名称]              导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end] [logai]\n修饰符: raw=跳过消息头解析直接拼接原始文本 | del_paren=删除括号包裹内容\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、短别名、跨群、染色器链接、文本'));
+        seal.replyToSender(ctx, msg, fw('.logutil <子命令>\nnew [名称] [raw]        新建日志并开始录制\non [名称] [raw]         继续已有日志\noff                     暂停录制\nend [名称] [del_paren] [-t]  结束并导出\nlist                    列出本群日志\nget [名称] [-t]         导出日志\nclear [名称]            删除日志\nwsconfig                查看/配置WS监听\n复合: .logutil [new] <op...> [end] [-t] [logai]\n修饰符: raw=跳过消息头解析 | del_paren=删除括号 | -t=按原消息时间戳排序\n修饰符可在任意位置使用。op支持: [file]-N/[link]-N/[history]-N、F-1倒数别名、短别名、跨群、染色器链接、文本'));
         return seal.ext.newCmdExecuteResult(true);
     }
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
-    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw'].includes((a || '').toLowerCase())) || '';
+    // v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    let sort_time = tokens.some(t => ['t', '-t', 'sort_time'].includes((t || '').toLowerCase()));
+    let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw', 't', '-t', 'sort_time'].includes((a || '').toLowerCase())) || '';
 
     let pureGroupId = getPureGroupId(groupId);
     let payload = { group_id: pureGroupId };
@@ -1604,7 +1727,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
         let hasLogai = allArgs.some(a => (a || '').toLowerCase() === 'logai');
         let hasOps = rawArgs.some(a => {
             let s = String(a || '').trim();
-            return /^\[file\]-\d+$/i.test(s) || /^\[link\]-\d+$/i.test(s) || /^\[history\]-\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
+            return /^\[file\][-~]\d+$/i.test(s) || /^\[link\][-~]\d+$/i.test(s) || /^\[history\][-~]\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
         let isCompound = (hasEnd || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && hasOps));
 
@@ -1631,9 +1754,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 let titleCandidateIdx = newIdx + 1;
                 if (titleCandidateIdx < allArgs.length) {
                     let cand = String(allArgs[titleCandidateIdx] || '').trim();
-                    let isOp = /^\[file\]-\d+$/i.test(cand) ||
-                               /^\[link\]-\d+$/i.test(cand) ||
-                               /^\[history\]-\d+$/i.test(cand) ||
+                    let isOp = /^\[file\][-~]\d+$/i.test(cand) ||
+                               /^\[link\][-~]\d+$/i.test(cand) ||
+                               /^\[history\][-~]\d+$/i.test(cand) ||
                                /^https?:\/\//i.test(cand) ||
                                (cand.toLowerCase() === 'end') ||
                                (cand.toLowerCase() === 'logai') ||
@@ -1641,6 +1764,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                                (cand.toLowerCase() === 'del_paren') ||
                                (cand.toLowerCase() === 'delparen') ||
                                (cand.toLowerCase() === 'del-paren') ||
+                               (cand.toLowerCase() === 't') ||
+                               (cand.toLowerCase() === '-t') ||
+                               (cand.toLowerCase() === 'sort_time') ||
                                !!parseLogTargetEntry(cand);
                     if (!isOp && cand) {
                         title = cand;
@@ -1666,7 +1792,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let logaiModeLower = new Set(logaiModeWords.map(w => (w || '').toLowerCase()));
             ops = ops.filter(a => {
                 let s = (a || '').toLowerCase();
-                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && s !== 'del_paren' && s !== 'delparen' && s !== 'del-paren' && !logaiModeLower.has(s);
+                return s !== 'new' && s !== 'end' && s !== 'logai' && s !== 'raw' && s !== 'del_paren' && s !== 'delparen' && s !== 'del-paren' && s !== 't' && s !== '-t' && s !== 'sort_time' && !logaiModeLower.has(s);
             });
 
             if (ops.length === 0 && !hasEnd && !hasLogai) {
@@ -1690,6 +1816,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             if (title) compoundPayload.title = title;
             if (del_paren) compoundPayload.del_paren = true;
             if (raw_mode) compoundPayload.raw = true;
+            if (sort_time) compoundPayload.sort_time = true;
 
             try {
                 let resp = await fetch(`${host}/api/logutil_compound`, {
@@ -1900,6 +2027,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             if (del_paren) {
                 payload.del_paren = true;
             }
+            if (sort_time) {
+                payload.sort_time = true;
+            }
             let endpoint = `${host}/api/logutil_${op}`;
             let resp;
             if (op === 'get') {
@@ -1909,6 +2039,9 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
                 }
                 if (del_paren) {
                     query += `&del_paren=true`;
+                }
+                if (sort_time) {
+                    query += `&sort_time=true`;
                 }
                 resp = await fetch(`${endpoint}${query}`);
             } else {
@@ -2297,7 +2430,7 @@ cmdTranslate.solve = async (ctx, msg, cmdArgs) => {
     let langSet = false;
     for (let a of args) {
         let trimmed = String(a || '').trim();
-        if (/^\[file\]-\d+$/i.test(trimmed) || /^\[link\]-\d+$/i.test(trimmed) || /^\[history\]-\d+$/i.test(trimmed)) {
+        if (/^\[file\][-~]\d+$/i.test(trimmed) || /^\[link\][-~]\d+$/i.test(trimmed) || /^\[history\][-~]\d+$/i.test(trimmed)) {
             fileArgs.push(trimmed);
         } else if ((trimmed.toLowerCase() === 'goal-all' || trimmed.toUpperCase() === 'ALL') && !isGoalAll && !langSet) {
             isGoalAll = true;

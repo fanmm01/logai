@@ -150,26 +150,152 @@ bash run_logutil.sh
 | GET | `/api/logutil_status` | 录制状态 |
 | POST | `/api/logutil_record_outgoing` | 记录发出消息 |
 
-### Bridge 端点
+### Bridge API 文档
 
-| 方法 | 路径 | 说明 |
+Bridge 系统负责群文件缓存、链接文本缓存、历史记录管理。以下为完整 API 参考。
+
+---
+
+#### `POST /napcat/event`
+接收 NapCat (OneBot v11) 文件上传事件，自动提取文本并缓存。
+
+| 参数 | 类型 | 说明 |
 |------|------|------|
-| POST | `/napcat/event` | 接收 NapCat 文件上传事件 |
-| POST/GET | `/bridge/latest` | 获取最新缓存文件 |
-| POST/GET | `/bridge/list` | 列出缓存 |
-| GET | `/bridge/content/<key>` | 获取缓存内容 |
-| POST | `/api/bridge_get` | 获取文件并上传到群 |
-| POST | `/api/bridge_del` | 删除缓存项 |
-| POST | `/api/bridge_poll_on` | 启用轮询 |
-| POST | `/api/bridge_poll_off` | 停用轮询 |
-| GET/POST | `/api/bridge_poll_status` | 轮询状态 |
-| GET/POST | `/api/bridge_list` | 缓存列表（含预览） |
-| POST | `/api/bridge_rate` | 设置轮询间隔 |
-| POST/GET | `/api/bridge_master` | Web GUI 地址 |
-| GET | `/bridge/gui` | Web 管理界面 |
-| GET | `/bridge/gui/<group_id>` | 指定群 Web 界面 |
-| GET | `/api/bridge_gui_data` | GUI 数据接口 |
-| POST | `/api/bridge_gui_command` | GUI 命令接口 |
+| `group_id` | int | 群号 |
+| `file` | object | 文件信息 `{id, name, busid, size}` |
+
+---
+
+#### `POST/GET /bridge/latest`
+获取指定群最新缓存的文件。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", file:{name, content_key, content_url, text_chars, ...}, file_count:N, index:N}`
+
+---
+
+#### `POST/GET /bridge/list`
+列出指定群桥接缓存（含文件、链接、历史）。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|------|------|------|------|------|
+| `group_id` | int | 是 | - | 群号 |
+
+**响应** `{status:"ok", files:[...], links:[...], history:[...], count:N}`
+
+---
+
+#### `GET /bridge/content/<content_key>`
+获取缓存文件的原始文本内容。返回 `text/plain`。
+
+---
+
+#### `GET/POST /api/bridge_list`
+列出缓存，含内容预览字符。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|------|------|------|------|------|
+| `group_id` | int | 是 | - | 群号 |
+| `filter` | string | 否 | 空 | `file`/`link`/`history`/`all`。空=file+link，`all`=全部含历史 |
+
+**响应** `{status:"ok", files:[{index,name,text_chars,preview,content_key,content_url,...}], links:[...], history:[...], history_count:N}`
+
+---
+
+#### `POST /api/bridge_get`
+获取指定编号的缓存项并上传到群。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `ref` | string | 是 | 引用，如 `[file]-0`、`[link]-1`、`[history]-2`、`[file]-0-123456`（跨群） |
+
+**响应** `{status:"ok", file_sent:true, filename:"xxx.txt"}`
+
+---
+
+#### `POST /api/bridge_del`
+删除指定编号的缓存项。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `targets` | string[] | 是 | 引用数组，如 `["[file]-0","[link]-1","[history]-2"]` |
+
+**响应** `{status:"ok", deleted:[...], errors:[...]}`
+
+---
+
+#### `POST /api/bridge_poll_on` / `POST /api/bridge_poll_off`
+启用/停用本群的桥接轮询。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+---
+
+#### `GET/POST /api/bridge_poll_status`
+查询轮询状态。参数同 `bridge_poll_on`。
+
+**响应** `{status:"ok", poll_active:bool, poll_interval_sec:N, ...}`
+
+---
+
+#### `POST /api/bridge_rate`
+设置轮询间隔。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `rate` | int | 是 | 间隔秒数 |
+
+---
+
+#### `POST/GET /api/bridge_master`
+获取 Web 管理界面地址（使用内网 IP）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", gui_url:"http://内网IP:端口/bridge/gui/群号"}`
+
+---
+
+#### `GET /api/bridge_groups`
+返回所有存在桥接数据的群号列表。
+
+**响应** `{status:"ok", groups:["123456","789012",...]}`
+
+---
+
+#### `GET /api/bridge_gui_data`
+Web GUI 数据接口。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", files:[...], links:[...], history:[...]}`
+
+---
+
+#### `POST /api/bridge_gui_command`
+Web GUI 命令输入接口（辅助性质，完整功能请通过 QQ 使用）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `command` | string | 是 | 命令文本 |
+
+---
+
+#### `GET /bridge/gui` / `GET /bridge/gui/<group_id>`
+Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 
 ### 通用端点
 
