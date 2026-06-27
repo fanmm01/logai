@@ -8,7 +8,7 @@
 # ]
 # ///
 
-# LogUtil + Bridge 4.4.5.1 - Standalone TRPG Log Recording & File Bridge Server
+# LogUtil + Bridge 4.6.0 - Standalone TRPG Log Recording & File Bridge Server
 # 原作者：Air, Gemini
 # 改编：fanmm @fanmm01, github copilot
 # logutil段大量参考与摘抄了 @chaye2333的fwlog项目的设计和实现，感谢其开源贡献！
@@ -166,7 +166,7 @@ LOGUTIL_MILESTONE_INTERVAL = 1000  # Notify every 1000 items
 
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.5.4-logutil"
+SERVICE_VERSION = "4.6.0"
 
 # 任务队列与缓存
 executor = ThreadPoolExecutor(max_workers=4) # 允许同时处理4个分析任务
@@ -375,8 +375,26 @@ def fetch_raw_url(url):
 def expand_short_alias(raw):
     """v4.4.4: 短别名展開 — F14→[file]-14, L0→[link]-0, H23→[history]-23.
     v4.4.4.1: 也支持跨群访问 F14-123456→[file]-14-123456。
+    v4.5.5: F-1/L-1/H-1 倒数别名（-1=最新），~ 为反向索引标记。
     与前端 expandShortAlias 完全一致。"""
     s = str(raw or '').strip()
+    # v4.5.5: 倒数跨群别名 F-1-123456, L-2-999888
+    m = re.match(r'^([FLH])-(\d+)-(\d+)$', s, re.I)
+    if m:
+        prefix = m.group(1).upper()
+        num = m.group(2)
+        gid = m.group(3)
+        if prefix == 'F': return f'[file]~{num}-{gid}'
+        if prefix == 'L': return f'[link]~{num}-{gid}'
+        if prefix == 'H': return f'[history]~{num}-{gid}'
+    # v4.5.5: 倒数别名 F-1, L-2, H-3（-1=倒数第1即最新）
+    m = re.match(r'^([FLH])-(\d+)$', s, re.I)
+    if m:
+        prefix = m.group(1).upper()
+        num = m.group(2)
+        if prefix == 'F': return f'[file]~{num}'
+        if prefix == 'L': return f'[link]~{num}'
+        if prefix == 'H': return f'[history]~{num}'
     # 跨群短别名: F14-123456, L0-999888
     m = re.match(r'^([FLH])(\d+)-(\d+)$', s, re.I)
     if m:
@@ -444,6 +462,30 @@ def parse_log_target_entry(raw, password=None, source=None):
         result = {'key': history_idx_match.group(1), 'source': 'bridge_history', 'password': ''}
         if history_idx_match.group(2):
             result['cross_group_id'] = history_idx_match.group(2)
+        return result
+
+    # v4.5.5: [file]~N pattern: reverse index (1=newest, ~N=倒数第N个)
+    file_rev_match = re.match(r'^\[file\]~(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
+    if file_rev_match:
+        result = {'key': file_rev_match.group(1), 'source': 'bridge_file_rev', 'password': ''}
+        if file_rev_match.group(2):
+            result['cross_group_id'] = file_rev_match.group(2)
+        return result
+
+    # v4.5.5: [link]~N pattern: reverse index for links
+    link_rev_match = re.match(r'^\[link\]~(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
+    if link_rev_match:
+        result = {'key': link_rev_match.group(1), 'source': 'bridge_link_rev', 'password': ''}
+        if link_rev_match.group(2):
+            result['cross_group_id'] = link_rev_match.group(2)
+        return result
+
+    # v4.5.5: [history]~N pattern: reverse index for history
+    history_rev_match = re.match(r'^\[history\]~(\d+)(?:-(\d+))?(?:\s|$)', value, re.IGNORECASE)
+    if history_rev_match:
+        result = {'key': history_rev_match.group(1), 'source': 'bridge_history_rev', 'password': ''}
+        if history_rev_match.group(2):
+            result['cross_group_id'] = history_rev_match.group(2)
         return result
 
     # Bare file name: look like filenames (not URLs, not known key patterns)
@@ -665,6 +707,63 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
             if path and os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     return format_raw_text(f.read())
+        return ""
+
+    # v4.5.5: [file]~N reverse index support (1=newest)
+    if resolved_source == "bridge_file_rev":
+        rev_idx = safe_int(resolved_key, 1)
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
+        if gid > 0 and rev_idx > 0:
+            with STATE_LOCK:
+                file_list = list(LATEST_FILES.get(gid, []))
+            if file_list:
+                idx = len(file_list) - rev_idx  # rev_idx=1 → last (newest)
+                if 0 <= idx < len(file_list):
+                    item = file_list[idx]
+                    ck = item.get('content_key', '')
+                    with STATE_LOCK:
+                        path = CONTENT_INDEX.get(ck, '')
+                    if path and os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            return format_raw_text(f.read())
+        return ""
+
+    # v4.5.5: [link]~N reverse index support
+    if resolved_source == "bridge_link_rev":
+        rev_idx = safe_int(resolved_key, 1)
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
+        if gid > 0 and rev_idx > 0:
+            with STATE_LOCK:
+                link_list = list(LINK_CACHE.get(gid, []))
+            if link_list:
+                idx = len(link_list) - rev_idx
+                if 0 <= idx < len(link_list):
+                    item = link_list[idx]
+                    ck = item.get('content_key', '')
+                    with STATE_LOCK:
+                        path = CONTENT_INDEX.get(ck, '')
+                    if path and os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            return format_raw_text(f.read())
+        return ""
+
+    # v4.5.5: [history]~N reverse index support
+    if resolved_source == "bridge_history_rev":
+        rev_idx = safe_int(resolved_key, 1)
+        gid = bridge_gid or (safe_int(group_id, 0) if group_id else 0)
+        if gid > 0 and rev_idx > 0:
+            with STATE_LOCK:
+                hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == gid] if gid > 0 else list(HISTORY)
+            if hist_list:
+                idx = len(hist_list) - rev_idx
+                if 0 <= idx < len(hist_list):
+                    item = hist_list[idx]
+                    ck = item.get('content_key', '')
+                    with STATE_LOCK:
+                        path = CONTENT_INDEX.get(ck, '')
+                    if path and os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            return format_raw_text(f.read())
         return ""
 
     return format_weizaima_text(fetch_weizaima(resolved_key, resolved_password))
@@ -1750,7 +1849,7 @@ def shutdown_handler():
 # ========================================
 
 
-def write_text_cache(group_id, original_name, text, file_id, busid, user_id, source_ts=0, public_base=""):
+def write_text_cache(group_id, original_name, text, file_id, busid, user_id, source_ts=0, public_base="", download_url=""):
     ensure_bridge_cache_dir()
 
     key = uuid.uuid4().hex
@@ -1777,6 +1876,7 @@ def write_text_cache(group_id, original_name, text, file_id, busid, user_id, sou
         "text_filename": text_filename,
         "text_chars": len(text),
         "text_bytes": os.path.getsize(path),
+        "download_url": str(download_url or ""),  # v4.5.5: 保存原始下载链接
         "_type": "file",
     }
 
@@ -1888,7 +1988,7 @@ def process_group_upload(info):
         raise RuntimeError("文件中未提取到可用文本")
 
     bridge_log("extract", f"group={group_id} chars={len(text)} name={filename}")
-    return write_text_cache(group_id, filename, text, file_id, busid, user_id, source_ts=source_ts, public_base=public_base)
+    return write_text_cache(group_id, filename, text, file_id, busid, user_id, source_ts=source_ts, public_base=public_base, download_url=download_url)
 
 
 def find_duplicate_by_name_and_chars(group_id, new_item):
@@ -3449,7 +3549,7 @@ def clear_logutil_items(log_id):
     conn.close()
 
 
-def get_logutil_log_full(group_id, name):
+def get_logutil_log_full(group_id, name, sort_by_time=False):
     if group_id is None:
         group_id = ''
     conn = get_logutil_db_connection()
@@ -3460,7 +3560,8 @@ def get_logutil_log_full(group_id, name):
         conn.close()
         return None
     log_obj = dict(row)
-    c.execute('SELECT * FROM items WHERE log_id = ? ORDER BY id', (log_obj['id'],))
+    order_clause = 'ORDER BY time, id' if sort_by_time else 'ORDER BY id'
+    c.execute(f'SELECT * FROM items WHERE log_id = ? {order_clause}', (log_obj['id'],))
     log_obj['items'] = [dict(item) for item in c.fetchall()]
     conn.close()
     return log_obj
@@ -4079,6 +4180,7 @@ def api_logutil_compound():
     do_end = bool(payload.get('end'))
     do_logai = bool(payload.get('logai'))
     raw_mode = bool(payload.get('raw'))
+    sort_time = bool(payload.get('sort_time'))  # v4.6.0: -t 按时间戳排序
     title = str(payload.get('title') or '').strip()
     ops = payload.get('ops') or []
     if not isinstance(ops, list):
@@ -4202,7 +4304,7 @@ def api_logutil_compound():
 
     # Step 3: end recording if requested
     if do_end:
-        log_obj = get_logutil_log_full(group_id, results['name'])
+        log_obj = get_logutil_log_full(group_id, results['name'], sort_by_time=sort_time)
         if log_obj and log_obj.get('items'):
             del_paren_compound = bool(payload.get('del_paren'))
             text_filename, content_url = export_log_text(log_obj, del_paren=del_paren_compound)
@@ -4261,7 +4363,9 @@ def api_logutil_get():
     print(f"[logutil_get] state current_log_name={state.get('current_log_name')!r} resolved_name={name!r}")
     if not name:
         return jsonify({'status': 'error', 'msg': 'missing log name'}), 400
-    log_obj = get_logutil_log_full(group_id, name)
+    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    sort_time = str(request.args.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
+    log_obj = get_logutil_log_full(group_id, name, sort_by_time=sort_time)
     if not log_obj:
         return jsonify({'status': 'error', 'msg': 'log not found'}), 404
     if not log_obj.get('items'):
@@ -4311,6 +4415,8 @@ def api_logutil_end():
     group_id = str(payload.get('group_id') or request.args.get('group_id') or '').strip()
     name = str(payload.get('name') or '').strip()
     del_paren = str(payload.get('del_paren') or request.args.get('del_paren') or '').lower() in ('1', 'true', 'yes', 'on')
+    # v4.6.0: -t 修饰符 — 按原消息时间戳排序
+    sort_time = str(payload.get('sort_time') or '').lower() in ('1', 'true', 'yes', 'on')
     if not group_id:
         return jsonify({'status': 'error', 'msg': 'missing group_id'}), 400
     state = ensure_logutil_group_state(group_id)
@@ -4318,7 +4424,7 @@ def api_logutil_end():
         name = state.get('current_log_name') or ''
     if not name:
         return jsonify({'status': 'error', 'msg': 'missing log name'}), 400
-    log_obj = get_logutil_log_full(group_id, name)
+    log_obj = get_logutil_log_full(group_id, name, sort_by_time=sort_time)
     if not log_obj:
         return jsonify({'status': 'error', 'msg': 'log not found'}), 404
     if not log_obj.get('items'):
@@ -4449,6 +4555,68 @@ def api_bridge_get():
         return jsonify({'status': 'ok', 'file_sent': True, 'filename': txt_name})
     return jsonify({'status': 'error', 'file_sent': False,
                     'msg': str(result.get('error', str(result)) if isinstance(result, dict) else result)})
+
+
+@app.route('/api/bridge_upload_audio', methods=['POST'])
+def api_bridge_upload_audio():
+    """v4.6.0: 上传音频文件到指定群并等待桥接缓存，返回 content_url。
+    用于 getSong 等插件的音乐卡片链接生成。
+    接受 {file_path, group_id, filename}。"""
+    payload = request.get_json(silent=True) or {}
+    file_path = str(payload.get('file_path') or '').strip()
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    filename = str(payload.get('filename') or 'audio.wav').strip()
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({'status': 'error', 'msg': 'file not found'}), 400
+    if group_id <= 0:
+        return jsonify({'status': 'error', 'msg': 'invalid group_id'}), 400
+
+    # Register this group for polling
+    BRIDGE_POLL_GROUPS.add(group_id)
+    ensure_poll_worker_started()
+
+    # Upload to group via NapCat
+    file_sent, result = napcat_upload_group_file(group_id, file_path, filename)
+    if not file_sent:
+        err_msg = str(result.get('error', str(result)) if isinstance(result, dict) else result)
+        return jsonify({'status': 'error', 'msg': f'upload failed: {err_msg}'}), 500
+
+    bridge_log("upload_audio", f"uploaded group={group_id} file={filename}, waiting for bridge cache...")
+
+    # Wait for bridge to detect and cache the file
+    for i in range(30):  # up to 30 seconds
+        time.sleep(1)
+        try:
+            # Force pull latest from NapCat
+            remote_info = get_latest_group_file_info(group_id)
+            if remote_info:
+                remote_name = str(remote_info.get('name', ''))
+                # Check if this is our file (name match or it's the newest)
+                with STATE_LOCK:
+                    file_list = list(LATEST_FILES.get(group_id, []))
+                # First check: exact file_id match
+                remote_fid = str(remote_info.get('file_id', ''))
+                for cached_item in file_list:
+                    if str(cached_item.get('file_id', '')) == remote_fid:
+                        ck = cached_item.get('content_key', '')
+                        content_url = cached_item.get('content_url', '') or build_content_url(ck)
+                        if content_url:
+                            bridge_log("upload_audio", f"found in cache: group={group_id} file={remote_name} url={content_url[:80]}")
+                            return jsonify({'status': 'ok', 'content_url': content_url, 'filename': remote_name})
+                # Not yet cached — pull and cache
+                remote_info['public_base'] = ''
+                pulled = process_group_upload(remote_info)
+                if pulled:
+                    ck = pulled.get('content_key', '')
+                    content_url = pulled.get('content_url', '') or build_content_url(ck)
+                    if content_url:
+                        bridge_log("upload_audio", f"pulled and cached: group={group_id} file={pulled.get('name','')} url={content_url[:80]}")
+                        return jsonify({'status': 'ok', 'content_url': content_url, 'filename': pulled.get('name', filename)})
+        except Exception as e:
+            bridge_log("upload_audio", f"poll attempt {i+1} failed: {e}")
+
+    return jsonify({'status': 'error', 'msg': 'bridge cache timeout (30s)'}), 500
 
 
 @app.route('/api/bridge_del', methods=['POST'])
@@ -5272,18 +5440,24 @@ async def process_ws_messages():
                 if normalized.startswith(".logutil"):
                     ws_log(f"检测到 logutil 指令 (WS端跳过，由HTTP处理): {text[:80]}")
                 else:
-                    # --- [file]-N command: append bridge-cached file to current log ---
-                    file_idx_match = re.match(r'^\[file\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
+                    # --- [file]-N / [file]~N command: append bridge-cached file to current log ---
+                    # v4.5.5: 也支持 ~ 反向索引（~1=最新，~2=倒数第2）
+                    file_idx_match = re.match(r'^\[file\]([-~])(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if file_idx_match:
                         group_id = str(msg.get("group_id") or "")
-                        xgid = file_idx_match.group(2)
+                        is_rev = file_idx_match.group(1) == '~'
+                        raw_idx = int(file_idx_match.group(2))
+                        xgid = file_idx_match.group(3)
                         lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
-                                file_idx = int(file_idx_match.group(1))
                                 with STATE_LOCK:
                                     file_list = list(LATEST_FILES.get(lookup_gid, []))
+                                if is_rev and raw_idx > 0:
+                                    file_idx = len(file_list) - raw_idx
+                                else:
+                                    file_idx = raw_idx
                                 if 0 <= file_idx < len(file_list):
                                     bridge_item = file_list[file_idx]
                                     ck = bridge_item.get("content_key", "")
@@ -5370,18 +5544,24 @@ async def process_ws_messages():
                             else:
                                 ws_log(f"[file]-N ignored: group not recording, group_id={group_id}")
                         continue
-                    # --- v4.4.0: [link]-N command: append bridge-cached link text to current log ---
-                    link_idx_match = re.match(r'^\[link\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
+                    # --- v4.4.0: [link]-N / [link]~N command: append bridge-cached link text to current log ---
+                    # v4.5.5: 也支持 ~ 反向索引
+                    link_idx_match = re.match(r'^\[link\]([-~])(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if link_idx_match:
                         group_id = str(msg.get("group_id") or "")
-                        xgid = link_idx_match.group(2)
+                        is_rev = link_idx_match.group(1) == '~'
+                        raw_idx = int(link_idx_match.group(2))
+                        xgid = link_idx_match.group(3)
                         lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
-                                link_idx = int(link_idx_match.group(1))
                                 with STATE_LOCK:
                                     link_list = list(LINK_CACHE.get(lookup_gid, []))
+                                if is_rev and raw_idx > 0:
+                                    link_idx = len(link_list) - raw_idx
+                                else:
+                                    link_idx = raw_idx
                                 if 0 <= link_idx < len(link_list):
                                     link_item = link_list[link_idx]
                                     ck = link_item.get("content_key", "")
@@ -5468,18 +5648,24 @@ async def process_ws_messages():
                             else:
                                 ws_log(f"[link]-N ignored: group not recording, group_id={group_id}")
                         continue
-                    # --- v4.4.3: [history]-N command: append evicted bridge item to current log ---
-                    history_idx_match = re.match(r'^\[history\]-(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
+                    # --- v4.4.3: [history]-N / [history]~N command: append evicted bridge item to current log ---
+                    # v4.5.5: 也支持 ~ 反向索引
+                    history_idx_match = re.match(r'^\[history\]([-~])(\d+)(?:-(\d+))?\s*$', text, re.IGNORECASE)
                     if history_idx_match:
                         group_id = str(msg.get("group_id") or "")
-                        xgid = history_idx_match.group(2)
+                        is_rev = history_idx_match.group(1) == '~'
+                        raw_idx = int(history_idx_match.group(2))
+                        xgid = history_idx_match.group(3)
                         lookup_gid = safe_int(xgid, 0) if xgid else safe_int(group_id, 0)
                         if group_id:
                             gs = ensure_logutil_group_state(group_id)
                             if gs.get("recording") and gs.get("current_log_name"):
-                                hist_idx = int(history_idx_match.group(1))
                                 with STATE_LOCK:
                                     hist_list = [h for h in HISTORY if safe_int(h.get('group_id', 0), 0) == lookup_gid]
+                                if is_rev and raw_idx > 0:
+                                    hist_idx = len(hist_list) - raw_idx
+                                else:
+                                    hist_idx = raw_idx
                                 if 0 <= hist_idx < len(hist_list):
                                     hist_item = hist_list[hist_idx]
                                     ck = hist_item.get("content_key", "")

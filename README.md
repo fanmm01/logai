@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.5.4**  
+**V4.6.0**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -173,6 +173,125 @@ logutil支持识别以下种类的消息头：
 
 ### 八、Web管理界面
 通过 `.bridge master` 查看网页版管理地址（使用内网 IP 而非 127.0.0.1），可在浏览器中通过下拉框选择群组查看文件/链接/历史记录（含内容开头预览），并支持输入命令。通过 `/bridge/gui/<群号>` 直接访问时默认打开对应群组。
+
+---
+
+### Bridge API 文档
+
+Bridge 系统负责群文件缓存、链接文本缓存、历史记录管理。以下为完整 API 参考。
+
+#### `POST /napcat/event`
+接收 NapCat (OneBot v11) 文件上传事件，自动提取文本并缓存。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `group_id` | int | 群号 |
+| `file` | object | 文件信息 `{id, name, busid, size}` |
+
+#### `POST/GET /bridge/latest`
+获取指定群最新缓存的文件。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", file:{name, content_key, content_url, text_chars, ...}, file_count:N, index:N}`
+
+#### `POST/GET /bridge/list`
+列出指定群桥接缓存（含文件、链接、历史）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", files:[...], links:[...], history:[...], count:N}`
+
+#### `GET /bridge/content/<content_key>`
+获取缓存文件的原始文本内容。返回 `text/plain`。
+
+#### `GET/POST /api/bridge_list`
+列出缓存，含内容预览字符。
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|------|------|------|------|------|
+| `group_id` | int | 是 | - | 群号 |
+| `filter` | string | 否 | 空 | `file`/`link`/`history`/`all`。空=file+link，`all`=全部含历史 |
+
+**响应** `{status:"ok", files:[{index,name,text_chars,preview,content_key,content_url,...}], links:[...], history:[...], history_count:N}`
+
+#### `POST /api/bridge_get`
+获取指定编号的缓存项并上传到群。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `ref` | string | 是 | 引用，如 `[file]-0`、`[link]-1`、`[history]-2`、`[file]-0-123456`（跨群） |
+
+**响应** `{status:"ok", file_sent:true, filename:"xxx.txt"}`
+
+#### `POST /api/bridge_del`
+删除指定编号的缓存项。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `targets` | string[] | 是 | 引用数组，如 `["[file]-0","[link]-1","[history]-2"]` |
+
+**响应** `{status:"ok", deleted:[...], errors:[...]}`
+
+#### `POST /api/bridge_poll_on` / `POST /api/bridge_poll_off`
+启用/停用本群的桥接轮询。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+#### `GET/POST /api/bridge_poll_status`
+查询轮询状态。参数同 `bridge_poll_on`。
+
+**响应** `{status:"ok", poll_active:bool, poll_interval_sec:N, ...}`
+
+#### `POST /api/bridge_rate`
+设置轮询间隔。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `rate` | int | 是 | 间隔秒数 |
+
+#### `POST/GET /api/bridge_master`
+获取 Web 管理界面地址（使用内网 IP）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", gui_url:"http://内网IP:端口/bridge/gui/群号"}`
+
+#### `GET /api/bridge_groups`
+返回所有存在桥接数据的群号列表。
+
+**响应** `{status:"ok", groups:["123456","789012",...]}`
+
+#### `GET /api/bridge_gui_data`
+Web GUI 数据接口。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+
+**响应** `{status:"ok", files:[...], links:[...], history:[...]}`
+
+#### `POST /api/bridge_gui_command`
+Web GUI 命令输入接口（辅助性质，完整功能请通过 QQ 使用）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `command` | string | 是 | 命令文本 |
+
+#### `GET /bridge/gui` / `GET /bridge/gui/<group_id>`
+Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 
 ---
 
@@ -387,3 +506,9 @@ logutil支持识别以下种类的消息头：
 **v4.5.4**
 1. 所有文件输出前自动截断超长文件名（>30字符保留扩展名）。
 2. 更新版本号至 4.5.4。
+
+**v4.6.0**
+1. 新增倒数别名 `F-1`/`L-1`/`H-1` 等（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引。支持跨群访问（`F-1-群号`）。全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
+2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。该时间来自 log 文件/染色器/合并聊天记录中每条消息自身的时间。
+3. 桥接缓存保存原始下载链接（`download_url` 字段），暂为备用。
+4. 更新版本号至 4.6.0。
