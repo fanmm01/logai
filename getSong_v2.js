@@ -38,6 +38,8 @@ if (!ext) {
 	seal.ext.registerStringConfig(ext, "文案-未找到歌曲", "未找到歌曲结果。请更换关键词。", "统一未找到提示");
 	seal.ext.registerStringConfig(ext, "文案-无可用结果", "没有可用结果。请更换关键词。", "统一空结果提示");
 	seal.ext.registerStringConfig(ext, "文案-音频失败", "获取音频失败。", "录音发送失败提示");
+	seal.ext.registerStringConfig(ext, "Bridge后端地址", "http://127.0.0.1:8000", "LogAI Bridge 后端 URL（离线音频查询）");
+	seal.ext.registerIntConfig(ext, "骰主群号", 1054664934, "离线音频失效时转发到的骰主群号");
 
 	let fs = null;
 	let path = null;
@@ -757,6 +759,52 @@ if (!ext) {
 		return `${card}\n${TEXT.ERR_AUDIO_FAILED}`;
 	}
 
+// v5.0.0: 离线音频支持 — 从 Bridge audio 类别查找本地歌曲
+async function fetchOfflineAudioInfo(keyword) {
+	const bridgeUrl = (seal.ext.getStringConfig(ext, "Bridge后端地址") || 'http://127.0.0.1:8001').trim();
+	const masterGroup = seal.ext.getIntConfig(ext, "骰主群号") || 1054664934;
+	try {
+		// 1) 从 bridge audio 类别获取列表
+		const listResp = await fetch(`${bridgeUrl}/api/bridge_list?group_id=${masterGroup}&filter=audio`);
+		const listData = await listResp.json();
+		if (listData.status !== 'ok') return null;
+		const audios = listData.audios || listData.files || [];
+		// 2) 查找匹配歌名
+		const kw = keyword.toLowerCase().replace(/\s+/g, '');
+		let best = null;
+		for (const a of audios) {
+			const name = (a.name || a.display_name || '').toLowerCase().replace(/\s+/g, '');
+			if (name.includes(kw)) { best = a; break; }
+		}
+		if (!best) return null;
+		// 3) 查找对应 lyrics.txt
+		const lyricsName = best.name.replace(/\.(wav|mp3|flac|ogg|m4a)$/i, '') + '-lyrics.txt';
+		let lyricsItem = null;
+		for (const a of audios) {
+			if ((a.name || '').toLowerCase() === lyricsName.toLowerCase()) { lyricsItem = a; break; }
+		}
+		if (!lyricsItem) return { item: best, url: null, needForward: true };
+		// 4) 读取 lyrics.txt 内容获取下载 URL
+		const contentResp = await fetch(`${bridgeUrl}/bridge/content/${lyricsItem.content_key}`);
+		const dlUrl = (await contentResp.text()).trim();
+		// 5) 检测 URL 是否可访问
+		try {
+			const checkResp = await fetch(dlUrl, { method: 'HEAD', timeout: 5000 });
+			if (checkResp.ok) return { item: best, url: dlUrl, needForward: false };
+		} catch (e) {}
+		return { item: best, url: dlUrl, needForward: true };
+	} catch (e) {
+		console.log('[getSong] 离线音频查询失败:', e.message);
+		return null;
+	}
+}
+
+function buildOfflineMusicCard(song, audioUrl) {
+	const title = song.name || song.title || "(离线歌曲)";
+	const singer = song.artist || song.singer || "";
+	const url = audioUrl || "https://music.163.com";
+	return `[CQ:music,type=custom,url=${escapeCqParam(url)},audio=${escapeCqParam(audioUrl||url)},title=${escapeCqParam(title)},content=${escapeCqParam(singer)},image=]`;
+}
 
 function makeForwardNode(userId, nickname, text) {
 		return {
@@ -1208,6 +1256,17 @@ function makeForwardNode(userId, nickname, text) {
 			seal.replyToSender(ctx, msg, TEXT.ERR_NO_RESULT);
 			return;
 		}
+		// v5.0.0: 离线音频检查
+		const keyword = song.name || song.singer || "";
+		if (keyword) {
+			try {
+				const offline = await fetchOfflineAudioInfo(keyword);
+				if (offline && offline.url && !offline.needForward) {
+					const card = buildOfflineMusicCard({name:song.name||keyword, artist:song.singer||""}, offline.url);
+					song.url = offline.url;
+				}
+			} catch (e) {}
+		}
 		await sendSongInTwoMessages(ctx, msg, song, opts);
 	}
 
@@ -1215,6 +1274,18 @@ function makeForwardNode(userId, nickname, text) {
 		if (!song || !song.id) {
 			seal.replyToSender(ctx, msg, TEXT.ERR_NO_RESULT);
 			return;
+		}
+		// v5.0.0: 离线音频优先 — 检查 bridge audio 类别
+		const keyword = song.name || song.singer || "";
+		if (keyword) {
+			try {
+				const offline = await fetchOfflineAudioInfo(keyword);
+				if (offline && offline.url && !offline.needForward) {
+					const card = buildOfflineMusicCard({name:song.name||keyword, artist:song.singer||""}, offline.url);
+					await sendSongInTwoMessages(ctx, msg, {url:offline.url, name:song.name, singer:song.singer, link:song.link||"", album:song.album||"", cover:song.cover||""}, opts);
+					return;
+				}
+			} catch (e) { /* offline check failed, fall through to API */ }
 		}
 		// Build song with auto source switching (sends progress hints to ctx)
 		const builtSong = await buildSongWithAutoSwitch(song.id, {

@@ -2,3 +2,4 @@
 instance/napcat_file_bridge/
 logutil.db
 **/__pycache__/
+autocombat/reference

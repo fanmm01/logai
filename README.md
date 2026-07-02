@@ -1,5 +1,5 @@
 # logutil & logai
-**V4.6.1**  
+**V5.0.0**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -47,10 +47,8 @@ a) 染色器链接。目前，支持的包括：
    - `"https://weizaima.com/"`
    - `"https://log.dice.zone/"`
 b) 文件编号/名称。目前，支持的包括：
-   - `[file]-N` / `[link]-N` / `[history]-N` 编号格式；
-   - 文件名及其不引起歧义的部分；
-   - 短别名 `F14`=`[file]-14`、`L0`=`[link]-0`、`H23`=`[history]-23`；
-   - 跨群访问 `F0-群号` / `[file]-0-群号` 等。
+   - `[file]-N` / `[link]-N` / `[history]-N` / `[permanent]-N` / `[audio]-N` / `[mod]-N` 编号格式，及自定义类型 `[typename]-N`；
+   - 短别名（F/L/H/P/A/M + 自定义简称），倒数别名（F-1/P-2 等），跨群访问（F0-群号）；
 
 **示例**: `.logai https://weizaima.com/dice/api?key=xxx pro 温柔 提取NPC`
 
@@ -117,16 +115,32 @@ logutil支持识别以下种类的消息头：
 ---
 
 ### 三、群文件桥接系统
-`.bridge on/off/status/rate`  控制群文件桥接系统。  
-`.bridge list [file|link|history|all]`  以合并聊天记录格式返回桥接缓存列表，条目附带内容开头预览字符。`all` 参数同时显示文件/链接/历史。  
-`.bridge master`  查看 Web 管理界面地址（使用内网 IP）。  
-`.bridge get [file]-N/[link]-N/[history]-N`  获取编号文件并直接发送纯文本到群。  
-`.bridge del [file]-N [link]-N [history]-N ...`  删除指定编号的桥接项，索引自动顺延。
 
-通过输入 `[file]-N` / `[link]-N` / `[history]-N` 调取编号为N的缓存项。  
-支持短别名 `F14`=`[file]-14`、`L0`=`[link]-0`、`H23`=`[history]-23`。  
-支持跨群访问语法 `F0-群号` / `[file]-0-群号` 等，可在任意命令中访问其他群的桥接缓存。  
-编号从旧到新排列，以0开端，最多缓存20个文件与30个链接。溢出项移入【历史记录】（最多50条），可通过 `.bridge list history` 查看。关闭后端时自动保存历史记录至磁盘，下次启动恢复。
+`.bridge on/off`  控制桥接轮询。  
+`.bridge rate <秒>`  设置轮询间隔。  
+`.bridge status`  查看当前轮询状态。  
+
+`.bridge list [类型名|all]`  以合并聊天记录格式返回缓存列表，条目附带内容开头预览。无参数默认 file+link；`all` 含全部类型（含自定义）。支持任意类型名筛选（如 `audio`、`permanent`、自定义类型名）。  
+
+`.bridge master`  查看 Web 管理界面地址（使用内网 IP）。  
+
+`.bridge get <ref>`  获取编号文件并直接发送到群。`ref` 支持 `[类型]-N`、短别名（F14/L0/H23/P1/A1/M1）、跨群（F0-群号）、倒数（F-1）。文件扩展名保留原格式（仅 docx/pdf 等转换类文件追加 .txt）。  
+
+`.bridge del <ref> [ref...]`  删除指定编号的桥接项，索引自动顺延。支持所有类型。  
+
+`.bridge save <ref...> [类型=P]`  将任意桥接项复制保存到指定类型（v5.0.0）。  
+`.bridge psave <ref...>`  等价于 `save refs... permanent`。  
+`.bridge asave <ref...>`  等价于 `save refs... audio`。  
+
+`.bridge new <名称> [简称] [temp/perm] [global/group] [raw]`  创建自定义类型（v5.0.0）。`temp`=重启后清空（默认 `perm` 持久）；`global`=全局可访问（默认 `group` 本群）；`raw`=直接储存原始字节不转换文本。  
+
+`.bridge keylist`  列出所有类型及各自文件数（v5.0.0）。  
+
+**引用格式：** `[file]-N` / `[link]-N` / `[history]-N` / `[permanent]-N` / `[audio]-N` / `[mod]-N` / `[自定义类型]-N`  
+**短别名：** `F`=file, `L`=link, `H`=history, `P`=permanent, `A`=audio, `M`=mod，如 `P1`=`[permanent]-1`。自定义类型简称（如 `TG1`）也可用。  
+**倒数别名：** `F-1`=`[file]` 最新项，`P-2`=`[permanent]` 倒数第2项，自定义类型同理。  
+**跨群访问：** `F0-群号` / `[file]-0-群号` 等，所有类型均支持。  
+**存储属性：** file 上限20 / link 上限30（溢出移入 history，上限50）。permanent/audio/mod 全局永久、无上限、永不移入 history。自定义类型默认无上限。关闭后端时 perm 类型自动持久化，temp 类型清空。
 
 文件桥接系统支持提取文本的文件格式如下:
 - `.txt`, `.log` (纯文本文件)
@@ -212,9 +226,39 @@ Bridge 系统负责群文件缓存、链接文本缓存、历史记录管理。�
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |------|------|------|------|------|
 | `group_id` | int | 是 | - | 群号 |
-| `filter` | string | 否 | 空 | `file`/`link`/`history`/`all`。空=file+link，`all`=全部含历史 |
+| `filter` | string | 否 | 空 | 任意类型名/`all`/空。空=file+link，`all`=全部含自定义类型 |
 
 **响应** `{status:"ok", files:[{index,name,text_chars,preview,content_key,content_url,...}], links:[...], history:[...], history_count:N}`
+
+#### `POST /api/bridge_save` (v5.0.0)
+将桥接项复制保存到指定类型。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `targets` | string[] | 是 | 引用数组 |
+| `sort` | string | 否 | 目标类型（默认 permanent） |
+
+**响应** `{status:"ok", saved:[...], errors:[...], sort:"permanent"}`
+
+#### `POST /api/bridge_new` (v5.0.0)
+创建自定义类型。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `group_id` | int | 是 | 群号 |
+| `name` | string | 是 | 类型名 |
+| `fastname` | string | 否 | 简称 |
+| `persist` | string | 否 | `perm`/`temp`（默认 perm） |
+| `scope` | string | 否 | `global`/`group`（默认 group） |
+| `method` | string | 否 | `raw`=直接储存原始字节 |
+
+**响应** `{status:"ok", name, fastname, persist, scope}`
+
+#### `GET/POST /api/bridge_keylist` (v5.0.0)
+返回所有类型及文件数。
+
+**响应** `{status:"ok", categories:[{name, fastname, count, scope, persist},...]}`
 
 #### `POST /api/bridge_get`
 获取指定编号的缓存项并上传到群。
@@ -294,13 +338,24 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 
 ## 更新日志：
 
+
+**v5.0.0**
+1. Bridge v2：可扩展分类存储系统。新增 `[permanent]-N`/`P1`、`[audio]-N`/`A1`、`[mod]-N`/`M1` 三种内置全局永久类型，不受数量上限，永不移入历史记录。
+2. 新增 `.bridge new <名称> [简称] [temp/perm] [global/group] [raw]` 命令，创建自定义类型。
+3. 新增 `.bridge save/psave/asave` 命令，将任意桥接项复制保存到指定类型。
+4. 新增 `.bridge keylist` 命令，列出所有类型及其文件数。
+5. `.bridge list` 支持任意类型名作为筛选参数；`all` 返回全部类型。
+6. `bridge get` 文件扩展名保留：仅对 docx/doc/pdf 等转换类文件强制 .txt，原始文件保留原扩展名。
+7. `_parse_bridge_ref` 支持任意 `[catname]-N` 格式；`expandShortAlias` 支持 P/A/M 及自定义 fastname。
+8. 新增 `/api/bridge_save`、`/api/bridge_new`、`/api/bridge_keylist` 端点。
+9. 更新版本号至 5.0.0。
+
 **v4.6**
 1. 新增倒数别名 `F-1`/`L-1`/`H-1`（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引，支持跨群访问，全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
 2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。
 3. 桥接缓存保存原始下载链接（`download_url` 字段）。
 4. 修复 `.logutil end` 被误判为复合命令的问题。
 5. 移除纯冒号格式的发言识别（仅保留尖括号+时间戳格式），修复纯标点文本被误识别为发言者名称的漏洞。
-
 
 **v4.6.1**
 1. 修复 `.logutil end` 被误判为复合命令的问题：`isCompound` 不再仅因 `end` 存在而触发。
@@ -311,6 +366,21 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 1. 新增倒数别名 `F-1`/`L-1`/`H-1` 等（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引。支持跨群访问（`F-1-群号`）。全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
 2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。
 3. 桥接缓存保存原始下载链接（`download_url` 字段）。
+
+
+**v4.5**
+1. 着色器链接文本分词修复：`format_weizaima_text` 改用方括号管道格式 `[time] <nick|IMUserId> msg` 输出，格式 b 输出 `<玩家|游戏外>`，格式 c 星号不加冒号。
+2. DOCX/PDF 文本提取：段落级聚合文本 run 并 strip 过滤空段，消除逐字换行与无意义空白。
+3. 新增跨群访问语法（`F0-群号`/`[file]-0-群号` 等）与 URL 黑名单（QQ 多媒体 CDN 不缓存），跨群历史记录按 `group_id` 隔离，编号改为顺序计数器。
+4. 修复 `raw` 修饰符复合命令/独立消息失效（DB行确保 + 复合op直接 `make_log_item` + WS检查 `raw_recording`）、`del_paren` 被当作文本op发送、SealDice去括号导致引用失效、短别名不识别等多项稳定性问题。
+5. `.bridge list` 无参数时仅返回文件+链接（`all` 参数含历史），全部采用合并聊天记录格式，空表分别提示。
+6. Web 管理界面改为下拉框选择群组，修复路由冲突与历史记录编号不一致。
+7. 新增 `.logai/.logutil/.aiutil/.translate/.bridge help` 指令，返回各命令用法及参数说明。
+8. 新增文件名截断（>30字符保留扩展名）；实例版默认端口改为 8001，注册名改为 `logutil`。
+9. `_parse_bridge_ref` 支持跨群后缀，`api_bridge_get` 使用 `lookup_group_id`，`/bridge/list` 返回历史记录，`api_bridge_gui_data` 按 group_id 过滤。
+
+
+
 
 **v4.5.4**
 1. 所有文件输出前自动截断超长文件名（>30字符保留扩展名）。
@@ -431,6 +501,8 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 11. 所有"下载链接"后追加"（仅骰主可用）"标注。
 12. 新增 `goal-ALL` 翻译模式：将全文分句后逐块翻译，每10秒将进度上传至 TextDB.online 云数据库（在线查看链接见翻译结果），支持 `.halt` 暂停。
 13. 更新 README 与 ARCHITECTURE 文档至 v4.4.0。
+
+——————————————
 
 **v4.3**
 1. 文件输入扩展：`.aiutil` 及所有文件输入命令，提供文件允许为任何可展开成文本的文件（.py/.c/.js/.class 等），未知扩展名直接当作文本解码。

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人工智障Log分析器 & 模组分析器 (合并版)
 // @author       Air, Gemini, fanmm, GPT5.1, Deepseek4.0
-// @version      4.6.1
-// @description  合并 Log 分析与模组分析 v4.6.1，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
+// @version      5.0.0
+// @description  合并 Log 分析与模组分析 v5.0.0，新增 logutil 命令与 del_paren 选项，兼容 HTTP 桥接与本地群文件。
 // @timestamp    1781107200
 // @license      Apache-2.0
 // @homepageURL  https://github.com/fanmm01/logai/
@@ -13,7 +13,7 @@
 
 let ext = seal.ext.find('log-analyzer');
 if (!ext) {
-    ext = seal.ext.new('log-analyzer', 'Air', '4.6.1');
+    ext = seal.ext.new('log-analyzer', 'Air', '5.0.0');
     seal.ext.register(ext);
 }
 
@@ -102,56 +102,28 @@ function getBridgeTokenHeader() {
     return { "Authorization": token };
 }
 
-// v4.4.0: 短别名展开 — F14→[file]-14, L0→[link]-0, H23→[history]-23
-// v4.4.4: 也修复file-0/link-0/history-0 格式
-// v4.4.4.1: 跨群访问 F14-123456→[file]-14-123456
-// v4.5.5: F-1/L-1/H-1 倒数别名（-1=最新），~ 为反向索引标记
+// v5.0.0: 短别名展开 — 支持 F/L/H/P/A/M 及自定义 fastname
+const FASTNAME_MAP = {F:'file',L:'link',H:'history',P:'permanent',A:'audio',M:'mod'};
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
-    // v4.5.5: 倒数跨群别名 F-1-123456, L-2-999888
-    let revCrossMatch = s.match(/^([FLH])-(\d+)-(\d+)$/i);
-    if (revCrossMatch) {
-        let prefix = revCrossMatch[1].toUpperCase();
-        let num = revCrossMatch[2];
-        let gid = revCrossMatch[3];
-        if (prefix === 'F') return `[file]~${num}-${gid}`;
-        if (prefix === 'L') return `[link]~${num}-${gid}`;
-        if (prefix === 'H') return `[history]~${num}-${gid}`;
+    // Multi-char: check if it's a fastname like TG1, AB0
+    let mcm = s.match(/^([A-Za-z]{2,})(-?\d+)(?:-(\d+))?$/);
+    if (mcm) {
+        let pfx = mcm[1]; let n = mcm[2]; let g = mcm[3];
+        if (n.startsWith('-')) { let idx=n.slice(1); return g ? `[${pfx.toLowerCase()}]~${idx}-${g}` : `[${pfx.toLowerCase()}]~${idx}`; }
+        else { return g ? `[${pfx.toLowerCase()}]-${n}-${g}` : `[${pfx.toLowerCase()}]-${n}`; }
     }
-    // v4.5.5: 倒数别名 F-1, L-2, H-3（-1=倒数第1即最新）
-    let revMatch = s.match(/^([FLH])-(\d+)$/i);
-    if (revMatch) {
-        let prefix = revMatch[1].toUpperCase();
-        let num = revMatch[2];
-        if (prefix === 'F') return `[file]~${num}`;
-        if (prefix === 'L') return `[link]~${num}`;
-        if (prefix === 'H') return `[history]~${num}`;
+    // Single-char: lookup or use as category prefix
+    let km = s.match(/^([A-Za-z])(-?\d+)(?:-(\d+))?$/);
+    if (km) {
+        let pfx = km[1].toUpperCase(); let n = km[2]; let g = km[3];
+        let cat = FASTNAME_MAP[pfx] || pfx.toLowerCase();
+        if (n.startsWith('-')) { let idx=n.slice(1); return g ? `[${cat}]~${idx}-${g}` : `[${cat}]~${idx}`; }
+        else { return g ? `[${cat}]-${n}-${g}` : `[${cat}]-${n}`; }
     }
-    // 跨群短别名: F14-123456, L0-999888
-    let cm = s.match(/^([FLH])(\d+)-(\d+)$/i);
-    if (cm) {
-        let prefix = cm[1].toUpperCase();
-        let num = cm[2];
-        let gid = cm[3];
-        if (prefix === 'F') return `[file]-${num}-${gid}`;
-        if (prefix === 'L') return `[link]-${num}-${gid}`;
-        if (prefix === 'H') return `[history]-${num}-${gid}`;
-    }
-    // 短别名: F14, L0, H23
-    let m = s.match(/^([FLH])(\d+)$/i);
-    if (m) {
-        let prefix = m[1].toUpperCase();
-        let num = m[2];
-        if (prefix === 'F') return `[file]-${num}`;
-        if (prefix === 'L') return `[link]-${num}`;
-        if (prefix === 'H') return `[history]-${num}`;
-    }
-    // v4.4.4: 修复 SealDice 去括号 — file-0→[file]-0, link-0→[link]-0, history-0→[history]-0
-    let bm = s.match(/^(file|link|history)-(\d+)$/i);
-    if (bm) {
-        let type = bm[1].toLowerCase();
-        return `[${type}]-${bm[2]}`;
-    }
+    // SealDice stripped: file-0→[file]-0
+    let bm = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$/);
+    if (bm) { return `[${bm[1].toLowerCase()}]-${bm[2]}`; }
     return raw;
 }
 
@@ -1706,7 +1678,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
     let rawArgs = tokens.slice(1);
     // v4.4.4: raw 修饰符可在任意位置生效
     let raw_mode = tokens.some(t => (t || '').toLowerCase() === 'raw');
-    // v4.6.1: -t 修饰符 — 按原消息时间戳排序
+    // v5.0.0: -t 修饰符 — 按原消息时间戳排序
     let sort_time = tokens.some(t => ['t', '-t', 'sort_time'].includes((t || '').toLowerCase()));
     let arg2 = rawArgs.find(a => !['del_paren', 'delparen', 'del-paren', 'raw', 't', '-t', 'sort_time'].includes((a || '').toLowerCase())) || '';
 
@@ -1729,7 +1701,7 @@ cmdLogUtil.solve = async (ctx, msg, cmdArgs) => {
             let s = String(a || '').trim();
             return /^\[file\][-~]\d+$/i.test(s) || /^\[link\][-~]\d+$/i.test(s) || /^\[history\][-~]\d+$/i.test(s) || /^https?:\/\//i.test(s) || !!parseLogTargetEntry(s);
         });
-        // v4.6.1: end alone is not compound — must be paired with new or logai
+        // v5.0.0: end alone is not compound — must be paired with new or logai
         let isCompound = ((hasEnd && hasNew) || hasLogai || (hasNew && rawArgs.length > 1) || (!hasNew && !hasEnd && hasOps));
 
         if (isCompound || (!op || (op !== 'new' && op !== 'on' && op !== 'off' && op !== 'get' &&
@@ -2152,7 +2124,7 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
     cmdArgs.args = (cmdArgs.args || []).map(expandShortAlias);
     let op = (cmdArgs.getArgN(1) || '').toLowerCase();
     if (op === 'help') {
-        seal.replyToSender(ctx, msg, '.bridge <子命令>\non/off/status   控制桥接轮询\nrate <秒>         设置轮询间隔\nlist [file|link|history|all]  列出缓存 (无参数=file+link, all=全部)\nmaster            查看Web管理界面\nget <ref>         获取文件到群\ndel <ref>...      删除指定缓存项\n引用格式: [file]-N/[link]-N/[history]-N | 短别名 F14/L0/H23 | 跨群 F0-群号');
+        seal.replyToSender(ctx, msg, '.bridge <子命令>\non/off/status   控制桥接轮询\nrate <秒>         设置轮询间隔\nlist [类型名|all]  列出缓存 (无参数=file+link, all=全部)\nmaster            查看Web管理界面\nget <ref>         获取文件到群\ndel <ref>...      删除指定缓存项\nsave <ref>... [类型]  保存引用到指定类型(默认permanent)\npsave <ref>...    保存到永久存储\nnew <名> <简称> [temp/perm] [global/group]  新建类型\nkeylist           列出所有类型及文件数\n引用: [file]-N/[link]-N/[history]-N/[permanent]-N/[audio]-N/[mod]-N | 短别名 F/L/H/P/A/M | 跨群 F0-群号');
         return seal.ext.newCmdExecuteResult(true);
     }
     let groupId = ctx.group ? ctx.group.groupId : '';
@@ -2201,10 +2173,8 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
         } else if (op === 'list') {
             // v4.4.0: 支持 filter 参数 (file/link/history/all)，默认 all 显示 file+link
             let filterArg = (cmdArgs.getArgN(2) || '').toLowerCase();
-            let validFilters = ['file', 'link', 'history', 'all'];
-            if (filterArg && !validFilters.includes(filterArg)) {
-                filterArg = '';
-            }
+            // v5.0.0: accept any category name as filter
+            if (!filterArg) filterArg = '';
             payload.filter = filterArg;
 
             let resp = await fetch(`${host}/api/bridge_list`, {
@@ -2395,8 +2365,79 @@ cmdBridge.solve = async (ctx, msg, cmdArgs) => {
             } else {
                 seal.replyToSender(ctx, msg, fw(`设置失败: ${JSON.stringify(data)}`));
             }
+        } else if (op === 'save' || op === 'psave' || op === 'asave') {
+            // v5.0.0: 保存文件到指定类型
+            let saveSort = (op === 'psave') ? 'permanent' : (op === 'asave') ? 'audio' : 'permanent';
+            let saveTargets = [];
+            let argsIdx = 2;
+            while (true) {
+                let arg = cmdArgs.getArgN(argsIdx);
+                if (!arg) break;
+                let lower = arg.toLowerCase();
+                if (['permanent','audio','mod','file','link','history'].includes(lower)) {
+                    saveSort = lower; argsIdx++; continue;
+                }
+                saveTargets.push(arg); argsIdx++;
+            }
+            if (saveTargets.length === 0) {
+                seal.replyToSender(ctx, msg, fw(`用法: .bridge ${op} <F1/L2/H3/文件名...> [类型=P]\n将指定引用保存到目标类型。`));
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            let resp = await fetch(`${host}/api/bridge_save`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({group_id: pureId, targets: saveTargets, sort: saveSort})
+            });
+            let data = await resp.json();
+            if (data.status === 'ok') {
+                let msg = fw(`已保存 ${data.saved.length} 项到 [${saveSort}]`);
+                if (data.errors.length) msg += fw(`\n错误: ${data.errors.join(', ')}`);
+                seal.replyToSender(ctx, msg, msg);
+            } else {
+                seal.replyToSender(ctx, msg, fw(`保存失败: ${JSON.stringify(data)}`));
+            }
+        } else if (op === 'new') {
+            // v5.0.0: 新建自定义类型
+            let name = cmdArgs.getArgN(2) || '';
+            let fastname = cmdArgs.getArgN(3) || '';
+            let persist = 'perm', scope = 'group', method = '';
+            for (let i = 4; i <= 7; i++) {
+                let a = (cmdArgs.getArgN(i) || '').toLowerCase();
+                if (a === 'temp') persist = 'temp';
+                else if (a === 'global') scope = 'global';
+                else if (a === 'raw') method = 'raw';
+            }
+            if (!name) {
+                seal.replyToSender(ctx, msg, fw('用法: .bridge new <名称> [简称] [temp/perm] [global/group] [raw]'));
+                return seal.ext.newCmdExecuteResult(true);
+            }
+            let resp = await fetch(`${host}/api/bridge_new`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({group_id: pureId, name, fastname, persist, scope, method})
+            });
+            let data = await resp.json();
+            if (data.status === 'ok') {
+                seal.replyToSender(ctx, msg, fw(`已创建类型 [${data.name}]${data.fastname ? ' (简称:'+data.fastname+')' : ''} persist=${data.persist} scope=${data.scope}`));
+            } else {
+                seal.replyToSender(ctx, msg, fw(`创建失败: ${data.msg || JSON.stringify(data)}`));
+            }
+        } else if (op === 'keylist') {
+            // v5.0.0: 列出所有类型
+            let resp = await fetch(`${host}/api/bridge_keylist?group_id=${pureId}`);
+            let data = await resp.json();
+            if (data.status === 'ok') {
+                let lines = [fw('【类型列表】')];
+                for (let c of (data.categories || [])) {
+                    let fn = c.fastname ? ` (${c.fastname})` : '';
+                    lines.push(fw(`  [${c.name}]${fn} - ${c.count}项 | ${c.scope} | ${c.persist}`));
+                }
+                seal.replyToSender(ctx, msg, lines.join('\n'));
+            } else {
+                seal.replyToSender(ctx, msg, fw(`获取失败: ${JSON.stringify(data)}`));
+            }
         } else {
-            seal.replyToSender(ctx, msg, fw('用法: .bridge on/off/status/list/get/rate'));
+            seal.replyToSender(ctx, msg, fw('用法: .bridge on/off/status/list/get/del/rate/save/new/keylist'));
         }
     } catch (e) {
         seal.replyToSender(ctx, msg, fw(`请求后端失败: ${e.message}`));

@@ -176,6 +176,62 @@ LATEST_FILES: Dict[int, list] = {}  # group_id -> list of cached items, index 0 
 CONTENT_INDEX: Dict[str, str] = {}
 LINK_CACHE: Dict[int, list] = {}  # group_id -> list of link items, index 0 = oldest
 MAX_BRIDGE_LINKS_PER_GROUP = 30
+
+# v5.0.0: Extensible category system
+BRIDGE_CATEGORIES: Dict[str, Dict[int, list]] = {}
+BRIDGE_GLOBAL_CATEGORIES: Dict[str, list] = {}
+CATEGORY_META: Dict[str, dict] = {}
+CATEGORY_META_FILE = os.path.join(BRIDGE_CACHE_DIR, "category_meta.json")
+
+def _init_bridge_categories():
+    builtins = {
+        'file':      {'scope': 'group',  'persist': 'perm', 'max_items': 20,  'fastname': 'F', 'evict_to_history': True,  'raw': False},
+        'link':      {'scope': 'group',  'persist': 'perm', 'max_items': 30,  'fastname': 'L', 'evict_to_history': True,  'raw': False},
+        'history':   {'scope': 'global', 'persist': 'perm', 'max_items': 50,  'fastname': 'H', 'evict_to_history': False, 'raw': False},
+        'permanent': {'scope': 'global', 'persist': 'perm', 'max_items': None, 'fastname': 'P', 'evict_to_history': False, 'raw': True},
+        'audio':     {'scope': 'global', 'persist': 'perm', 'max_items': None, 'fastname': 'A', 'evict_to_history': False, 'raw': True},
+        'mod':       {'scope': 'global', 'persist': 'perm', 'max_items': None, 'fastname': 'M', 'evict_to_history': False, 'raw': True},
+    }
+    for name, meta in builtins.items():
+        if name not in CATEGORY_META:
+            CATEGORY_META[name] = meta
+    _load_category_meta()
+
+def _save_category_meta():
+    try:
+        with open(CATEGORY_META_FILE, 'w', encoding='utf-8') as f:
+            json.dump(CATEGORY_META, f, ensure_ascii=False)
+    except Exception: pass
+
+def _load_category_meta():
+    try:
+        if os.path.exists(CATEGORY_META_FILE):
+            with open(CATEGORY_META_FILE, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                for name, meta in loaded.items():
+                    if name not in CATEGORY_META:
+                        CATEGORY_META[name] = meta
+    except Exception: pass
+
+def _get_category_list(cat_name, group_id=None):
+    meta = CATEGORY_META.get(cat_name, {})
+    if meta.get('scope') == 'global':
+        return BRIDGE_GLOBAL_CATEGORIES.setdefault(cat_name, [])
+    else:
+        gid = safe_int(group_id, 0) if group_id else 0
+        return BRIDGE_CATEGORIES.setdefault(cat_name, {}).setdefault(gid, [])
+
+def _get_category_count(cat_name, group_id=None):
+    return len(_get_category_list(cat_name, group_id))
+
+def _resolve_fastname(prefix):
+    p = prefix.upper()
+    for name, meta in CATEGORY_META.items():
+        if meta.get('fastname', '').upper() == p:
+            return name
+    return None
+
+_init_bridge_categories()
 LOG_IMPORTED_FILES: Dict[str, set] = {}  # log_id_str -> set of file_id strings already imported
 LAST_ERROR_BY_GROUP: Dict[int, str] = {}
 LAST_EVENT_SUMMARY: Dict[str, Any] = {}
@@ -373,48 +429,30 @@ def fetch_raw_url(url):
     except Exception as e: print(f"RawURL Error: {e}"); return None
 
 def expand_short_alias(raw):
-    """v4.4.4: 短别名展開 — F14→[file]-14, L0→[link]-0, H23→[history]-23.
-    v4.4.4.1: 也支持跨群访问 F14-123456→[file]-14-123456。
-    v4.5.5: F-1/L-1/H-1 倒数别名（-1=最新），~ 为反向索引标记。
-    与前端 expandShortAlias 完全一致。"""
+    """v5.0.0: 短别名展開 — 查找 CATEGORY_META 中的 fastname。
+    支持 F14→[file]-14, P0→[permanent]-0, TG1→[testgroup]-1 等。
+    也支持跨群 F14-123456、倒数 F-1/P-1、倒数跨群 F-1-123456。"""
     s = str(raw or '').strip()
-    # v4.5.5: 倒数跨群别名 F-1-123456, L-2-999888
-    m = re.match(r'^([FLH])-(\d+)-(\d+)$', s, re.I)
+    m = re.match(r'^([A-Za-z]+)(-?\d+)(?:-(\d+))?$', s)
     if m:
-        prefix = m.group(1).upper()
-        num = m.group(2)
-        gid = m.group(3)
-        if prefix == 'F': return f'[file]~{num}-{gid}'
-        if prefix == 'L': return f'[link]~{num}-{gid}'
-        if prefix == 'H': return f'[history]~{num}-{gid}'
-    # v4.5.5: 倒数别名 F-1, L-2, H-3（-1=倒数第1即最新）
-    m = re.match(r'^([FLH])-(\d+)$', s, re.I)
-    if m:
-        prefix = m.group(1).upper()
-        num = m.group(2)
-        if prefix == 'F': return f'[file]~{num}'
-        if prefix == 'L': return f'[link]~{num}'
-        if prefix == 'H': return f'[history]~{num}'
-    # 跨群短别名: F14-123456, L0-999888
-    m = re.match(r'^([FLH])(\d+)-(\d+)$', s, re.I)
-    if m:
-        prefix = m.group(1).upper()
-        num = m.group(2)
-        gid = m.group(3)
-        if prefix == 'F': return f'[file]-{num}-{gid}'
-        if prefix == 'L': return f'[link]-{num}-{gid}'
-        if prefix == 'H': return f'[history]-{num}-{gid}'
-    # 短别名: F14, L0, H23
-    m = re.match(r'^([FLH])(\d+)$', s, re.I)
-    if m:
-        prefix = m.group(1).upper()
-        num = m.group(2)
-        if prefix == 'F': return f'[file]-{num}'
-        if prefix == 'L': return f'[link]-{num}'
-        if prefix == 'H': return f'[history]-{num}'
-    # v4.4.4: SealDice 去括号修复 — file-0→[file]-0
-    m = re.match(r'^(file|link|history)-(\d+)$', s, re.I)
-    if m:
+        letters = m.group(1); num_str = m.group(2); gid = m.group(3)
+        cat_name = None
+        if len(letters) == 1:
+            cat_name = _resolve_fastname(letters)
+        else:
+            for name, meta in CATEGORY_META.items():
+                if meta.get('fastname', '').upper() == letters.upper():
+                    cat_name = name; break
+            if not cat_name and letters.lower() in CATEGORY_META:
+                cat_name = letters.lower()
+        if cat_name:
+            if num_str.startswith('-'):
+                idx = num_str[1:]
+                return f'[{cat_name}]~{idx}-{gid}' if gid else f'[{cat_name}]~{idx}'
+            else:
+                return f'[{cat_name}]-{num_str}-{gid}' if gid else f'[{cat_name}]-{num_str}'
+    m = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$', s)
+    if m and m.group(1).lower() in CATEGORY_META:
         return f'[{m.group(1).lower()}]-{m.group(2)}'
     return raw
 
@@ -2774,6 +2812,53 @@ def api_bridge_list():
 BRIDGE_POLL_INTERVAL_OVERRIDE: Dict[int, float] = {}
 
 
+# ====== v5.0.0: Bridge v2 Categorized Storage API ======
+
+@app.route('/api/bridge_save', methods=['POST'])
+def api_bridge_save():
+    payload = request.get_json(silent=True) or {}
+    group_id = safe_int(payload.get('group_id', 0), 0)
+    targets = payload.get('targets', [])
+    sort = str(payload.get('sort', 'permanent')).lower().strip()
+    if group_id <= 0 or not targets: return jsonify({'status':'error','msg':'missing group_id or targets'}),400
+    if sort not in CATEGORY_META: return jsonify({'status':'error','msg':f'unknown category: {sort}'}),400
+    saved=[]; errors=[]
+    for t in targets:
+        t_str=str(t).strip(); ptype,pidx,_=_parse_bridge_ref(t_str)
+        if not ptype: errors.append(f'{t_str}: invalid ref'); continue
+        src=_get_category_list(ptype,group_id)
+        if pidx<0 or pidx>=len(src): errors.append(f'{t_str}: out of range'); continue
+        item=dict(src[pidx]); item['_saved_from']=ptype; item['ts']=now_ts()
+        _get_category_list(sort,group_id).append(item); saved.append(t_str)
+    return jsonify({'status':'ok','saved':saved,'errors':errors,'sort':sort})
+
+@app.route('/api/bridge_new', methods=['POST'])
+def api_bridge_new():
+    payload=request.get_json(silent=True) or {}
+    group_id=safe_int(payload.get('group_id',0),0)
+    name=str(payload.get('name','')).strip(); fastname=str(payload.get('fastname','')).strip()
+    persist=str(payload.get('persist','perm')).strip().lower(); scope=str(payload.get('scope','group')).strip().lower()
+    raw=str(payload.get('method','')).strip().lower()=='raw'
+    if group_id<=0 or not name: return jsonify({'status':'error','msg':'missing group_id or name'}),400
+    if name in CATEGORY_META: return jsonify({'status':'error','msg':f'name {name} exists'}),400
+    if fastname:
+        for n,m in CATEGORY_META.items():
+            if m.get('fastname','').upper()==fastname.upper(): return jsonify({'status':'error','msg':f'fastname {fastname} used by {n}'}),400
+    CATEGORY_META[name]={'scope':scope,'persist':persist,'max_items':None,'fastname':fastname,'evict_to_history':False,'raw':raw}
+    _save_category_meta()
+    return jsonify({'status':'ok','name':name,'fastname':fastname,'persist':persist,'scope':scope})
+
+@app.route('/api/bridge_keylist', methods=['GET','POST'])
+def api_bridge_keylist():
+    payload=request.get_json(silent=True) or {}
+    group_id=safe_int(payload.get('group_id') or request.args.get('group_id',0),0)
+    cats=[]
+    for name,meta in CATEGORY_META.items():
+        if meta.get('scope')=='global' or group_id>0:
+            cats.append({'name':name,'fastname':meta.get('fastname',''),'count':_get_category_count(name,group_id),
+                         'scope':meta.get('scope','group'),'persist':meta.get('persist','perm')})
+    return jsonify({'status':'ok','categories':cats})
+
 @app.route('/api/bridge_rate', methods=['POST'])
 def api_bridge_rate():
     """设置指定群组的桥接轮询间隔（秒）。
@@ -4483,12 +4568,12 @@ def api_logutil_end():
 # ====== NapCat 消息/文件发送 (fwlog-style logutil end) ======
 
 def _parse_bridge_ref(ref_str):
-    """v4.4.0: 解析 '[file]-3', '[link]-1', '[history]-5' 为 ('file', 3) 等。
-    v4.4.4.1: 支持跨群 '[file]-3-123456' → ('file', 3, 123456)。"""
-    m = re.match(r'^\[(file|link|history)\]-(\d+)(?:-(\d+))?$', str(ref_str).strip(), re.I)
+    """v5.0.0: 解析任意类型引用 '[cat]-N' 及 '[cat]-N-GID' 为 (cat_name, N, cross_gid)。"""
+    m = re.match(r'^\[([a-zA-Z_][a-zA-Z0-9_]*)\]-(\d+)(?:-(\d+))?$', str(ref_str).strip(), re.I)
     if m:
+        cat = m.group(1).lower()
         cross_gid = int(m.group(3)) if m.group(3) else None
-        return m.group(1).lower(), int(m.group(2)), cross_gid
+        return cat, int(m.group(2)), cross_gid
     return None, -1, None
 
 
