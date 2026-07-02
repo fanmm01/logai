@@ -294,91 +294,82 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 
 ## 更新日志：
 
-**napcat bridge v0.1**  
-- 建立了一个可以被外部接口访问的小型文件管理器，功能是读取napcat接收到的群文件并将其转为文本形式存储。
+**v4.6**
+1. 新增倒数别名 `F-1`/`L-1`/`H-1`（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引，支持跨群访问，全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
+2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。
+3. 桥接缓存保存原始下载链接（`download_url` 字段）。
+4. 修复 `.logutil end` 被误判为复合命令的问题。
+5. 移除纯冒号格式的发言识别（仅保留尖括号+时间戳格式），修复纯标点文本被误识别为发言者名称的漏洞。
 
-**napcat bridge v0.2**  
-- 增加缓存功能，使之可以同时存储多个文件，并可通过文件编号获取它们。
-- 增加自动轮巡功能，使之可以主动地循环获取最新群文件。
-- 将其内嵌至了logai中。下面将把其更新日志合并至logai内部。
 
-**logai v2.5.1**  
-- 追加对外部接口“napcat bridge”的兼容性。现在可以在napcatbridge运行中，通过该桥接系统监听并获取群文件列表，不再需要修改海豹源码。
+**v4.6.1**
+1. 修复 `.logutil end` 被误判为复合命令的问题：`isCompound` 不再仅因 `end` 存在而触发。
+2. 移除纯冒号格式（`Name: text`）及含时间戳冒号格式（`time Name: text`）的发言识别，防止一般文本中冒号被误判为发言头。
+3. 移除仅含标点文本被识别为发言者名称的漏洞（`looks_like_speaker_name` 要求至少一个字母/数字/中文）。
 
-**logai v3.0.0**  
-1. 将logai与napcat bridge合并。现在，只需要开启logai的后端便可以获取群文件列表了。
-2. 现在允许logai同时读入多个链接/文件，将其依照顺序拼接后交给ai分析。需要提供链接或完整的文件名。
+**v4.6.0**
+1. 新增倒数别名 `F-1`/`L-1`/`H-1` 等（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引。支持跨群访问（`F-1-群号`）。全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
+2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。
+3. 桥接缓存保存原始下载链接（`download_url` 字段）。
 
-**logai v3.1.0**  
-1. 将logai与原作者的模组分析插件前端功能合并。
-2. 对桥接系统，增加文件编号。该编号可以被用于替代文件名。
-3. 染色器链接现在支持dicezone。
-4. bug修复。
+**v4.5.4**
+1. 所有文件输出前自动截断超长文件名（>30字符保留扩展名）。
 
-**fwlog_forked v1.0**  
-1. 追加对外部接口“napcat bridge”的兼容性。
-2. 增加把文件，染色器链接，单句对话接入至fwlog的能力。
-3. 减少一些bug，增加另一些bug。
+**v4.5.3**
+1. 修复着色器链接分词漏洞：`format_weizaima_text` 改用方括号管道格式 `[time] <nick|IMUserId> msg` 输出，保留 IMUserId 与 time 字段；格式 b 输出 `<玩家|游戏外>`；格式 c 星号动作不加冒号直接拼接。同步至主路径。
+2. DOCX 文本提取：`extract_text_from_group_file` 改为按段落聚合文本 run，消除逐字换行；`extract_text_from_file` 段落 strip 并过滤空段。PDF 页文本同样 strip 过滤。
+3. `.bridge list` 无参数时不再返回历史记录（仅 file+link），`all` 参数仍同时显示全部；文件/链接表均空时分别提示而非仅提示文件。
+4. 新增 `.logai help`、`.logutil help`、`.aiutil help`、`.translate help`、`.bridge help` 指令，返回各命令用法及全部参数/修饰符说明。
+5. 实例版默认端口改为 8001（与主版本 8000 分离）；前端错误输出优化（含 URL/HTTP 状态码/原始响应）；注册名改为 `logutil` 避免与主前端冲突。
 
-**logai v4.0.0**  
-1. 合并fwlog与logai。为fwlog提供新名字为logutil。
-2. 更改了ncbridge文件监听的逻辑。旧逻辑保留备用。
-3. 追加del_paren参数，用于去括号。
+**v4.5.1.1**
+1. 修复 WebUI 路由冲突导致无法显示数据的问题（`/api/bridge_gui_data` 装饰器错误绑定到 `api_bridge_groups`）。
+2. 修复 WebUI 与 `bridge list` 历史记录编号不一致的问题：WebUI 现在同样按 `group_id` 过滤并使用顺序编号。
+3. 修复主后端 `/bridge/list` 未返回历史记录的问题（此前仅实例版修复），解决 `.translate` 等前端命令无法解析 `[history]-N` 的 bug。
 
-**v4.1.0**  
-1. 修复数个重要bug。
-2. logutil增加对菠萝导出的log的支持。
-3. 增加复合命令功能。
-4. 扩大ncbridge编号系统的实用价值。将其反序。
-5. 由于bug严重，暂时不实现del_paren参数的功能。
-6. 创建win/linux系统下的启动脚本，并将api key改为在启动脚本内填写，以增大分发过程中的安全性与灵活性。
+**v4.5.1**
+1. 跨群访问语法全面生效：`H0-群号` / `[history]-0-群号` 等格式所有场景可用。
+2. `.translate` 新增简写：`ALL` 等价于 `goal-ALL`。
+3. Web 管理界面改造：群号输入框改为下拉框，自动列出全部有数据的群组，通过链接访问时默认打开对应群组。
 
-**v4.2.0**  
-1. 新增 `.aiutil` 命令：快速AI分析，仅支持 `[file]-N` 格式文件，不保存配置。无文件时仅将提示词交给AI。
-2. 新增 `.translate` 命令：调用AI翻译接口，对docx/pdf/txt格式文件进行翻译。
-3. 新增 `get_text` 修饰符：图片输出指令可改为txt文件输出。
-4. 完善 `del_paren` 修饰符：修复括号段落逻辑漏洞，现已完整奏效。追加到 `logutil get` 的支持。
-5. 模组命令（分析/完善/备团）全面支持多文件与指定文件，机制与logai完全对齐。
-6. 后端端口号改为海豹配置项，默认8000，可即时调整。
-   
-**v4.2.1**
-1. 修复 `.aiutil` 无文件模式下混杂 `.logai` 评分prompt的bug，现使用中性AI助手系统提示。
-   
-**v4.3**
-1. 文件输入扩展：`.aiutil` 及所有文件输入命令，提供文件允许为任何可展开成文本的文件（.py/.c/.js/.class 等），未知扩展名直接当作文本解码。
-2. 文件大小上限从 50MB/40MB 统一提升至 150MB。
-3. `.bridge get` 新增专用后端接口 `/api/bridge_get`，内部直接调用 NapCat 上传文件到群，解决大文件提取失败及只发链接未实际上传的问题。
-4. `.aiutil get_text` 与 `.translate` 同样改为后端自动上传文件到群，翻译结果统一以 `.txt` 扩展名发送。
-5. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题，WS模式下彻底禁用HTTP轮询。
-6. 新增 `raw` 修饰符（对 logutil 生效）：跳过消息头解析，直接拼接原始文本。
-7. 移除 `.ai` 作为 `.aiutil` 的别名，避免与其他插件命名冲突。
-8. Python 下载源新增 Gitee 镜像作为首选；修复 Windows 启动脚本编码、Python 路径嵌套、依赖安装失败等问题；确认 LLBot 兼容性。
 
-——————————————
+**v4.5.0.2**
+1. 修复 `raw` 修饰符在复合命令中无效的根因：`api_logutil_compound` 未在调用 `parse_structured_text_to_items` 前检查 `raw_mode`；WS 独立消息（`[file]`/`[link]`/`[history]`）处理同样未检查 `raw_recording`；新增 `ensure_logutil_group_state` 确保 DB 行存在后再 UPDATE。
+2. 修复 `del_paren` 等修饰符在复合命令中被当作文本 op 发送给后端的问题（ops filter 白名单补全）。
 
-**v4.3.0**  
-1. 文件输入扩展：`.aiutil` 及一切输入文件的命令，提供文件允许为任何可以被展开成文本的文件（.py, .c, .js, .class 等）。
-2. 新增 `.bridge get N`：将该编号文件桥接为纯文本后的txt文档直接给出下载链接。
-3. 文件大小上限从50MB/40MB统一提升至150MB。
 
-**v4.3.1**  
-1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 新增专用后端接口 `/api/bridge_get`（内部直接调用 NapCat `upload_group_file`，与 `logutil end` 机制一致）；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
-2. 修复 `.py`、`.js`、`.c` 等非白名单扩展名文件报"不支持的文件格式"的问题：未知扩展名现在直接当作文本解码。
-3. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题：WS模式下彻底禁用HTTP轮询。
+**4.5.0.1**
+1. 修复 `raw` 修饰符在复合命令中仍可能被误判为日志标题的问题（`isOp` 检查显式列出修饰符）。
+2. 修复 `.aiutil get_text` 模式下 txt 文件可能因竞态条件而丢失的问题（`status='done'` 移至 `get_text` 块之后）。
+3. 修复 `.bridge get [history]-N` 与 `.bridge list history` 显示的编号不一致（因全局/过滤后索引错位）的问题。
+4. 新增跨群访问语法：`L0-群号` / `[link]-0-群号` 等，可访问其他群的桥接缓存项。
+5. `.bridge list` 全部采用合并聊天记录格式（含单条记录时），新增 `all` 参数同时显示文件/链接/历史。
 
-**v4.3.2**  
-1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题：改为后端自动调用 `napcat_upload_group_file` 上传，前端不再参与文件发送逻辑。`.translate` 同时保留下载链接作为保险机制。
-2. 新增 `raw` 修饰符（对 logutil 生效）：携带时跳过消息头解析步骤，直接把各源文本并行拼接入日志。
 
-**v4.3.3**  
-1. 修复 `raw` 修饰符无效的问题：`raw` 出现在 `logutil` 后第一或第二字段时正确识别为修饰符，不再被误当作日志名称或录入文本。
-2. `.translate` 翻译结果统一以 `.txt` 扩展名发送（因桥接已将原文统一转为纯文本，保留原扩展名无意义）。
+**4.5.0.0**
+1. 修复 `.bridge get [link]-N` / `[history]-N` 返回文件名含 URL 的问题，现使用干净文件名。
+2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
+3. 修复历史记录列表中 `[link]` 字样重复显示的问题。
+4. 修复 SealDice 去括号导致 `.aiutil` 等命令中 `[link]-N` / `[history]-N` 无法识别的问题。
+5. 新增 URL 黑名单：QQ 多媒体 CDN（`multimedia.nt.qq.com.cn`）不再被自动缓存为 bridge link。
+6. 修复 logutil 复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）的问题：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
+7. 修复 logutil 复合命令中 `raw` 修饰符仅在开头两个位置生效的问题，现可在任意位置使用。
 
-**v4.3.4**  
-1. 移除 `.ai` 作为 `.aiutil` 的别名，避免与其他插件命名冲突。
-2. 修复 Windows 启动脚本 `run_logai.bat` 的编码、Python 路径嵌套、依赖安装失败等问题。
-3. Python 下载源新增 Gitee 镜像（`https://gitee.com/masx200/python-build-standalone`）作为首选。
-4. 确认 LLBot 架构下的可用性。
+**v4.5.0**
+1. 修复 `.bridge get [link]-N`/`[history]-N` 返回文件名含 URL 的问题，现使用干净文件名。
+2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
+3. 修复历史记录列表中 `[link]` 字样重复显示的问题（name 字段移除 `[link] ` 前缀）。
+4. 修复 SealDice 去括号导致 `.aiutil` 等命令中 `[link]-N`/`[history]-N` 无法识别的问题。
+5. 修复 logutil 复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）的问题：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
+6. 修复 `raw` 修饰符三层失效问题：DB 行确保（`ensure_logutil_group_state`）、复合 op 解析（直接 `make_log_item`）、WS 消息处理（检查 `raw_recording` 标记）。
+7. 修复 `del_paren` 等修饰符在复合命令中被当作文本 op 发送给后端的问题。
+8. 修复 `.aiutil get_text` 模式下 txt 文件可能因竞态条件而丢失的问题。
+9. 修复 `.bridge get [history]-N` 与 `.bridge list history` 显示的编号不一致（全局索引→顺序计数器）。
+10. 新增 URL 黑名单：QQ 多媒体 CDN（`multimedia.nt.qq.com.cn`）不再自动缓存。
+11. 新增跨群访问语法：`L0-群号`/`[link]-0-群号` 等，可访问其他群的桥接缓存项。
+12. `.bridge list` 全部采用合并聊天记录格式（含单条记录时），新增 `all` 参数同时显示文件/链接/历史。
+
+—————————
 
 **v4.4**
 1. 新增防刷屏机制：基于滑动窗口限速 `.logai` 与 `.aiutil` 调用，海豹配置项可调。
@@ -401,6 +392,31 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 18. 修复 TextDB 云数据库接口，仅用于 goal-ALL 翻译功能。
 
 ————————————————
+
+**v4.4.3**
+1. `[history]-N` 全面支持：`.aiutil`、`.translate`、`.模组分析/备团/完善`、`.logutil` 复合命令及录音中独立发送，均支持 `[history]-N` 引用被淘汰的桥接历史项。
+2. 修复 `bridge_link` 在复合命令中静默失效的问题：`.logutil` 复合命令现在正确解析 `[link]-N` 引用（此前因来源白名单遗漏，被当作原始文本处理）。
+3. `.模组分析/备团/完善` 新增 `[link]-N` 和 `[history]-N` 引用支持。
+4. 修复独立版前端（instance/logutil/frontend.js）在复合命令中未传递 `raw` 修饰符的问题。
+5. `/api/bridge_list` 在默认 `all` 模式下同时返回历史记录（按群号过滤），前端无需额外请求。
+6. 独立版后端的 `/bridge/list` 端点新增历史记录返回。
+
+**v4.4.2**
+1. 删除所有用户侧的下载链接功能：AI 分析、翻译、logutil 等结果不再附带下载链接，文件直接通过群文件交付。
+2. 消息中的染色器链接自动缓存：用户发送到群内的 log 链接（weizaima/dice.zone/kokona/trpgbot 等）自动拉取纯文本并加入桥接 `[link]` 列表，无需手动指令。
+
+**v4.4.1**
+1. `.translate` 参数顺序调整：`[goal-ALL]` 优先于 `[lang]`，再跟文件/链接。goal-ALL 模式下翻译启动时即发送 TextDB 在线查看链接。
+2. `.translate goal-ALL` 模式不再有超时限制，将持续执行直到完成或被 `.halt` 停止。
+3. `.halt` 权限下放：所有群成员均可使用，不再仅限骰主。
+4. `.bridge list` 文件/链接条目附带内容开头预览字符；以合并聊天记录格式呈现。
+5. Web 管理界面地址改用内网 IP（而非 127.0.0.1），彻底移除输出中的所有 127.0.0.1。
+6. 新增 `.bridge master` 命令：单独查看 Web 管理界面地址。`.bridge list` 不再附带 Web UI 链接。
+7. 日志输出净化：NapCat 文件上传日志中不再打印完整 base64 文件内容，改为截断标记。
+8. `.bridge get` 直接发送纯文本文件到群，不再附带下载链接。
+9. 修复 TextDB 云数据库接口（改用 `/api/write` 端点），确认仅用于 goal-ALL 翻译功能。
+
+
 **v4.4.0**
 1. 新增防刷屏机制：海豹配置项 `刷屏警告时限(s)`（默认60）与 `处理上限`（默认6），基于滑动窗口限速 `.logai` 与 `.aiutil` 调用。
 2. 新增着色器链接文本缓存：任何功能中使用着色器链接时，其纯文本内容自动保存到桥接缓存中，编号为 `[link]-N`（上限30个），可在任何使用链接处替代。支持单独发送 `[link]-N` 调取。
@@ -416,103 +432,89 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 12. 新增 `goal-ALL` 翻译模式：将全文分句后逐块翻译，每10秒将进度上传至 TextDB.online 云数据库（在线查看链接见翻译结果），支持 `.halt` 暂停。
 13. 更新 README 与 ARCHITECTURE 文档至 v4.4.0。
 
-**v4.4.1**
-1. `.translate` 参数顺序调整：`[goal-ALL]` 优先于 `[lang]`，再跟文件/链接。goal-ALL 模式下翻译启动时即发送 TextDB 在线查看链接。
-2. `.translate goal-ALL` 模式不再有超时限制，将持续执行直到完成或被 `.halt` 停止。
-3. `.halt` 权限下放：所有群成员均可使用，不再仅限骰主。
-4. `.bridge list` 文件/链接条目附带内容开头预览字符；以合并聊天记录格式呈现。
-5. Web 管理界面地址改用内网 IP（而非 127.0.0.1），彻底移除输出中的所有 127.0.0.1。
-6. 新增 `.bridge master` 命令：单独查看 Web 管理界面地址。`.bridge list` 不再附带 Web UI 链接。
-7. 日志输出净化：NapCat 文件上传日志中不再打印完整 base64 文件内容，改为截断标记。
-8. `.bridge get` 直接发送纯文本文件到群，不再附带下载链接。
-9. 修复 TextDB 云数据库接口（改用 `/api/write` 端点），确认仅用于 goal-ALL 翻译功能。
-10. 更新版本号至 v4.4.1。
+**v4.3**
+1. 文件输入扩展：`.aiutil` 及所有文件输入命令，提供文件允许为任何可展开成文本的文件（.py/.c/.js/.class 等），未知扩展名直接当作文本解码。
+2. 文件大小上限从 50MB/40MB 统一提升至 150MB。
+3. `.bridge get` 新增专用后端接口 `/api/bridge_get`，内部直接调用 NapCat 上传文件到群，解决大文件提取失败及只发链接未实际上传的问题。
+4. `.aiutil get_text` 与 `.translate` 同样改为后端自动上传文件到群，翻译结果统一以 `.txt` 扩展名发送。
+5. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题，WS模式下彻底禁用HTTP轮询。
+6. 新增 `raw` 修饰符（对 logutil 生效）：跳过消息头解析，直接拼接原始文本。
+7. 移除 `.ai` 作为 `.aiutil` 的别名，避免与其他插件命名冲突。
+8. Python 下载源新增 Gitee 镜像作为首选；修复 Windows 启动脚本编码、Python 路径嵌套、依赖安装失败等问题；确认 LLBot 兼容性。
 
-**v4.4.2**
-1. 删除所有用户侧的下载链接功能：AI 分析、翻译、logutil 等结果不再附带下载链接，文件直接通过群文件交付。
-2. 消息中的染色器链接自动缓存：用户发送到群内的 log 链接（weizaima/dice.zone/kokona/trpgbot 等）自动拉取纯文本并加入桥接 `[link]` 列表，无需手动指令。
-3. 更新版本号至 v4.4.2。
+——————————————
 
-**v4.4.3**
-1. `[history]-N` 全面支持：`.aiutil`、`.translate`、`.模组分析/备团/完善`、`.logutil` 复合命令及录音中独立发送，均支持 `[history]-N` 引用被淘汰的桥接历史项。
-2. 修复 `bridge_link` 在复合命令中静默失效的问题：`.logutil` 复合命令现在正确解析 `[link]-N` 引用（此前因来源白名单遗漏，被当作原始文本处理）。
-3. `.模组分析/备团/完善` 新增 `[link]-N` 和 `[history]-N` 引用支持。
-4. 修复独立版前端（instance/logutil/frontend.js）在复合命令中未传递 `raw` 修饰符的问题。
-5. `/api/bridge_list` 在默认 `all` 模式下同时返回历史记录（按群号过滤），前端无需额外请求。
-6. 独立版后端的 `/bridge/list` 端点新增历史记录返回。
-7. 更新版本号至 v4.4.3。
+**v4.3.4**  
+1. 移除 `.ai` 作为 `.aiutil` 的别名，避免与其他插件命名冲突。
+2. 修复 Windows 启动脚本 `run_logai.bat` 的编码、Python 路径嵌套、依赖安装失败等问题。
+3. Python 下载源新增 Gitee 镜像（`https://gitee.com/masx200/python-build-standalone`）作为首选。
+4. 确认 LLBot 架构下的可用性。
 
-**v4.5.0**
-1. 修复 `.bridge get [link]-N`/`[history]-N` 返回文件名含 URL 的问题，现使用干净文件名。
-2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
-3. 修复历史记录列表中 `[link]` 字样重复显示的问题（name 字段移除 `[link] ` 前缀）。
-4. 修复 SealDice 去括号导致 `.aiutil` 等命令中 `[link]-N`/`[history]-N` 无法识别的问题。
-5. 修复 logutil 复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）的问题：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
-6. 修复 `raw` 修饰符三层失效问题：DB 行确保（`ensure_logutil_group_state`）、复合 op 解析（直接 `make_log_item`）、WS 消息处理（检查 `raw_recording` 标记）。
-7. 修复 `del_paren` 等修饰符在复合命令中被当作文本 op 发送给后端的问题。
-8. 修复 `.aiutil get_text` 模式下 txt 文件可能因竞态条件而丢失的问题。
-9. 修复 `.bridge get [history]-N` 与 `.bridge list history` 显示的编号不一致（全局索引→顺序计数器）。
-10. 新增 URL 黑名单：QQ 多媒体 CDN（`multimedia.nt.qq.com.cn`）不再自动缓存。
-11. 新增跨群访问语法：`L0-群号`/`[link]-0-群号` 等，可访问其他群的桥接缓存项。
-12. `.bridge list` 全部采用合并聊天记录格式（含单条记录时），新增 `all` 参数同时显示文件/链接/历史。
+**v4.3.3**  
+1. 修复 `raw` 修饰符无效的问题：`raw` 出现在 `logutil` 后第一或第二字段时正确识别为修饰符，不再被误当作日志名称或录入文本。
+2. `.translate` 翻译结果统一以 `.txt` 扩展名发送（因桥接已将原文统一转为纯文本，保留原扩展名无意义）。
 
-—————————
-**4.5.0.0**
-1. 修复 `.bridge get [link]-N` / `[history]-N` 返回文件名含 URL 的问题，现使用干净文件名。
-2. 修复跨群数据泄露：所有历史记录访问点增加 `group_id` 过滤隔离。
-3. 修复历史记录列表中 `[link]` 字样重复显示的问题。
-4. 修复 SealDice 去括号导致 `.aiutil` 等命令中 `[link]-N` / `[history]-N` 无法识别的问题。
-5. 新增 URL 黑名单：QQ 多媒体 CDN（`multimedia.nt.qq.com.cn`）不再被自动缓存为 bridge link。
-6. 修复 logutil 复合命令与独立发送中不识别短别名（`F14`/`L0`/`H23`）的问题：后端新增 `expand_short_alias`，前端重分词后补做别名展开。
-7. 修复 logutil 复合命令中 `raw` 修饰符仅在开头两个位置生效的问题，现可在任意位置使用。
-8. 更新版本号至 v4.4.4。
+**v4.3.2**  
+1. 修复 `.bridge get`、`.aiutil get_text`、`.translate` 三个功能只发送下载链接而未实际通过 NapCat 上传文件到群的问题：改为后端自动调用 `napcat_upload_group_file` 上传，前端不再参与文件发送逻辑。`.translate` 同时保留下载链接作为保险机制。
+2. 新增 `raw` 修饰符（对 logutil 生效）：携带时跳过消息头解析步骤，直接把各源文本并行拼接入日志。
 
-**4.5.0.1**
-1. 修复 `raw` 修饰符在复合命令中仍可能被误判为日志标题的问题（`isOp` 检查显式列出修饰符）。
-2. 修复 `.aiutil get_text` 模式下 txt 文件可能因竞态条件而丢失的问题（`status='done'` 移至 `get_text` 块之后）。
-3. 修复 `.bridge get [history]-N` 与 `.bridge list history` 显示的编号不一致（因全局/过滤后索引错位）的问题。
-4. 新增跨群访问语法：`L0-群号` / `[link]-0-群号` 等，可访问其他群的桥接缓存项。
-5. `.bridge list` 全部采用合并聊天记录格式（含单条记录时），新增 `all` 参数同时显示文件/链接/历史。
-6. 更新版本号至 4.5.0.1。
+**v4.3.1**  
+1. 修复大文件（如59MB PDF）通过 `.bridge get` 和 `.aiutil` 提取失败的问题：`.bridge get` 新增专用后端接口 `/api/bridge_get`（内部直接调用 NapCat `upload_group_file`，与 `logutil end` 机制一致）；`.aiutil` 改走 `raw_url` 模式避免重复解析已提取的桥接文本。
+2. 修复 `.py`、`.js`、`.c` 等非白名单扩展名文件报"不支持的文件格式"的问题：未知扩展名现在直接当作文本解码。
+3. 修复 `FileBridgeMode=0`（WS实时推送模式）下仍启动HTTP轮询的问题：WS模式下彻底禁用HTTP轮询。
 
-**v4.5.0.2**
-1. 修复 `raw` 修饰符在复合命令中无效的根因：`api_logutil_compound` 未在调用 `parse_structured_text_to_items` 前检查 `raw_mode`；WS 独立消息（`[file]`/`[link]`/`[history]`）处理同样未检查 `raw_recording`；新增 `ensure_logutil_group_state` 确保 DB 行存在后再 UPDATE。
-2. 修复 `del_paren` 等修饰符在复合命令中被当作文本 op 发送给后端的问题（ops filter 白名单补全）。
-3. 更新版本号至 v4.5.0.2。
+**v4.3.0**  
+1. 文件输入扩展：`.aiutil` 及一切输入文件的命令，提供文件允许为任何可以被展开成文本的文件（.py, .c, .js, .class 等）。
+2. 新增 `.bridge get N`：将该编号文件桥接为纯文本后的txt文档直接给出下载链接。
+3. 文件大小上限从50MB/40MB统一提升至150MB。
 
-**v4.5.1**
-1. 跨群访问语法全面生效：`H0-群号` / `[history]-0-群号` 等格式所有场景可用。
-2. `.translate` 新增简写：`ALL` 等价于 `goal-ALL`。
-3. Web 管理界面改造：群号输入框改为下拉框，自动列出全部有数据的群组，通过链接访问时默认打开对应群组。
-4. 更新版本号至 v4.5.1。
 
-**v4.5.1.1**
-1. 修复 WebUI 路由冲突导致无法显示数据的问题（`/api/bridge_gui_data` 装饰器错误绑定到 `api_bridge_groups`）。
-2. 修复 WebUI 与 `bridge list` 历史记录编号不一致的问题：WebUI 现在同样按 `group_id` 过滤并使用顺序编号。
-3. 修复主后端 `/bridge/list` 未返回历史记录的问题（此前仅实例版修复），解决 `.translate` 等前端命令无法解析 `[history]-N` 的 bug。
-4. 更新版本号至 v4.5.1.1。
+**v4.2.1**
+1. 修复 `.aiutil` 无文件模式下混杂 `.logai` 评分prompt的bug，现使用中性AI助手系统提示。
 
-**v4.5.3**
-1. 修复着色器链接分词漏洞：`format_weizaima_text` 改用方括号管道格式 `[time] <nick|IMUserId> msg` 输出，保留 IMUserId 与 time 字段；格式 b 输出 `<玩家|游戏外>`；格式 c 星号动作不加冒号直接拼接。同步至主路径。
-2. DOCX 文本提取：`extract_text_from_group_file` 改为按段落聚合文本 run，消除逐字换行；`extract_text_from_file` 段落 strip 并过滤空段。PDF 页文本同样 strip 过滤。
-3. `.bridge list` 无参数时不再返回历史记录（仅 file+link），`all` 参数仍同时显示全部；文件/链接表均空时分别提示而非仅提示文件。
-4. 新增 `.logai help`、`.logutil help`、`.aiutil help`、`.translate help`、`.bridge help` 指令，返回各命令用法及全部参数/修饰符说明。
-5. 实例版默认端口改为 8001（与主版本 8000 分离）；前端错误输出优化（含 URL/HTTP 状态码/原始响应）；注册名改为 `logutil` 避免与主前端冲突。
-6. 更新版本号至 4.5.3。
+**v4.2.0**  
+1. 新增 `.aiutil` 命令：快速AI分析，仅支持 `[file]-N` 格式文件，不保存配置。无文件时仅将提示词交给AI。
+2. 新增 `.translate` 命令：调用AI翻译接口，对docx/pdf/txt格式文件进行翻译。
+3. 新增 `get_text` 修饰符：图片输出指令可改为txt文件输出。
+4. 完善 `del_paren` 修饰符：修复括号段落逻辑漏洞，现已完整奏效。追加到 `logutil get` 的支持。
+5. 模组命令（分析/完善/备团）全面支持多文件与指定文件，机制与logai完全对齐。
+6. 后端端口号改为海豹配置项，默认8000，可即时调整。
 
-**v4.5.4**
-1. 所有文件输出前自动截断超长文件名（>30字符保留扩展名）。
-2. 更新版本号至 4.5.4。
+**v4.1.0**  
+1. 修复数个重要bug。
+2. logutil增加对菠萝导出的log的支持。
+3. 增加复合命令功能。
+4. 扩大ncbridge编号系统的实用价值。将其反序。
+5. 由于bug严重，暂时不实现del_paren参数的功能。
+6. 创建win/linux系统下的启动脚本，并将api key改为在启动脚本内填写，以增大分发过程中的安全性与灵活性。
 
-**v4.6.1**
-1. 修复 `.logutil end` 被误判为复合命令的问题：`isCompound` 不再仅因 `end` 存在而触发。
-2. 移除纯冒号格式（`Name: text`）及含时间戳冒号格式（`time Name: text`）的发言识别，防止一般文本中冒号被误判为发言头。
-3. 移除仅含标点文本被识别为发言者名称的漏洞（`looks_like_speaker_name` 要求至少一个字母/数字/中文）。
-4. 更新版本号至 4.6.1。
+**logai v4.0.0**  
+1. 合并fwlog与logai。为fwlog提供新名字为logutil。
+2. 更改了ncbridge文件监听的逻辑。旧逻辑保留备用。
+3. 追加del_paren参数，用于去括号。
 
-**v4.6.0**
-1. 新增倒数别名 `F-1`/`L-1`/`H-1` 等（`-1`=最新，`-2`=倒数第2），使用 `~` 内部标记为反向索引。支持跨群访问（`F-1-群号`）。全部功能（`.logai`、`.aiutil`、`.logutil`、`.bridge`、`.translate`、模组命令、复合命令、WS 独立消息）均支持。
-2. 对 fwlog/logutil 新增 `-t` 修饰符：携带时生成的日志按原消息的发送时间戳排序（适用于 `.logutil end`、`.logutil get`、复合命令末尾）。
-3. 桥接缓存保存原始下载链接（`download_url` 字段）。
-4. 更新版本号至 4.6.0。
+**fwlog_forked v1.0**  
+1. 追加对外部接口“napcat bridge”的兼容性。
+2. 增加把文件，染色器链接，单句对话接入至fwlog的能力。
+3. 减少一些bug，增加另一些bug。
 
+**logai v3.1.0**  
+1. 将logai与原作者的模组分析插件前端功能合并。
+2. 对桥接系统，增加文件编号。该编号可以被用于替代文件名。
+3. 染色器链接现在支持dicezone。
+4. bug修复。
+
+**logai v3.0.0**  
+1. 将logai与napcat bridge合并。现在，只需要开启logai的后端便可以获取群文件列表了。
+2. 现在允许logai同时读入多个链接/文件，将其依照顺序拼接后交给ai分析。需要提供链接或完整的文件名。
+
+**logai v2.5.1**  
+- 追加对外部接口“napcat bridge”的兼容性。现在可以在napcatbridge运行中，通过该桥接系统监听并获取群文件列表，不再需要修改海豹源码。
+
+**napcat bridge v0.2**  
+- 增加缓存功能，使之可以同时存储多个文件，并可通过文件编号获取它们。
+- 增加自动轮巡功能，使之可以主动地循环获取最新群文件。
+- 将其内嵌至了logai中。下面将把其更新日志合并至logai内部。
+
+**napcat bridge v0.1**  
+- 建立了一个可以被外部接口访问的小型文件管理器，功能是读取napcat接收到的群文件并将其转为文本形式存储。
