@@ -19,6 +19,9 @@ if (!ext) {
   seal.ext.register(ext);
 }
 
+// ── 扩展配置项 ──
+seal.ext.registerStringConfig(ext, "PvP战斗后端地址", "http://127.0.0.1:8889", "Python 战斗引擎后端地址（battle_http_server.py），用于 .setab 2 模式。");
+
 // 模式通过 .setab / .setrestim 指令切换，使用 $g 变量存储
 
 // ============================================================
@@ -735,13 +738,14 @@ function resolveDamage(diceCtx, loserUserId, winnerUserId, groupId,
 }
 
 // ============================================================
-//  .setab <0|1>  — 切换自动化程度
+//  .setab <0|1|2>  — 切换自动化程度
 // ============================================================
 const cmdSetab = seal.ext.newCmdItemInfo();
 cmdSetab.name = 'setab';
 cmdSetab.help =
   '.setab 0 // 最小自动化模式（仅单次攻击-反应-结算 + 变身/解除）\n' +
-  '.setab 1 // 完全自动化模式（默认，含地图、回合制等）';
+  '.setab 1 // 完全自动化模式（默认，含地图、回合制等）\n' +
+  '.setab 2 // Python后端完全自动化模式（需启动 battle_http_server.py）';
 cmdSetab.solve = (ctx, msg, cmdArgs) => {
   const val = cmdArgs.getArgN(1);
   switch (val) {
@@ -757,6 +761,13 @@ cmdSetab.solve = (ctx, msg, cmdArgs) => {
         '已切换至【半自动战斗·完全自动化模式】(.setab 1)\n' +
         '（完全自动化模式尚在开发中）');
       break;
+    case '2':
+      seal.vars.intSet(ctx, '$gAutoBattleMode', 2);
+      seal.replyToSender(ctx, msg,
+        '已切换至【半自动战斗·Python后端模式】(.setab 2)\n' +
+        '需确保 battle_http_server.py 已启动（端口8889）。\n' +
+        '使用 .btastartfull2 开始PvP战斗，或 .btastartfullai <编号> 开始PvE战斗。');
+      break;
     case '':
     case 'help': {
       const ret = seal.ext.newCmdExecuteResult(true);
@@ -764,7 +775,7 @@ cmdSetab.solve = (ctx, msg, cmdArgs) => {
       return ret;
     }
     default:
-      seal.replyToSender(ctx, msg, '用法：.setab 0（最小自动化） 或 .setab 1（完全自动化）');
+      seal.replyToSender(ctx, msg, '用法：.setab 0（最小自动化）/ .setab 1（完全自动化）/ .setab 2（Python后端）');
   }
   return seal.ext.newCmdExecuteResult(true);
 };
@@ -2426,6 +2437,121 @@ function handleKpCommand(ctx, msg, cmdArgs) {
 }
 
 // ============================================================
+//  .setab 2 — Python HTTP 后端工具函数
+// ============================================================
+
+/** Get the PvP battle server URL from SealDice config (default: http://127.0.0.1:8889). */
+function getPvpServerUrl() {
+  const url = seal.ext.getStringConfig(ext, 'PvP战斗后端地址');
+  return (url || 'http://127.0.0.1:8889').trim().replace(/\/+$/, '');
+}
+
+/** Collect COC attributes + runtime state from a character card for Python backend.
+ *  Spells, damage dice, and special attrs come from Python chData — NOT sent here. */
+function serializeCharacterForEngine(ctx) {
+  const data = { uid: '', name: '', serial: '', attrs: {}, str_attrs: {} };
+  data.uid = ctx.player.userId;
+  // Serial number from .as binding
+  const mgidV = seal.vars.intGet(ctx, '魔法少女序号');
+  const mgid = mgidV[1] ? mgidV[0] : 0;
+  if (mgid > 0) {
+    data.serial = 'Y' + mgid;
+    data.attrs['魔法少女序号'] = mgid;
+  }
+  // COC base 8
+  const cocBase = ['力量','体质','体型','敏捷','外貌','教育','智力','意志','幸运'];
+  for (const k of cocBase) {
+    const v = seal.vars.intGet(ctx, k);
+    if (v[1]) data.attrs[k] = v[0];
+  }
+  // Runtime state
+  const runtime = ['体力','体力上限','魔力','魔力上限','理智','行动力','体格','等级',
+                   '回合行动数','闪避','伤害贯穿','可反击','状态'];
+  for (const k of runtime) {
+    const v = seal.vars.intGet(ctx, k);
+    if (v[1]) data.attrs[k] = v[0];
+  }
+  // Combat skills (player's actual values)
+  for (const sk of ALL_COMBAT_SKILLS) {
+    const v = seal.vars.intGet(ctx, sk);
+    if (v[1]) data.attrs[sk] = v[0];
+  }
+  // Name
+  const nameResult = seal.format(ctx, '{$t玩家}');
+  data.name = nameResult || '未知';
+  return data;
+}
+
+/** Serialize all battle state for sending to Python backend. */
+function serializeBattleState(gid) {
+  const mapRaw = ext.storageGet(`combat_map_${gid}`);
+  let mapData = null;
+  if (mapRaw) { try { mapData = JSON.parse(mapRaw); } catch(e) {} }
+
+  const initList = getInitiative(gid);
+  const actions = getActions(gid);
+
+  // Collect character data from all initiative participants
+  // Note: in SealDice we can only get ctx for the current player.
+  // For other players, we rely on data already in initiative + storage.
+  const characters = {};
+
+  return {
+    group_id: String(gid),
+    map: mapData,
+    initiative: initList,
+    actions: actions,
+    characters: characters,
+  };
+}
+
+/** HTTP POST to PvP backend. Returns parsed JSON or {error:true, message}. */
+async function pvpFetch(endpoint, data) {
+  try {
+    const baseUrl = getPvpServerUrl();
+    const resp = await fetch(`${baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!resp.ok) {
+      try {
+        const err = await resp.json();
+        return { error: true, message: err.message || `HTTP ${resp.status}` };
+      } catch(e) {
+        return { error: true, message: `服务器错误 HTTP ${resp.status}` };
+      }
+    }
+    return await resp.json();
+  } catch(e) {
+    return { error: true, message: '战斗服务器无响应，请确认 battle_http_server.py 已启动（端口8889）。' };
+  }
+}
+
+/** Apply HP/MP changes from Python response to local JS storage. */
+function applyServerChanges(gid, result) {
+  if (!result) return;
+  // HP changes
+  if (result.hp_changes) {
+    const hpStore = getCombatHP(gid);
+    for (const [uid, hp] of Object.entries(result.hp_changes)) {
+      hpStore[uid] = hp;
+    }
+    setCombatHP(gid, hpStore);
+  }
+  // Effects
+  if (result.effects !== undefined) {
+    ext.storageSet(`combat_effects_${gid}`, result.effects.length > 0 ? JSON.stringify(result.effects) : '');
+  }
+}
+
+/** Get the current auto-battle mode. */
+function getAutoMode(ctx) {
+  const v = seal.vars.intGet(ctx, '$gAutoBattleMode');
+  return v[1] ? v[0] : 1;  // default to 1
+}
+
+// ============================================================
 //  .setab 1 战斗引擎 — 状态管理
 // ============================================================
 
@@ -2765,12 +2891,202 @@ cmdBtaStartFull.solve = (ctx, msg, cmdArgs) => {
 };
 
 // ============================================================
-//  .s0/.s1...  — 技能使用指令 (.setab 1)
+//  .btastartfull2  — .setab 2 PvP 模式开始战斗
+//  使用 Python HTTP 后端
+// ============================================================
+const cmdBtaStartFull2 = seal.ext.newCmdItemInfo();
+cmdBtaStartFull2.name = 'btastartfull2';
+cmdBtaStartFull2.help = '.btastartfull2 // .setab 2 PvP模式开始战斗（Python后端）\n使用前确保 battle_http_server.py 已启动';
+cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
+  const mctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+  const gid = mctx.group ? mctx.group.groupId : 'private';
+
+  // Collect player character data
+  const playerData = serializeCharacterForEngine(ctx);
+
+  // Build request: send map, initiative, and character data
+  const mapRaw = ext.storageGet(`combat_map_${gid}`);
+  let mapData = null;
+  if (mapRaw) { try { mapData = JSON.parse(mapRaw); } catch(e) {} }
+  if (!mapData) {
+    seal.replyToSender(ctx, msg, '请先使用 .bta map 创建地图！');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  const initList = getInitiative(gid);
+  if (initList.length < 2) {
+    seal.replyToSender(ctx, msg, '至少需要2人加入战斗（使用 .bta int）！');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // Collect character data for all participants
+  const characters = {};
+  // We can only get ctx for the current player. For other players,
+  // we send the basic info we have from initiative.
+  for (const e of initList) {
+    if (e.userId === ctx.player.userId) {
+      characters[e.userId] = playerData;
+    } else {
+      // For other players: minimal data — Python fills from chData by name/serial
+      characters[e.userId] = {
+        uid: e.userId,
+        name: e.name || e.userId,
+        serial: '',
+        attrs: { '敏捷': e.dex || 50 },
+        str_attrs: {},
+      };
+    }
+  }
+
+  const requestData = {
+    group_id: String(gid),
+    mode: 'pvp',
+    map: mapData,
+    initiative: initList,
+    characters: characters,
+  };
+
+  seal.replyToSender(ctx, msg, '正在连接 Python 后端...');
+  pvpFetch('/api/pvp/create', requestData).then(result => {
+    if (result.error) {
+      seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+      return;
+    }
+    // Store battle_id
+    ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+    // Sync state
+    if (result.initiative) setInitiative(gid, result.initiative);
+    if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
+    // Display initial info
+    seal.replyToSender(ctx, msg, result.output + '\n\n' + renderMap(gid));
+    // Sync HP to local storage
+    if (result.characters) {
+      const hpStore = {};
+      for (const [uid, info] of Object.entries(result.characters)) {
+        hpStore[uid] = info.hp;
+        hpStore['mp_' + uid] = info.mp;
+        hpStore['san_' + uid] = info.san;
+      }
+      setCombatHP(gid, hpStore);
+    }
+  });
+
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .btastartfullai <编号(s)> [as <编号>] [with <编号(s)>]
+//  .setab 2 PvE 模式 — 玩家队伍 vs AI 对手
+// ============================================================
+const cmdBtaStartFullAI = seal.ext.newCmdItemInfo();
+cmdBtaStartFullAI.name = 'btastartfullai';
+cmdBtaStartFullAI.help =
+  '.btastartfullai <编号(s)> [as <编号>] [with <编号(s)>]\n' +
+  '  <编号(s)> : 己方队伍魔法少女编号（如 Y1 Y2）\n' +
+  '  as <编号> : 指定玩家操控的角色（默认：第一个）\n' +
+  '  with <编号(s)> : 追加AI队友\n' +
+  '例:\n' +
+  '  .btastartfullai Y1              // 玩家Y1 vs 随机AI\n' +
+  '  .btastartfullai Y1 with Y3      // 玩家Y1 + AI队友Y3 vs 随机AI队\n' +
+  '  .btastartfullai Y1 Y2 as Y1     // 玩家Y1 + AI Y2 vs 随机AI队';
+cmdBtaStartFullAI.solve = (ctx, msg, cmdArgs) => {
+  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const rawArgs = (cmdArgs.cleanArgs || '').split(/\s+/).filter(a => a.length > 0);
+
+  // ── Parse syntax: <编号(s)> [as <编号>] [with <编号(s)>] ──
+  const asIdx = rawArgs.findIndex(a => a.toLowerCase() === 'as');
+  const withIdx = rawArgs.findIndex(a => a.toLowerCase() === 'with');
+
+  // Serial numbers before 'as' or 'with' (or all if neither)
+  let mainEnd = rawArgs.length;
+  if (asIdx >= 0) mainEnd = Math.min(mainEnd, asIdx);
+  if (withIdx >= 0) mainEnd = Math.min(mainEnd, withIdx);
+  const playerSerials = rawArgs.slice(0, mainEnd).filter(a => /^[A-Za-z]\d+$/i.test(a));
+
+  // 'as' designates the human-controlled character
+  let humanSerial = '';
+  if (asIdx >= 0 && asIdx + 1 < rawArgs.length) {
+    const candidate = rawArgs[asIdx + 1];
+    if (/^[A-Za-z]\d+$/i.test(candidate)) {
+      humanSerial = candidate.toUpperCase();
+    }
+  }
+  // Default: first serial in player list
+  if (!humanSerial && playerSerials.length > 0) {
+    humanSerial = playerSerials[0];
+  }
+
+  // 'with' adds AI allies
+  let allySerials = [];
+  if (withIdx >= 0) {
+    const rest = rawArgs.slice(withIdx + 1);
+    // Take serials until we hit another keyword
+    for (const a of rest) {
+      if (a.toLowerCase() === 'as') break;
+      if (/^[A-Za-z]\d+$/i.test(a)) allySerials.push(a.toUpperCase());
+    }
+  }
+
+  // If no serials at all
+  if (playerSerials.length === 0) {
+    seal.replyToSender(ctx, msg,
+      '请指定魔法少女编号。\n' +
+      '用法：.btastartfullai <编号(s)> [as <编号>] [with <编号(s)>]\n' +
+      '例：.btastartfullai Y1  /  .btastartfullai Y1 with Y3  /  .btastartfullai Y1 Y2 as Y1');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // Collect player character data (only for the human-controlled character)
+  const playerData = serializeCharacterForEngine(ctx);
+  playerData.serial = humanSerial;
+
+  // Default 10x10 map
+  const mapData = { width: 10, height: 10, entryRow: 5, obstacles: {}, occupants: {} };
+
+  const requestData = {
+    group_id: String(gid),
+    mode: 'pve',
+    map: mapData,
+    player_serials: playerSerials.map(s => s.toUpperCase()),
+    human_serial: humanSerial.toUpperCase(),
+    ally_serials: allySerials,
+    characters: { [ctx.player.userId]: playerData },
+  };
+
+  seal.replyToSender(ctx, msg,
+    `己方队伍: ${playerSerials.join(' ')}` +
+    (allySerials.length > 0 ? ` + AI队友: ${allySerials.join(' ')}` : '') +
+    ` | 玩家操控: ${humanSerial}\n正在连接 Python 后端...`);
+
+  pvpFetch('/api/pvp/create', requestData).then(result => {
+    if (result.error) {
+      seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+      return;
+    }
+    ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+    ext.storageSet(`pvp_human_${gid}`, result.human_uid || ctx.player.userId);
+    if (result.initiative) setInitiative(gid, result.initiative);
+    if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
+    seal.replyToSender(ctx, msg, result.output);
+    if (result.characters) {
+      const hpStore = {};
+      for (const [uid, info] of Object.entries(result.characters)) {
+        hpStore[uid] = info.hp;
+        hpStore['mp_' + uid] = info.mp;
+      }
+      setCombatHP(gid, hpStore);
+    }
+  });
+
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .s0/.s1...  — 技能使用指令 (.setab 1 & .setab 2)
 //  语法: .s2 Y12 / .s2 @张三 / .s3 A1
-//  .s0 = 基础近战攻击（同空 .bta）
 // ============================================================
 // ============================================================
-//  .setab 1 法术系统 — 加载、执行、效果
+//  法术系统 — 加载、执行、效果
 // ============================================================
 
 // Chinese number mapping for spell keys (技能一 through 技能二十)
@@ -3572,6 +3888,42 @@ function makeSkillCmd(skillNum) {
       return endPersistentSpell(ctx, msg, gid, skillNum);
     }
 
+    // --- .setab 2 HTTP path ---
+    const _autoMode = getAutoMode(ctx);
+    const _battleId = ext.storageGet(`pvp_battle_${gid}`);
+    if (_autoMode >= 2 && _battleId) {
+      const _mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      let _targetId = '';
+      if (_mctx && _mctx.player && _mctx.player.userId !== ctx.player.userId) {
+        _targetId = _mctx.player.userId;
+      }
+      pvpFetch(`/api/pvp/${_battleId}/action`, {
+        player_id: ctx.player.userId,
+        action: `.s${skillNum}`,
+        target: _targetId,
+        args: cmdArgs.cleanArgs,
+      }).then(_result => {
+        if (_result.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
+          return;
+        }
+        applyServerChanges(gid, _result);
+        let _out = _result.output || '';
+        if (_result.needs_reaction && _result.pending_attack) {
+          ext.storageSet(`pvp_pending_${gid}`, JSON.stringify(_result.pending_attack));
+        }
+        if (_result.auto_turns && _result.auto_turns.length > 0) {
+          _out += '\n\n[AI回合]\n' + _result.auto_turns.join('\n');
+        }
+        if (_result.state && _result.state.phase !== 'active') {
+          ext.storageSet(`pvp_battle_${gid}`, '');
+          _out += '\n\n=== 战斗结束 ===';
+        }
+        seal.replyToSender(ctx, msg, _out);
+      });
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
     // Verify it's this player's turn
     const initList = getInitiative(gid);
     const actions = getActions(gid);
@@ -4126,9 +4478,11 @@ ext.cmdMap['stc']      = cmdStc;
 ext.cmdMap['btaint']   = cmdBtaInt;
 ext.cmdMap['a']        = makeAdditionalCmd();
 ext.cmdMap['btastartfull'] = cmdBtaStartFull;
+ext.cmdMap['btastartfull2'] = cmdBtaStartFull2;
+ext.cmdMap['btastartfullai'] = cmdBtaStartFullAI;
 
 // ============================================================
-//  .i end  — 手动结束当前回合
+//  .i end  — 手动结束当前回合 (.setab 1 & .setab 2)
 // ============================================================
 const cmdI = seal.ext.newCmdItemInfo();
 cmdI.name = 'i';
@@ -4141,6 +4495,34 @@ cmdI.solve = (ctx, msg, cmdArgs) => {
   }
 
   const gid = ctx.group ? ctx.group.groupId : 'private';
+
+  // ── .setab 2 HTTP path ──
+  const autoMode = getAutoMode(ctx);
+  const battleId = ext.storageGet(`pvp_battle_${gid}`);
+  if (autoMode >= 2 && battleId) {
+    pvpFetch(`/api/pvp/${battleId}/action`, {
+      player_id: ctx.player.userId,
+      action: '.i end',
+      target: '',
+      args: '',
+    }).then(result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+        return;
+      }
+      applyServerChanges(gid, result);
+      const out = result.output || '回合已结束。';
+      // Check if battle ended
+      if (result.state && result.state.phase !== 'active') {
+        ext.storageSet(`pvp_battle_${gid}`, '');
+        seal.replyToSender(ctx, msg, out + `\n\n=== 战斗结束 ===\n胜者: ${result.state.winner || '?'}`);
+      } else {
+        seal.replyToSender(ctx, msg, out);
+      }
+    });
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
   const state = getCombatState(gid);
   if (!state || state.phase !== 'active') {
     seal.replyToSender(ctx, msg, '当前不在战斗中！请先使用 .bta start 开始战斗。');
@@ -4602,5 +4984,5 @@ ext.onCommandReceived = (ctx, msg, cmdArgs) => {
 };
 
 console.log('[autocombat] 半自动战斗扩展 v0.7.0 已加载');
-console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .g .i end');
+console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end');
 console.log('[autocombat] v0.7.0: 召唤物战斗系统、领域效果、DOT持续伤害、Buff/Debuff应用、护盾吸收、吸血、HP阈值触发');

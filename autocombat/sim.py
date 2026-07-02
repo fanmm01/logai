@@ -30,7 +30,7 @@ from characters_data import ALL_CHARACTERS, load_character_to_engine
 
 def parse_single_args(argv):
     """Parse single-match args. Returns (team_a, team_b, num, map_size, seed)."""
-    args = ' '.join(argv[2:] if argv[1] != 'vs' else argv[1:])
+    args = ' '.join(argv[1:])
     parts = re.split(r'\s+vs\s+', args, flags=re.IGNORECASE)
     if len(parts) != 2:
         print('Usage: python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED]')

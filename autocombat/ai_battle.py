@@ -49,7 +49,7 @@ SHOW_ROUND_HP_KNOCKOUT = True       # Show per-round per-player HP in knockout
 CUSTOM_PREVIEW_BATTLES = 20         # Silent preview battles before /game/ match
 CUSTOM_BATTLE_DELAY = 0.4           # Delay for actual /game/ custom battles
 
-RR_ROUNDS_1V1 = 8                    # RR rounds per pair per map (1v1)
+RR_ROUNDS_1V1 = 7                    # RR rounds per pair per map (1v1)
 RR_ROUNDS_2V2 = 4                    # RR rounds per pair per map (2v2)
 RR_ROUNDS_3V3 = 4                    # RR rounds per pair per map (3v3)
 RANDOM_BONUS_1V1 = 24               # Extra random 1v1 bonus matches
@@ -57,7 +57,7 @@ RANDOM_BONUS_2V2 = 16               # Extra random 2v2 bonus matches
 RANDOM_BONUS_3V3 = 16               # Extra random 3v3 bonus matches
 PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
 
-MAX_ROUNDS_PRELIM = 30              # Max rounds before timeout in prelim
+MAX_ROUNDS_PRELIM = 25              # Max rounds before timeout in prelim
 MAX_ROUNDS_KNOCKOUT = 35             # Max rounds before timeout in knockout
 
 # Knockout draw weights — ranks 5-8 vs seeds 1-4
@@ -69,13 +69,13 @@ KNOCKOUT_DRAW_WEIGHTS = [
     [8, 6, 5, 5],    # rank8
     [5, 6, 7, 8],    # rank9
     [6, 5, 8, 7],    # rank10
-    [7, 5, 6, 8],    # rank11
+    [7, 8, 6, 5],    # rank11
     [8, 7, 5, 6],    # rank12
 ]
 
 # Bracket config
 BO_N_PLAYIN = 5                     # 5-12 play-in round best-of-N
-BO_N_QF = 5                         # Quarterfinal best-of-N
+BO_N_QF = 7                         # Quarterfinal best-of-N
 BO_N_SF = 7                         # Semifinal best-of-N
 BO_N_BRONZE = 7                     # Bronze match best-of-N
 BO_N_FINAL = 7                      # Final best-of-N
@@ -479,7 +479,9 @@ class BattleEngine(FullBattleEngine):
         y_avg = y_sum / y_cnt if y_cnt > 0 else 0.0
         x_avg = x_sum / x_cnt if x_cnt > 0 else 0.0
         winner = 'Y' if y_avg >= x_avg else 'X'
-        battle_log('info', f'  [超时] Y队人均HP比={y_avg:.2f} X队人均HP比={x_avg:.2f} → {winner}胜')
+        y_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'Y' and not e.get('isSummon')) or '?'
+        x_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'X' and not e.get('isSummon')) or '?'
+        battle_log('info', f'  [超时] Y队[{y_names}] X队[{x_names}] Y队人均HP比={y_avg:.2f} X队人均HP比={x_avg:.2f} → {winner}胜')
         return {'winner': winner, 'rounds': self.max_rounds, 'timeout': True,
                 'y_ratio': round(y_avg, 4), 'x_ratio': round(x_avg, 4)}
 
@@ -623,16 +625,20 @@ class BattleEngine(FullBattleEngine):
                         else: break
                         for rline in (result_text.split('\n') if result_text else []):
                             if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        # Main actions consume one 主动 (skills exempt if 技能不消耗主动)
+                        # Action consumption: .s0/.sN consume 主动; .a eat/.a m/.a s consume 附加
                         is_xs = self.get_char(uid).get_attr('技能不消耗主动', 0) == 1 if self.get_char(uid) else False
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
-                        if cmd in ('.s0',) or is_skill or cmd.startswith('.a eat'):
+                        is_bonus = cmd.startswith('.a ')
+                        if cmd in ('.s0',) or is_skill:
                             if not (is_xs and is_skill):
                                 acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
                                 ma['主动'] -= 1; self._set_actions(acts_d)
-                            # Check remaining actions
+                        elif is_bonus:
                             acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
-                            if ma['主动'] <= 0: self._end_turn(uid)
+                            ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
+                        # Check remaining actions — end turn when 主动 exhausted
+                        acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                        if ma['主动'] <= 0: self._end_turn(uid)
                         s2 = self._get_state()
                         if not s2 or s2.get('phase')!='active': break
                         i2 = self._get_initiative()
@@ -669,9 +675,42 @@ class Tournament:
             self.ai_map[uid] = AIController(uid, c, 'Y')
         battle_log('info', f'Loaded {len(self.char_map)} characters')
 
+    def _resolve_clones(self, team_a_serials, team_b_serials, engine):
+        """Resolve serials to uids, cloning characters that appear on both sides
+        (or multiple times on the same side). Each clone gets independent HP/MP/spells.
+        Returns (a_uids, b_uids)."""
+        a_uids = []; b_uids = []
+        serial_use_index = {}  # serial → how many times used so far
+
+        def _resolve_one(serial, team_list):
+            base_uid = self.char_map[serial]
+            idx = serial_use_index.get(serial, 0)
+            serial_use_index[serial] = idx + 1
+            if idx == 0:
+                team_list.append(base_uid)
+                return
+            # Need a clone — load independent copy into engine
+            clone_uid = f"{base_uid}_clone{idx}"
+            c_data = next(c for c in ALL_CHARACTERS if c['serial'] == serial)
+            load_character_to_engine(engine, c_data, clone_uid)
+            if not c_data.get('pre_transformed'):
+                engine.process_command(clone_uid, '.hs')
+            # Clone AI controller with same reaction weights as original
+            orig_ai = self.ai_map.get(base_uid)
+            clone_ai = AIController(clone_uid, c_data, 'Y')
+            if orig_ai:
+                clone_ai.react_dodge_w = orig_ai.react_dodge_w
+                clone_ai.react_counter_w = orig_ai.react_counter_w
+            self.ai_map[clone_uid] = clone_ai
+            team_list.append(clone_uid)
+
+        for s in team_a_serials:
+            _resolve_one(s, a_uids)
+        for s in team_b_serials:
+            _resolve_one(s, b_uids)
+        return a_uids, b_uids
+
     def battle(self, team_a, team_b, map_size, phase_label='', best_of=1, fast_mode=False, delay=0.4, show_round_hp=False, max_rounds=None):
-        a_uids = [self.char_map[s] for s in team_a]
-        b_uids = [self.char_map[s] for s in team_b]
         # Look up display names
         name_map = {c['serial']: c['name'] for c in ALL_CHARACTERS}
         a_names = [name_map.get(s, s) for s in team_a]
@@ -688,6 +727,8 @@ class Tournament:
             load_character_to_engine(engine, c, uid)
             if not c.get('pre_transformed'):
                 engine.process_command(uid, '.hs')
+        # Resolve teams — clone characters that appear on both sides
+        a_uids, b_uids = self._resolve_clones(team_a, team_b, engine)
         for uid in a_uids: self.ai_map[uid].team = 'Y'
         for uid in b_uids: self.ai_map[uid].team = 'X'
         # Inject reaction weights into engine for _coc7_attack
@@ -1593,19 +1634,20 @@ AI模式: {q_status}
         def run_custom():
             set_terminal_quiet(True)
             try:
-                a_uids = [tournament.char_map[s] for s in team_a]
-                b_uids = [tournament.char_map[s] for s in team_b]
                 # Look up display names for logging
                 nm = {c['serial']: c['name'] for c in ALL_CHARACTERS}
                 a_disp = '+'.join(nm.get(s, s) for s in team_a)
                 b_disp = '+'.join(nm.get(s, s) for s in team_b)
 
                 def _setup_engine(engine):
-                    """Load characters, set teams, inject reaction weights."""
+                    """Load characters, set teams, inject reaction weights.
+                    Returns (a_uids, b_uids) resolved with clones for mirror matches."""
                     for c in ALL_CHARACTERS:
                         uid = tournament.char_map[c['serial']]
                         load_character_to_engine(engine, c, uid)
                         if not c.get('pre_transformed'): engine.process_command(uid, '.hs')
+                    # Resolve teams — clone characters that appear on both sides
+                    a_uids, b_uids = tournament._resolve_clones(team_a, team_b, engine)
                     for uid in a_uids: tournament.ai_map[uid].team = 'Y'
                     for uid in b_uids: tournament.ai_map[uid].team = 'X'
                     engine._ai_react_dodge_w = {}; engine._ai_react_counter_w = {}
@@ -1615,6 +1657,7 @@ AI模式: {q_status}
                             engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                             engine._ai_react_counter_w[uid] = ai.react_counter_w
                     engine.setup_battle(a_uids, b_uids, map_size)
+                    return a_uids, b_uids
 
                 # Phase 0: Silent preview — estimate win rates
                 if CUSTOM_PREVIEW_BATTLES > 0:

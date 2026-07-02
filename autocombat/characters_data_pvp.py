@@ -52,7 +52,6 @@ SUMMON_TEMPLATES = {
         'react_dodge': 10, 'react_counter': 90,
         'shield_block': 100,
         'merge_group': 'trinity',
-        'merge_result': '三合一',
     },
     '朱雀': {
         'HP': 90, 'MP': 0, 'SAN': 0,
@@ -61,7 +60,6 @@ SUMMON_TEMPLATES = {
         'flying': True,  # 非飞行不可近战
         'skills': ['爪击:75 1d4+1d6', '俯冲:70 2d6+4'],
         'merge_group': 'trinity',
-        'merge_result': '三合一',
     },
     '龙虎': {
         'HP': 140, 'MP': 50, 'SAN': 0,
@@ -73,28 +71,12 @@ SUMMON_TEMPLATES = {
              'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
         ],
         'merge_group': 'trinity',
-        'merge_result': '三合一',
     },
     # Meta-template: 随机召唤物 pool (斯瑞提卡 空间引入)
     '随机召唤物': {
         '_meta': True,
         'options': ['玄武', '朱雀', '龙虎'],
         'unique_per_caster': True,
-    },
-    # Merge result: 三合一 (斯瑞提卡 — 玄武+朱雀+龙虎 合体)
-    '三合一': {
-        'HP': 200, 'MP': 50, 'SAN': 0,
-        'STR': 90, 'CON': 90, 'SIZ': 90, 'DEX': 80, 'APP': 40, 'INT': 40, 'POW': 40, 'EDU': 0,
-        '闪避': 60, 'MOV': 10, '行动次数': 2, '可反击': 1, '可反应': 1,
-        'flying': True,
-        'shield_block': 50,
-        'skills': [
-            {'name': '盾击', 'val': 70, 'dice': '1d4+2d6'},
-            {'name': '爪击', 'val': 75, 'dice': '1d4+1d6'},
-            {'name': '水火弹', 'val': 70, 'dice': '1d4+2d6', 'hits': 2,
-             'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
-        ],
-        '_is_merge_result': True,
     },
 }
 
@@ -105,8 +87,8 @@ SUMMON_TEMPLATES = {
 # ============================================================
 
 ITEM_TEMPLATES = {
-    '蛋糕HP': {'回复hp': '2d8+4'},
-    '蛋糕MP': {'回复mp': '2d8+4'},
+    '蛋糕HP': {'回复hp': '2d6+4'},
+    '蛋糕MP': {'回复mp': '2d6+4'},
     '蛋糕SAN': {'回复san': '1d3'},
 }
 
@@ -278,12 +260,12 @@ XUEREN = {
                 {'type':8, '客体':45, '作用半径':5, '持续回合':3,
                  '每回合伤害骰':'1d4', '属性削减':'行动力-5',  # 每回合伤害+MOV减半(近似MOV-3)
                  '领域中心跟随':0},
-                {'type':1, '客体':45, '伤害骰':'1d4+1d3', '成功率':70, '可反应性':0},  # 初始伤害
+                {'type':1, '客体':45, '伤害骰':'2d4+1d3', '成功率':70, '可反应性':0},  # 初始伤害
             ]
         },
         {
             'name':'发送雪球', 'timing':'2', 'category':1, '消耗mp':2,
-            'effects':[{'type':1, '客体':4, '伤害骰':'1d4+1d3', '成功率':70, '可反应性':1}]
+            'effects':[{'type':1, '客体':4, '伤害骰':'2d4+1d3', '成功率':70, '可反应性':1}]
         },
     ]
 }
@@ -332,11 +314,11 @@ BIHAMI = {
     'str_attrs':{'伤害值':'1d4'},
     'spells':[
         {
-            'name':'美味的蛋糕', 'timing':'3', 'category':6, '消耗mp':3,
+            'name':'美味的蛋糕', 'timing':'2', 'category':6, '消耗mp':3,
             'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':1, '制造物模板':'蛋糕HP'}]
         },
         {
-            'name':'甜甜的蛋糕', 'timing':'3', 'category':6, '消耗mp':3,
+            'name':'甜甜的蛋糕', 'timing':'2', 'category':6, '消耗mp':3,
             'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':1, '制造物模板':'蛋糕MP'}]
         },
     ]
@@ -352,7 +334,7 @@ MULUO = {
     'pre_transformed': True,
     'attrs':{
         '等级':6, '敏捷':70, '体力':120, '体力上限':120, '魔力':65, '魔力上限':65,
-        '闪避':50, '理智':5, '斗殴':80, '剑':75, '行动力':8, '体格':3,
+        '闪避':50, '理智':5, '斗殴':85, '剑':75, '行动力':8, '体格':3,
         '力量':70, '体质':75, '体型':70, '外貌':50, '教育':40, '智力':50, '意志':50, '幸运':50,
         '回合行动数':1, '魔法少女序号':9, '伤害贯穿':1, '可反击':1, '状态':60,
     },
@@ -396,7 +378,7 @@ MULUO = {
         # Skill 1: 召唤生灵 — 点燃版本（2d4伤害, 不可治疗, 3伤/回合）
         {'name':'召唤生灵', 'phase':2, 'timing':'23', 'category':5,
          'effects':[{'type':5, '客体':1, '召唤个数':'1d4', '召唤物模板':'生灵', '持续回合':99,
-                     'ignite': True, 'ignite_dmg_dice': '1d4+1', 'ignite_tick_dmg': 3}],
+                     'ignite': True, 'ignite_dmg_dice': '2d4', 'ignite_tick_dmg': 3}],
          '_mp_formula': 'summon_count_ceil_half'},
         # Skill 2: 死之矛 — 纯伤害2d8
         {'name':'死之矛', 'phase':2, 'timing':'2', 'category':1,

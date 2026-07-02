@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Q-Learning AI自训练系统 (ai_trainer.py)
-=========================================
+Q-Learning AI自训练系统 (ai_trainer_pvp.py) — PvP版本
+==================================================
 50代 × 100场对战，用HP差分奖励训练12角色的行动策略。
-输出 ai_weights.json 供 ai_battle.py 使用。
+使用 characters_data_pvp 的数据集进行训练。
+输出 ai_weights_pvp.json 供 battle_http_server.py 使用。
 """
 
 import sys, os, random, math, json, itertools, time
@@ -14,7 +15,7 @@ import multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, is_in_melee_range,
     has_timing, parse_coord, format_coord, avg_damage)
-from characters_data import ALL_CHARACTERS, load_character_to_engine
+from characters_data_pvp import ALL_CHARACTERS, load_character_to_engine
 
 # ============================================================
 #  Hyperparameters
@@ -89,7 +90,10 @@ def encode_state(engine, uid):
     # Phase dimension (for dual-phase characters like 木落)
     phase = getattr(char, 'phase', 1)
 
-    return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase)
+    # Ready cake available (for 比哈米 cake-giving / eating decisions)
+    has_cake = int(hasattr(engine, '_has_ready_cake') and engine._has_ready_cake())
+
+    return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase, has_cake)
 
 
 # ============================================================
@@ -210,7 +214,7 @@ def _mp_run_battle(args):
         for s in team_a + team_b:
             uid = char_map_dict[s]
             ck = s
-            st = encode_state(engine, uid) if hasattr(engine, '_get_state') else (0,)*11
+            st = encode_state(engine, uid) if hasattr(engine, '_get_state') else (0,)*12
             my_team = 'Y' if s in team_a else 'X'
             term_r = 3.0 if winner == my_team else -3.0
             for ak, _ in get_available_actions(engine, uid):
@@ -304,10 +308,23 @@ def get_available_actions(engine, uid):
                     continue
         filtered.append((ak, an))
 
-    # EAT_CAKE: available when ready cakes exist
+    # CAKE actions: available when ready cakes exist (type 6 制造物)
     if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
-        for ts, tl in target_strats:
-            filtered.append((f'EAT_CAKE__{ts}', f'食用蛋糕→{tl}'))
+        # EAT_CAKE: 自己食用蛋糕 → self-heal
+        filtered.append(('EAT_CAKE__SELF', '食用蛋糕→自己'))
+        # GIVE_CAKE: 送出蛋糕给队友 → support/heal teammate
+        teammate_strats = [('T0', '最低HP队友'), ('T1', '最近队友'), ('T2', '最低MP队友')]
+        # Only add GIVE_CAKE if there are living teammates
+        il = engine._get_initiative()
+        my_entry_gc = next((e for e in il if e['userId'] == uid), None)
+        if my_entry_gc:
+            my_team_gc = my_entry_gc.get('team', 'Y')
+            living_teammates = [e for e in il if e['team'] == my_team_gc
+                                and e['userId'] != uid
+                                and (engine._get_combat_hp(e['userId']) or 0) > 0]
+            if living_teammates:
+                for ts, tl in teammate_strats:
+                    filtered.append((f'GIVE_CAKE__{ts}', f'送出蛋糕→{tl}'))
 
     return filtered
 
@@ -330,6 +347,25 @@ def select_target_by_strategy(engine, uid, strategy, enemies):
     elif strategy == 'T2':  # 最高威胁
         return max(enemies, key=lambda e: e.get('dex', 50))['userId']
     return enemies[0]['userId'] if enemies else None
+
+
+def select_teammate_by_strategy(engine, uid, strategy, teammates):
+    """Select target from teammate list based on strategy. Returns teammate userId or None.
+    Used for support actions like GIVE_CAKE (送出蛋糕给队友).
+
+    Strategies:
+        T0: 最低HP (lowest HP teammate) — best for healing cakes
+        T1: 最近 (nearest teammate)
+        T2: 最低MP (lowest MP teammate) — best for MP/SAN cakes
+    """
+    if not teammates: return None
+    if strategy == 'T0':  # 最低HP队友
+        return min(teammates, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
+    elif strategy == 'T1':  # 最近队友
+        return teammates[0]['userId']
+    elif strategy == 'T2':  # 最低MP队友
+        return min(teammates, key=lambda e: engine.get_char(e['userId']).get_attr('魔力', 9999) if engine.get_char(e['userId']) else 9999)['userId']
+    return teammates[0]['userId'] if teammates else None
 
 
 # ---- Summon Q-table for skill selection ----
@@ -369,6 +405,23 @@ def execute_action(engine, uid, action_key):
         if spell:
             target = tid or engine._smart_target(uid, spell)
             return engine._execute_spell(uid, target, spell)
+    elif base == 'EAT_CAKE':
+        # 自己食用蛋糕 → self-heal (uses _eat_cake with no target_id)
+        if hasattr(engine, '_eat_cake') and hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+            engine._eat_cake(uid)
+        return ''
+    elif base == 'GIVE_CAKE':
+        # 送出蛋糕给队友 → heal teammate
+        if hasattr(engine, '_eat_cake') and hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+            # Get living teammates for target selection
+            teammates = [e for e in init_list if e['team'] == my_team
+                         and e['userId'] != uid
+                         and (engine._get_combat_hp(e['userId']) or 0) > 0]
+            if teammates:
+                tm_id = select_teammate_by_strategy(engine, uid, target_strat, teammates)
+                if tm_id:
+                    engine._eat_cake(uid, tm_id)
+        return ''
     return ''
 
 def _fast_move(engine, uid):
@@ -535,9 +588,10 @@ class QTrainer:
         if winner:
             for s in team_a+team_b:
                 ck = self._char_key(uid := self.char_map[s])
-                st = (0,)*11; mt2 = 'Y' if s in team_a else 'X'
+                st = (0,)*12; mt2 = 'Y' if s in team_a else 'X'
                 tr = 3.0 if winner==mt2 else -3.0
-                for ak in ['BASIC_ATTACK__T0','BASIC_ATTACK__T1','END_TURN','MOVE_TOWARD']:
+                for ak in ['BASIC_ATTACK__T0','BASIC_ATTACK__T1','END_TURN','MOVE_TOWARD',
+                           'EAT_CAKE__SELF','GIVE_CAKE__T0','GIVE_CAKE__T1','GIVE_CAKE__T2']:
                     updates.append((ck, st, ak, tr, None))
         return updates
 
@@ -599,9 +653,9 @@ class QTrainer:
             stats_log.append((gen, gen_battles, total_actions, avg_reward))
         q_serializable = {}
         for ck, qdict in self.Q.items():
-            q_serializable[ck] = {f'{s[0]}|{s[1]}|{s[2]}|{s[3]}|{s[4]}|{s[5]}|{s[6]}|{s[7]}|{s[8]}|{s[9]}|{s[10]}__{ak}': v
+            q_serializable[ck] = {f'{s[0]}|{s[1]}|{s[2]}|{s[3]}|{s[4]}|{s[5]}|{s[6]}|{s[7]}|{s[8]}|{s[9]}|{s[10]}|{s[11]}__{ak}': v
                                       for (s, ak), v in qdict.items()}
-        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights.json')
+        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
         with open(weight_path, 'w', encoding='utf-8') as f:
             json.dump({'Q': q_serializable, 'stats': stats_log, 'params': {
                 'generations': GENERATIONS, 'battles_per_gen': BATTLES_PER_GEN,
@@ -613,7 +667,7 @@ class QTrainer:
 def load_q_table(path=None):
     """Load trained Q-table for use in battle."""
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights.json')
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
     if not os.path.exists(path): return None
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -623,9 +677,12 @@ def load_q_table(path=None):
             parts = key.split('__')
             state_str, action = parts[0], parts[1]
             state = tuple(int(v) for v in state_str.split('|'))
-            # Backward compat: old 10-dim states get phase=1 appended
+            # Backward compat: old 10-dim states get phase=1 + has_cake=0 appended
             if len(state) == 10:
-                state = state + (1,)
+                state = state + (1, 0)
+            # Backward compat: old 11-dim states get has_cake=0 appended
+            elif len(state) == 11:
+                state = state + (0,)
             Q[ck][(state, action)] = val
     return Q
 

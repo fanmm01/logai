@@ -378,9 +378,9 @@ class CombatEngine:
         return self._execute_spell(uid, target_id, spell)
 
     def _additional_action(self, uid, args):
-        """Execute .a m / .a sN command."""
+        """Execute .a m / .a sN / .a eat / .a give command (附加动作)."""
         parts = args.split() if args else []
-        if not parts: return '用法: .a m <坐标> 或 .a s<序号>'
+        if not parts: return '用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>'
         if parts[0].lower() == 'm' and len(parts) >= 2:
             return f'移动至 {parts[1].upper()}'
         elif parts[0].lower().startswith('s'):
@@ -390,7 +390,31 @@ class CombatEngine:
             if not spell: return f'未找到技能{sn}'
             if not has_timing(spell.get('时机','2'), '3'): return f'不能在附加动作阶段使用'
             return self._execute_spell(uid, uid, spell)
-        return '用法: .a m <坐标> 或 .a s<序号>'
+        elif parts[0].lower() == 'eat':
+            # .a eat [目标名] — 使用物品（给自己）或给出物品（给目标）
+            target_id = None
+            if len(parts) >= 2:
+                target_name = ' '.join(parts[1:])
+                il = self._get_initiative()
+                target_entry = next((e for e in il if e.get('name', '') == target_name), None)
+                if target_entry:
+                    target_id = target_entry['userId']
+                else:
+                    return f'未找到目标: {target_name}'
+            result_text, success = self._eat_cake(uid, target_id)
+            return result_text
+        elif parts[0].lower() == 'give':
+            # .a give <目标名> — 给出物品给队友
+            if len(parts) < 2:
+                return '用法: .a give <目标名>'
+            target_name = ' '.join(parts[1:])
+            il = self._get_initiative()
+            target_entry = next((e for e in il if e.get('name', '') == target_name), None)
+            if not target_entry:
+                return f'未找到目标: {target_name}'
+            result_text, success = self._eat_cake(uid, target_entry['userId'])
+            return result_text
+        return '用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>'
 
     def _end_turn(self, uid):
         """End current character's turn and advance initiative."""
@@ -1333,9 +1357,9 @@ class FullBattleEngine(CombatEngine):
         return self._execute_spell(uid, target, spell)
 
     def _additional_action(self, uid, args):
-        """Handle .a m / .a sN commands."""
+        """Handle .a m / .a sN / .a eat / .a give commands (附加动作)."""
         parts = args.split()
-        if not parts: return "用法: .a m <坐标> 或 .a s<序号>"
+        if not parts: return "用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>"
         char = self.get_char(uid)
         if parts[0].lower() == 'm' and len(parts) >= 2:
             coord = parts[1].upper()
@@ -1347,7 +1371,31 @@ class FullBattleEngine(CombatEngine):
             if not has_timing(spell.get('时机','2'), '3'):
                 return f"【{spell['name']}】不能在附加动作阶段使用"
             return self._execute_spell(uid, uid, spell)
-        return "用法: .a m <坐标> 或 .a s<序号>"
+        elif parts[0].lower() == 'eat':
+            # .a eat [目标名] — 使用物品（给自己）或给出物品（给目标）
+            target_id = None
+            if len(parts) >= 2:
+                target_name = ' '.join(parts[1:])
+                il = self._get_initiative()
+                target_entry = next((e for e in il if e.get('name', '') == target_name), None)
+                if target_entry:
+                    target_id = target_entry['userId']
+                else:
+                    return f"未找到目标: {target_name}"
+            result_text, success = self._eat_cake(uid, target_id)
+            return result_text
+        elif parts[0].lower() == 'give':
+            # .a give <目标名> — 给出物品给队友
+            if len(parts) < 2:
+                return "用法: .a give <目标名>"
+            target_name = ' '.join(parts[1:])
+            il = self._get_initiative()
+            target_entry = next((e for e in il if e.get('name', '') == target_name), None)
+            if not target_entry:
+                return f"未找到目标: {target_name}"
+            result_text, success = self._eat_cake(uid, target_entry['userId'])
+            return result_text
+        return "用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>"
 
     def _basic_attack(self, uid):
         char = self.get_char(uid); il = self._get_initiative()
@@ -1447,6 +1495,17 @@ class FullBattleEngine(CombatEngine):
                         if 0 <= nc < 26 and 0 <= nr < 99:
                             self._get_map()["occupants"][format_coord(nc, nr)] = sid
                 self._set_map(self._get_map())
+        # Track summoned template for merge eligibility
+        mg = tmpl.get('merge_group', '')
+        if mg:
+            if not hasattr(self, '_summoned_templates'):
+                self._summoned_templates = {}
+            st = self._summoned_templates
+            if caster_id not in st:
+                st[caster_id] = {}
+            if mg not in st[caster_id]:
+                st[caster_id][mg] = set()
+            st[caster_id][mg].add(template_name)
         return sid
 
     def _summon_attack(self, summon_id):
@@ -1619,16 +1678,61 @@ class FullBattleEngine(CombatEngine):
         for mg, members in groups.items():
             alive = [m for m in members if (self._get_combat_hp(m["userId"]) or 0) > 0]
             if len(alive) != 1: continue
+            # Require all templates in this merge_group to have been summoned
+            all_templates = {name for name, t in SUMMON_TEMPLATES.items()
+                             if not t.get('_meta') and t.get('merge_group') == mg}
+            owner_id = members[0].get('ownerId', '')
+            summoned = getattr(self, '_summoned_templates', {}).get(owner_id, {}).get(mg, set())
+            if not all_templates or not all_templates.issubset(summoned):
+                continue
+            # Ensure merge happens at most once per owner per merge_group
+            merge_key = mg + '_merged'
+            st_owner = getattr(self, '_summoned_templates', {}).get(owner_id, {})
+            if st_owner.get(merge_key):
+                continue
+            st_owner[merge_key] = True
             merged = alive[0]
-            # Look up merge result from first member's template
-            tmpl = SUMMON_TEMPLATES.get(members[0].get("name", ""), {})
-            merged["name"] = "三合一"  # default merge name
+            # Look up merge_result template from characters_data
+            member_tmpl = SUMMON_TEMPLATES.get(members[0].get("name", ""), {})
+            result_name = member_tmpl.get("merge_result", "")
+            result_tmpl = SUMMON_TEMPLATES.get(result_name, {})
+            if not result_tmpl:
+                continue
+            # Apply full stats from merge_result template
+            merged["name"] = result_name
             merged["_merged"] = True
-            self._set_combat_hp(merged["userId"], 120)
-            all_skills = []
-            for s in members:
-                all_skills.extend(s.get("skills", []))
-            merged["skills"] = all_skills
+            self._set_combat_hp(merged["userId"], result_tmpl.get("HP", 200))
+            merged["dex"] = result_tmpl.get("DEX", 50)
+            merged["flying"] = result_tmpl.get("flying", False)
+            merged["react_dodge_w"] = result_tmpl.get("react_dodge", 50)
+            merged["react_counter_w"] = result_tmpl.get("react_counter", 50)
+            merged["shield_block"] = result_tmpl.get("shield_block", 0)
+            merged["shield_block_hp"] = result_tmpl.get("shield_block", 0)
+            # Parse skills from merge_result template
+            skills_raw = result_tmpl.get("skills", [])
+            parsed = []
+            for sk_raw in skills_raw:
+                if isinstance(sk_raw, dict):
+                    parsed.append({
+                        "name": sk_raw.get("name", ""),
+                        "val": sk_raw.get("val", 50),
+                        "dice": sk_raw.get("dice", "1d4"),
+                        "hits": sk_raw.get("hits", 1),
+                        "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
+                        "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                    })
+                else:
+                    parts = str(sk_raw).split(); nv = parts[0].split(":")
+                    parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
+                                   "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            merged["skills"] = parsed
+            if parsed:
+                merged["skill_name"] = parsed[0]["name"]
+                merged["skill_val"] = parsed[0]["val"]
+                merged["dmg_dice"] = parsed[0]["dice"]
+            # Update action count
+            acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
+            self._set_actions(acts)
             self._set_initiative(il)
 
 class FastBattleEngine(CombatEngine):
@@ -1758,6 +1862,17 @@ class FastBattleEngine(CombatEngine):
                         if 0<=nc<26 and 0<=nr<99:
                             self._get_map()["occupants"][format_coord(nc,nr)] = sid
                 self._set_map(self._get_map())
+        # Track summoned template for merge eligibility
+        mg = tmpl.get('merge_group', '')
+        if mg:
+            if not hasattr(self, '_summoned_templates'):
+                self._summoned_templates = {}
+            st = self._summoned_templates
+            if caster_id not in st:
+                st[caster_id] = {}
+            if mg not in st[caster_id]:
+                st[caster_id][mg] = set()
+            st[caster_id][mg].add(template_name)
         return sid
 
     def _summon_attack(self, summon_id):
@@ -1930,14 +2045,61 @@ class FastBattleEngine(CombatEngine):
         for mg, members in groups.items():
             alive = [m for m in members if (self._get_combat_hp(m["userId"]) or 0) > 0]
             if len(alive) != 1: continue
+            # Require all templates in this merge_group to have been summoned
+            all_templates = {name for name, t in SUMMON_TEMPLATES.items()
+                             if not t.get('_meta') and t.get('merge_group') == mg}
+            owner_id = members[0].get('ownerId', '')
+            summoned = getattr(self, '_summoned_templates', {}).get(owner_id, {}).get(mg, set())
+            if not all_templates or not all_templates.issubset(summoned):
+                continue
+            # Ensure merge happens at most once per owner per merge_group
+            merge_key = mg + '_merged'
+            st_owner = getattr(self, '_summoned_templates', {}).get(owner_id, {})
+            if st_owner.get(merge_key):
+                continue
+            st_owner[merge_key] = True
             merged = alive[0]
-            merged["name"] = "三合一"
+            # Look up merge_result template from characters_data
+            member_tmpl = SUMMON_TEMPLATES.get(members[0].get("name", ""), {})
+            result_name = member_tmpl.get("merge_result", "")
+            result_tmpl = SUMMON_TEMPLATES.get(result_name, {})
+            if not result_tmpl:
+                continue
+            # Apply full stats from merge_result template
+            merged["name"] = result_name
             merged["_merged"] = True
-            self._set_combat_hp(merged["userId"], 120)
-            all_skills = []
-            for s in members:
-                all_skills.extend(s.get("skills", []))
-            merged["skills"] = all_skills
+            self._set_combat_hp(merged["userId"], result_tmpl.get("HP", 200))
+            merged["dex"] = result_tmpl.get("DEX", 50)
+            merged["flying"] = result_tmpl.get("flying", False)
+            merged["react_dodge_w"] = result_tmpl.get("react_dodge", 50)
+            merged["react_counter_w"] = result_tmpl.get("react_counter", 50)
+            merged["shield_block"] = result_tmpl.get("shield_block", 0)
+            merged["shield_block_hp"] = result_tmpl.get("shield_block", 0)
+            # Parse skills from merge_result template
+            skills_raw = result_tmpl.get("skills", [])
+            parsed = []
+            for sk_raw in skills_raw:
+                if isinstance(sk_raw, dict):
+                    parsed.append({
+                        "name": sk_raw.get("name", ""),
+                        "val": sk_raw.get("val", 50),
+                        "dice": sk_raw.get("dice", "1d4"),
+                        "hits": sk_raw.get("hits", 1),
+                        "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
+                        "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                    })
+                else:
+                    parts = str(sk_raw).split(); nv = parts[0].split(":")
+                    parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
+                                   "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            merged["skills"] = parsed
+            if parsed:
+                merged["skill_name"] = parsed[0]["name"]
+                merged["skill_val"] = parsed[0]["val"]
+                merged["dmg_dice"] = parsed[0]["dice"]
+            # Update action count
+            acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
+            self._set_actions(acts)
             self._set_initiative(il)
 
     # ---- Conditional effects ----
