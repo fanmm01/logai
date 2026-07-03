@@ -41,7 +41,7 @@ SUMMON_TEMPLATES = {
         'HP': 12, 'MP': 0, 'SAN': 0,
         'STR': 20, 'CON': 30, 'SIZ': 10, 'DEX': 90, 'APP': 30, 'INT': 20, 'POW': 10, 'EDU': 0,
         '闪避': 45, 'MOV': 10, '行动次数': 2, '可反击': 1, '可反应': 1,
-        'skills': ['爪击:60 1d6+1d4'],
+        'skills': ['爪击:60 2d4'],
     },
     '玄武': {
         'HP': 80, 'MP': 0, 'SAN': 0,
@@ -52,6 +52,7 @@ SUMMON_TEMPLATES = {
         'react_dodge': 10, 'react_counter': 90,
         'shield_block': 100,
         'merge_group': 'trinity',
+        'merge_result': '三合一',
     },
     '朱雀': {
         'HP': 90, 'MP': 0, 'SAN': 0,
@@ -60,6 +61,7 @@ SUMMON_TEMPLATES = {
         'flying': True,  # 非飞行不可近战
         'skills': ['爪击:75 1d4+1d6', '俯冲:70 2d6+4'],
         'merge_group': 'trinity',
+        'merge_result': '三合一',
     },
     '龙虎': {
         'HP': 140, 'MP': 50, 'SAN': 0,
@@ -69,14 +71,33 @@ SUMMON_TEMPLATES = {
             {'name': '斗殴', 'val': 80, 'dice': '2d6'},
             {'name': '水火弹', 'val': 70, 'dice': '1d4+2d6', 'hits': 2,
              'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
+            {'name': '治愈领域', 'skill_type': 'zone_heal',
+             'zone_heal_hp': '2d6', 'zone_radius': 8, 'zone_duration': 3,
+             'mp_cost': 8, 'cooldown_rounds': 3},
         ],
         'merge_group': 'trinity',
+        'merge_result': '三合一',
     },
     # Meta-template: 随机召唤物 pool (斯瑞提卡 空间引入)
     '随机召唤物': {
         '_meta': True,
         'options': ['玄武', '朱雀', '龙虎'],
         'unique_per_caster': True,
+    },
+    # Merge result: 三合一 (斯瑞提卡 — 玄武+朱雀+龙虎 合体)
+    '三合一': {
+        'HP': 200, 'MP': 50, 'SAN': 0,
+        'STR': 90, 'CON': 90, 'SIZ': 90, 'DEX': 80, 'APP': 40, 'INT': 40, 'POW': 40, 'EDU': 0,
+        '闪避': 60, 'MOV': 10, '行动次数': 2, '可反击': 1, '可反应': 1,
+        'flying': True,
+        'shield_block': 50,
+        'skills': [
+            {'name': '盾击', 'val': 70, 'dice': '1d4+2d6'},
+            {'name': '爪击', 'val': 75, 'dice': '1d4+1d6'},
+            {'name': '水火弹', 'val': 70, 'dice': '1d4+2d6', 'hits': 2,
+             'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
+        ],
+        '_is_merge_result': True,
     },
 }
 
@@ -87,8 +108,8 @@ SUMMON_TEMPLATES = {
 # ============================================================
 
 ITEM_TEMPLATES = {
-    '蛋糕HP': {'回复hp': '2d6+4'},
-    '蛋糕MP': {'回复mp': '2d6+4'},
+    '蛋糕HP': {'回复hp': '2d8+4'},
+    '蛋糕MP': {'回复mp': '2d8+4'},
     '蛋糕SAN': {'回复san': '1d3'},
 }
 
@@ -98,12 +119,13 @@ ITEM_TEMPLATES = {
 YANYAN = {
     'name': '炎焱', 'serial': 'Y1',
     'attrs': {
-        '等级':5, '敏捷':65, '体力':15, '体力上限':15, '魔力':16, '魔力上限':16,
+        '等级':6, '敏捷':65, '体力':15, '体力上限':15, '魔力':16, '魔力上限':16,
         '闪避':70, '理智':50, '斗殴':85, '行动力':8, '体格':1,
         '力量':55, '体质':55, '体型':60, '外貌':60, '教育':50, '智力':55, '意志':55, '幸运':50,
         '回合行动数':1, '魔法少女序号':1, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs': {'伤害值':'2d4'},
+    'inventory': [],
     'spells': [
         {
             'name':'斗殴精通', 'timing':'1', 'category':4, 'default_persist':1,
@@ -128,12 +150,13 @@ YANYAN = {
 DANIUSI = {
     'name':'达尼厄斯', 'serial':'Y2',
     'attrs':{
-        '等级':2, '敏捷':70, '体力':12, '体力上限':12, '魔力':15, '魔力上限':15,
+        '等级':3, '敏捷':70, '体力':12, '体力上限':12, '魔力':15, '魔力上限':15,
         '闪避':50, '理智':59, '斗殴':65, '行动力':8, '体格':0,
         '力量':50, '体质':55, '体型':55, '外貌':55, '教育':50, '智力':55, '意志':55, '幸运':50,
         '回合行动数':1, '魔法少女序号':2, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d8+1d4'},
+    'inventory': [],
     'spells':[
         {
             'name':'火球术', 'timing':'2', 'category':1, '消耗mp':3,
@@ -162,6 +185,7 @@ LINGNIU = {
         '回合行动数':1, '魔法少女序号':3, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'2d6'},
+    'inventory': [],
     'spells':[
         {
             'name':'斗殴强化', 'timing':'1', 'category':4, 'default_persist':1,
@@ -192,6 +216,7 @@ XINGSHAN = {
         '技能不消耗主动': 1,
     },
     'str_attrs':{'伤害值':'1d4+1d3'},
+    'inventory': [],
     'spells':[
         {
             'name':'星闪攻击', 'timing':'2', 'category':1,
@@ -223,6 +248,9 @@ XUETIANSHI = {
         '飞行': 1,
     },
     'str_attrs':{'伤害值':'2d3+1d4'},
+    'inventory': [
+        {'item': '蛋糕HP', 'count': 3},
+    ],
     'spells':[
         {
             'name':'飞行', 'timing':'1', 'category':4, 'default_persist':1, '消耗mp':2,
@@ -253,6 +281,9 @@ XUEREN = {
         '回合行动数':1, '魔法少女序号':6, '伤害贯穿':0, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4+1d3'},
+    'inventory': [
+        {'item': '蛋糕HP', 'count': 1},
+    ],
     'spells':[
         {
             'name':'制造雪带', 'timing':'4', 'category':8, '消耗mp':4,  # 反应+领域
@@ -260,12 +291,12 @@ XUEREN = {
                 {'type':8, '客体':45, '作用半径':5, '持续回合':3,
                  '每回合伤害骰':'1d4', '属性削减':'行动力-5',  # 每回合伤害+MOV减半(近似MOV-3)
                  '领域中心跟随':0},
-                {'type':1, '客体':45, '伤害骰':'2d4+1d3', '成功率':70, '可反应性':0},  # 初始伤害
+                {'type':1, '客体':45, '伤害骰':'1d4+1d3', '成功率':70, '可反应性':0},  # 初始伤害
             ]
         },
         {
             'name':'发送雪球', 'timing':'2', 'category':1, '消耗mp':2,
-            'effects':[{'type':1, '客体':4, '伤害骰':'2d4+1d3', '成功率':70, '可反应性':1}]
+            'effects':[{'type':1, '客体':4, '伤害骰':'1d4+1d3', '成功率':70, '可反应性':1}]
         },
     ]
 }
@@ -285,6 +316,10 @@ HUANHUANUAN = {
         '回合行动数':1, '魔法少女序号':7, '伤害贯穿':0, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4+1d3'},
+    'inventory': [
+        {'item': '蛋糕HP', 'count': 1},
+        {'item': '蛋糕MP', 'count': 1},
+    ],
     'spells':[
         {
             'name':'战意值削弱', 'timing':'1', 'category':4, 'default_persist':1,
@@ -306,19 +341,22 @@ HUANHUANUAN = {
 BIHAMI = {
     'name':'比哈米', 'serial':'Y8',
     'attrs':{
-        '等级':3, '敏捷':50, '体力':7, '体力上限':7, '魔力':15, '魔力上限':15,
+        '等级':5, '敏捷':50, '体力':8, '体力上限':8, '魔力':15, '魔力上限':15,
         '闪避':65, '理智':70, '斗殴':40, '行动力':8, '体格':0,
         '力量':40, '体质':45, '体型':50, '外貌':55, '教育':55, '智力':60, '意志':60, '幸运':50,
         '回合行动数':1, '魔法少女序号':8, '伤害贯穿':0, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4'},
+    'inventory': [
+        {'item': '蛋糕HP', 'count': 2},
+    ],
     'spells':[
         {
-            'name':'美味的蛋糕', 'timing':'2', 'category':6, '消耗mp':3,
+            'name':'美味的蛋糕', 'timing':'3', 'category':6, '消耗mp':3,
             'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':1, '制造物模板':'蛋糕HP'}]
         },
         {
-            'name':'甜甜的蛋糕', 'timing':'2', 'category':6, '消耗mp':3,
+            'name':'甜甜的蛋糕', 'timing':'3', 'category':6, '消耗mp':3,
             'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':1, '制造物模板':'蛋糕MP'}]
         },
     ]
@@ -334,11 +372,12 @@ MULUO = {
     'pre_transformed': True,
     'attrs':{
         '等级':6, '敏捷':70, '体力':120, '体力上限':120, '魔力':65, '魔力上限':65,
-        '闪避':50, '理智':5, '斗殴':85, '剑':75, '行动力':8, '体格':3,
+        '闪避':50, '理智':5, '斗殴':80, '剑':75, '行动力':8, '体格':3,
         '力量':70, '体质':75, '体型':70, '外貌':50, '教育':40, '智力':50, '意志':50, '幸运':50,
         '回合行动数':1, '魔法少女序号':9, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值a':'1d6+1d6', '伤害值b':'1d8+1d6+2'},
+    'inventory': [],
     'spells':[
         # === Phase 1 (木·荣) ===
         # Skill 1: 召唤生灵 — {1d4}只, MP=ceil(总数/2)
@@ -360,7 +399,7 @@ MULUO = {
         # Skill 3a: 领域·生 — 8x8治疗+敏捷+10
         {'name':'领域·生', 'phase':1, 'timing':'2', 'category':8, 'default_persist':0, '消耗mp':5,
          'effects':[
-             {'type':8, '客体':3, '作用半径':8, '持续回合':3, '回复hp':'1d3', '领域中心跟随':1},
+             {'type':8, '客体':3, '作用半径':8, '持续回合':3, '回复hp':'1d6', '领域中心跟随':1},
              {'type':4, '客体':3, '持续回合':3, '技能加减值':'敏捷+10'},
          ]},
         # Skill 4: 阶段转换 — HP阈值(2/3,1/2,1/3,1/6)检定(30/50/80/100%), 消耗2d6 SAN
@@ -378,7 +417,7 @@ MULUO = {
         # Skill 1: 召唤生灵 — 点燃版本（2d4伤害, 不可治疗, 3伤/回合）
         {'name':'召唤生灵', 'phase':2, 'timing':'23', 'category':5,
          'effects':[{'type':5, '客体':1, '召唤个数':'1d4', '召唤物模板':'生灵', '持续回合':99,
-                     'ignite': True, 'ignite_dmg_dice': '2d4', 'ignite_tick_dmg': 3}],
+                     'ignite': True, 'ignite_dmg_dice': '1d4+1', 'ignite_tick_dmg': 3}],
          '_mp_formula': 'summon_count_ceil_half'},
         # Skill 2: 死之矛 — 纯伤害2d8
         {'name':'死之矛', 'phase':2, 'timing':'2', 'category':1,
@@ -405,14 +444,15 @@ CHUNSHANG = {
         '回合行动数':1, '魔法少女序号':10, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d6+1d3'},
+    'inventory': [],
     'spells':[
         {
             'name':'屏障术', 'timing':'2', 'category':2, '消耗mp':9,
-            'effects':[{'type':2, '客体':3, '作用半径':4, '护盾值':'3d6', '持续回合':5}]
+            'effects':[{'type':2, '客体':3, '作用半径':4, '护盾值':'2d6', '持续回合':5}]
         },
         {
             'name':'治疗术', 'timing':'2', 'category':3, '消耗mp':3,
-            'effects':[{'type':3, '客体':3, '作用半径':8, '回复hp':'2d6+2'}]
+            'effects':[{'type':3, '客体':3, '作用半径':8, '回复hp':'1d8'}]
         },
         {
             'name':'藤蔓术', 'timing':'23', 'category':5, '消耗mp':4,
@@ -437,6 +477,7 @@ LAN = {
         '回合行动数':1, '魔法少女序号':11, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'2d4+4'},
+    'inventory': [],
     'spells':[
         {
             'name':'挥动镰刀', 'timing':'2', 'category':1, '消耗mp':5,
@@ -468,10 +509,13 @@ SIRUITIKA = {
         '召唤物HP单独显示': 1,
     },
     'str_attrs':{'伤害值':'1d3+1d4'},
+    'inventory': [],
     'spells':[
         {
             'name':'空间扭曲', 'timing':'2', 'category':4, '消耗mp':3,
-            'effects':[{'type':4, '客体':124, '持续回合':1,
+            'effects':[{'type':4, '客体':4, '持续回合':1,
+                        '其他辅助效果a':'伤害成功率奖励惩罚', '辅助效果值a':'p'}, 
+                        {'type':4, '客体':4, '持续回合':1,
                         '其他辅助效果a':'伤害成功率奖励惩罚', '辅助效果值a':'p'}]
         },
         {
@@ -576,6 +620,12 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
     engine.load_spells(user_id)
+    # Load inventory items (物品栏)
+    for inv_entry in char_data.get('inventory', []):
+        item_name = inv_entry.get('item', '')
+        count = inv_entry.get('count', 1)
+        if item_name and count > 0:
+            engine.add_item_to_inventory(user_id, item_name, count)
     # Handle pre-transformed characters (变身前：——)
     if char_data.get('pre_transformed'):
         char.hs_transformed = True

@@ -15,7 +15,9 @@ import multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, is_in_melee_range,
     has_timing, parse_coord, format_coord, avg_damage)
-from characters_data_pvp import ALL_CHARACTERS, load_character_to_engine
+from characters_data_pvp import ALL_CHARACTERS, load_character_to_engine, SUMMON_TEMPLATES
+import battle_engine
+battle_engine._SUMMON_TEMPLATES = SUMMON_TEMPLATES
 
 # ============================================================
 #  Hyperparameters
@@ -96,14 +98,67 @@ def encode_state(engine, uid):
     return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase, has_cake)
 
 
+def encode_summon_state(engine, uid):
+    """Encode combat state for a summon entity into a hashable key."""
+    init_list = engine._get_initiative()
+    entry = next((e for e in init_list if e['userId'] == uid), None)
+    if not entry: return 'dead'
+    my_team = entry.get('team', 'Y')
+
+    my_hp = engine._get_combat_hp(uid) or 0
+    my_max_hp = entry.get('max_hp', max(my_hp, 1))
+    my_b = bucket(my_hp, my_max_hp)
+
+    # Enemy HP
+    enemy_hps = [engine._get_combat_hp(e['userId']) or 0 for e in init_list if e['team'] != my_team]
+    enemy_max = max(enemy_hps + [1])
+    eb = bucket(sum(enemy_hps) / max(1, len(enemy_hps)), enemy_max)
+
+    # Distance to nearest enemy
+    my_coord = entry.get('coord', '')
+    enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    dist = 3
+    if enemies and my_coord:
+        for e in enemies:
+            ec = e.get('coord', '')
+            if ec:
+                mp, ep = parse_coord(my_coord), parse_coord(ec)
+                if mp and ep:
+                    d = abs(mp[0] - ep[0]) + abs(mp[1] - ep[1])
+                    if d == 0: dist = min(dist, 0)
+                    elif d <= 2: dist = min(dist, 1)
+                    else: dist = min(dist, 2)
+
+    n_enemies = min(len(enemies), 4)
+
+    # Number of skills this summon has (0=1 skill, 1=2, 2=3+)
+    skills = entry.get('skills', [])
+    n_skills = min(len(skills) - 1, 2) if skills else 0
+    if n_skills < 0: n_skills = 0
+
+    # Ignited flag
+    ignited = 1 if entry.get('ignited') else 0
+
+    # Battle spirit penalty dice (from 环花暖)
+    bs_penalty = min(entry.get('battle_spirit_penalty_dice', 0), 2)
+
+    return (my_b, eb, dist, n_enemies, n_skills, ignited, bs_penalty)
+
+
 # ============================================================
 #  Multiprocess battle runner (module-level for pickling)
 # ============================================================
 
 def _mp_run_battle(args):
-    """Standalone battle runner for ProcessPoolExecutor. Returns (updates, winner_info)."""
-    team_a, team_b, map_size, all_char_data, char_map_dict = args
+    """Standalone battle runner for ProcessPoolExecutor. Returns (updates, winner_info).
+    Updates format: (table_type, ck, st, ak, reward, next_st)
+    table_type: 'solo' | 'team' | 'summon'
+    """
+    team_a, team_b, map_size, all_char_data, char_map_dict, summon_templates = args
     engine = FastBattleEngine()
+    if summon_templates:
+        import battle_engine as _be
+        _be._SUMMON_TEMPLATES = summon_templates
     a_uids = [char_map_dict[s] for s in team_a]
     b_uids = [char_map_dict[s] for s in team_b]
     for c in all_char_data:
@@ -138,7 +193,11 @@ def _mp_run_battle(args):
                                if not e.get('isSummon') and (engine._get_combat_hp(e['userId']) or 0) <= 0}
                 if dead_owners:
                     il = engine._get_initiative()
-                    engine._set_initiative([e for e in il if not (e.get('isSummon') and e.get('ownerId') in dead_owners)])
+                    new_il = [e for e in il if not (e.get('isSummon') and e.get('ownerId') in dead_owners)]
+                    engine._set_initiative(new_il)
+                    if state.get('activeIndex', 0) >= len(new_il):
+                        state['activeIndex'] = state['activeIndex'] % max(1, len(new_il))
+                        engine._set_state(state)
             for attr in list(engine.__dict__.keys()):
                 if attr.startswith('_xingshan_attacked_'): delattr(engine, attr)
             engine._last_zone_round = round_count
@@ -147,6 +206,9 @@ def _mp_run_battle(args):
         if dead_owners_r:
             init_list = [e for e in init_list if not (e.get('isSummon') and e.get('ownerId') in dead_owners_r)]
             engine._set_initiative(init_list)
+            if state.get('activeIndex', 0) >= len(init_list):
+                state['activeIndex'] = state['activeIndex'] % max(1, len(init_list))
+                engine._set_state(state)
 
         y_alive = sum(1 for e in init_list if e['team'] == 'Y' and (engine._get_combat_hp(e['userId']) or 0) > 0)
         x_alive = sum(1 for e in init_list if e['team'] == 'X' and (engine._get_combat_hp(e['userId']) or 0) > 0)
@@ -169,8 +231,23 @@ def _mp_run_battle(args):
                 engine._tick_down(); engine._apply_zone_effects()
             engine._set_state(state)
             continue
+
         if is_summon:
-            engine._summon_attack(uid)
+            # Summon Q-training: random action in subprocess
+            st = encode_summon_state(engine, uid)
+            av = get_summon_actions(engine, uid)
+            if av:
+                ak, an = random.choice(av)
+                prev_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
+                execute_summon_action(engine, uid, ak)
+                curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
+                max_hp = max(abs(prev_diff), abs(curr_diff), 1)
+                reward = (curr_diff - prev_diff) / max_hp
+                next_st = encode_summon_state(engine, uid)
+                summon_name = entry.get('name', uid)
+                updates.append(('summon', summon_name, st, ak, reward, next_st))
+            else:
+                engine._summon_attack(uid)
             state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
             if state['activeIndex'] == 0:
                 state['round'] = state.get('round', 1) + 1
@@ -187,6 +264,13 @@ def _mp_run_battle(args):
         st = encode_state(engine, uid)
         available = get_available_actions(engine, uid)
         if not available: engine._end_turn(uid); continue
+
+        # Determine solo vs team for this character
+        living_allies = [e for e in init_list if e['team'] == my_team
+                         and e['userId'] != uid
+                         and not e.get('isSummon')
+                         and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        table_type = 'solo' if not living_allies else 'team'
 
         # Epsilon-greedy (no Q-table access in subprocess — random)
         ak, an = random.choice(available)
@@ -207,7 +291,7 @@ def _mp_run_battle(args):
         ck = None
         for c in all_char_data:
             if char_map_dict[c['serial']] == uid: ck = c['serial']; break
-        if ck: updates.append((ck, st, ak, reward, next_st))
+        if ck: updates.append((table_type, ck, st, ak, reward, next_st))
 
     # Terminal rewards
     if winner:
@@ -215,10 +299,23 @@ def _mp_run_battle(args):
             uid = char_map_dict[s]
             ck = s
             st = encode_state(engine, uid) if hasattr(engine, '_get_state') else (0,)*12
-            my_team = 'Y' if s in team_a else 'X'
-            term_r = 3.0 if winner == my_team else -3.0
+            mt2 = 'Y' if s in team_a else 'X'
+            term_r = 3.0 if winner == mt2 else -3.0
+            # Determine table type for terminal update
+            init_list_end = engine._get_initiative()
+            my_entry_end = next((e for e in init_list_end if e['userId'] == uid), None)
+            my_team_end = my_entry_end.get('team', mt2) if my_entry_end else mt2
+            living_allies_end = [e for e in init_list_end if e['team'] == my_team_end
+                                 and e['userId'] != uid
+                                 and not e.get('isSummon')
+                                 and (engine._get_combat_hp(e['userId']) or 0) > 0]
+            end_table = 'solo' if not living_allies_end else 'team'
             for ak, _ in get_available_actions(engine, uid):
-                updates.append((ck, st, ak, term_r, None))
+                updates.append((end_table, ck, st, ak, term_r, None))
+            # Also update the other table for terminal state (solo↔team cross-pollination)
+            other_table = 'team' if end_table == 'solo' else 'solo'
+            for ak, _ in get_available_actions(engine, uid):
+                updates.append((other_table, ck, st, ak, term_r * 0.3, None))
     return updates
 
 # ============================================================
@@ -368,13 +465,128 @@ def select_teammate_by_strategy(engine, uid, strategy, teammates):
     return teammates[0]['userId'] if teammates else None
 
 
-# ---- Summon Q-table for skill selection ----
-SUMMON_Q = defaultdict(lambda: defaultdict(float))  # Q[summon_name][state_action] = value
+# ---- Summon action space ----
 
-def get_summon_skills(entry):
-    """Get available skills for a summon entity."""
+def get_summon_actions(engine, uid):
+    """Get available actions for a summon entity. Returns list of (action_key, description)."""
+    init_list = engine._get_initiative()
+    entry = next((e for e in init_list if e['userId'] == uid), None)
+    if not entry: return []
     skills = entry.get('skills', [])
-    return [(f'SUMMON_SKILL_{i}', s['name']) for i, s in enumerate(skills)]
+    if not skills: return []
+
+    target_strats = [('T0', '最低HP'), ('T1', '最近'), ('T2', '最高威胁')]
+    actions = []
+    for i, sk in enumerate(skills):
+        if sk.get("skill_type") == "zone_heal":
+            # Zone skills don't target enemies — single cast action
+            actions.append((f'SUMMON_ZONE_{i}', f'{sk["name"]}（领域）'))
+        else:
+            for ts, tl in target_strats:
+                actions.append((f'SUMMON_SKILL_{i}__{ts}', f'{sk["name"]}→{tl}'))
+    return actions
+
+
+def execute_summon_action(engine, uid, action_key):
+    """Execute a summon action. Uses the same skill execution as _summon_attack but with Q-chosen skill/target."""
+    init_list = engine._get_initiative()
+    entry = next((e for e in init_list if e['userId'] == uid), None)
+    if not entry: return
+    my_team = entry.get('team', 'Y')
+
+    base, target_strat = parse_action(action_key)
+
+    # Zone cast action — create healing field
+    if base.startswith('SUMMON_ZONE_'):
+        skill_idx = int(base.split('_')[-1])
+        skills = entry.get('skills', [])
+        if skill_idx < len(skills):
+            sk = skills[skill_idx]
+            zone_cooldown = entry.get("zone_cooldown", 0)
+            if zone_cooldown <= 0:
+                mp_cost = sk.get("mp_cost", 0)
+                summon_mp = entry.get("summon_mp", 0)
+                if summon_mp >= mp_cost:
+                    entry["summon_mp"] = summon_mp - mp_cost
+                    entry["zone_cooldown"] = sk.get("cooldown_rounds", 0) + sk.get("zone_duration", 3)
+                    center = entry.get("coord", "A1")
+                    effects = engine._get_effects()
+                    effects.append({
+                        'type': 'zone', 'center': center,
+                        'radius': sk.get("zone_radius", 8),
+                        'remainingRounds': sk.get("zone_duration", 3),
+                        'tickDmg': '', 'tickHealHp': sk.get("zone_heal_hp", "2d6"),
+                        'tickHealMp': '', 'centerFollows': 1, 'filter': 3,
+                        'attributeDebuff': '', 'sourceUserId': uid,
+                        'spellName': sk.get("name", "治愈领域"), 'spellIndex': -1,
+                        'persistent': 0, 'stackable': 0,
+                    })
+                    engine._set_effects(effects)
+        return
+
+    enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    if not enemies: return
+
+    if not base.startswith('SUMMON_SKILL_'):
+        engine._summon_attack(uid)
+        return
+
+    skill_idx = int(base.split('_')[-1])
+    skills = entry.get('skills', [])
+    if skill_idx >= len(skills):
+        engine._summon_attack(uid)
+        return
+
+    sk = skills[skill_idx]
+    # Zone heal skills should not be used as attack — delegate to _summon_attack
+    if sk.get("skill_type") == "zone_heal":
+        engine._summon_attack(uid)
+        return
+
+    # Select target by strategy
+    tid = select_target_by_strategy(engine, uid, target_strat, enemies)
+    if not tid: tid = enemies[0]['userId']
+
+    sv = sk['val']; dmg_dice = sk['dice']
+    hits = sk.get('hits', 1)
+    on_whiff_aoe = sk.get('on_whiff_aoe_dmg', '')
+    on_whiff_mp = sk.get('on_whiff_mp_cost', 0)
+
+    # Ignited summons use their ignite damage dice
+    if entry.get('ignited'):
+        dmg_dice = entry.get('ignite_dmg_dice', dmg_dice)
+
+    # Battle spirit penalty dice
+    pens = entry.get('battle_spirit_penalty_dice', 0)
+    if pens > 0:
+        atk_roll = max(random.randint(1, 100) for _ in range(pens + 1))
+    else:
+        atk_roll = random.randint(1, 100)
+
+    if atk_roll > sv: return
+
+    total_dmg = 0
+    for _ in range(hits):
+        if hits > 1 and random.randint(1, 100) > sv: continue
+        dmg = roll_dice(dmg_dice)
+        eff_dmg, _, _ = engine._absorb_damage_with_shield(tid, dmg)
+        eff_dmg = engine._apply_shield_block(tid, eff_dmg)
+        total_dmg += eff_dmg
+
+    cur_hp = engine._get_combat_hp(tid) or 10
+    engine._set_combat_hp(tid, max(0, cur_hp - total_dmg))
+
+    # On-whiff AoE
+    if on_whiff_aoe and total_dmg == 0:
+        owner_id = entry.get('ownerId')
+        if owner_id:
+            oc = engine.get_char(owner_id); omp = oc.get_attr('魔力', 0) or 0
+            if omp >= on_whiff_mp:
+                oc.set_attr('魔力', omp - on_whiff_mp)
+                for enemy in enemies:
+                    aoe_dmg = roll_dice(on_whiff_aoe) // 2
+                    ehp = engine._get_combat_hp(enemy['userId']) or 10
+                    engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
 
 def execute_action(engine, uid, action_key):
     """Execute action with target selection. Action key may have __T suffix."""
@@ -460,7 +672,9 @@ def _fast_move(engine, uid):
 
 class QTrainer:
     def __init__(self):
-        self.Q = defaultdict(lambda: defaultdict(float))  # Q[char_id][(state, action)] = value
+        self.Q_solo = defaultdict(lambda: defaultdict(float))   # 单人/最后一人 Q[char_id][(state, action)]
+        self.Q_team = defaultdict(lambda: defaultdict(float))   # 多人 Q[char_id][(state, action)]
+        self.Q_summon = defaultdict(lambda: defaultdict(float)) # 召唤物 Q[summon_name][(state, action)]
         self.char_map = {}
         self.win_counts = defaultdict(int)
         self.battle_counts = defaultdict(int)
@@ -482,7 +696,10 @@ class QTrainer:
         return uid
 
     def _run_one_battle(self, team_a, team_b, map_size):
-        """Run a single training battle and return Q-updates."""
+        """Run a single training battle and return Q-updates.
+        Updates format: (table_type, ck, st, ak, reward, next_st)
+        table_type: 'solo' | 'team' | 'summon'
+        """
         engine = FastBattleEngine()
         a_uids = [self.char_map[s] for s in team_a]
         b_uids = [self.char_map[s] for s in team_b]
@@ -528,7 +745,33 @@ class QTrainer:
                     engine._tick_down(); engine._apply_zone_effects()
                 engine._set_state(state); continue
             if entry.get('isSummon'):
-                engine._summon_attack(uid)
+                # Summon Q-training
+                st = encode_summon_state(engine, uid)
+                av = get_summon_actions(engine, uid)
+                if av:
+                    TEMPERATURE = 1.0
+                    summon_name = entry.get('name', uid)
+                    q_vals = [self.Q_summon[summon_name].get((st, aak), 0.0) for aak, aan in av]
+                    # 状态 deformation for summons too
+                    zt = random.randint(40, 80)  # summons have ~60 average 状态
+                    deform_prob = (100 - zt) / 100.0 * 0.4
+                    if random.random() < deform_prob:
+                        scale = max(max(abs(q) for q in q_vals), 1.0)
+                        q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
+                    max_q = max(q_vals) if q_vals else 0
+                    exp_vals = [math.exp((q - max_q) / TEMPERATURE) for q in q_vals]
+                    total = sum(exp_vals)
+                    probs = [e / total for e in exp_vals] if total > 0 else None
+                    idx = random.choices(range(len(av)), weights=probs, k=1)[0]
+                    ak, an = av[idx]
+                    pd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
+                    execute_summon_action(engine, uid, ak)
+                    cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
+                    reward = (cd-pd)/max(abs(pd),abs(cd),1)
+                    ns = encode_summon_state(engine, uid)
+                    updates.append(('summon', summon_name, st, ak, reward, ns))
+                else:
+                    engine._summon_attack(uid)
                 state['activeIndex']=(state['activeIndex']+1)%len(il)
                 if state['activeIndex']==0:
                     state['round']=state.get('round',1)+1
@@ -542,9 +785,18 @@ class QTrainer:
             ck = self._char_key(uid); st = encode_state(engine, uid)
             av = get_available_actions(engine, uid)
             if not av: engine._end_turn(uid); continue
+
+            # Determine solo vs team
+            living_allies = [e for e in il if e['team'] == mt
+                             and e['userId'] != uid
+                             and not e.get('isSummon')
+                             and (engine._get_combat_hp(e['userId']) or 0) > 0]
+            qt = self.Q_solo[ck] if not living_allies else self.Q_team[ck]
+            table_type = 'solo' if not living_allies else 'team'
+
             # Weighted random sampling based on Q-values (softmax / Boltzmann)
             TEMPERATURE = 1.0
-            q_vals = [self.Q[ck].get((st, aak), 0.0) for aak, aan in av]
+            q_vals = [qt.get((st, aak), 0.0) for aak, aan in av]
 
             # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
             zt = engine.get_char(uid).get_attr('状态', 60)
@@ -574,7 +826,7 @@ class QTrainer:
             cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
             reward = (cd-pd)/max(abs(pd),abs(cd),1)
             ns = encode_state(engine, uid)
-            updates.append((ck, st, ak, reward, ns))
+            updates.append((table_type, ck, st, ak, reward, ns))
         # Update reaction weights based on outcome
         if winner:
             for uid in a_uids + b_uids:
@@ -590,9 +842,19 @@ class QTrainer:
                 ck = self._char_key(uid := self.char_map[s])
                 st = (0,)*12; mt2 = 'Y' if s in team_a else 'X'
                 tr = 3.0 if winner==mt2 else -3.0
-                for ak in ['BASIC_ATTACK__T0','BASIC_ATTACK__T1','END_TURN','MOVE_TOWARD',
-                           'EAT_CAKE__SELF','GIVE_CAKE__T0','GIVE_CAKE__T1','GIVE_CAKE__T2']:
-                    updates.append((ck, st, ak, tr, None))
+                # Determine table type for terminal state
+                il_end = engine._get_initiative()
+                me_end = next((e for e in il_end if e['userId'] == self.char_map[s]), None)
+                my_team_end = me_end.get('team', mt2) if me_end else mt2
+                living_allies_end = [e for e in il_end if e['team'] == my_team_end
+                                     and e['userId'] != self.char_map[s]
+                                     and not e.get('isSummon')
+                                     and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                end_table = 'solo' if not living_allies_end else 'team'
+                terminal_aks = ['BASIC_ATTACK__T0','BASIC_ATTACK__T1','END_TURN','MOVE_TOWARD',
+                               'EAT_CAKE__SELF','GIVE_CAKE__T0','GIVE_CAKE__T1','GIVE_CAKE__T2']
+                for ak in terminal_aks:
+                    updates.append((end_table, ck, st, ak, tr, None))
         return updates
 
     def train(self):
@@ -623,7 +885,7 @@ class QTrainer:
                     specs.append((ch[:3],ch[3:],random.choice(['10x10','20x20'])))
             # Submit ALL battles at once — no waiting between batches
             all_ups = []
-            tasks = [(ta,tb,ms,all_char_data,char_map_dict) for ta,tb,ms in specs]
+            tasks = [(ta,tb,ms,all_char_data,char_map_dict,SUMMON_TEMPLATES) for ta,tb,ms in specs]
             completed = 0
             with ProcessPoolExecutor(max_workers=NUM_WORKERS) as ex:
                 futs = {ex.submit(_mp_run_battle, t): i for i, t in enumerate(tasks)}
@@ -635,56 +897,93 @@ class QTrainer:
                     completed += 1
                     if completed % 20 == 0 or completed == BATTLES_PER_GEN:
                         recent = all_ups[-500:] if len(all_ups) > 500 else all_ups
-                        r_sofar = sum(u[3] for u in recent) / max(1, len(recent))
+                        r_sofar = sum(u[4] for u in recent) / max(1, len(recent))
                         log(f'  [{completed}/{BATTLES_PER_GEN}] avg_reward~{r_sofar:.3f}')
             # Apply Q-updates sequentially (main thread, no contention)
-            for ck,st,ak,reward,next_st in all_ups:
-                if next_st is None:
-                    old_q = self.Q[ck].get((st,ak),0.0)
-                    self.Q[ck][(st,ak)] = old_q + ALPHA*(reward - old_q)
+            # Update format: (table_type, ck, st, ak, reward, next_st)
+            # table_type: 'solo' | 'team' | 'summon'
+            for table_type, ck, st, ak, reward, next_st in all_ups:
+                if table_type == 'summon':
+                    tbl = self.Q_summon
+                elif table_type == 'solo':
+                    tbl = self.Q_solo
                 else:
-                    max_next = max((v for (s2,a2),v in self.Q[ck].items() if s2==next_st),default=0.0)
-                    old_q = self.Q[ck].get((st,ak),0.0)
-                    self.Q[ck][(st,ak)] = old_q + ALPHA*(reward + GAMMA*max_next - old_q)
+                    tbl = self.Q_team
+                if next_st is None:
+                    old_q = tbl[ck].get((st, ak), 0.0)
+                    tbl[ck][(st, ak)] = old_q + ALPHA * (reward - old_q)
+                else:
+                    max_next = max((v for (s2, a2), v in tbl[ck].items() if s2 == next_st), default=0.0)
+                    old_q = tbl[ck].get((st, ak), 0.0)
+                    tbl[ck][(st, ak)] = old_q + ALPHA * (reward + GAMMA * max_next - old_q)
                 total_reward += reward
-            total_actions = sum(len(v) for v in self.Q.values())
+            total_actions = sum(len(v) for v in self.Q_solo.values()) + sum(len(v) for v in self.Q_team.values()) + sum(len(v) for v in self.Q_summon.values())
             avg_reward = total_reward / max(1, gen_battles * 4)
             log(f'Gen {gen:3d}: {gen_battles} battles, {total_actions} Q-entries, avg_reward={avg_reward:.3f}')
+            log(f'       solo:{sum(len(v) for v in self.Q_solo.values())} team:{sum(len(v) for v in self.Q_team.values())} summon:{sum(len(v) for v in self.Q_summon.values())}')
             stats_log.append((gen, gen_battles, total_actions, avg_reward))
-        q_serializable = {}
-        for ck, qdict in self.Q.items():
-            q_serializable[ck] = {f'{s[0]}|{s[1]}|{s[2]}|{s[3]}|{s[4]}|{s[5]}|{s[6]}|{s[7]}|{s[8]}|{s[9]}|{s[10]}|{s[11]}__{ak}': v
-                                      for (s, ak), v in qdict.items()}
+        # Serialize all three tables
+        def serialize_q(qdict):
+            result = {}
+            for ck, qd in qdict.items():
+                result[ck] = {'|'.join(str(x) for x in s) + '__' + ak: v
+                              for (s, ak), v in qd.items()}
+            return result
+        q_solo = serialize_q(self.Q_solo)
+        q_team = serialize_q(self.Q_team)
+        q_summon = serialize_q(self.Q_summon)
         weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
         with open(weight_path, 'w', encoding='utf-8') as f:
-            json.dump({'Q': q_serializable, 'stats': stats_log, 'params': {
+            json.dump({'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon,
+                       'stats': stats_log, 'params': {
                 'generations': GENERATIONS, 'battles_per_gen': BATTLES_PER_GEN,
                 'alpha': ALPHA, 'gamma': GAMMA, 'temperature': 1.0
             }}, f, ensure_ascii=False, indent=2)
         log(f'Saved Q-tables to {weight_path}')
-        return self.Q
+        return {'solo': self.Q_solo, 'team': self.Q_team, 'summon': self.Q_summon}
 
 def load_q_table(path=None):
-    """Load trained Q-table for use in battle."""
+    """Load trained Q-tables for use in battle.
+    Returns dict: {'solo': Q_solo, 'team': Q_team, 'summon': Q_summon}
+    Backward-compat with old single-Q format.
+    """
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
     if not os.path.exists(path): return None
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    Q = defaultdict(lambda: defaultdict(float))
-    for ck, qdict in data['Q'].items():
-        for key, val in qdict.items():
-            parts = key.split('__')
-            state_str, action = parts[0], parts[1]
-            state = tuple(int(v) for v in state_str.split('|'))
-            # Backward compat: old 10-dim states get phase=1 + has_cake=0 appended
-            if len(state) == 10:
-                state = state + (1, 0)
-            # Backward compat: old 11-dim states get has_cake=0 appended
-            elif len(state) == 11:
-                state = state + (0,)
-            Q[ck][(state, action)] = val
-    return Q
+
+    def parse_qdict(qdict):
+        """Parse a serialized Q-dict (string-keyed) into (state, action) tuple dict."""
+        Q = defaultdict(lambda: defaultdict(float))
+        for ck, entries in qdict.items():
+            for key, val in entries.items():
+                parts = key.split('__')
+                state_str, action = parts[0], parts[1]
+                state = tuple(int(v) for v in state_str.split('|'))
+                # Backward compat: old dims → 12
+                if len(state) == 10:
+                    state = state + (1, 0)
+                elif len(state) == 11:
+                    state = state + (0,)
+                Q[ck][(state, action)] = val
+        return Q
+
+    result = {}
+    if 'Q_solo' in data and 'Q_team' in data:
+        # New dual-table format
+        result['solo'] = parse_qdict(data['Q_solo'])
+        result['team'] = parse_qdict(data['Q_team'])
+        result['summon'] = parse_qdict(data.get('Q_summon', {}))
+    elif 'Q' in data:
+        # Old single-table format: use same Q for both solo and team
+        Q = parse_qdict(data['Q'])
+        result['solo'] = Q
+        result['team'] = Q
+        result['summon'] = defaultdict(lambda: defaultdict(float))
+    else:
+        return None
+    return result
 
 if __name__ == '__main__':
     random.seed(42)

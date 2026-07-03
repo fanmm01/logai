@@ -15,6 +15,9 @@ import sys, os, random, math, json, re, time
 from collections import defaultdict
 from abc import ABC, abstractmethod
 
+# Overridable by trainers to inject correct SUMMON_TEMPLATES for PvP vs PvE
+_SUMMON_TEMPLATES = None
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ============================================================
@@ -31,7 +34,7 @@ AUX_EFFECT_TYPES = {
     5:'mp回复+',6:'mp回复-',7:'hp回复+',8:'hp回复-',
     9:'魔能消耗+',10:'魔能消耗-',11:'致死骰优势',12:'致死骰劣势',
     13:'伤害骰优势',14:'伤害骰劣势',15:'伤害成功率加减',16:'伤害成功率奖励惩罚',
-    17:'以上全部的成倍变化'
+    17:'以上全部的成倍变化',18:'技能奖励骰',19:'技能惩罚骰'
 }
 AUX_NAME_TO_CODE = {v: k for k, v in AUX_EFFECT_TYPES.items()}
 
@@ -107,6 +110,67 @@ def roll_d100(bp_str=''):
     result = 100 if (tens == 0 and units == 0) else tens * 10 + units
     return (result, detail)
 
+def _calc_net_bp(buffs, bp_suffix='', skill_name=None):
+    """Calculate net bonus/penalty dice from all buffs with stacking (max ±3).
+
+    Counts all bonus dice and penalty dice from:
+    - AUX 16 (伤害成功率奖励惩罚) buffs with auxVal like 'b','b2','b3','p','p2','p3'
+    - Skill-specific bonus/penalty dice (技能奖励骰/技能惩罚骰) matching skill_name
+    - The passed-in bp_suffix (from command like .btab/.btap)
+
+    Nets them: bonus − penalty, capped at ±3.
+    Returns formatted string: 'b3','b2','b','','p','p2','p3'
+    """
+    bonus_count = 0
+    penalty_count = 0
+
+    # 1. Parse bp_suffix (from command)
+    if bp_suffix:
+        m = re.match(r'^([bp])(\d*)$', bp_suffix.lower())
+        if m:
+            cnt = int(m.group(2) or '1')
+            if m.group(1) == 'b':
+                bonus_count += cnt
+            else:
+                penalty_count += cnt
+
+    # 2. Scan all buffs
+    for b in buffs:
+        # AUX 16: 伤害成功率奖励惩罚
+        if b.get("auxCode") == 16:
+            val = str(b.get("auxVal", "")).strip().lower()
+            m = re.match(r'^([bp])(\d*)$', val)
+            if m:
+                cnt = int(m.group(2) or '1')
+                if m.group(1) == 'b':
+                    bonus_count += cnt
+                else:
+                    penalty_count += cnt
+        # Skill-specific bonus/penalty dice
+        if skill_name:
+            try:
+                aux_type = b.get('auxType', '')
+                aux_val = str(b.get('auxVal', '')).strip()
+                if aux_type == '技能奖励骰' and aux_val.lower() == skill_name.lower():
+                    bonus_count += 1
+                if aux_type == '技能惩罚骰' and aux_val.lower() == skill_name.lower():
+                    penalty_count += 1
+            except Exception:
+                pass
+
+    # 3. Net and cap at ±3
+    net = bonus_count - penalty_count
+    net = max(-3, min(3, net))
+
+    if net > 0:
+        return f'b{net}' if net > 1 else 'b'
+    elif net < 0:
+        n = -net
+        return f'p{n}' if n > 1 else 'p'
+    else:
+        return ''
+
+
 def max_damage(expr):
     if not expr: return 0
     expr = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
@@ -149,6 +213,7 @@ class Character:
         self.hs_transformed = False; self.hs_orig = {}
         self.hs_spell_count = 0; self.hs_combat_flag = 0
         self.phase = 1  # Current combat phase (for dual-phase characters like 木落)
+        self.inventory = []  # 物品栏: [{'item': '蛋糕HP', 'count': 3}, ...]
 
     def get_attr(self, name, fallback=0):
         return self.attrs.get(name, fallback)
@@ -214,6 +279,32 @@ class CombatEngine:
         self.storage_set(f"combat_effects_{self.group_id}", json.dumps(e, ensure_ascii=False) if e else '')
     def _get_map(self): return self.get_json(f"combat_map_{self.group_id}")
     def _set_map(self, m): self.set_json(f"combat_map_{self.group_id}", m)
+
+    # ---- 物品栏 (Inventory) methods ----
+    def get_inventory(self, uid):
+        """Get a character's inventory list. Returns list of {'item': name, 'count': N}."""
+        return self.get_char(uid).inventory
+
+    def add_item_to_inventory(self, uid, item_name, count=1):
+        """Add items to a character's inventory."""
+        char = self.get_char(uid)
+        for entry in char.inventory:
+            if entry['item'] == item_name:
+                entry['count'] += count
+                return
+        char.inventory.append({'item': item_name, 'count': count})
+
+    def remove_item_from_inventory(self, uid, item_name, count=1):
+        """Remove items from a character's inventory. Returns True if successful."""
+        char = self.get_char(uid)
+        for i, entry in enumerate(char.inventory):
+            if entry['item'] == item_name:
+                if entry['count'] >= count:
+                    entry['count'] -= count
+                    if entry['count'] <= 0:
+                        char.inventory.pop(i)
+                    return True
+        return False
 
     def _get_active_buffs(self, uid):
         return [e for e in self._get_effects()
@@ -307,9 +398,10 @@ class CombatEngine:
                 eff = {'type': ct, 'letter': letter}
                 for k in ['客体','作用半径','可调节性','成功率','成功率奖惩骰','可反应性','可贯穿性',
                           '致死值','致死值优劣','附加效果时长','持续回合','引发目标法术','引发延迟回合',
-                          '制造个数','制造花费回合数','领域中心跟随','触发HP比例','target_phase',
+                          '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
-                          'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate']:
+                          'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate',
+                          '可叠加']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
@@ -632,13 +724,29 @@ class CombatEngine:
             elif ct == 4:  # Buff (with auxCode)
                 dur = eff.get('持续回合',1); aux_type = eff.get('其他辅助效果a','')
                 aux_code = AUX_NAME_TO_CODE.get(aux_type, 0)
+                stackable = eff.get('可叠加', 0)
+                tid = target_id or caster_id
                 effects = self._get_effects()
-                effects.append({'type':'buff','remainingRounds':dur,'skillMod':eff.get('技能加减值',''),
-                    'auxType':aux_type,'auxVal':eff.get('辅助效果值a',''),'auxCode':aux_code,
-                    'sourceUserId':caster_id,'targetUserId':target_id or caster_id,
-                    'spellName':spell['name'],'spellIndex':spell['index'],
-                    'persistent':spell.get('默认延续性',0)})
-                self._set_effects(effects); out += f'  施加辅助效果: {aux_type} {eff.get("辅助效果值a","")}\n'
+                # Same-name buff dedup: unless 可叠加, refresh existing buff instead of stacking
+                existing = None
+                if not stackable:
+                    for e in effects:
+                        if (e.get('type') == 'buff' and e.get('targetUserId') == tid
+                            and e.get('spellName') == spell['name']
+                            and e.get('auxType') == aux_type):
+                            existing = e; break
+                if existing:
+                    existing['remainingRounds'] = max(existing.get('remainingRounds', 0), dur)
+                    out += f'  刷新辅助效果: {aux_type} {eff.get("辅助效果值a","")} (延长至{existing["remainingRounds"]}回合)\n'
+                else:
+                    effects.append({'type':'buff','remainingRounds':dur,'skillMod':eff.get('技能加减值',''),
+                        'auxType':aux_type,'auxVal':eff.get('辅助效果值a',''),'auxCode':aux_code,
+                        'sourceUserId':caster_id,'targetUserId':tid,
+                        'spellName':spell['name'],'spellIndex':spell['index'],
+                        'persistent':spell.get('默认延续性',0),
+                        'stackable':stackable})
+                    out += f'  施加辅助效果: {aux_type} {eff.get("辅助效果值a","")}\n'
+                self._set_effects(effects)
 
             elif ct == 5:  # Summon — handled by subclass
                 # Use pre-rolled count from MP calculation if available
@@ -716,13 +824,12 @@ class CombatEngine:
                     for c, occ in map_data.get('occupants',{}).items():
                         if occ == caster_id: center = c; break
                 effects = self._get_effects()
-                # Dedup: remove existing zone with same spellName
-                effects = [e for e in effects if not (e.get('type')=='zone' and e.get('spellName')==spell['name'])]
                 effects.append({'type':'zone','center':center,'radius':radius,'remainingRounds':dur,
                     'tickDmg':tick_dmg,'tickHealHp':tick_heal_hp,'tickHealMp':tick_heal_mp,
                     'centerFollows':cf,'filter':of,'attributeDebuff':ad,
                     'sourceUserId':caster_id,'spellName':spell['name'],'spellIndex':spell['index'],
-                    'persistent':spell.get('默认延续性',0)})
+                    'persistent':spell.get('默认延续性',0),
+                    'stackable':eff.get('可叠加',0)})
                 self._set_effects(effects)
                 dur_text = '' if dur >= 99 else f' 持续{dur}回合'
                 out += f'  创建领域【{spell["name"]}】（半径{radius}格{dur_text}，中心{center}）\n'
@@ -1122,44 +1229,73 @@ class CombatEngine:
         pass  # Override
 
     # ---- Item/cake system (shared by both engines) ----
-    def _eat_cake(self, eater_id, target_id=None):
-        """Consume a ready cake and apply its effect from ITEM_TEMPLATES. Returns (result_text, success)."""
+    def _apply_item_heal(self, item_name, target_id):
+        """Apply an item's healing effect to target. Returns formatted result string."""
         from characters_data import ITEM_TEMPLATES
-        effects = self._get_effects()
+        item = ITEM_TEMPLATES[item_name]
+        tchar = self.get_char(target_id)
+        tname = tchar.name if tchar else target_id
+        hp_heal = roll_dice(item.get('回复hp', '0'))
+        mp_heal = roll_dice(item.get('回复mp', '0'))
+        san_heal = roll_dice(item.get('回复san', '0'))
+        parts = []
+        if hp_heal > 0:
+            chp = self._get_combat_hp(target_id) or 10
+            mhp = tchar.get_attr('体力上限', chp) if tchar else chp
+            self._set_combat_hp(target_id, min(chp + hp_heal, mhp))
+            parts.append(f'{hp_heal} HP')
+        if mp_heal > 0:
+            cmp = tchar.get_attr('魔力', 0) if tchar else 0
+            mx = tchar.get_attr('魔力上限', cmp) if tchar else cmp
+            tchar.set_attr('魔力', min(cmp + mp_heal, mx))
+            parts.append(f'{mp_heal} MP')
+        if san_heal > 0:
+            cs = tchar.get_attr('理智', 50) if tchar else 50
+            tchar.set_attr('理智', min(cs + san_heal, 99))
+            parts.append(f'{san_heal} SAN')
+        return f"食用【{item_name}】→ {tname} 回复 {'+'.join(parts)}"
+
+    def _eat_cake(self, eater_id, target_id=None):
+        """Consume a ready cake from inventory or shared effects pool.
+        First checks eater's personal inventory (物品栏), then falls back to
+        the shared battle effects pool (for mid-battle crafted items).
+        Returns (result_text, success)."""
+        from characters_data import ITEM_TEMPLATES
         tid = target_id or eater_id
-        tchar = self.get_char(tid)
-        tname = tchar.name if tchar else tid
+
+        # 1) Check eater's personal inventory first
+        eater_char = self.get_char(eater_id)
+        for i, entry in enumerate(eater_char.inventory):
+            item_name = entry['item']
+            if item_name in ITEM_TEMPLATES and entry['count'] > 0:
+                # Consume one from inventory
+                result = self._apply_item_heal(item_name, tid)
+                entry['count'] -= 1
+                if entry['count'] <= 0:
+                    eater_char.inventory.pop(i)
+                return (result, True)
+
+        # 2) Fall back to shared effects pool (mid-battle crafted items)
+        effects = self._get_effects()
         for i, e in enumerate(effects):
             if e.get('type') != 'create': continue
             if e.get('craftRoundsRemaining', 1) > 0: continue
             tmpl = e.get('template', '')
             if not tmpl or tmpl not in ITEM_TEMPLATES: continue
-            item = ITEM_TEMPLATES[tmpl]
-            hp_heal = roll_dice(item.get('回复hp', '0'))
-            mp_heal = roll_dice(item.get('回复mp', '0'))
-            san_heal = roll_dice(item.get('回复san', '0'))
-            parts = []
-            if hp_heal > 0:
-                chp = self._get_combat_hp(tid) or 10
-                mhp = tchar.get_attr('体力上限', chp) if tchar else chp
-                self._set_combat_hp(tid, min(chp + hp_heal, mhp))
-                parts.append(f'{hp_heal} HP')
-            if mp_heal > 0:
-                cmp = tchar.get_attr('魔力', 0) if tchar else 0
-                mx = tchar.get_attr('魔力上限', cmp) if tchar else cmp
-                tchar.set_attr('魔力', min(cmp + mp_heal, mx))
-                parts.append(f'{mp_heal} MP')
-            if san_heal > 0:
-                cs = tchar.get_attr('理智', 50) if tchar else 50
-                tchar.set_attr('理智', min(cs + san_heal, 99))
-                parts.append(f'{san_heal} SAN')
+            result = self._apply_item_heal(tmpl, tid)
             effects.pop(i); self._set_effects(effects)
-            return (f"食用【{tmpl}】→ {tname} 回复 {'+'.join(parts)}", True)
+            return (result, True)
         return ("无可用的蛋糕", False)
 
     def _has_ready_cake(self):
-        """Check if any ready cake exists (uses ITEM_TEMPLATES)."""
+        """Check if any ready cake exists (checks inventories + shared effects)."""
         from characters_data import ITEM_TEMPLATES
+        # Check all characters' inventories
+        for char in self.characters.values():
+            for entry in char.inventory:
+                if entry.get('item', '') in ITEM_TEMPLATES and entry.get('count', 0) > 0:
+                    return True
+        # Check shared effects pool
         for e in self._get_effects():
             if e.get('type') == 'create' and e.get('craftRoundsRemaining', 1) <= 0:
                 if e.get('template', '') in ITEM_TEMPLATES: return True
@@ -1214,9 +1350,8 @@ class FullBattleEngine(CombatEngine):
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
         aname = achar.name; dname = dchar.name; lines = []
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
-        atk_buffs = self._get_active_buffs(atk_uid); eff_bp = bp_suffix or ""
-        for b in atk_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not eff_bp: eff_bp = str(b["auxVal"])
+        atk_buffs = self._get_active_buffs(atk_uid)
+        eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
         atk_result, bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill)
         bp_str = f", {bp_detail}" if bp_detail else ""
         lines.append(f"{aname} 的【{skill_name}】检定:"); lines.append(f"  D100={atk_result}/{eff_skill}{bp_str} {rank_text(atk_rank)}")
@@ -1226,9 +1361,8 @@ class FullBattleEngine(CombatEngine):
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val); bmv = self._apply_buff_skill_mod(def_uid, bmv)
-        def_buffs = self._get_active_buffs(def_uid); def_bp = ""
-        for b in def_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not def_bp: def_bp = str(b["auxVal"])
+        def_buffs = self._get_active_buffs(def_uid)
+        def_bp = _calc_net_bp(def_buffs, "", skill_name)
 
         ai_dw = self._ai_react_dodge_w.get(def_uid, 50); ai_cw = self._ai_react_counter_w.get(def_uid, 50)
         is_dodge = random.random() < (ai_dw / max(1, ai_dw + ai_cw)) if (ai_dw+ai_cw) > 0 else (dodge_val >= bmv)
@@ -1410,10 +1544,18 @@ class FullBattleEngine(CombatEngine):
         return "\n".join(lines)
 
     def _create_summon(self, caster_id, template_name):
-        from characters_data import SUMMON_TEMPLATES
-        # Fix #9 / C7: _meta template resolution handled below after SUMMON_TEMPLATES lookup
-        tmpl = SUMMON_TEMPLATES.get(template_name)
-        if not tmpl: return None
+        tmpls = _SUMMON_TEMPLATES
+        if tmpls is None:
+            from characters_data import SUMMON_TEMPLATES as tmpls
+        if tmpls is None:
+            import sys
+            print(f'[ERROR] _SUMMON_TEMPLATES is None, cannot create summon "{template_name}" for {caster_id}', file=sys.stderr, flush=True)
+            return None
+        tmpl = tmpls.get(template_name)
+        if not tmpl:
+            import sys
+            print(f'[ERROR] Summon template "{template_name}" not found (available: {list(tmpls.keys())}) for caster {caster_id}', file=sys.stderr, flush=True)
+            return None
         # Fix #9 / C7: Handle _meta templates (e.g. 随机召唤物 with options pool)
         if tmpl.get('_meta'):
             options = list(tmpl.get('options', []))
@@ -1425,7 +1567,7 @@ class FullBattleEngine(CombatEngine):
             if not options:
                 return None
             template_name = random.choice(options)
-            tmpl = SUMMON_TEMPLATES.get(template_name)
+            tmpl = tmpls.get(template_name)
             if not tmpl: return None
         sid = f"sum_{caster_id}_{random.randint(1000,9999)}"
         hp = tmpl.get("HP",10); dex = tmpl.get("DEX",50)
@@ -1440,11 +1582,19 @@ class FullBattleEngine(CombatEngine):
                     "hits": sk_raw.get("hits", 1),
                     "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                     "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                    "skill_type": sk_raw.get("skill_type", "attack"),
+                    "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
+                    "zone_radius": sk_raw.get("zone_radius", 0),
+                    "zone_duration": sk_raw.get("zone_duration", 0),
+                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
                 parts = str(sk_raw).split(); nv = parts[0].split(":")
                 parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
-                               "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+                               "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
+                               "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
+                               "mp_cost":0,"cooldown_rounds":0})
         init_list = self._get_initiative()
         ce = next((e for e in init_list if e["userId"]==caster_id), None)
         coord = "A1"
@@ -1469,6 +1619,8 @@ class FullBattleEngine(CombatEngine):
         init_list.append({"userId":sid,"name":summon_display_name,"team":team,"dex":dex,"initRoll":dex+random.randint(1,20),
             "coord":coord,"isSummon":True,"ownerId":caster_id,"skills":parsed,
             "skill_name":parsed[0]["name"],"skill_val":parsed[0]["val"],"dmg_dice":parsed[0]["dice"],
+            "zone_skills": [sk for sk in parsed if sk.get("skill_type") == "zone_heal"],
+            "zone_cooldown": 0, "summon_mp": tmpl.get("MP", 0),
             "react_dodge_w":tmpl.get("react_dodge",50),"react_counter_w":tmpl.get("react_counter",50),
             "shield_block":tmpl.get("shield_block",0),"shield_block_hp":tmpl.get("shield_block",0),
             "flying":tmpl.get("flying",False)})
@@ -1511,6 +1663,36 @@ class FullBattleEngine(CombatEngine):
     def _summon_attack(self, summon_id):
         il = self._get_initiative(); entry = next((e for e in il if e["userId"]==summon_id), None)
         if not entry: return "未找到召唤物"
+
+        # Zone skill check — summon can cast a zone instead of attacking
+        zone_cooldown = entry.get("zone_cooldown", 0)
+        if zone_cooldown > 0:
+            entry["zone_cooldown"] = zone_cooldown - 1
+        if entry.get("zone_cooldown", 0) <= 0:
+            zone_skills = entry.get("zone_skills", [])
+            if zone_skills:
+                zsk = zone_skills[0]
+                mp_cost = zsk.get("mp_cost", 0)
+                summon_mp = entry.get("summon_mp", 0)
+                if summon_mp >= mp_cost:
+                    entry["summon_mp"] = summon_mp - mp_cost
+                    entry["zone_cooldown"] = zsk.get("cooldown_rounds", 0) + zsk.get("zone_duration", 3)
+                    center = entry.get("coord", "A1")
+                    effects = self._get_effects()
+                    effects.append({
+                        'type': 'zone', 'center': center,
+                        'radius': zsk.get("zone_radius", 8),
+                        'remainingRounds': zsk.get("zone_duration", 3),
+                        'tickDmg': '', 'tickHealHp': zsk.get("zone_heal_hp", "2d6"),
+                        'tickHealMp': '', 'centerFollows': 1, 'filter': 3,
+                        'attributeDebuff': '', 'sourceUserId': summon_id,
+                        'spellName': zsk.get("name", "治愈领域"), 'spellIndex': -1,
+                        'persistent': 0, 'stackable': 0,
+                    })
+                    self._set_effects(effects)
+                    zname = zsk.get("name", "治愈领域")
+                    return f"{zname} → 创建治愈领域（半径{zsk.get('zone_radius',8)}格，持续{zsk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）"
+
         enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
         if not enemies: return "无可用目标"
         tid = enemies[0]["userId"]; tname = enemies[0].get("name", tid)
@@ -1518,6 +1700,7 @@ class FullBattleEngine(CombatEngine):
         if skills:
             best_score = -1; best = skills[0]
             for sk in skills:
+                if sk.get("skill_type") != "attack": continue
                 score = (sk["val"]/100.0)*avg_damage(sk["dice"])
                 if score > best_score: best_score = score; best = sk
             sv = best["val"]; dmg_dice = best["dice"]; sk_name = best["name"]
@@ -1569,10 +1752,14 @@ class FullBattleEngine(CombatEngine):
     def _apply_zone_effects(self):
         effects = self._get_effects(); il = self._get_initiative()
         need_save = False
+        # Track (coord, spellName) pairs processed this round for non-stackable zones
+        processed_zone_positions = set()
         for eff in effects:
             if eff.get("type")!="zone" or eff.get("radius",0)<=0: continue
             cp = parse_coord(eff.get("center","A1"))
             if not cp: continue
+            stackable = eff.get("stackable", 0)
+            spell_name = eff.get("spellName", "")
             # Determine zone caster's team for healing filter (Fix #8)
             zone_team = "Y"
             src_uid = eff.get("sourceUserId")
@@ -1584,6 +1771,11 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     dmg = roll_dice(eff["tickDmg"])
                     if dmg > 0:
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
@@ -1596,6 +1788,11 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     heal = roll_dice(eff["tickHealHp"])
                     if heal > 0:
                         hp = self._get_combat_hp(entry["userId"]) or 10
@@ -1608,6 +1805,11 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     heal = roll_dice(eff["tickHealMp"])
                     if heal > 0:
                         ch = self.get_char(entry["userId"])
@@ -1663,13 +1865,17 @@ class FullBattleEngine(CombatEngine):
 
     def _check_trinity_merge(self):
         """Generic summon merge: summons with same merge_group merge when only one survives."""
-        from characters_data import SUMMON_TEMPLATES
+        tmpls = _SUMMON_TEMPLATES
+        if tmpls is None:
+            from characters_data import SUMMON_TEMPLATES as tmpls
+        if tmpls is None:
+            return
         il = self._get_initiative()
         summons = [e for e in il if e.get("isSummon")]
         # Group summons by merge_group
         groups = {}
         for s in summons:
-            tmpl = SUMMON_TEMPLATES.get(s.get("name", ""), {})
+            tmpl = tmpls.get(s.get("name", ""), {})
             mg = tmpl.get("merge_group", "")
             if not mg: continue
             if mg not in groups:
@@ -1679,7 +1885,7 @@ class FullBattleEngine(CombatEngine):
             alive = [m for m in members if (self._get_combat_hp(m["userId"]) or 0) > 0]
             if len(alive) != 1: continue
             # Require all templates in this merge_group to have been summoned
-            all_templates = {name for name, t in SUMMON_TEMPLATES.items()
+            all_templates = {name for name, t in tmpls.items()
                              if not t.get('_meta') and t.get('merge_group') == mg}
             owner_id = members[0].get('ownerId', '')
             summoned = getattr(self, '_summoned_templates', {}).get(owner_id, {}).get(mg, set())
@@ -1693,9 +1899,9 @@ class FullBattleEngine(CombatEngine):
             st_owner[merge_key] = True
             merged = alive[0]
             # Look up merge_result template from characters_data
-            member_tmpl = SUMMON_TEMPLATES.get(members[0].get("name", ""), {})
+            member_tmpl = tmpls.get(members[0].get("name", ""), {})
             result_name = member_tmpl.get("merge_result", "")
-            result_tmpl = SUMMON_TEMPLATES.get(result_name, {})
+            result_tmpl = tmpls.get(result_name, {})
             if not result_tmpl:
                 continue
             # Apply full stats from merge_result template
@@ -1730,6 +1936,9 @@ class FullBattleEngine(CombatEngine):
                 merged["skill_name"] = parsed[0]["name"]
                 merged["skill_val"] = parsed[0]["val"]
                 merged["dmg_dice"] = parsed[0]["dice"]
+            merged["zone_skills"] = [sk for sk in parsed if sk.get("skill_type") == "zone_heal"]
+            merged["zone_cooldown"] = 0
+            merged["summon_mp"] = result_tmpl.get("MP", 0)
             # Update action count
             acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
             self._set_actions(acts)
@@ -1777,10 +1986,18 @@ class FastBattleEngine(CombatEngine):
 
     # ---- Summon system (same as FullBattleEngine) ----
     def _create_summon(self, caster_id, template_name):
-        from characters_data import SUMMON_TEMPLATES
-        # Fix #9 / C7: _meta template resolution handled below after SUMMON_TEMPLATES lookup
-        tmpl = SUMMON_TEMPLATES.get(template_name)
-        if not tmpl: return None
+        tmpls = _SUMMON_TEMPLATES
+        if tmpls is None:
+            from characters_data import SUMMON_TEMPLATES as tmpls
+        if tmpls is None:
+            import sys
+            print(f'[ERROR] _SUMMON_TEMPLATES is None, cannot create summon "{template_name}" for {caster_id}', file=sys.stderr, flush=True)
+            return None
+        tmpl = tmpls.get(template_name)
+        if not tmpl:
+            import sys
+            print(f'[ERROR] Summon template "{template_name}" not found (available: {list(tmpls.keys())}) for caster {caster_id}', file=sys.stderr, flush=True)
+            return None
         # Fix #9 / C7: Handle _meta templates (e.g. 随机召唤物 with options pool)
         if tmpl.get('_meta'):
             options = list(tmpl.get('options', []))
@@ -1792,7 +2009,7 @@ class FastBattleEngine(CombatEngine):
             if not options:
                 return None
             template_name = random.choice(options)
-            tmpl = SUMMON_TEMPLATES.get(template_name)
+            tmpl = tmpls.get(template_name)
             if not tmpl: return None
         sid = f"sum_{caster_id}_{random.randint(1000,9999)}"
         hp = tmpl.get("HP",10); dex = tmpl.get("DEX",50)
@@ -1807,11 +2024,19 @@ class FastBattleEngine(CombatEngine):
                     "hits": sk_raw.get("hits", 1),
                     "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                     "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                    "skill_type": sk_raw.get("skill_type", "attack"),
+                    "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
+                    "zone_radius": sk_raw.get("zone_radius", 0),
+                    "zone_duration": sk_raw.get("zone_duration", 0),
+                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
                 parts = str(sk_raw).split(); nv = parts[0].split(":")
                 parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
-                               "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+                               "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
+                               "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
+                               "mp_cost":0,"cooldown_rounds":0})
         init_list = self._get_initiative()
         ce = next((e for e in init_list if e["userId"]==caster_id), None)
         coord = "A1"
@@ -1836,6 +2061,8 @@ class FastBattleEngine(CombatEngine):
         init_list.append({"userId":sid,"name":summon_display_name,"team":team,"dex":dex,"initRoll":dex+random.randint(1,20),
             "coord":coord,"isSummon":True,"ownerId":caster_id,"skills":parsed,
             "skill_name":parsed[0]["name"],"skill_val":parsed[0]["val"],"dmg_dice":parsed[0]["dice"],
+            "zone_skills": [sk for sk in parsed if sk.get("skill_type") == "zone_heal"],
+            "zone_cooldown": 0, "summon_mp": tmpl.get("MP", 0),
             "react_dodge_w":tmpl.get("react_dodge",50),"react_counter_w":tmpl.get("react_counter",50),
             "shield_block":tmpl.get("shield_block",0),"shield_block_hp":tmpl.get("shield_block",0),
             "flying":tmpl.get("flying",False)})
@@ -1878,6 +2105,35 @@ class FastBattleEngine(CombatEngine):
     def _summon_attack(self, summon_id):
         il = self._get_initiative(); entry = next((e for e in il if e["userId"]==summon_id), None)
         if not entry: return
+
+        # Zone skill check — summon can cast a zone instead of attacking
+        zone_cooldown = entry.get("zone_cooldown", 0)
+        if zone_cooldown > 0:
+            entry["zone_cooldown"] = zone_cooldown - 1
+        if entry.get("zone_cooldown", 0) <= 0:
+            zone_skills = entry.get("zone_skills", [])
+            if zone_skills:
+                zsk = zone_skills[0]
+                mp_cost = zsk.get("mp_cost", 0)
+                summon_mp = entry.get("summon_mp", 0)
+                if summon_mp >= mp_cost:
+                    entry["summon_mp"] = summon_mp - mp_cost
+                    entry["zone_cooldown"] = zsk.get("cooldown_rounds", 0) + zsk.get("zone_duration", 3)
+                    center = entry.get("coord", "A1")
+                    effects = self._get_effects()
+                    effects.append({
+                        'type': 'zone', 'center': center,
+                        'radius': zsk.get("zone_radius", 8),
+                        'remainingRounds': zsk.get("zone_duration", 3),
+                        'tickDmg': '', 'tickHealHp': zsk.get("zone_heal_hp", "2d6"),
+                        'tickHealMp': '', 'centerFollows': 1, 'filter': 3,
+                        'attributeDebuff': '', 'sourceUserId': summon_id,
+                        'spellName': zsk.get("name", "治愈领域"), 'spellIndex': -1,
+                        'persistent': 0, 'stackable': 0,
+                    })
+                    self._set_effects(effects)
+                    return
+
         enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
         if not enemies: return
         tid = enemies[0]["userId"]; skills = entry.get("skills",[]); sk_name = ""
@@ -1885,6 +2141,7 @@ class FastBattleEngine(CombatEngine):
         if skills:
             best_score = -1; best = skills[0]
             for sk in skills:
+                if sk.get("skill_type") != "attack": continue
                 score = (sk["val"]/100.0)*avg_damage(sk["dice"])
                 if score > best_score: best_score = score; best = sk
             sv = best["val"]; dmg_dice = best["dice"]; sk_name = best["name"]
@@ -1936,10 +2193,14 @@ class FastBattleEngine(CombatEngine):
     def _apply_zone_effects(self):
         effects = self._get_effects(); il = self._get_initiative()
         need_save = False
+        # Track (coord, spellName) pairs processed this round for non-stackable zones
+        processed_zone_positions = set()
         for eff in effects:
             if eff.get("type")!="zone" or eff.get("radius",0)<=0: continue
             cp = parse_coord(eff.get("center","A1"))
             if not cp: continue
+            stackable = eff.get("stackable", 0)
+            spell_name = eff.get("spellName", "")
             # Determine zone caster's team for healing filter (Fix #8)
             zone_team = "Y"
             src_uid = eff.get("sourceUserId")
@@ -1951,6 +2212,11 @@ class FastBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     dmg = roll_dice(eff["tickDmg"])
                     if dmg > 0:
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
@@ -1963,6 +2229,11 @@ class FastBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     heal = roll_dice(eff["tickHealHp"])
                     if heal > 0:
                         hp = self._get_combat_hp(entry["userId"]) or 10
@@ -1975,6 +2246,11 @@ class FastBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # Dedup: skip if this (coord, spellName) already processed
+                    pos_key = (ec, spell_name)
+                    if not stackable and pos_key in processed_zone_positions:
+                        continue
+                    processed_zone_positions.add(pos_key)
                     heal = roll_dice(eff["tickHealMp"])
                     if heal > 0:
                         ch = self.get_char(entry["userId"])
@@ -2031,12 +2307,16 @@ class FastBattleEngine(CombatEngine):
 
     def _check_trinity_merge(self):
         """Generic summon merge: summons with same merge_group merge when only one survives."""
-        from characters_data import SUMMON_TEMPLATES
+        tmpls = _SUMMON_TEMPLATES
+        if tmpls is None:
+            from characters_data import SUMMON_TEMPLATES as tmpls
+        if tmpls is None:
+            return
         il = self._get_initiative()
         summons = [e for e in il if e.get("isSummon")]
         groups = {}
         for s in summons:
-            tmpl = SUMMON_TEMPLATES.get(s.get("name", ""), {})
+            tmpl = tmpls.get(s.get("name", ""), {})
             mg = tmpl.get("merge_group", "")
             if not mg: continue
             if mg not in groups:
@@ -2046,7 +2326,7 @@ class FastBattleEngine(CombatEngine):
             alive = [m for m in members if (self._get_combat_hp(m["userId"]) or 0) > 0]
             if len(alive) != 1: continue
             # Require all templates in this merge_group to have been summoned
-            all_templates = {name for name, t in SUMMON_TEMPLATES.items()
+            all_templates = {name for name, t in tmpls.items()
                              if not t.get('_meta') and t.get('merge_group') == mg}
             owner_id = members[0].get('ownerId', '')
             summoned = getattr(self, '_summoned_templates', {}).get(owner_id, {}).get(mg, set())
@@ -2060,9 +2340,9 @@ class FastBattleEngine(CombatEngine):
             st_owner[merge_key] = True
             merged = alive[0]
             # Look up merge_result template from characters_data
-            member_tmpl = SUMMON_TEMPLATES.get(members[0].get("name", ""), {})
+            member_tmpl = tmpls.get(members[0].get("name", ""), {})
             result_name = member_tmpl.get("merge_result", "")
-            result_tmpl = SUMMON_TEMPLATES.get(result_name, {})
+            result_tmpl = tmpls.get(result_name, {})
             if not result_tmpl:
                 continue
             # Apply full stats from merge_result template
@@ -2097,6 +2377,9 @@ class FastBattleEngine(CombatEngine):
                 merged["skill_name"] = parsed[0]["name"]
                 merged["skill_val"] = parsed[0]["val"]
                 merged["dmg_dice"] = parsed[0]["dice"]
+            merged["zone_skills"] = [sk for sk in parsed if sk.get("skill_type") == "zone_heal"]
+            merged["zone_cooldown"] = 0
+            merged["summon_mp"] = result_tmpl.get("MP", 0)
             # Update action count
             acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
             self._set_actions(acts)
@@ -2123,9 +2406,8 @@ class FastBattleEngine(CombatEngine):
         """Full COC7 attack for training: rank-based damage + trainable reaction."""
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
-        atk_buffs = self._get_active_buffs(atk_uid); eff_bp = ""
-        for b in atk_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not eff_bp: eff_bp = str(b["auxVal"])
+        atk_buffs = self._get_active_buffs(atk_uid)
+        eff_bp = _calc_net_bp(atk_buffs, "", skill_name)
         atk_result, _ = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill)
         if atk_rank <= 0:
             return (def_uid, atk_uid, 0, "")  # Miss/fumble: defender wins, no damage
@@ -2133,9 +2415,8 @@ class FastBattleEngine(CombatEngine):
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
         bmv = self._apply_buff_skill_mod(def_uid, bmv)
-        def_buffs = self._get_active_buffs(def_uid); def_bp = ""
-        for b in def_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not def_bp: def_bp = str(b["auxVal"])
+        def_buffs = self._get_active_buffs(def_uid)
+        def_bp = _calc_net_bp(def_buffs, "", skill_name)
 
         # Reaction: use stored character weights (trainable)
         dw = getattr(self, '_react_dw', {}).get(def_uid, 50)

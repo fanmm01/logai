@@ -27,7 +27,7 @@ from battle_engine import (
     FullBattleEngine, CombatEngine,
     roll_dice, parse_coord, format_coord,
     is_in_melee_range, has_timing, has_object,
-    rank_text, avg_damage, success_rank, roll_d100, max_damage,
+    rank_text, avg_damage, success_rank, roll_d100, max_damage, _calc_net_bp,
     CN_NUMS, CAT_LETTERS,
 )
 
@@ -181,6 +181,13 @@ def merge_character(engine, uid: str, js_data: dict) -> object:
             if k in ch_data.get('attrs', {}):
                 char.set_attr(k, ch_data['attrs'][k])
 
+        # Inventory items from chData (物品栏)
+        for inv_entry in ch_data.get('inventory', []):
+            item_name = inv_entry.get('item', '')
+            count = inv_entry.get('count', 1)
+            if item_name and count > 0:
+                engine.add_item_to_inventory(uid, item_name, count)
+
     # ── 2) COC base stats from JS (player's actual card values) ──
     coc_base = ['力量','体质','体型','敏捷','外貌','教育','智力','意志','幸运']
     for k in coc_base:
@@ -292,10 +299,7 @@ class PvPFullBattleEngine(FullBattleEngine):
 
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
-        eff_bp = bp_suffix or ""
-        for b in atk_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not eff_bp:
-                eff_bp = str(b["auxVal"])
+        eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
 
         atk_result, bp_detail = roll_d100(eff_bp)
         atk_rank = success_rank(atk_result, eff_skill)
@@ -313,10 +317,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
         bmv = self._apply_buff_skill_mod(def_uid, bmv)
         def_buffs = self._get_active_buffs(def_uid)
-        def_bp = ""
-        for b in def_buffs:
-            if b.get("auxCode") == 16 and b.get("auxVal") and not def_bp:
-                def_bp = str(b["auxVal"])
+        def_bp = _calc_net_bp(def_buffs, "", skill_name)
 
         # ── INTERCEPT: raise instead of AI random choice ──
         raise ReactionNeeded(
@@ -570,7 +571,9 @@ class PvPFullBattleEngine(FullBattleEngine):
 # ═══════════════════════════════════════════════════════════════
 
 def _load_q_table_pvp():
-    """Try to load PvP Q-learning weights for AI opponents."""
+    """Try to load PvP Q-learning weights for AI opponents.
+    Returns dict: {'solo': Q_solo, 'team': Q_team, 'summon': Q_summon}
+    """
     try:
         weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
         if not os.path.exists(weight_path):
@@ -578,22 +581,39 @@ def _load_q_table_pvp():
         with open(weight_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         from collections import defaultdict
-        Q = defaultdict(lambda: defaultdict(float))
-        for ck, qdict in data.get('Q', {}).items():
-            for key, val in qdict.items():
-                parts = key.split('__')
-                state_str, action = parts[0], parts[1]
-                state = tuple(int(v) for v in state_str.split('|'))
-                if len(state) == 10:
-                    state = state + (1,)
-                Q[ck][(state, action)] = val
-        return Q
+
+        def parse_qdict(qdict):
+            Q = defaultdict(lambda: defaultdict(float))
+            for ck, entries in qdict.items():
+                for key, val in entries.items():
+                    parts = key.split('__')
+                    state_str, action = parts[0], parts[1]
+                    state = tuple(int(v) for v in state_str.split('|'))
+                    if len(state) == 10:
+                        state = state + (1, 0)
+                    elif len(state) == 11:
+                        state = state + (0,)
+                    Q[ck][(state, action)] = val
+            return Q
+
+        if 'Q_solo' in data and 'Q_team' in data:
+            return {
+                'solo': parse_qdict(data['Q_solo']),
+                'team': parse_qdict(data['Q_team']),
+                'summon': parse_qdict(data.get('Q_summon', {})),
+            }
+        elif 'Q' in data:
+            Q = parse_qdict(data['Q'])
+            return {'solo': Q, 'team': Q, 'summon': defaultdict(lambda: defaultdict(float))}
+        return None
     except Exception:
         return None
 
 
 def _ai_decide_action(engine, uid: str, Q=None) -> str:
-    """Decide an AI action for the given character. Returns a command string like '.s2' or '.s0'."""
+    """Decide an AI action for the given character. Returns a command string like '.s2' or '.s0'.
+    Q should be dict: {'solo': Q_solo, 'team': Q_team, 'summon': Q_summon}
+    """
     char = engine.get_char(uid)
     spells = char.spells or engine.load_spells(uid)
 
@@ -614,16 +634,48 @@ def _ai_decide_action(engine, uid: str, Q=None) -> str:
 
     # Use Q-table if available, otherwise random weighted
     if Q:
-        # Try to encode state and find best action
         try:
-            # Use the same state encoding as ai_trainer.py
             from ai_trainer_pvp import encode_state, get_available_actions
             st = encode_state(engine, uid)
             avail = get_available_actions(engine, uid)
             if avail:
-                import random as _random
-                best_action = max(avail, key=lambda a: Q.get(f'{st}__{a[0]}', {}).get(a[1], 0) if isinstance(Q, dict) else 0)
-                return best_action[1] if isinstance(best_action, tuple) else '.s0'
+                # Route to solo or team table based on living allies
+                il = engine._get_initiative()
+                my_entry = next((e for e in il if e['userId'] == uid), None)
+                my_team = my_entry.get('team', 'Y') if my_entry else 'Y'
+                living_allies = [e for e in il if e['team'] == my_team
+                                 and e['userId'] != uid
+                                 and not e.get('isSummon')
+                                 and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                qtable = Q['solo'] if not living_allies else Q['team']
+                ck = char.serial or uid
+                qdict = qtable.get(ck, {})
+                if qdict:
+                    import random as _random
+                    q_vals = [qdict.get((st, ak), 0.0) for ak, an in avail]
+                    # deformation
+                    zt = char.get_attr('状态', 60)
+                    deform_prob = (100 - zt) / 100.0 * 0.4
+                    if _random.random() < deform_prob:
+                        scale = max(max(abs(q) for q in q_vals), 1.0)
+                        q_vals = [q + _random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
+                    if q_vals:
+                        import math
+                        max_q = max(q_vals)
+                        exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                        total = sum(exp_vals)
+                        probs = [e / total for e in exp_vals] if total > 0 else None
+                        idx = _random.choices(range(len(avail)), weights=probs, k=1)[0]
+                        ak, an = avail[idx]
+                        # Map action key to command
+                        base_ak = ak.split('__')[0] if '__' in ak else ak
+                        if base_ak == 'BASIC_ATTACK': return '.s0'
+                        if base_ak == 'MOVE_TOWARD': return '.s0'
+                        if base_ak == 'EAT_CAKE' or base_ak == 'GIVE_CAKE':
+                            return '.a eat'
+                        if base_ak.startswith('SKILL_'):
+                            sn = int(base_ak.split('_')[1])
+                            return f'.s{sn}'
         except Exception:
             pass
 
@@ -660,11 +712,43 @@ def _run_ai_turns(engine, player_uid: str, Q=None) -> list:
             outputs.append(f"{entry.get('name', uid)} 已阵亡，跳过回合。")
             continue
 
-        # Summon auto-attack
+        # Summon: use Q-table if available, else auto-attack
         if entry.get('isSummon'):
-            engine._summon_attack(uid)
+            if Q and Q.get('summon'):
+                summon_name = entry.get('name', uid)
+                sdict = Q['summon'].get(summon_name, {})
+                if sdict:
+                    try:
+                        from ai_trainer_pvp import encode_summon_state, get_summon_actions, execute_summon_action
+                        st = encode_summon_state(engine, uid)
+                        av = get_summon_actions(engine, uid)
+                        if av:
+                            import random as _random, math
+                            q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
+                            zt = _random.randint(40, 80)
+                            deform_prob = (100 - zt) / 100.0 * 0.4
+                            if _random.random() < deform_prob:
+                                scale = max(max(abs(q) for q in q_vals), 1.0)
+                                q_vals = [q + _random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
+                            if q_vals:
+                                max_q = max(q_vals)
+                                exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                                total = sum(exp_vals)
+                                probs = [e / total for e in exp_vals] if total > 0 else None
+                                idx = _random.choices(range(len(av)), weights=probs, k=1)[0]
+                                ak, an = av[idx]
+                                execute_summon_action(engine, uid, ak)
+                                engine._end_turn(uid)
+                                outputs.append(f"召唤物 {entry.get('name', uid)} Q-行动: {an}")
+                                continue
+                    except Exception:
+                        pass
+            result_msg = engine._summon_attack(uid)
             engine._end_turn(uid)
-            outputs.append(f"召唤物 {entry.get('name', uid)} 自动攻击。")
+            if result_msg:
+                outputs.append(f"召唤物 {entry.get('name', uid)}：{result_msg}")
+            else:
+                outputs.append(f"召唤物 {entry.get('name', uid)} 自动攻击。")
             continue
 
         # AI decides and executes
@@ -771,6 +855,8 @@ def create_battle():
 
             # Track all team serials (used to exclude from AI opponents)
             team_serials = set(player_serials + ally_serials)
+            if human_serial:
+                team_serials.add(human_serial)
 
             from characters_data_pvp import load_character_to_engine
 
@@ -781,6 +867,8 @@ def create_battle():
                     a_uid = f"ally_{a_serial}_{random.randint(1000, 9999)}"
                     load_character_to_engine(engine, a_data, a_uid)
                     engine.get_char(a_uid).name = a_data.get('name', 'AI队友')
+                    if not a_data.get('pre_transformed'):
+                        engine.process_command(a_uid, '.hs')
                     all_uids.append(a_uid)
 
             # ── Load additional player team members (from chData) ──
@@ -792,6 +880,8 @@ def create_battle():
                     p_uid = f"team_{p_serial}_{random.randint(1000, 9999)}"
                     load_character_to_engine(engine, p_data, p_uid)
                     engine.get_char(p_uid).name = p_data.get('name', p_serial)
+                    if not p_data.get('pre_transformed'):
+                        engine.process_command(p_uid, '.hs')
                     all_uids.append(p_uid)
 
             # ── Identify human_uid ──
@@ -815,6 +905,8 @@ def create_battle():
                 load_character_to_engine(engine, ai_data, ai_uid)
                 engine.get_char(ai_uid).name = ai_data.get('name', 'AI对手')
                 engine.get_char(ai_uid).serial = ai_data.get('serial', '')
+                if not ai_data.get('pre_transformed'):
+                    engine.process_command(ai_uid, '.hs')
                 all_uids.append(ai_uid)
 
         # ── Setup map ──
@@ -1358,5 +1450,7 @@ def end_battle(battle_id):
 # ── Main (for testing) ──
 if __name__ == '__main__':
     import math as _math  # used in create_battle when no init_list
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
     print('Starting autocombat PvP battle server on http://127.0.0.1:8889')
     app.run(host='0.0.0.0', port=8889, debug=False)

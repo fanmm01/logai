@@ -163,6 +163,77 @@ function rollD100(ctx, bpStr) {
   return { result: r, detail: `${label}${extraStr}` };
 }
 
+/** Calculate net bonus/penalty dice from all buffs with stacking (max ±3).
+ *
+ *  Counts all bonus dice and penalty dice from:
+ *  - AUX 16 (伤害成功率奖励惩罚) buffs with auxVal like 'b','b2','b3','p','p2','p3'
+ *  - Skill-specific bonus/penalty dice (技能奖励骰/技能惩罚骰) matching skillName
+ *  - The passed-in bpSuffix (from command like .btab/.btap)
+ *
+ *  Nets them: bonus − penalty, capped at ±3.
+ *  Returns formatted string: 'b3','b2','b','','p','p2','p3'
+ */
+function calcNetBp(buffs, bpSuffix, skillName) {
+  let bonusCount = 0;
+  let penaltyCount = 0;
+
+  // 1. Parse bpSuffix (from command)
+  if (bpSuffix) {
+    const m = bpSuffix.match(/^([bp])(\d*)$/i);
+    if (m) {
+      const cnt = m[2] ? parseInt(m[2]) : 1;
+      if (m[1].toLowerCase() === 'b') {
+        bonusCount += cnt;
+      } else {
+        penaltyCount += cnt;
+      }
+    }
+  }
+
+  // 2. Scan all buffs
+  for (const b of buffs) {
+    // AUX 16: 伤害成功率奖励惩罚
+    if (b.auxCode === 16 && b.auxVal) {
+      const val = String(b.auxVal).trim().toLowerCase();
+      const m = val.match(/^([bp])(\d*)$/);
+      if (m) {
+        const cnt = m[2] ? parseInt(m[2]) : 1;
+        if (m[1] === 'b') {
+          bonusCount += cnt;
+        } else {
+          penaltyCount += cnt;
+        }
+      }
+    }
+    // Skill-specific bonus/penalty dice
+    if (skillName) {
+      try {
+        const auxType = b.auxType || '';
+        const auxVal = String(b.auxVal || '').trim();
+        if (auxType === '技能奖励骰' && auxVal.toLowerCase() === skillName.toLowerCase()) {
+          bonusCount += 1;
+        }
+        if (auxType === '技能惩罚骰' && auxVal.toLowerCase() === skillName.toLowerCase()) {
+          penaltyCount += 1;
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // 3. Net and cap at ±3
+  let net = bonusCount - penaltyCount;
+  net = Math.max(-3, Math.min(3, net));
+
+  if (net > 0) {
+    return net > 1 ? 'b' + net : 'b';
+  } else if (net < 0) {
+    const n = -net;
+    return n > 1 ? 'p' + n : 'p';
+  } else {
+    return '';
+  }
+}
+
 /** COC7 success rank (rule 2: domestic common).
  *  大失败=-2  失败=-1  成功=1  困难成功=2  极难成功=3  大成功=4
  */
@@ -880,9 +951,33 @@ cmdBtaEnd.help =
   '将战斗HP写回人物卡，清除待处理攻击，关闭战斗标记。';
 cmdBtaEnd.solve = (ctx, msg, cmdArgs) => {
   const mctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+  const gid = mctx.group ? mctx.group.groupId : 'private';
+
+  // --- .setab 2 HTTP path: clean up backend battle instance ---
+  const autoMode2 = getAutoMode(ctx);
+  const battleId2 = ext.storageGet(`pvp_battle_${gid}`);
+  if (autoMode2 >= 2 && battleId2) {
+    pvpFetch(`/api/pvp/${battleId2}/end`, {
+      player_id: mctx.player.userId,
+    }).then(_result => {
+      ext.storageSet(`pvp_battle_${gid}`, '');
+      ext.storageSet(`pvp_human_${gid}`, '');
+      // Also do local cleanup
+      flushCombatHP(gid, mctx.player.userId, mctx);
+      const targetsKey = `pending_targets_${gid}`;
+      ext.storageSet(targetsKey, '');
+      ext.storageSet(`pending_atk_${gid}`, '');
+      const snapKey = `bta_snapshot_${mctx.player.userId}`;
+      ext.storageSet(snapKey, '');
+      seal.vars.intSet(mctx, '$gCombatActive', 0);
+      const pn = seal.format(mctx, '{$t玩家}');
+      seal.replyToSender(ctx, msg, `${pn} 的战斗已结束（后端战斗实例已清理），属性已同步回人物卡。`);
+    });
+    return seal.ext.newCmdExecuteResult(true);
+  }
 
   // Flush combat HP back to character card
-  const groupId = mctx.group ? mctx.group.groupId : 'private';
+  const groupId = gid;
   flushCombatHP(groupId, mctx.player.userId, mctx);
 
   // Clear all pending attacks for this group (per-user keys + tracking list)
@@ -988,6 +1083,43 @@ function makeBtaCmd(baseName) {
   cmd.solve = (ctx, msg, cmdArgs) => {
     // --- Check for kp GM sub-commands first (no @target needed) ---
     if (handleKpCommand(ctx, msg, cmdArgs)) {
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    // --- .setab 2 HTTP path: route attack through Python backend ---
+    const _gid = ctx.group ? ctx.group.groupId : 'private';
+    const _autoMode = getAutoMode(ctx);
+    const _battleId = ext.storageGet(`pvp_battle_${_gid}`);
+    if (_autoMode >= 2 && _battleId) {
+      const _targetMctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      let _targetId = '';
+      if (_targetMctx && _targetMctx.player && _targetMctx.player.userId !== ctx.player.userId) {
+        _targetId = _targetMctx.player.userId;
+      }
+      pvpFetch(`/api/pvp/${_battleId}/action`, {
+        player_id: ctx.player.userId,
+        action: '.s0',
+        target: _targetId,
+        args: cmdArgs.cleanArgs,
+      }).then(_result => {
+        if (_result.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
+          return;
+        }
+        applyServerChanges(_gid, _result);
+        let _out = _result.output || '';
+        if (_result.needs_reaction && _result.pending_attack) {
+          ext.storageSet(`pvp_pending_${_gid}`, JSON.stringify(_result.pending_attack));
+        }
+        if (_result.auto_turns && _result.auto_turns.length > 0) {
+          _out += '\n\n[AI回合]\n' + _result.auto_turns.join('\n');
+        }
+        if (_result.state && _result.state.phase !== 'active') {
+          ext.storageSet(`pvp_battle_${_gid}`, '');
+          _out += '\n\n=== 战斗结束 ===';
+        }
+        seal.replyToSender(ctx, msg, _out);
+      });
       return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -1137,15 +1269,9 @@ function makeBtaCmd(baseName) {
 
     const atkResults = [];
     for (let n = 0; n < atkCount; n++) {
-      // Check buffs for bonus/penalty dice (AUX code 16) and advantage/disadvantage (13/14)
+      // Check buffs for bonus/penalty dice (stacking, max ±3, bonus cancels penalty)
       const buffs = getActiveBuffs(gid3, ctx.player.userId);
-      let effectiveBp = bpSuffix || '';
-      for (const b of buffs) {
-        // AUX 16: 伤害成功率奖励惩罚 → bonus/penalty dice on attack roll
-        if (b.auxCode === 16 && b.auxVal && !effectiveBp) {
-          effectiveBp = String(b.auxVal);  // 'b', 'p', 'b2', 'p2', etc.
-        }
-      }
+      const effectiveBp = calcNetBp(buffs, bpSuffix || '', displaySkillName);
       const rollInfo = rollD100(ctx, effectiveBp);
       const roll = rollInfo.result;
       const rank = successRank(roll, effectiveSkill);
@@ -1617,14 +1743,9 @@ function makeECmd(baseName) {
       // Roll reaction for this attack — apply buffs to defender's skill
       const reactGid = pending.groupId || gid;
       reactSkillValue = applyBuffSkillMod(reactGid, ctx.player.userId, reactSkillValue);
-      // Check debuffs for penalty dice (AUX 16) on defender
+      // Check buffs for bonus/penalty dice (stacking, max ±3) on defender
       const reactBuffs = getActiveBuffs(reactGid, ctx.player.userId);
-      let reactEffectiveBp = bpSuffix || '';
-      for (const rb of reactBuffs) {
-        if (rb.auxCode === 16 && rb.auxVal && !reactEffectiveBp) {
-          reactEffectiveBp = String(rb.auxVal);  // 'b', 'p', 'b2', 'p2'
-        }
-      }
+      const reactEffectiveBp = calcNetBp(reactBuffs, bpSuffix || '', reactSkillName);
       const reactRollInfo = rollD100(defCtx, reactEffectiveBp);
       const reactRoll = reactRollInfo.result;
       const rawReactRank = successRank(reactRoll, reactSkillValue);
@@ -4290,6 +4411,56 @@ function makeAdditionalCmd() {
     '.a s<序号>    // 附加动作释放技能（须为附加动作时机）';
   cmd.solve = (ctx, msg, cmdArgs) => {
     const gid = ctx.group ? ctx.group.groupId : 'private';
+
+    // --- .setab 2 HTTP path: route additional action through Python backend ---
+    const _autoMode = getAutoMode(ctx);
+    const _battleId = ext.storageGet(`pvp_battle_${gid}`);
+    if (_autoMode >= 2 && _battleId) {
+      const _args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+      if (_args.length < 1) {
+        seal.replyToSender(ctx, msg, '用法：.a m <坐标>（移动） 或 .a s<序号>（技能） 或 .a eat [目标]');
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      let _action;
+      if (_args[0].toLowerCase() === 'm' && _args.length >= 2) {
+        _action = `.a m ${_args[1]}`;
+      } else if (_args[0].toLowerCase() === 'eat') {
+        _action = '.a eat ' + (_args.slice(1).join(' ') || '');
+      } else if (_args[0].toLowerCase() === 'give') {
+        _action = '.a give ' + (_args.slice(1).join(' ') || '');
+      } else if (/^s\d+$/i.test(_args[0])) {
+        _action = `.a ${_args[0]}`;
+      } else {
+        seal.replyToSender(ctx, msg, '用法：.a m <坐标> 或 .a s<序号> 或 .a eat [目标]');
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      pvpFetch(`/api/pvp/${_battleId}/action`, {
+        player_id: ctx.player.userId,
+        action: _action,
+        target: '',
+        args: cmdArgs.cleanArgs,
+      }).then(_result => {
+        if (_result.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
+          return;
+        }
+        applyServerChanges(gid, _result);
+        let _out = _result.output || '';
+        if (_result.needs_reaction && _result.pending_attack) {
+          ext.storageSet(`pvp_pending_${gid}`, JSON.stringify(_result.pending_attack));
+        }
+        if (_result.auto_turns && _result.auto_turns.length > 0) {
+          _out += '\n\n[AI回合]\n' + _result.auto_turns.join('\n');
+        }
+        if (_result.state && _result.state.phase !== 'active') {
+          ext.storageSet(`pvp_battle_${gid}`, '');
+          _out += '\n\n=== 战斗结束 ===';
+        }
+        seal.replyToSender(ctx, msg, _out);
+      });
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
     const state = getCombatState(gid);
     if (!state || state.phase !== 'active') {
       seal.replyToSender(ctx, msg, '当前不在战斗中！请先使用 .bta start 开始战斗。');
@@ -4306,7 +4477,7 @@ function makeAdditionalCmd() {
 
     const args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
     if (args.length < 1) {
-      seal.replyToSender(ctx, msg, '用法：.a m <坐标>（移动） 或 .a s<序号>（技能）');
+      seal.replyToSender(ctx, msg, '用法：.a m <坐标>（移动） 或 .a s<序号>（技能） 或 .a eat [目标]');
       return seal.ext.newCmdExecuteResult(true);
     }
 
