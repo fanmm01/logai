@@ -242,11 +242,18 @@ class CombatEngine:
         self.characters = {}
         self.storage = {}
         self.group_id = 'default'
+        # Dying system: when HP reaches 0, CON save → dying state instead of instant death.
+        # Set to False to revert to old behaviour (HP≤0 → instant death, no death saves).
+        # Toggle at runtime: engine.use_dying_system = True / False
+        self.use_dying_system = True
+        self._last_death_overflow = {}  # team → overflow damage of last non-summon death (mutual-annihilation tiebreaker)
+        self._battle_result = None  # Set by _check_battle_end when battle concludes
 
     def get_char(self, uid):
-        if uid not in self.characters:
-            self.characters[uid] = Character(uid, uid)
-        return self.characters[uid]
+        base = self._resolve_uid(uid)
+        if base not in self.characters:
+            self.characters[base] = Character(base, base)
+        return self.characters[base]
 
     def storage_get(self, key): return self.storage.get(key)
     def storage_set(self, key, value):
@@ -261,12 +268,113 @@ class CombatEngine:
         self.storage_set(key, json.dumps(data, ensure_ascii=False))
 
     def _combat_hp_key(self): return f"combat_hp_{self.group_id}"
+    def _resolve_uid(self, uid):
+        """Resolve multi-action UIDs (Y1__act0) to base UID (Y1) for shared HP/attrs."""
+        if '__act' in str(uid):
+            return uid.rsplit('__act', 1)[0]
+        return uid
+
     def _init_combat_hp(self, uid, hp):
-        s = self.get_json(self._combat_hp_key(), {}); s[uid] = hp; self.set_json(self._combat_hp_key(), s)
+        s = self.get_json(self._combat_hp_key(), {}); s[self._resolve_uid(uid)] = hp; self.set_json(self._combat_hp_key(), s)
     def _get_combat_hp(self, uid):
-        return self.get_json(self._combat_hp_key(), {}).get(uid)
-    def _set_combat_hp(self, uid, hp):
-        s = self.get_json(self._combat_hp_key(), {}); s[uid] = max(0, hp); self.set_json(self._combat_hp_key(), s)
+        return self.get_json(self._combat_hp_key(), {}).get(self._resolve_uid(uid))
+    def _set_combat_hp(self, uid, hp, source_dmg=0):
+        """Set combat HP. Accepts raw HP (negative = overflow damage).
+        Tracks per-team overflow for mutual-annihilation tiebreaker."""
+        base = self._resolve_uid(uid)
+        s = self.get_json(self._combat_hp_key(), {})
+        old_hp = s.get(base)
+        # Compute overflow: from negative hp or from source_dmg exceeding old_hp
+        overflow = max(0, -hp) if hp < 0 else 0
+        if source_dmg > 0 and old_hp is not None:
+            overflow = max(overflow, max(0, source_dmg - old_hp))
+        new_hp = max(0, hp)
+        s[base] = new_hp
+        self.set_json(self._combat_hp_key(), s)
+
+        # Track per-team last-death overflow for battle-end tiebreaker
+        if old_hp is not None and old_hp > 0 and new_hp <= 0:
+            entry = next((e for e in self._get_initiative() if self._resolve_uid(e['userId']) == base), None)
+            if entry and not entry.get('isSummon'):
+                team = entry.get('team', '?')
+                if not hasattr(self, '_last_death_overflow'):
+                    self._last_death_overflow = {}
+                self._last_death_overflow[team] = overflow
+                if getattr(self, 'use_dying_system', False):
+                    # New system: CON save → dying or death
+                    excess = max(0, source_dmg - old_hp) if source_dmg > 0 else max(0, -hp)
+                    self._enter_dying_or_die(base, excess)
+                else:
+                    # Old system: immediate death, remove character + summons
+                    self._remove_summons_of_owner(base)
+
+    # ---- Dying / Death helpers ----
+    def _check_con_save(self, uid, difficulty='normal'):
+        """COC CON saving throw. difficulty: 'normal'=need success, 'hard'=need hard success, etc.
+        Returns True if the save succeeds (stays alive/dying)."""
+        char = self.get_char(uid)
+        con = char.get_attr('体质', 50)
+        roll, detail = roll_d100('')
+        rank = success_rank(roll, con)
+        if difficulty == 'normal': return rank >= 1
+        elif difficulty == 'hard': return rank >= 2
+        elif difficulty == 'extreme': return rank >= 3
+        elif difficulty == 'critical': return rank >= 4
+        return rank >= 1
+
+    def _hp_safe(self, uid, default=10):
+        """Get combat HP safely: None→default, 0→0 (not default!). Prevents dead healing."""
+        v = self._get_combat_hp(uid)
+        return default if v is None else v
+
+    def _is_dying(self, uid):
+        """Check if uid is currently in dying state."""
+        base = self._resolve_uid(uid)
+        for e in self._get_effects():
+            if e.get('type') == 'dying' and self._resolve_uid(e.get('targetUserId', '')) == base:
+                return e
+        return None
+
+    def _enter_dying_or_die(self, uid, excess_damage=0):
+        """On HP≤0: CON save → dying state or death. Returns True if still alive (dying)."""
+        if self._is_dying(uid): return True  # Already dying
+        char = self.get_char(uid)
+        # CON saving throw
+        if self._check_con_save(uid, 'normal'):
+            # Success → enter dying state
+            effects = self._get_effects()
+            effects.append({
+                'type': 'dying', 'targetUserId': uid,
+                'excessDamage': excess_damage,
+                'dyingRounds': 0,
+                'sourceUserId': uid, 'spellName': '濒死',
+                'remainingRounds': 999, 'persistent': 1,
+            })
+            self._set_effects(effects)
+            return True
+        else:
+            # Failed save → check for revive, else die
+            effects = self._get_effects()
+            revive_item = None
+            for e in effects:
+                if e.get('type') in ('item', 'zone') and e.get('复活回复比例'):
+                    revive_item = e
+                    break
+            if revive_item:
+                ratio = revive_item.get('复活回复比例', 0.5)
+                max_hp = char.get_attr('体力上限', char.get_attr('体力', 10))
+                self._set_combat_hp(uid, int(max_hp * ratio))
+                # Remove dying effects
+                effs = [e for e in effects if not (e.get('type') == 'dying' and e.get('targetUserId') == uid)]
+                self._set_effects(effs)
+                return True
+            # Death
+            self._remove_summons_of_owner(uid)
+            return False
+
+    def _remove_character_from_initiative(self, uid):
+        """Remove a dead character from initiative. Kept separate for clarity."""
+        pass  # handled by _remove_summons_of_owner
 
     def _get_state(self): return self.get_json(f"combat_state_{self.group_id}")
     def _set_state(self, s): self.set_json(f"combat_state_{self.group_id}", s)
@@ -305,6 +413,74 @@ class CombatEngine:
                         char.inventory.pop(i)
                     return True
         return False
+
+    def _has_healing_item(self, uid):
+        """Check if a character has any item in inventory that restores HP."""
+        from characters_data import ITEM_TEMPLATES
+        char = self.get_char(uid)
+        for entry in char.inventory:
+            item_name = entry['item']
+            if entry['count'] > 0 and item_name in ITEM_TEMPLATES:
+                item_data = ITEM_TEMPLATES[item_name]
+                hp_dice = item_data.get('回复hp', '0')
+                if hp_dice and hp_dice != '0':
+                    return True
+        return False
+
+    def _team_has_healing_item(self, team):
+        """Check if any dying character on the given team has a healing item.
+        Only checks characters at 0 HP (dying state), since that's when it matters."""
+        il = self._get_initiative()
+        for e in il:
+            if e.get('isSummon') or e.get('team') != team:
+                continue
+            uid = e['userId']
+            hp = self._get_combat_hp(uid)
+            if hp == 0 and self._is_dying(uid):
+                if self._has_healing_item(uid):
+                    return True
+        return False
+
+    def _remove_summons_of_owner(self, owner_uid):
+        """Remove all summons owned by owner_uid from initiative and map. Also removes dead owner."""
+        il = self._get_initiative()
+        # Use _resolve_uid to match summons even when ownerId was set from a multi-action entry
+        dead_summons = {e['userId'] for e in il
+                        if e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) == owner_uid}
+        # Clean map occupants for dead summons
+        md = self._get_map()
+        if md:
+            for sid in dead_summons:
+                for c, o in list(md.get('occupants', {}).items()):
+                    if o == sid: del md['occupants'][c]
+            self._set_map(md)
+        # Remove dead summons + dead owner + multi-action entries from initiative
+        new_il = [e for e in il
+                  if e['userId'] not in dead_summons and self._resolve_uid(e['userId']) != owner_uid]
+        if len(new_il) < len(il):
+            state = self._get_state()
+            if state and state.get('activeIndex', 0) >= len(new_il):
+                state['activeIndex'] = max(0, len(new_il) - 1)
+                self._set_state(state)
+        self._set_initiative(new_il)
+        if dead_summons:
+            pass
+
+    def _is_untargetable(self, uid):
+        """Check if uid should be excluded from targeting.
+        Rule: Character with 不可指定=1 cannot be targeted if they have non-三合一 summons alive."""
+        entry = next((e for e in self._get_initiative() if e['userId'] == uid), None)
+        if not entry or entry.get('isSummon'):
+            return False
+        char = self.get_char(uid)
+        if char.get_attr('不可指定', 0) != 1:
+            return False
+        il = self._get_initiative()
+        other = [e for e in il
+                 if e.get('isSummon') and e.get('ownerId') == uid
+                 and (self._get_combat_hp(e['userId']) or 0) > 0
+                 and e.get('name', '') != '三合一']
+        return len(other) > 0
 
     def _get_active_buffs(self, uid):
         return [e for e in self._get_effects()
@@ -430,11 +606,16 @@ class CombatEngine:
         has_dmg = any(e['type']==1 for e in spell.get('effects',[]))
         has_heal = any(e['type'] in (2,3,4) or (e['type']==8 and e.get('回复hp')) for e in spell.get('effects',[]))
         has_zone_dmg = any(e['type']==8 and e.get('每回合伤害骰') and not e.get('回复hp') for e in spell.get('effects',[]))
-        if has_dmg or has_zone_dmg:
+        # Type-4 buff/debuff with 客体=5 (enemy debuff) or 124 (legacy) targets an enemy
+        has_enemy_debuff = any(
+            e['type'] == 4 and e.get('客体', 4) in (5, 124)
+            for e in spell.get('effects', [])
+        )
+        if has_dmg or has_zone_dmg or has_enemy_debuff:
             init_list = self._get_initiative()
             my_entry = next((e for e in init_list if e['userId']==caster_id), None)
             mt = my_entry.get('team','Y') if my_entry else 'Y'
-            enemies = [e for e in init_list if e['team']!=mt and (self._get_combat_hp(e['userId'])or 0)>0]
+            enemies = [e for e in init_list if e['team']!=mt and (self._get_combat_hp(e['userId'])or 0)>0 and not self._is_untargetable(e['userId'])]
             return enemies[0]['userId'] if enemies else caster_id
         return caster_id
 
@@ -509,9 +690,17 @@ class CombatEngine:
         return '用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>'
 
     def _end_turn(self, uid):
-        """End current character's turn and advance initiative."""
+        """End current character's turn and advance initiative.
+        After advancing, checks if battle should end (one side wiped out).
+        If initiative is empty (all characters dead/removed), still checks end."""
         state = self._get_state(); il = self._get_initiative()
-        if not state or not il: return
+        if not state: return
+
+        if not il:
+            # All characters dead — check end immediately (mutual annihilation)
+            self._check_and_mark_end(state)
+            return False
+
         state['activeIndex'] = (state['activeIndex'] + 1) % len(il)
         if state['activeIndex'] == 0:
             state['round'] = state.get('round', 1) + 1
@@ -521,11 +710,200 @@ class CombatEngine:
             self._tick_down(); self._apply_zone_effects()
         self._set_state(state)
 
-    def _find_enemy(self, uid):
+        # Check battle end after every turn
+        self._check_and_mark_end(state)
+
+        return state['activeIndex'] == 0 if state else False  # is_new_round
+
+    def _check_and_mark_end(self, state):
+        """Call _check_battle_end and, if over, store result and set phase='ended'."""
+        result = self._check_battle_end()
+        if result:
+            self._battle_result = result
+            if state:
+                state['phase'] = 'ended'
+                self._set_state(state)
+
+    def _check_battle_end(self):
+        """Check if the battle should end after a turn completes.
+
+        Rules:
+        1. If only one side has surviving non-summon characters → that side wins.
+        2. If a team has ONLY dying characters AND they have no healing items → that team loses.
+        3. If neither side has survivors → compare last-death overflow damage per team;
+           the team whose last death took LESS overflow wins (smaller overflow = winner).
+        4. If overflow is equal or untracked, Y wins (arbitrary tie-break).
+
+        "Surviving" means: HP > 0, OR HP == 0 but in dying state (濒死) WITH healing items.
+        Only non-summon characters are counted.
+
+        Returns dict {winner, ended, mutual_death?} if battle ended, None otherwise.
+        """
+        il = self._get_initiative()
+
+        # Count living non-summon characters per team (resolve multi-action UIDs)
+        # "Alive" = HP > 0, OR in dying state WITH healing items available
+        y_alive = set()
+        x_alive = set()
+        y_has_true_alive = False
+        x_has_true_alive = False
+        for e in il:
+            if e.get('isSummon'):
+                continue
+            uid = e['userId']
+            hp = self._get_combat_hp(uid)
+            base = self._resolve_uid(uid)
+            if hp is not None and hp > 0:
+                if e['team'] == 'Y':
+                    y_alive.add(base)
+                    y_has_true_alive = True
+                else:
+                    x_alive.add(base)
+                    x_has_true_alive = True
+            elif hp == 0 and self._is_dying(uid):
+                # Character at 0 HP but in dying state → still fighting (if team has healing)
+                if e['team'] == 'Y':
+                    y_alive.add(base)
+                else:
+                    x_alive.add(base)
+
+        # Dying-team defeat check: if a team has ONLY dying characters
+        # and none of them have healing items → they auto-lose
+        if not y_has_true_alive and y_alive:
+            if not self._team_has_healing_item('Y'):
+                y_alive.clear()  # Y cannot recover → effectively dead
+        if not x_has_true_alive and x_alive:
+            if not self._team_has_healing_item('X'):
+                x_alive.clear()  # X cannot recover → effectively dead
+
+        if y_alive and not x_alive:
+            return {'winner': 'Y', 'ended': True}
+        if x_alive and not y_alive:
+            return {'winner': 'X', 'ended': True}
+        if not y_alive and not x_alive:
+            # Mutual annihilation — compare last-death overflow (less overflow = winner)
+            y_overflow = self._last_death_overflow.get('Y', float('inf'))
+            x_overflow = self._last_death_overflow.get('X', float('inf'))
+            if y_overflow < x_overflow:
+                return {'winner': 'Y', 'ended': True, 'mutual_death': True,
+                        'y_overflow': y_overflow, 'x_overflow': x_overflow}
+            elif x_overflow < y_overflow:
+                return {'winner': 'X', 'ended': True, 'mutual_death': True,
+                        'y_overflow': y_overflow, 'x_overflow': x_overflow}
+            else:
+                # Equal overflow or no overflow tracked → Y wins by default
+                return {'winner': 'Y', 'ended': True, 'mutual_death': True,
+                        'y_overflow': y_overflow, 'x_overflow': x_overflow, 'tie': True}
+
+        return None  # Battle continues
+
+    def _get_initiative_display(self):
+        """Format initiative table with DEX rolls and HPs."""
+        il = self._get_initiative()
+        state = self._get_state()
+        rnd = state.get('round', 1) if state else 1
+        lines = [f"===== 第{rnd}回合 =====", "先攻表:"]
+        for i, e in enumerate(il):
+            name = e.get('displayName', e.get('name', e['userId']))
+            dex_v = e.get('dex', '?')
+            roll = e.get('initRoll', '?')
+            rank = e.get('initRank', 0)
+            hp = self._get_combat_hp(e['userId']) or 0
+            lines.append(f"  {i+1}. {name} D100={roll}/DEX={dex_v} {rank_text(rank)} HP:{hp}")
+        return '\n'.join(lines)
+
+    def _get_member_status_display(self, uid):
+        """Format member HP status for turn announcement."""
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        name = entry.get('displayName', entry.get('name', uid)) if entry else uid
+        lines = [f"【{name} 的回合！】", "成员状态:"]
+        for e in il:
+            n = e.get('displayName', e.get('name', e['userId']))
+            hp = self._get_combat_hp(e['userId']) or 0
+            lines.append(f"  {n} HP:{hp}")
+        return '\n'.join(lines)
+
+    def _get_available_skills_display(self, uid):
+        """Return formatted list of available skills with MP/CD/action status."""
+        char = self.get_char(uid)
+        spells = char.spells or self.load_spells(uid)
+        acts = self._get_actions().get(uid, {'主动': 0, '附加': 0})
+        mp = char.get_attr('魔力', 0) or 0
+        effects = self._get_effects()
+
+        lines = ["【可用技能】"]
+        for s in spells:
+            timing = s.get('时机', '2')
+            name = s.get('name', '?')
+            mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
+            cd_eff = [e for e in effects if e.get('type') == 'cooldown'
+                      and e.get('sourceUserId') == uid
+                      and e.get('spellIndex') == s.get('index')
+                      and e.get('remainingRounds', 0) > 0]
+            cd_remaining = cd_eff[0].get('remainingRounds', 0) if cd_eff else 0
+
+            timing_label = []
+            if has_timing(timing, '2'): timing_label.append('主')
+            if has_timing(timing, '3'): timing_label.append('附')
+            timing_str = '/'.join(timing_label) if timing_label else '?'
+
+            status = ""
+            if cd_remaining > 0:
+                status = f" [CD:{cd_remaining}回合]"
+            elif mp_cost > mp:
+                status = f" [MP不足({mp}/{mp_cost})]"
+            elif has_timing(timing, '2') and acts.get('主动', 0) <= 0:
+                status = " [主动作不足]"
+            elif has_timing(timing, '3') and acts.get('附加', 0) <= 0:
+                status = " [附加动作不足]"
+
+            lines.append(f"  .s{s['index']} [{timing_str}] {name} MP:{mp_cost}{status}")
+
+        bn, bv = char.get_best_melee()
+        if bv > 0:
+            atk_status = "" if acts.get('主动', 0) > 0 else " [主动作不足]"
+            lines.append(f"  .s0 基本攻击 [{bn}={bv}]{atk_status}")
+
+        return '\n'.join(lines)
+
+    def _get_targets_display(self, uid):
+        """Return enemy target list with distance, HP, and untargetable markers."""
+        il = self._get_initiative()
+        me = next((e for e in il if e['userId'] == uid), None)
+        if not me: return "无目标信息"
+        mt = me.get('team', 'Y')
+        my_coord = me.get('coord', '?')
+
+        enemies = [e for e in il if e['team'] != mt and (self._get_combat_hp(e['userId']) or 0) > 0]
+        if not enemies:
+            return "【敌对目标】无存活敌人"
+
+        lines = ["【敌对目标】"]
+        global_idx = 0
+        for e in il:
+            global_idx += 1
+            if e['team'] == mt: continue
+            if (self._get_combat_hp(e['userId']) or 0) <= 0: continue
+
+            name = e.get('displayName', e.get('name', e['userId']))
+            hp = self._get_combat_hp(e['userId']) or 0
+            coord = e.get('coord', '?')
+            if my_coord != '?' and coord != '?':
+                mp_a = parse_coord(my_coord)
+                mp_b = parse_coord(coord)
+                dist = max(abs(mp_a[0]-mp_b[0]), abs(mp_a[1]-mp_b[1])) if mp_a and mp_b else '?'
+            else:
+                dist = '?'
+            unt = " [不可指定]" if self._is_untargetable(e['userId']) else ""
+
+            lines.append(f"  #{global_idx} {name} HP:{hp} 坐标:{coord} 距离:{dist}{unt}")
+
+        return '\n'.join(lines)
         il = self._get_initiative(); me = next((e for e in il if e['userId']==uid), None)
         if not me: return None
         for e in il:
-            if e['team']!=me.get('team','Y') and (self._get_combat_hp(e['userId'])or 0)>0: return e['userId']
+            if e['team']!=me.get('team','Y') and (self._get_combat_hp(e['userId'])or 0)>0 and not self._is_untargetable(e['userId']): return e['userId']
         return None
 
     def _get_damage_dice(self, uid, skill_name):
@@ -620,8 +998,8 @@ class CombatEngine:
                     eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
                     cur_hp = self._get_combat_hp(target_id) or 10
                     actual_lost = min(cur_hp, eff_dmg)
-                    cur_hp = max(0, cur_hp - actual_lost)
-                    self._set_combat_hp(target_id, cur_hp)
+                    cur_hp = cur_hp - actual_lost  # raw (may be negative → overflow)
+                    self._set_combat_hp(target_id, cur_hp, source_dmg=actual_lost)
                     tname_f = self.get_char(target_id).name if target_id else '目标'
                     out += f'  友方伤害: {fdmg_dice}={dmg_val} → {actual_lost}点 (HP:{cur_hp})\n'
 
@@ -649,13 +1027,14 @@ class CombatEngine:
                     dmg_val = roll_dice(dmg_dice)
                     eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
                     cur_hp = self._get_combat_hp(target_id) or 10
-                    # Lethality
+                    # Lethality: d(2×cur_hp) ≤ 致死值 → instant 120% max HP death
                     exp_dmg = avg_damage(dmg_dice)
                     if leth and exp_dmg > 6:
-                        if random.randint(1, max(2, cur_hp*2)) <= int(exp_dmg): cur_hp = 0
-                        else: cur_hp = max(0, cur_hp - eff_dmg)
-                    else: cur_hp = max(0, cur_hp - eff_dmg)
-                    self._set_combat_hp(target_id, cur_hp)
+                        lr = random.randint(1, max(2, cur_hp * 2))
+                        if lr <= leth: cur_hp = 0
+                        else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+                    else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+                    self._set_combat_hp(target_id, cur_hp, source_dmg=eff_dmg)
                     out += f'  伤害: {dmg_dice}={dmg_val} → {eff_dmg}点 (HP:{cur_hp})\n'
 
                     # Enemy lifesteal: min(lost/2, heal_dice) for caster (生之矛 enemy pattern)
@@ -702,7 +1081,7 @@ class CombatEngine:
                 effects.append({'type':'shield','value':sv,'remainingRounds':dur,'sourceUserId':caster_id,
                     'targetUserId':target_id or caster_id,'spellName':spell['name'],
                     'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)})
-                self._set_effects(effects); out += f'  获得 {sv} 点护盾\n'
+                self._set_effects(effects); out += f'  获得 {sv} 点护盾 ({eff.get("护盾值","1d4")})\n'
 
             elif ct == 3:  # Heal (HP/SAN/MP with caps)
                 hp_heal = roll_dice(eff.get('回复hp','0'))
@@ -710,9 +1089,29 @@ class CombatEngine:
                 mp_heal = roll_dice(eff.get('回复mp','0'))
                 tid = target_id or caster_id; tchar = self.get_char(tid)
                 if hp_heal > 0:
-                    chp = self._get_combat_hp(tid) or 10
-                    mhp = tchar.get_attr('体力上限', chp) if tchar else chp
-                    self._set_combat_hp(tid, min(chp+hp_heal, mhp)); out += f'  回复 HP +{hp_heal}\n'
+                    chp = self._hp_safe(tid, 10)
+                    if chp <= 0 and not self._is_dying(tid):
+                        out += f'  目标已死亡，无法治疗\n'
+                    else:
+                        mhp = tchar.get_attr('体力上限', chp) if tchar else chp
+                        # Dying: heal excess damage first
+                        dying_eff = self._is_dying(tid)
+                        if dying_eff:
+                            excess = dying_eff.get('excessDamage', 0)
+                            healed_excess = min(hp_heal, excess)
+                            dying_eff['excessDamage'] = excess - healed_excess
+                            hp_heal -= healed_excess
+                            if dying_eff['excessDamage'] <= 0 and hp_heal > 0:
+                                chp = hp_heal
+                                self._set_combat_hp(tid, chp)
+                                # Remove dying effect
+                                effs = [e for e in self._get_effects() if e is not dying_eff]
+                                self._set_effects(effs)
+                                out += f'  脱离濒死！回复 HP: {chp}\n'
+                            else:
+                                out += f'  治愈濒死伤害 {healed_excess}点 (剩余{dying_eff["excessDamage"]})\n'
+                        else:
+                            self._set_combat_hp(tid, min(chp+hp_heal, mhp)); out += f'  回复 HP +{hp_heal} ({eff.get("回复hp","0")})\n'
                 if san_heal > 0:
                     cs = tchar.get_attr('理智', 50) if tchar else 50
                     tchar.set_attr('理智', min(cs+san_heal, 99)); out += f'  回复 SAN +{san_heal}\n'
@@ -781,7 +1180,8 @@ class CombatEngine:
                                 e['dmg_dice'] = ignite_dmg_dice
                                 break
                         self._set_initiative(il)
-                out += f'  召唤 {count} 个【{tmpl or "使魔"}】\n'
+                cnt_detail = f'{count_raw}={count}' if isinstance(count_raw, str) and 'd' in str(count_raw) else str(count)
+                out += f'  召唤 {cnt_detail} 个【{tmpl or "使魔"}】\n'
                 # Generic cooldown support (C1)
                 cooldown = eff.get('cooldown_rounds', 0)
                 if cooldown > 0:
@@ -1096,6 +1496,23 @@ class CombatEngine:
         self._process_zone_specials()
         self._check_trinity_merge()
 
+        # ---- Dying state round-start CON saves ----
+        for eff in effects:
+            if eff.get('type') == 'dying' and eff.get('remainingRounds', 0) > 0:
+                uid = eff.get('targetUserId', '')
+                eff['dyingRounds'] = eff.get('dyingRounds', 0) + 1
+                rnd = eff['dyingRounds']
+                # Required rank escalates: round1=成功(1), r2=困难(2), r3=极难(3), r4+=大成功(4)
+                required = min(rnd, 4)
+                diff_map = {1: 'normal', 2: 'hard', 3: 'extreme', 4: 'critical'}
+                if not self._check_con_save(uid, diff_map.get(required, 'normal')):
+                    # Died in dying state
+                    char = self.get_char(uid)
+                    msgs.append(f"{char.name} 在濒死第{rnd}回合安息了...")
+                    self._remove_summons_of_owner(uid)
+                    # Mark for removal
+                    eff['remainingRounds'] = -1
+
         for eff in effects:
             # Craft countdown
             if eff.get('type')=='create' and eff.get('craftRoundsRemaining',0) > 0:
@@ -1120,13 +1537,19 @@ class CombatEngine:
                 if dot_dmg > 0:
                     remaining, absorbed, sh_msgs = self._absorb_damage_with_shield(eff['targetUserId'], dot_dmg)
                     cur_hp = self._get_combat_hp(eff['targetUserId']) or 10
-                    cur_hp = max(0, cur_hp - remaining); self._set_combat_hp(eff['targetUserId'], cur_hp)
+                    cur_hp = cur_hp - remaining  # raw (may be negative → overflow)
+                    self._set_combat_hp(eff['targetUserId'], cur_hp, source_dmg=remaining)
                     msgs.extend(sh_msgs)
-                    msgs.append(f"持续伤害【{eff.get('spellName','')}】→ {eff['dotDice']}={dot_dmg}，造成{remaining}点伤害(HP:{cur_hp})")
+                    msgs.append(f"持续伤害【{eff.get('spellName','')}】→ {eff['dotDice']}={dot_dmg}，造成{remaining}点伤害(HP:{max(0,cur_hp)})")
                     if cur_hp <= 0:
-                        # Remove dead from initiative
-                        self._set_initiative([e for e in init_list if e['userId'] != eff['targetUserId']])
-                        msgs.append(f"目标因持续伤害死亡，退出战斗！")
+                        # Remove dead target + their summons from initiative
+                        target_entry = next((e for e in init_list if e['userId'] == eff['targetUserId']), None)
+                        if target_entry and not target_entry.get('isSummon'):
+                            self._remove_summons_of_owner(eff['targetUserId'])
+                            msgs.append(f"目标因持续伤害死亡，召唤物一同清除！")
+                        else:
+                            self._set_initiative([e for e in init_list if e['userId'] != eff['targetUserId']])
+                            msgs.append(f"目标因持续伤害死亡，退出战斗！")
 
             # Delayed heal processing
             if eff.get('type') == 'delayedHeal' and eff.get('targetUserId'):
@@ -1202,9 +1625,13 @@ class CombatEngine:
                     if hp - ignite_dmg <= 0:
                         msgs.append(f"  {entry.get('name', sid)} 被火焰烧尽！")
 
-        # MP regen per round (Python training convenience)
+        # MP regen per round — deduplicate by base uid for multi-action characters
+        seen_uids = set()
         for entry in init_list:
-            uid = entry['userId']; hp = self._get_combat_hp(uid)
+            uid = entry.get('baseUserId', entry['userId'])
+            if uid in seen_uids: continue
+            seen_uids.add(uid)
+            hp = self._get_combat_hp(uid)
             if hp is not None and hp > 0:
                 char = self.get_char(uid); cm = char.get_attr('魔力',0) or 0
                 mx = char.get_attr('魔力上限',cm) or cm
@@ -1308,6 +1735,8 @@ class FullBattleEngine(CombatEngine):
         self.max_rounds = 30
         self._ai_react_dodge_w = {}
         self._ai_react_counter_w = {}
+        self._summoned_once = {}  # caster_id -> set of template names ever summoned
+        self._summon_counters = {}
 
     def setup_battle(self, team_a, team_b, map_size="10x10"):
         w, h = map(int, map_size.split("x"))
@@ -1316,17 +1745,35 @@ class FullBattleEngine(CombatEngine):
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
-            coord = format_coord(1, row)
-            init_list.append({"userId":uid, "name":char.name, "team":"Y", "dex":char.get_attr("敏捷",50), "initRoll":random.randint(1,100), "coord":coord})
-            map_data["occupants"][coord] = uid
+            n_actions = char.get_attr('回合行动数', 1)
+            for ai in range(n_actions):
+                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
+                row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
+                coord = format_coord(1, row)
+                dex_val = char.get_attr("敏捷",50)
+                init_roll, _ = roll_d100("")
+                init_rank = success_rank(init_roll, dex_val)
+                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
+                                  "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+                if ai == 0:
+                    map_data["occupants"][coord] = uid
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
-            coord = format_coord(w-2, row)
-            init_list.append({"userId":uid, "name":char.name, "team":"X", "dex":char.get_attr("敏捷",50), "initRoll":random.randint(1,100), "coord":coord})
-            map_data["occupants"][coord] = uid
-        self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRoll"], -e["dex"]))
+            n_actions = char.get_attr('回合行动数', 1)
+            for ai in range(n_actions):
+                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
+                row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
+                coord = format_coord(w-2, row)
+                dex_val = char.get_attr("敏捷",50)
+                init_roll, _ = roll_d100("")
+                init_rank = success_rank(init_roll, dex_val)
+                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
+                                  "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+                if ai == 0:
+                    map_data["occupants"][coord] = uid
+        self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], -e["initRoll"]))
         self._set_initiative(init_list)
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
@@ -1470,12 +1917,25 @@ class FullBattleEngine(CombatEngine):
         cur_hp = self._get_combat_hp(loser_uid) or 10
         exp_dmg = avg_damage(dmg_dice)
         if leth and exp_dmg > 6:
-            lr = random.randint(1, max(2, cur_hp*2))
-            if lr <= int(exp_dmg): cur_hp = 0; lines.append(f"  致死骰: 成功! {loser_name}死亡")
-            else: cur_hp = max(0, cur_hp - eff_dmg); lines.append(f"  致死骰: 失败")
-        else: cur_hp = max(0, cur_hp - eff_dmg)
-        lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点"); self._set_combat_hp(loser_uid, cur_hp)
-        lines.append(f"  {loser_name} HP: {cur_hp}")
+            # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
+            lr = random.randint(1, max(2, cur_hp * 2))
+            if lr <= int(exp_dmg):
+                loser_char = self.get_char(loser_uid)
+                max_hp = loser_char.get_attr('体力上限', loser_char.get_attr('体力', 10))
+                lethal_dmg = int(max_hp * 1.2)
+                cur_hp = -lethal_dmg
+                lines.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} ≤ {int(exp_dmg)} 即死! 受到{max_hp}×1.2={lethal_dmg}伤害")
+            else:
+                cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow tracked in _set_combat_hp)
+                lines.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} > {int(exp_dmg)} 失败")
+        else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+        lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点"); self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg)
+        lines.append(f"  {loser_name} HP: {max(0, cur_hp)}")
+        # Cleanup: if a non-summon character died, remove their summons immediately
+        if cur_hp <= 0:
+            loser_entry = next((e for e in self._get_initiative() if e['userId'] == loser_uid), None)
+            if loser_entry and not loser_entry.get('isSummon'):
+                self._remove_summons_of_owner(loser_uid)
         return (winner_uid, loser_uid, lines)
 
     def _use_skill(self, uid, skill_num, args):
@@ -1535,7 +1995,7 @@ class FullBattleEngine(CombatEngine):
         char = self.get_char(uid); il = self._get_initiative()
         me = next((e for e in il if e["userId"]==uid), None)
         if not me: return "No position"
-        enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
+        enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
         if not enemies: return "No enemies"
         t = enemies[0]; tid = t["userId"]
         bn, bv = char.get_best_melee()
@@ -1558,18 +2018,25 @@ class FullBattleEngine(CombatEngine):
             return None
         # Fix #9 / C7: Handle _meta templates (e.g. 随机召唤物 with options pool)
         if tmpl.get('_meta'):
+            meta_unique = tmpl.get('unique_per_caster', False)  # Save before tmpl reassignment
             options = list(tmpl.get('options', []))
-            if tmpl.get('unique_per_caster'):
-                il = self._get_initiative()
-                existing = {e.get("name") for e in il
-                            if e.get("isSummon") and e.get("ownerId") == caster_id}
+            if meta_unique:
+                existing = self._summoned_once.get(caster_id, set())
                 options = [n for n in options if n not in existing]
             if not options:
                 return None
             template_name = random.choice(options)
-            tmpl = tmpls.get(template_name)
+            tmpl = tmpls.get(template_name)  # tmpl is now the resolved template (e.g. '朱雀') — no unique_per_caster!
             if not tmpl: return None
-        sid = f"sum_{caster_id}_{random.randint(1000,9999)}"
+            # Track as summoned (unique_per_caster: once per battle — survives death)
+            if meta_unique:  # Use the saved flag from meta template
+                self._summoned_once.setdefault(caster_id, set()).add(template_name)
+        # Generate summon ID: {caster_serial}_sum_{n} (e.g. Y12_sum_1)
+        caster_info = self.get_char(caster_id)
+        caster_serial = (caster_info.serial if caster_info and caster_info.serial else caster_id)
+        n = self._summon_counters.get(caster_id, 0) + 1
+        self._summon_counters[caster_id] = n
+        sid = f"{caster_serial}_sum_{n}"
         hp = tmpl.get("HP",10); dex = tmpl.get("DEX",50)
         skills_raw = tmpl.get("skills",["斗殴:50 1d4"])
         parsed = []
@@ -1615,9 +2082,12 @@ class FullBattleEngine(CombatEngine):
         team = ce.get("team","Y") if ce else "Y"
         caster = self.get_char(caster_id)
         caster_name = caster.name if caster else caster_id
-        summon_display_name = template_name
-        init_list.append({"userId":sid,"name":summon_display_name,"team":team,"dex":dex,"initRoll":dex+random.randint(1,20),
-            "coord":coord,"isSummon":True,"ownerId":caster_id,"skills":parsed,
+        summon_display_name = f"{caster_name} 的 {template_name}"
+        # Summon COC DEX initiative roll
+        sum_init_roll, _ = roll_d100("")
+        sum_init_rank = success_rank(sum_init_roll, dex)
+        init_list.append({"userId":sid,"name":template_name,"displayName":summon_display_name,"team":team,"dex":dex,"initRoll":sum_init_roll,"initRank":sum_init_rank,
+            "coord":coord,"isSummon":True,"ownerId":self._resolve_uid(caster_id),"skills":parsed,
             "skill_name":parsed[0]["name"],"skill_val":parsed[0]["val"],"dmg_dice":parsed[0]["dice"],
             "zone_skills": [sk for sk in parsed if sk.get("skill_type") == "zone_heal"],
             "zone_cooldown": 0, "summon_mp": tmpl.get("MP", 0),
@@ -1662,7 +2132,9 @@ class FullBattleEngine(CombatEngine):
 
     def _summon_attack(self, summon_id):
         il = self._get_initiative(); entry = next((e for e in il if e["userId"]==summon_id), None)
-        if not entry: return "未找到召唤物"
+        if not entry: return ["未找到召唤物"]
+        sname = entry.get("displayName", entry.get("name", summon_id))
+        lines = []
 
         # Zone skill check — summon can cast a zone instead of attacking
         zone_cooldown = entry.get("zone_cooldown", 0)
@@ -1691,10 +2163,11 @@ class FullBattleEngine(CombatEngine):
                     })
                     self._set_effects(effects)
                     zname = zsk.get("name", "治愈领域")
-                    return f"{zname} → 创建治愈领域（半径{zsk.get('zone_radius',8)}格，持续{zsk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）"
+                    lines.append(f"{zname} → 创建治愈领域（半径{zsk.get('zone_radius',8)}格，持续{zsk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）")
+                    return lines
 
-        enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
-        if not enemies: return "无可用目标"
+        enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
+        if not enemies: return ["无可用目标"]
         tid = enemies[0]["userId"]; tname = enemies[0].get("name", tid)
         skills = entry.get("skills",[]); sk_name = ""
         if skills:
@@ -1711,22 +2184,67 @@ class FullBattleEngine(CombatEngine):
         # Ignited summons use their ignite damage dice
         if entry.get("ignited"):
             dmg_dice = entry.get('ignite_dmg_dice', '2d4')
-        # Battle spirit penalty dice
+        sk_label = sk_name or "攻击"
+
+        # Battle spirit penalty dice → unified roll_d100
         pens = entry.get('battle_spirit_penalty_dice', 0)
+        pen_detail = ""
         if pens > 0:
-            atk_roll = max(random.randint(1, 100) for _ in range(pens + 1))
+            bp_str = 'p' if pens == 1 else f'p{pens}'
+            atk_roll, detail = roll_d100(bp_str)
+            extra_nums = detail[2:]  # strip '惩罚' prefix, keep extra tens values
+            pen_detail = f"，惩罚骰({extra_nums})→{atk_roll}"
         else:
-            atk_roll = random.randint(1, 100)
+            atk_roll, _ = roll_d100()
+
+        atk_rank = success_rank(atk_roll, sv)
+        lines.append(f"{sname} 的【{sk_label}】检定:")
+        lines.append(f"  D100={atk_roll}/{sv}{pen_detail} {rank_text(atk_rank)}")
+
         if atk_roll > sv:
-            return f"{sk_name or '攻击'} {tname} → 未命中"
+            lines.append(f"  {sname} 攻击失败！未命中 {tname}")
+            return lines
+
         total_dmg = 0
-        for _ in range(hits):
+        dmg_details = []
+        for hi in range(hits):
             if hits > 1 and random.randint(1,100) > sv: continue
-            dmg = roll_dice(dmg_dice); eff_dmg, _, _ = self._absorb_damage_with_shield(tid, dmg)
-            eff_dmg = self._apply_shield_block(tid, eff_dmg); total_dmg += eff_dmg
-        cur_hp = self._get_combat_hp(tid) or 10; self._set_combat_hp(tid, max(0, cur_hp - total_dmg))
-        thp = self._get_combat_hp(tid) or 0
-        return f"{sk_name or '攻击'} {tname} → 造成 {total_dmg} 点伤害 (HP:{thp})"
+            dmg = roll_dice(dmg_dice)
+            dmg_display = f"{dmg_dice}={dmg}"
+            eff_dmg, shield_abs, _ = self._absorb_damage_with_shield(tid, dmg)
+            eff_dmg = self._apply_shield_block(tid, eff_dmg)
+            total_dmg += eff_dmg
+            if hits > 1:
+                dmg_details.append(f"    第{hi+1}击: {dmg_display} → {eff_dmg}点")
+            else:
+                dmg_details.append(f"  {dmg_display}")
+            if shield_abs > 0:
+                dmg_details.append(f"  护盾吸收: {shield_abs}点")
+
+        cur_hp = self._get_combat_hp(tid) or 10
+        # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
+        leth_val = entry.get("lethality", 0)
+        exp_dmg = avg_damage(dmg_dice)
+        leth_result = ""
+        if leth_val and exp_dmg > 6:
+            lr = random.randint(1, max(2, cur_hp * 2))
+            if lr <= int(exp_dmg):
+                cur_hp = 0
+                leth_result = f"  致死骰: 1d{max(2,cur_hp*2) if total_dmg == 0 else ''}={lr} ≤ {int(exp_dmg)} 成功! {tname}死亡"
+            else:
+                cur_hp = cur_hp - total_dmg  # raw (may be negative → overflow)
+                leth_result = f"  致死骰: 1d{max(2,(self._get_combat_hp(tid) or 10)*2)}={lr} > {int(exp_dmg)} 失败"
+        else:
+            cur_hp = cur_hp - total_dmg  # raw (may be negative → overflow)
+
+        self._set_combat_hp(tid, cur_hp, source_dmg=total_dmg)
+        lines.extend(dmg_details)
+        if dmg_details:
+            lines.append(f"  造成 {total_dmg} 点伤害")
+        if leth_result:
+            lines.append(leth_result)
+        lines.append(f"  {tname} HP: {cur_hp}")
+        return lines
 
     def _apply_shield_block(self, target_id, dmg):
         il = self._get_initiative(); entry = next((e for e in il if e["userId"]==target_id), None)
@@ -1780,7 +2298,7 @@ class FullBattleEngine(CombatEngine):
                     if dmg > 0:
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
                         hp = self._get_combat_hp(entry["userId"]) or 10
-                        self._set_combat_hp(entry["userId"], max(0, hp - ed))
+                        self._set_combat_hp(entry["userId"], hp - ed, source_dmg=ed)
             if eff.get("tickHealHp"):
                 for entry in il:
                     if entry.get("team") != zone_team: continue
@@ -1949,6 +2467,8 @@ class FastBattleEngine(CombatEngine):
     def __init__(self):
         super().__init__()
         self.max_rounds = 20
+        self._summoned_once = {}  # caster_id -> set of template names ever summoned
+        self._summon_counters = {}
 
     def setup_battle(self, team_a, team_b, map_size="10x10"):
         w, h = map(int, map_size.split("x"))
@@ -1957,17 +2477,35 @@ class FastBattleEngine(CombatEngine):
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
-            coord = format_coord(1, row)
-            init_list.append({"userId":uid, "name":char.name, "team":"Y", "dex":char.get_attr("敏捷",50), "initRoll":random.randint(1,100), "coord":coord})
-            map_data["occupants"][coord] = uid
+            n_actions = char.get_attr('回合行动数', 1)
+            for ai in range(n_actions):
+                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
+                row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
+                coord = format_coord(1, row)
+                dex_val = char.get_attr("敏捷",50)
+                init_roll, _ = roll_d100("")
+                init_rank = success_rank(init_roll, dex_val)
+                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
+                                  "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+                if ai == 0:
+                    map_data["occupants"][coord] = uid
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
-            coord = format_coord(w-2, row)
-            init_list.append({"userId":uid, "name":char.name, "team":"X", "dex":char.get_attr("敏捷",50), "initRoll":random.randint(1,100), "coord":coord})
-            map_data["occupants"][coord] = uid
-        self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRoll"], -e["dex"]))
+            n_actions = char.get_attr('回合行动数', 1)
+            for ai in range(n_actions):
+                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
+                row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
+                coord = format_coord(w-2, row)
+                dex_val = char.get_attr("敏捷",50)
+                init_roll, _ = roll_d100("")
+                init_rank = success_rank(init_roll, dex_val)
+                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
+                                  "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+                if ai == 0:
+                    map_data["occupants"][coord] = uid
+        self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], -e["initRoll"]))
         self._set_initiative(init_list)
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
@@ -2000,18 +2538,25 @@ class FastBattleEngine(CombatEngine):
             return None
         # Fix #9 / C7: Handle _meta templates (e.g. 随机召唤物 with options pool)
         if tmpl.get('_meta'):
+            meta_unique = tmpl.get('unique_per_caster', False)  # Save before tmpl reassignment
             options = list(tmpl.get('options', []))
-            if tmpl.get('unique_per_caster'):
-                il = self._get_initiative()
-                existing = {e.get("name") for e in il
-                            if e.get("isSummon") and e.get("ownerId") == caster_id}
+            if meta_unique:
+                existing = self._summoned_once.get(caster_id, set())
                 options = [n for n in options if n not in existing]
             if not options:
                 return None
             template_name = random.choice(options)
-            tmpl = tmpls.get(template_name)
+            tmpl = tmpls.get(template_name)  # tmpl is now the resolved template (e.g. '朱雀') — no unique_per_caster!
             if not tmpl: return None
-        sid = f"sum_{caster_id}_{random.randint(1000,9999)}"
+            # Track as summoned (unique_per_caster: once per battle — survives death)
+            if meta_unique:  # Use the saved flag from meta template
+                self._summoned_once.setdefault(caster_id, set()).add(template_name)
+        # Generate summon ID: {caster_serial}_sum_{n} (e.g. Y12_sum_1)
+        caster_info = self.get_char(caster_id)
+        caster_serial = (caster_info.serial if caster_info and caster_info.serial else caster_id)
+        n = self._summon_counters.get(caster_id, 0) + 1
+        self._summon_counters[caster_id] = n
+        sid = f"{caster_serial}_sum_{n}"
         hp = tmpl.get("HP",10); dex = tmpl.get("DEX",50)
         skills_raw = tmpl.get("skills",["斗殴:50 1d4"])
         parsed = []
@@ -2057,9 +2602,12 @@ class FastBattleEngine(CombatEngine):
         team = ce.get("team","Y") if ce else "Y"
         caster = self.get_char(caster_id)
         caster_name = caster.name if caster else caster_id
-        summon_display_name = template_name
-        init_list.append({"userId":sid,"name":summon_display_name,"team":team,"dex":dex,"initRoll":dex+random.randint(1,20),
-            "coord":coord,"isSummon":True,"ownerId":caster_id,"skills":parsed,
+        summon_display_name = f"{caster_name} 的 {template_name}"
+        # Summon COC DEX initiative roll
+        sum_init_roll, _ = roll_d100("")
+        sum_init_rank = success_rank(sum_init_roll, dex)
+        init_list.append({"userId":sid,"name":template_name,"displayName":summon_display_name,"team":team,"dex":dex,"initRoll":sum_init_roll,"initRank":sum_init_rank,
+            "coord":coord,"isSummon":True,"ownerId":self._resolve_uid(caster_id),"skills":parsed,
             "skill_name":parsed[0]["name"],"skill_val":parsed[0]["val"],"dmg_dice":parsed[0]["dice"],
             "zone_skills": [sk for sk in parsed if sk.get("skill_type") == "zone_heal"],
             "zone_cooldown": 0, "summon_mp": tmpl.get("MP", 0),
@@ -2134,7 +2682,7 @@ class FastBattleEngine(CombatEngine):
                     self._set_effects(effects)
                     return
 
-        enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
+        enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
         if not enemies: return
         tid = enemies[0]["userId"]; skills = entry.get("skills",[]); sk_name = ""
         on_whiff_aoe = ""; on_whiff_mp = 0
@@ -2154,19 +2702,20 @@ class FastBattleEngine(CombatEngine):
         # Ignited summons use their ignite damage dice
         if entry.get("ignited"):
             dmg_dice = entry.get('ignite_dmg_dice', '2d4')
-        # Battle spirit penalty dice
+        # Battle spirit penalty dice → unified roll_d100
         pens = entry.get('battle_spirit_penalty_dice', 0)
         if pens > 0:
-            atk_roll = max(random.randint(1, 100) for _ in range(pens + 1))
+            bp_str = 'p' if pens == 1 else f'p{pens}'
+            atk_roll, _ = roll_d100(bp_str)
         else:
-            atk_roll = random.randint(1, 100)
+            atk_roll, _ = roll_d100()
         if atk_roll > sv: return
         total_dmg = 0
         for _ in range(hits):
             if hits > 1 and random.randint(1,100) > sv: continue
             dmg = roll_dice(dmg_dice); eff_dmg, _, _ = self._absorb_damage_with_shield(tid, dmg)
             eff_dmg = self._apply_shield_block(tid, eff_dmg); total_dmg += eff_dmg
-        cur_hp = self._get_combat_hp(tid) or 10; self._set_combat_hp(tid, max(0, cur_hp - total_dmg))
+        cur_hp = self._get_combat_hp(tid) or 10; self._set_combat_hp(tid, cur_hp - total_dmg, source_dmg=total_dmg)
         # Generic on-all-miss AoE (e.g. 积雨云引导)
         if on_whiff_aoe and total_dmg == 0:
             owner_id = entry.get("ownerId")
@@ -2221,7 +2770,7 @@ class FastBattleEngine(CombatEngine):
                     if dmg > 0:
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
                         hp = self._get_combat_hp(entry["userId"]) or 10
-                        self._set_combat_hp(entry["userId"], max(0, hp - ed))
+                        self._set_combat_hp(entry["userId"], hp - ed, source_dmg=ed)
             if eff.get("tickHealHp"):
                 for entry in il:
                     if entry.get("team") != zone_team: continue
@@ -2408,9 +2957,10 @@ class FastBattleEngine(CombatEngine):
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
         eff_bp = _calc_net_bp(atk_buffs, "", skill_name)
-        atk_result, _ = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill)
+        atk_result, atk_bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill)
+        bp_str = f", {atk_bp_detail}" if atk_bp_detail else ""
         if atk_rank <= 0:
-            return (def_uid, atk_uid, 0, "")  # Miss/fumble: defender wins, no damage
+            return (def_uid, atk_uid, 0, f"D100={atk_result}/{eff_skill}{bp_str} {rank_text(atk_rank)}")
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
@@ -2424,16 +2974,16 @@ class FastBattleEngine(CombatEngine):
         is_dodge = random.random() < (dw / max(1, dw + cw)) if (dw + cw) > 0 else (dodge_val >= bmv)
 
         if is_dodge:
-            rr, _ = roll_d100(def_bp); react_rank = success_rank(rr, dodge_val)
+            rr, rd_detail = roll_d100(def_bp); react_rank = success_rank(rr, dodge_val)
             eff_atk = atk_rank
             if react_rank > 1: eff_atk -= (react_rank - 1)
             if react_rank == -2: eff_atk += (1 if eff_atk == -1 else 2)
             eff_atk = max(-2, min(4, eff_atk))
-            if eff_atk <= 0: return (def_uid, atk_uid, 0, f"dodge:{react_rank}")
+            if eff_atk <= 0: return (def_uid, atk_uid, 0, f"D100={rr}/{dodge_val} dodge rank={react_rank}")
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             is_counter = False
         else:
-            rr, _ = roll_d100(def_bp); react_rank = success_rank(rr, bmv)
+            rr, rd_detail = roll_d100(def_bp); react_rank = success_rank(rr, bmv)
             eff_atk, eff_react = atk_rank, react_rank
             if react_rank == -2: eff_atk += (1 if eff_atk == -1 else 2)
             if eff_atk == -2: eff_react = min(4, eff_react + 1)
@@ -2447,13 +2997,15 @@ class FastBattleEngine(CombatEngine):
                 winner_rank, winner_uid, loser_uid, is_counter = eff_atk, atk_uid, def_uid, False
             else: return (None, None, 0, "draw")
 
+        # Track winning roll for 大成功 handling: use rr for counter, atk_result for attacker
+        winner_roll = rr if is_counter else atk_result
         mx = max_damage(dmg_dice); dmg_val = 0
         if winner_rank == 2:
             dmg_val = max(roll_dice(dmg_dice), roll_dice(dmg_dice))
         elif winner_rank == 3:
             dmg_val = mx + roll_dice(dmg_dice) if pen else mx
         elif winner_rank == 4:
-            dmg_val = mx * 2 if (atk_result == 1 or pen) else mx + roll_dice(dmg_dice)
+            dmg_val = mx * 2 if (winner_roll == 1 or pen) else mx + roll_dice(dmg_dice)
         else:
             dmg_val = roll_dice(dmg_dice)
 
@@ -2461,10 +3013,17 @@ class FastBattleEngine(CombatEngine):
         cur_hp = self._get_combat_hp(loser_uid) or 10
         exp_dmg = avg_damage(dmg_dice)
         if leth and exp_dmg > 6:
-            if random.randint(1, max(2, cur_hp*2)) <= int(exp_dmg): cur_hp = 0
-            else: cur_hp = max(0, cur_hp - eff_dmg)
-        else: cur_hp = max(0, cur_hp - eff_dmg)
-        self._set_combat_hp(loser_uid, cur_hp)
+            # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
+            lr = random.randint(1, max(2, cur_hp * 2))
+            if lr <= int(exp_dmg):
+                loser_char = self.get_char(loser_uid)
+                max_hp = loser_char.get_attr('体力上限', loser_char.get_attr('体力', 10))
+                cur_hp = -int(max_hp * 1.2)
+            else:
+                cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+        else:
+            cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+        self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg)
 
         react_tag = "dodge" if is_dodge else ("counter" if not is_dodge else "?")
         return (winner_uid, loser_uid, eff_dmg, f"rank:{winner_rank} react:{react_tag} dmg:{eff_dmg}")
@@ -2474,7 +3033,7 @@ class FastBattleEngine(CombatEngine):
         me = next((e for e in il if e["userId"]==uid), None)
         if not me: return ""
         if not self._can_basic_attack(uid, char): return ""
-        enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0]
+        enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
         if not enemies: return ""
         grounded = [e for e in enemies if self._can_melee(uid, e["userId"])]
         if not grounded: return ""
@@ -2489,10 +3048,16 @@ class FastBattleEngine(CombatEngine):
         cur_hp = self._get_combat_hp(tid) or 10
         exp_dmg = avg_damage(dd)
         if l and exp_dmg > 6:
-            if random.randint(1, max(2, cur_hp*2)) <= int(exp_dmg): cur_hp = 0
-            else: cur_hp = max(0, cur_hp - eff_dmg)
-        else: cur_hp = max(0, cur_hp - eff_dmg)
-        self._set_combat_hp(tid, cur_hp)
+            # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
+            lr = random.randint(1, max(2, cur_hp * 2))
+            if lr <= int(exp_dmg): cur_hp = 0
+            else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+        else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
+        self._set_combat_hp(tid, cur_hp, source_dmg=eff_dmg)
+        if cur_hp <= 0:
+            target_entry = next((e for e in il if e['userId'] == tid), None)
+            if target_entry and not target_entry.get('isSummon'):
+                self._remove_summons_of_owner(tid)
         # Lifesteal
         spells = char.spells or self.load_spells(uid)
         for s in spells:
@@ -2507,7 +3072,7 @@ class FastBattleEngine(CombatEngine):
         il = self._get_initiative(); me = next((e for e in il if e["userId"]==uid), None)
         if not me: return ""
         mt = me.get("team","Y"); mc = me.get("coord","")
-        enemies = [e for e in il if e["team"]!=mt and (self._get_combat_hp(e["userId"])or 0)>0]
+        enemies = [e for e in il if e["team"]!=mt and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
         if not enemies or not mc: return ""
         ec = enemies[0].get("coord","")
         if not ec: return ""

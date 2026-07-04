@@ -13,8 +13,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, is_in_melee_range,
-    has_timing, parse_coord, format_coord, avg_damage)
+from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, roll_d100,
+    is_in_melee_range, has_timing, parse_coord, format_coord, avg_damage,
+    success_rank, rank_text)
 from characters_data import ALL_CHARACTERS, load_character_to_engine, SUMMON_TEMPLATES
 import battle_engine
 battle_engine._SUMMON_TEMPLATES = SUMMON_TEMPLATES
@@ -26,6 +27,7 @@ GENERATIONS = 50
 BATTLES_PER_GEN = 100
 ALPHA = 0.1       # Learning rate
 GAMMA = 0.9       # Discount factor
+OUTPUT_FILE = 'ai_weights.json'  # Can be overridden by wrapper
 
 # ============================================================
 #  State Encoding
@@ -45,7 +47,7 @@ def encode_state(engine, uid):
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
-    if not my_entry: return 'dead'
+    if not my_entry: return None  # sentinel: character not in initiative
     my_team = my_entry.get('team', 'Y')
 
     my_hp = engine._get_combat_hp(uid) or 0
@@ -89,20 +91,26 @@ def encode_state(engine, uid):
 
     n_enemies = min(len(enemies), 4)
 
+    # Active zone check — summons don't cast zones, always 0
+    has_zone_active = 0
+
+    # Dying state
+    is_dying = int(engine._is_dying(uid) is not None)
+
     # Phase dimension (for dual-phase characters like 木落)
     phase = getattr(char, 'phase', 1)
 
     # Ready cake available (for 比哈米 cake-giving / eating decisions)
     has_cake = int(hasattr(engine, '_has_ready_cake') and engine._has_ready_cake())
 
-    return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase, has_cake)
+    return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase, has_cake, has_zone_active, is_dying)
 
 
 def encode_summon_state(engine, uid):
     """Encode combat state for a summon entity into a hashable key."""
     init_list = engine._get_initiative()
     entry = next((e for e in init_list if e['userId'] == uid), None)
-    if not entry: return 'dead'
+    if not entry: return None  # sentinel: summon not in initiative
     my_team = entry.get('team', 'Y')
 
     my_hp = engine._get_combat_hp(uid) or 0
@@ -131,6 +139,12 @@ def encode_summon_state(engine, uid):
 
     n_enemies = min(len(enemies), 4)
 
+    # Summons don't cast zones, always 0
+    has_zone_active = 0
+
+    # Dying state
+    is_dying = int(engine._is_dying(uid) is not None)
+
     # Number of skills this summon has (0=1 skill, 1=2, 2=3+)
     skills = entry.get('skills', [])
     n_skills = min(len(skills) - 1, 2) if skills else 0
@@ -142,7 +156,7 @@ def encode_summon_state(engine, uid):
     # Battle spirit penalty dice (from 环花暖)
     bs_penalty = min(entry.get('battle_spirit_penalty_dice', 0), 2)
 
-    return (my_b, eb, dist, n_enemies, n_skills, ignited, bs_penalty)
+    return (my_b, eb, dist, n_enemies, n_skills, ignited, bs_penalty, has_zone_active, is_dying)
 
 
 # ============================================================
@@ -237,6 +251,7 @@ def _mp_run_battle(args):
         if is_summon:
             # Summon Q-training: random action in subprocess
             st = encode_summon_state(engine, uid)
+            if st is None: engine._end_turn(uid); continue
             av = get_summon_actions(engine, uid)
             if av:
                 ak, an = random.choice(av)
@@ -247,7 +262,8 @@ def _mp_run_battle(args):
                 reward = (curr_diff - prev_diff) / max_hp
                 next_st = encode_summon_state(engine, uid)
                 summon_name = entry.get('name', uid)
-                updates.append(('summon', summon_name, st, ak, reward, next_st))
+                if next_st is not None:
+                    updates.append(('summon', summon_name, st, ak, reward, next_st))
             else:
                 engine._summon_attack(uid)
             state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
@@ -264,6 +280,7 @@ def _mp_run_battle(args):
         if actions['主动'] <= 0: engine._end_turn(uid); continue
 
         st = encode_state(engine, uid)
+        if st is None: engine._end_turn(uid); continue
         available = get_available_actions(engine, uid)
         if not available: engine._end_turn(uid); continue
 
@@ -279,10 +296,7 @@ def _mp_run_battle(args):
 
         prev_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
         execute_action(engine, uid, ak)
-        # 星闪 skills don't consume 主动
-        is_xs_action = engine.get_char(uid).get_attr('技能不消耗主动', 0) == 1 and ak.startswith('SKILL_')
-        if not is_xs_action:
-            actions['主动'] -= 1
+        actions['主动'] -= 1
         engine._set_actions(engine._get_actions())
         if actions['主动'] <= 0: engine._end_turn(uid)
         curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
@@ -293,7 +307,7 @@ def _mp_run_battle(args):
         ck = None
         for c in all_char_data:
             if char_map_dict[c['serial']] == uid: ck = c['serial']; break
-        if ck: updates.append((table_type, ck, st, ak, reward, next_st))
+        if ck and next_st is not None: updates.append((table_type, ck, st, ak, reward, next_st))
 
     # Terminal rewards
     if winner:
@@ -301,6 +315,7 @@ def _mp_run_battle(args):
             uid = char_map_dict[s]
             ck = s
             st = encode_state(engine, uid) if hasattr(engine, '_get_state') else (0,)*12
+            if st is None: continue
             mt2 = 'Y' if s in team_a else 'X'
             term_r = 3.0 if winner == mt2 else -3.0
             # Determine table type for terminal update
@@ -339,14 +354,16 @@ def get_available_actions(engine, uid):
     phase_key = f"{ck}_p{current_phase}"
     spells = char.spells or engine.load_spells(uid)
 
-    target_strats = [('T0', '最低HP'), ('T1', '最近'), ('T2', '最高威胁')]
+    target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
 
     # Build static base cache (spell list + basic attack + move, without MP check)
     # Use phase-aware key so Phase 1 and Phase 2 have separate caches
     if phase_key not in _ACTION_CACHE:
         base = []
         for s in spells:
-            if has_timing(s.get('时机', '2'), '2') and not has_timing(s.get('时机', '1'), '1'):
+            timing = s.get('时机', '2')
+            is_mfg = any(e.get('type') == 6 for e in s.get('effects', []))
+            if (has_timing(timing, '2') or (has_timing(timing, '3') and is_mfg)) and not has_timing(timing, '1'):
                 for ts, tl in target_strats:
                     base.append((f'SKILL_{s["index"]}__{ts}', f'{s["name"]}→{tl}'))
         for ts, tl in target_strats:
@@ -439,12 +456,20 @@ def parse_action(action_key):
 def select_target_by_strategy(engine, uid, strategy, enemies):
     """Select target from enemy list based on strategy. Returns enemy userId or None."""
     if not enemies: return None
-    if strategy == 'T0':  # 最低HP
+    if strategy == 'T0':  # 最低HP (only non-summon players)
+        non_summons = [e for e in enemies if not e.get('isSummon')]
+        if non_summons:
+            return min(non_summons, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
         return min(enemies, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
     elif strategy == 'T1':  # 最近
         return enemies[0]['userId']
     elif strategy == 'T2':  # 最高威胁
         return max(enemies, key=lambda e: e.get('dex', 50))['userId']
+    elif strategy == 'T3':  # 最低HP召唤物
+        summons = [e for e in enemies if e.get('isSummon')]
+        if summons:
+            return min(summons, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
+        return enemies[0]['userId'] if enemies else None
     return enemies[0]['userId'] if enemies else None
 
 
@@ -477,7 +502,7 @@ def get_summon_actions(engine, uid):
     skills = entry.get('skills', [])
     if not skills: return []
 
-    target_strats = [('T0', '最低HP'), ('T1', '最近'), ('T2', '最高威胁')]
+    target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
     actions = []
     for i, sk in enumerate(skills):
         if sk.get("skill_type") == "zone_heal":
@@ -490,11 +515,13 @@ def get_summon_actions(engine, uid):
 
 
 def execute_summon_action(engine, uid, action_key):
-    """Execute a summon action. Uses the same skill execution as _summon_attack but with Q-chosen skill/target."""
+    """Execute a summon action. Returns list of detail lines for display."""
     init_list = engine._get_initiative()
     entry = next((e for e in init_list if e['userId'] == uid), None)
-    if not entry: return
+    if not entry: return []
+    sname = entry.get('name', uid)
     my_team = entry.get('team', 'Y')
+    lines = []
 
     base, target_strat = parse_action(action_key)
 
@@ -524,32 +551,35 @@ def execute_summon_action(engine, uid, action_key):
                         'persistent': 0, 'stackable': 0,
                     })
                     engine._set_effects(effects)
-        return
+                    lines.append(f"{sname} 的【{sk.get('name', '治愈领域')}】（领域）")
+                    lines.append(f"  → 创建治愈领域（半径{sk.get('zone_radius',8)}格，持续{sk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）")
+                else:
+                    lines.append(f"{sname} MP不足，无法施放领域")
+        return lines
 
     enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
-    if not enemies: return
+    if not enemies: return ["无可用目标"]
 
     if not base.startswith('SUMMON_SKILL_'):
-        engine._summon_attack(uid)
-        return
+        return engine._summon_attack(uid)
 
     skill_idx = int(base.split('_')[-1])
     skills = entry.get('skills', [])
     if skill_idx >= len(skills):
-        engine._summon_attack(uid)
-        return
+        return engine._summon_attack(uid)
 
     sk = skills[skill_idx]
     # Zone heal skills should not be used as attack — delegate to _summon_attack
     if sk.get("skill_type") == "zone_heal":
-        engine._summon_attack(uid)
-        return
+        return engine._summon_attack(uid)
 
     # Select target by strategy
     tid = select_target_by_strategy(engine, uid, target_strat, enemies)
     if not tid: tid = enemies[0]['userId']
+    tname = next((e.get('name', tid) for e in init_list if e['userId'] == tid), tid)
 
     sv = sk['val']; dmg_dice = sk['dice']
+    sk_name = sk.get('name', '攻击')
     hits = sk.get('hits', 1)
     on_whiff_aoe = sk.get('on_whiff_aoe_dmg', '')
     on_whiff_mp = sk.get('on_whiff_mp_cost', 0)
@@ -558,25 +588,77 @@ def execute_summon_action(engine, uid, action_key):
     if entry.get('ignited'):
         dmg_dice = entry.get('ignite_dmg_dice', dmg_dice)
 
-    # Battle spirit penalty dice
+    # Battle spirit penalty dice → unified roll_d100
     pens = entry.get('battle_spirit_penalty_dice', 0)
+    pen_detail = ""
     if pens > 0:
-        atk_roll = max(random.randint(1, 100) for _ in range(pens + 1))
+        bp_str = 'p' if pens == 1 else f'p{pens}'
+        atk_roll, detail = roll_d100(bp_str)
+        extra_nums = detail[2:]  # strip '惩罚' prefix, keep extra tens values
+        pen_detail = f"，惩罚骰({extra_nums})→{atk_roll}"
     else:
-        atk_roll = random.randint(1, 100)
+        atk_roll, _ = roll_d100()
 
-    if atk_roll > sv: return
+    atk_rank = success_rank(atk_roll, sv)
+    lines.append(f"{sname} 的【{sk_name}】检定:")
+    lines.append(f"  D100={atk_roll}/{sv}{pen_detail} {rank_text(atk_rank)}")
+
+    if atk_roll > sv:
+        lines.append(f"  {sname} 攻击失败！未命中 {tname}")
+        # On-whiff AoE
+        if on_whiff_aoe:
+            owner_id = entry.get('ownerId')
+            if owner_id:
+                oc = engine.get_char(owner_id); omp = oc.get_attr('魔力', 0) or 0
+                if omp >= on_whiff_mp:
+                    oc.set_attr('魔力', omp - on_whiff_mp)
+                    lines.append(f"  消耗{on_whiff_mp}MP触发溅射!")
+                    for enemy in enemies:
+                        aoe_dmg = roll_dice(on_whiff_aoe) // 2
+                        ehp = engine._get_combat_hp(enemy['userId']) or 10
+                        engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
+                        ename = enemy.get('name', enemy['userId'])
+                        lines.append(f"  溅射 {ename}: {on_whiff_aoe}//2={aoe_dmg}点 → HP:{max(0, ehp - aoe_dmg)}")
+        return lines
 
     total_dmg = 0
-    for _ in range(hits):
+    dmg_details = []
+    for hi in range(hits):
         if hits > 1 and random.randint(1, 100) > sv: continue
         dmg = roll_dice(dmg_dice)
-        eff_dmg, _, _ = engine._absorb_damage_with_shield(tid, dmg)
+        dmg_display = f"{dmg_dice}={dmg}"
+        eff_dmg, shield_abs, _ = engine._absorb_damage_with_shield(tid, dmg)
         eff_dmg = engine._apply_shield_block(tid, eff_dmg)
         total_dmg += eff_dmg
+        if hits > 1:
+            dmg_details.append(f"  第{hi+1}击: {dmg_display} → {eff_dmg}点")
+        else:
+            dmg_details.append(f"  {dmg_display}")
+        if shield_abs > 0:
+            dmg_details.append(f"  护盾吸收: {shield_abs}点")
 
     cur_hp = engine._get_combat_hp(tid) or 10
-    engine._set_combat_hp(tid, max(0, cur_hp - total_dmg))
+
+    # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
+    leth_val = entry.get("lethality", 0) or sk.get("lethality", 0)
+    exp_dmg = avg_damage(dmg_dice)
+    if leth_val and exp_dmg > 6:
+        lr = random.randint(1, max(2, cur_hp * 2))
+        if lr <= int(exp_dmg):
+            cur_hp = 0
+            dmg_details.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} ≤ {int(exp_dmg)} 成功! {tname}死亡")
+        else:
+            cur_hp = max(0, cur_hp - total_dmg)
+            dmg_details.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} > {int(exp_dmg)} 失败")
+    else:
+        cur_hp = max(0, cur_hp - total_dmg)
+
+    engine._set_combat_hp(tid, cur_hp)
+
+    lines.extend(dmg_details)
+    if dmg_details:
+        lines.append(f"  造成 {total_dmg} 点伤害")
+    lines.append(f"  {tname} HP: {cur_hp}")
 
     # On-whiff AoE
     if on_whiff_aoe and total_dmg == 0:
@@ -585,10 +667,15 @@ def execute_summon_action(engine, uid, action_key):
             oc = engine.get_char(owner_id); omp = oc.get_attr('魔力', 0) or 0
             if omp >= on_whiff_mp:
                 oc.set_attr('魔力', omp - on_whiff_mp)
+                lines.append(f"  消耗{on_whiff_mp}MP触发溅射!")
                 for enemy in enemies:
                     aoe_dmg = roll_dice(on_whiff_aoe) // 2
                     ehp = engine._get_combat_hp(enemy['userId']) or 10
                     engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
+                    ename = enemy.get('name', enemy['userId'])
+                    lines.append(f"  溅射 {ename}: {on_whiff_aoe}//2={aoe_dmg}点 → HP:{max(0, ehp - aoe_dmg)}")
+
+    return lines
 
 def execute_action(engine, uid, action_key):
     """Execute action with target selection. Action key may have __T suffix."""
@@ -825,6 +912,7 @@ def _mp_run_summon_battle(args):
 
         # Summon Q-training turn
         st = encode_summon_state(engine, uid)
+        if st is None: engine._end_turn(uid); continue
         av = get_summon_actions(engine, uid)
         if av:
             ak, an = random.choice(av)
@@ -835,7 +923,8 @@ def _mp_run_summon_battle(args):
             reward = (curr_diff - prev_diff) / max_hp
             next_st = encode_summon_state(engine, uid)
             sname = entry.get("name", uid)
-            updates.append(("summon", sname, st, ak, reward, next_st))
+            if next_st is not None:
+                updates.append(("summon", sname, st, ak, reward, next_st))
         else:
             engine._summon_attack(uid)
 
@@ -944,6 +1033,7 @@ class QTrainer:
             if entry.get('isSummon'):
                 # Summon Q-training
                 st = encode_summon_state(engine, uid)
+                if st is None: engine._end_turn(uid); continue
                 av = get_summon_actions(engine, uid)
                 if av:
                     TEMPERATURE = 1.0
@@ -966,7 +1056,8 @@ class QTrainer:
                     cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
                     reward = (cd-pd)/max(abs(pd),abs(cd),1)
                     ns = encode_summon_state(engine, uid)
-                    updates.append(('summon', summon_name, st, ak, reward, ns))
+                    if ns is not None:
+                        updates.append(('summon', summon_name, st, ak, reward, ns))
                 else:
                     engine._summon_attack(uid)
                 state['activeIndex']=(state['activeIndex']+1)%len(il)
@@ -980,6 +1071,7 @@ class QTrainer:
             acts = engine._get_actions().get(uid,{'主动':2,'附加':3})
             if acts['主动']<=0: engine._end_turn(uid); continue
             ck = self._char_key(uid); st = encode_state(engine, uid)
+            if st is None: engine._end_turn(uid); continue
             av = get_available_actions(engine, uid)
             if not av: engine._end_turn(uid); continue
 
@@ -1013,17 +1105,17 @@ class QTrainer:
             ak, an = av[idx]
             pd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
             execute_action(engine, uid, ak)
-            is_xs_act = engine.get_char(uid).get_attr('技能不消耗主动', 0) == 1 and ak.startswith('SKILL_')
             is_bonus_act = ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE')
             if is_bonus_act:
                 acts['附加'] = max(0, acts.get('附加', 0) - 1); engine._set_actions(engine._get_actions())
-            elif not is_xs_act:
+            else:
                 acts['主动']-=1; engine._set_actions(engine._get_actions())
             if acts['主动']<=0: engine._end_turn(uid)
             cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
             reward = (cd-pd)/max(abs(pd),abs(cd),1)
             ns = encode_state(engine, uid)
-            updates.append((table_type, ck, st, ak, reward, ns))
+            if ns is not None:
+                updates.append((table_type, ck, st, ak, reward, ns))
         # Update reaction weights based on outcome
         if winner:
             for uid in a_uids + b_uids:
@@ -1148,12 +1240,12 @@ class QTrainer:
             result = {}
             for ck, qd in qdict.items():
                 result[ck] = {'|'.join(str(x) for x in s) + '__' + ak: v
-                              for (s, ak), v in qd.items()}
+                              for (s, ak), v in qd.items() if isinstance(s, tuple)}
             return result
         q_solo = serialize_q(self.Q_solo)
         q_team = serialize_q(self.Q_team)
         q_summon = serialize_q(self.Q_summon)
-        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights.json')
+        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
         with open(weight_path, 'w', encoding='utf-8') as f:
             json.dump({'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon,
                        'stats': stats_log, 'params': {
@@ -1169,7 +1261,7 @@ def load_q_table(path=None):
     Backward-compat with old single-Q format.
     """
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights.json')
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
     if not os.path.exists(path): return None
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -1177,17 +1269,25 @@ def load_q_table(path=None):
     def parse_qdict(qdict):
         """Parse a serialized Q-dict (string-keyed) into (state, action) tuple dict."""
         Q = defaultdict(lambda: defaultdict(float))
+        skipped = 0
         for ck, entries in qdict.items():
             for key, val in entries.items():
                 parts = key.split('__')
+                if len(parts) < 2:
+                    skipped += 1; continue
                 state_str, action = parts[0], parts[1]
-                state = tuple(int(v) for v in state_str.split('|'))
+                try:
+                    state = tuple(int(v) for v in state_str.split('|'))
+                except ValueError:
+                    skipped += 1; continue  # skip corrupted entries (e.g. 'dead' state)
                 # Backward compat: old dims → 12
                 if len(state) == 10:
                     state = state + (1, 0)
                 elif len(state) == 11:
                     state = state + (0,)
                 Q[ck][(state, action)] = val
+        if skipped:
+            print(f'[load_q_table] Skipped {skipped} malformed Q-entries (will be cleaned on next save)')
         return Q
 
     result = {}
@@ -1206,9 +1306,12 @@ def load_q_table(path=None):
         return None
     return result
 
-if __name__ == '__main__':
+def main():
     random.seed(42)
     trainer = QTrainer()
     trainer.init_characters()
     print(f'Characters loaded: {list(trainer.char_map.keys())}', flush=True)
     trainer.train()
+
+if __name__ == '__main__':
+    main()

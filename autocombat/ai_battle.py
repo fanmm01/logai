@@ -333,6 +333,12 @@ class AIController:
         """Q-table based decision. Routes to solo or team table based on living allies."""
         state = engine._get_state()
         if not state or state.get('phase') != 'active': return '.i end'
+
+        # Dying characters can only use healing items (or end turn)
+        if engine._is_dying(user_id):
+            if engine._has_healing_item(user_id):
+                return '.a eat'
+            return '.i end'
         actions = engine._get_actions()
         my_acts = actions.get(user_id, {'主动': 2, '附加': 3})
         if my_acts['主动'] <= 0: return '.i end'
@@ -425,6 +431,12 @@ class AIController:
     def _rule_decide(self, engine, user_id):
         state = engine._get_state()
         if not state or state.get('phase') != 'active':
+            return '.i end'
+
+        # Dying characters can only use healing items (or end turn)
+        if engine._is_dying(user_id):
+            if engine._has_healing_item(user_id):
+                return '.a eat'
             return '.i end'
 
         init_list = engine._get_initiative()
@@ -620,10 +632,16 @@ class BattleEngine(FullBattleEngine):
                     x_sum += ratio; x_cnt += 1
         y_avg = y_sum / y_cnt if y_cnt > 0 else 0.0
         x_avg = x_sum / x_cnt if x_cnt > 0 else 0.0
-        winner = 'Y' if y_avg >= x_avg else 'X'
+        if y_avg > x_avg:
+            winner = 'Y'
+        elif x_avg > y_avg:
+            winner = 'X'
+        else:
+            # Equal ratios (including 0.00 vs 0.00) → random winner
+            winner = random.choice(['Y', 'X'])
         y_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'Y' and not e.get('isSummon')) or '?'
         x_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'X' and not e.get('isSummon')) or '?'
-        battle_log('info', f'  [超时] Y队[{y_names}] X队[{x_names}] Y队人均HP比={y_avg:.2f} X队人均HP比={x_avg:.2f} → {winner}胜')
+        battle_log('info', f'  [超时] Y队[{y_names}] X队[{x_names}] Y队人均HP比={y_avg:.2f} X队人均HP比={x_avg:.2f} → {winner}胜' + (' (平局随机)' if y_avg == x_avg else ''))
         return {'winner': winner, 'rounds': self.max_rounds, 'timeout': True,
                 'y_ratio': round(y_avg, 4), 'x_ratio': round(x_avg, 4)}
 
@@ -647,7 +665,13 @@ class BattleEngine(FullBattleEngine):
                 state = self._get_state()
                 if not state or state.get('phase') != 'active': break
                 il = self._get_initiative()
-                if not il: break
+                if not il:
+                    # Initiative empty (all dead/removed) — ensure end-check ran
+                    if not getattr(self, '_battle_result', None):
+                        end_result = self._check_battle_end()
+                        if end_result:
+                            self._battle_result = end_result
+                    break
                 rc = state.get('round', 1)
                 if rc != last_round:
                     last_round = rc; self._moved_this_turn = set()
@@ -675,9 +699,19 @@ class BattleEngine(FullBattleEngine):
 
                         y_hp_parts = []
                         x_hp_parts = []
+                        seen_y_uids = set()
+                        seen_x_uids = set()
                         for e in il:
                             if e.get('isSummon'): continue
                             uid = e['userId']
+                            if e['team'] == 'Y':
+                                if uid in seen_y_uids:
+                                    continue
+                                seen_y_uids.add(uid)
+                            else:
+                                if uid in seen_x_uids:
+                                    continue
+                                seen_x_uids.add(uid)
                             hp = self._get_combat_hp(uid) or 0
                             name = e.get('name', uid)
                             # Append summon HP suffix
@@ -698,9 +732,12 @@ class BattleEngine(FullBattleEngine):
                                 x_hp_parts.append(hp_str)
                         _bl('info', f'    第{rc}回合 Y: {", ".join(y_hp_parts)} | X: {", ".join(x_hp_parts)}')
                 dead_owners = {e['userId'] for e in il if not e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
+                # Also track resolved base UIDs so we can clean up summons whose ownerId
+                # might be the base uid (even when dead_owners contains __act suffixed entries)
+                dead_base_uids = {self._resolve_uid(uid) for uid in dead_owners}
                 if dead_owners:
-                    # Remove dead summons (owned by dead characters)
-                    il = [e for e in il if not (e.get('isSummon') and e.get('ownerId') in dead_owners)]
+                    # Remove dead summons (owned by dead characters) — match by resolved base UID
+                    il = [e for e in il if not (e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) in dead_base_uids)]
                     # Also remove dead characters themselves from initiative & map
                     md = self._get_map()
                     for uid in dead_owners:
@@ -713,10 +750,24 @@ class BattleEngine(FullBattleEngine):
                     if state['activeIndex'] >= len(il):
                         state['activeIndex'] = state['activeIndex'] % max(1, len(il))
                         self._set_state(state)
-                ya = sum(1 for e in il if e['team']=='Y' and (self._get_combat_hp(e['userId']) or 0) > 0)
-                xa = sum(1 for e in il if e['team']=='X' and (self._get_combat_hp(e['userId']) or 0) > 0)
-                if ya == 0: return {'winner': 'X', 'rounds': rc}
-                if xa == 0: return {'winner': 'Y', 'rounds': rc}
+                # Check battle end: count non-summon alive characters per team
+                end_result = self._check_battle_end()
+                if end_result:
+                    y_chars_d = [e.get('name','?') for e in il if e['team']=='Y' and not e.get('isSummon')]
+                    x_chars_d = [e.get('name','?') for e in il if e['team']=='X' and not e.get('isSummon')]
+                    y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
+                    x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
+                    if end_result.get('mutual_death'):
+                        y_ov = end_result.get('y_overflow', 0)
+                        x_ov = end_result.get('x_overflow', 0)
+                        battle_log('info', f'  [同归于尽] Y队[{y_disp}]溢出{y_ov} X队[{x_disp}]溢出{x_ov} → {end_result["winner"]}胜')
+                    else:
+                        # Normal end: file-only (debug) in prelim; terminal+file in knockout
+                        battle_log('debug', f'  [战斗结束] Y队[{y_disp}] X队[{x_disp}] → {end_result["winner"]}胜 ({rc}回合)')
+                    return {'winner': end_result['winner'], 'rounds': rc,
+                            'mutual_death': end_result.get('mutual_death', False),
+                            'y_overflow': end_result.get('y_overflow', 0),
+                            'x_overflow': end_result.get('x_overflow', 0)}
                 entry = il[state['activeIndex']]; uid = entry['userId']
                 char_name = entry.get('name', uid); hp = self._get_combat_hp(uid) or 0
                 is_summon = entry.get('isSummon', False)
@@ -750,8 +801,7 @@ class BattleEngine(FullBattleEngine):
                                 probs = [e / total for e in exp_vals] if total > 0 else None
                                 idx = random.choices(range(len(av)), weights=probs, k=1)[0]
                                 ak, an = av[idx]
-                                execute_summon_action(self, uid, ak)
-                                result = ''
+                                result = execute_summon_action(self, uid, ak)
                             else:
                                 result = self._summon_attack(uid)
                         else:
@@ -762,16 +812,27 @@ class BattleEngine(FullBattleEngine):
                     summon_name = entry.get('name', uid)
                     _bl('debug', f'    [{team_tag}] {summon_name}(召) (HP:{hp}) 行动')
                     if result:
-                        for rline in result.split('\n'):
-                            if rline.strip(): _bl('debug', f'        {rline.strip()}')
+                        if isinstance(result, list):
+                            for rline in result:
+                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
+                        else:
+                            for rline in result.split('\n'):
+                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
                     self._end_turn(uid); continue
                 team_tag = entry.get('team', '?')
                 _bl('debug', f'    [{team_tag}] {char_name} (HP:{hp}) 行动')
                 ai = ai_map.get(uid)
                 if ai:
                     ai.team = entry['team']; acted = False
+                    is_dying = self._is_dying(uid)
                     for _ in range(5):
                         cmd = ai.decide_action(self, uid)
+                        # Dying characters: only allow .a eat (use healing item) or .i end
+                        if is_dying and cmd not in ('.i end',) and not cmd.startswith('.a eat'):
+                            if self._has_healing_item(uid):
+                                cmd = '.a eat'
+                            else:
+                                cmd = '.i end'
                         if cmd == '.i end':
                             if not acted:
                                 _bl('debug', f'      -> 结束回合')
@@ -804,13 +865,11 @@ class BattleEngine(FullBattleEngine):
                         for rline in (result_text.split('\n') if result_text else []):
                             if rline.strip(): _bl('debug', f'        {rline.strip()}')
                         # Action consumption: .s0/.sN consume 主动; .a eat/.a m/.a s consume 附加
-                        is_xs = self.get_char(uid).get_attr('技能不消耗主动', 0) == 1 if self.get_char(uid) else False
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
                         is_bonus = cmd.startswith('.a ')
                         if cmd in ('.s0',) or is_skill:
-                            if not (is_xs and is_skill):
-                                acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
-                                ma['主动'] -= 1; self._set_actions(acts_d)
+                            acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                            ma['主动'] -= 1; self._set_actions(acts_d)
                         elif is_bonus:
                             acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
                             ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
@@ -823,6 +882,25 @@ class BattleEngine(FullBattleEngine):
                         if i2 and i2[s2['activeIndex']]['userId'] != uid: break
                 else:
                     self._end_turn(uid)
+            # Check if battle ended normally (phase='ended' set by _end_turn → _check_battle_end)
+            br = getattr(self, '_battle_result', None)
+            if br:
+                il_final = self._get_initiative()
+                y_chars_d = [e.get('name','?') for e in il_final if e['team']=='Y' and not e.get('isSummon')]
+                x_chars_d = [e.get('name','?') for e in il_final if e['team']=='X' and not e.get('isSummon')]
+                y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
+                x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
+                if br.get('mutual_death'):
+                    y_ov = br.get('y_overflow', 0)
+                    x_ov = br.get('x_overflow', 0)
+                    battle_log('info', f'  [同归于尽] Y队[{y_disp}]溢出{y_ov} X队[{x_disp}]溢出{x_ov} → {br["winner"]}胜')
+                else:
+                    # Normal end: file-only (debug) in prelim; terminal+file in knockout
+                    battle_log('debug', f'  [战斗结束] Y队[{y_disp}] X队[{x_disp}] → {br["winner"]}胜')
+                return {'winner': br['winner'], 'rounds': rc,
+                        'mutual_death': br.get('mutual_death', False),
+                        'y_overflow': br.get('y_overflow', 0),
+                        'x_overflow': br.get('x_overflow', 0)}
             return self._timeout_verdict()
         finally:
             if self.quiet:
