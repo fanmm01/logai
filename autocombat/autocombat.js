@@ -2408,8 +2408,9 @@ const cmdAs = seal.ext.newCmdItemInfo();
 cmdAs.name = 'as';
 cmdAs.help =
   '.as <序号> // 绑定魔法少女序号（如 .as Y1, .as 3, .as III）\n' +
-  '绑定后，其他玩家可用 @你 来引用你的魔法少女序号。\n' +
-  '可用于 .s2 @某人 等指令中的目标参数。';
+  '在战斗中：.as Y1 按序号绑定，.as 3 按先攻列表编号绑定。\n' +
+  '已加入时追加操控角色，不替换已有绑定。\n' +
+  '绑定后，其他玩家可用 @你 来引用你的魔法少女序号。';
 cmdAs.solve = (ctx, msg, cmdArgs) => {
   const val = cmdArgs.getArgN(1);
   if (!val) {
@@ -2443,21 +2444,33 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
 
   if (abMode === 2 && battleId) {
     // /setab2 mode: call server to bind controller
+    // Detect numeric input → use init_index; otherwise use serial
+    const isNumeric = /^\d+$/.test(val);
     const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
-    const sendPayload = JSON.stringify({
-      player_id: uid,
-      serial: serial,
-    });
+    const sendPayload = {};
+    sendPayload.player_id = uid;
+    if (isNumeric) {
+      sendPayload.init_index = parseInt(val);
+    } else {
+      sendPayload.serial = serial;
+    }
     fetch(serverUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: sendPayload,
+      body: JSON.stringify(sendPayload),
     }).then(r => r.json()).then(result => {
       if (result.error) {
         seal.replyToSender(ctx, msg, `[.setab 2] 战斗中绑定失败: ${result.message}`);
       } else {
         const charName = result.char_name || serial;
-        seal.replyToSender(ctx, msg, `${seal.format(ctx, '{$t玩家}')} 已接管【${serial}】（${charName}）`);
+        const bindKey2 = isNumeric ? `行动序号#${val}` : serial;
+        let bindMsg = `${seal.format(ctx, '{$t玩家}')} 已接管【${bindKey2}】（${charName}）`;
+        // Show all controlled characters
+        if (result.my_characters && result.my_characters.length > 0) {
+          const names = result.my_characters.map(c => `${c.name}${c.serial ? '(' + c.serial + ')' : ''}`).join(', ');
+          bindMsg += `\n你当前控制: ${names}`;
+        }
+        seal.replyToSender(ctx, msg, bindMsg);
         if (result.auto_turns && result.auto_turns.length > 0) {
           const nodes = result.auto_turns.map((t, i) => {
             const label = (result.turn_labels && result.turn_labels[i]) || `行动 ${i+1}`;
@@ -3136,10 +3149,116 @@ cmdBtaStartFull.solve = (ctx, msg, cmdArgs) => {
 // ============================================================
 const cmdBtaStartFull2 = seal.ext.newCmdItemInfo();
 cmdBtaStartFull2.name = 'btastartfull2';
-cmdBtaStartFull2.help = '.btastartfull2 // .setab 2 PvP模式开始战斗（Python后端）\n使用前确保 battle_http_server.py 已启动';
+cmdBtaStartFull2.help =
+  '.btastartfull2 // .setab 2 PvP模式开始战斗（Python后端）\n' +
+  '.btast / .btastt2  // 简写别名\n' +
+  '.btast TEAM1 vs TEAM2  // 多人PvP格式：两队使用空格分隔的序号或TN战队别名\n' +
+  '使用前确保 battle_http_server.py 已启动';
 cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
   const mctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
   const gid = mctx.group ? mctx.group.groupId : 'private';
+  const rawArgs = (cmdArgs.cleanArgs || '').trim();
+
+  // ── New multi-PvP format: .btast TEAM1 vs TEAM2 ──
+  const vsMatch = rawArgs.match(/^(.+)\s+vs\s+(.+)$/i);
+  if (vsMatch) {
+    const leftTokens = vsMatch[1].split(/\s+/).filter(t => t.length > 0);
+    const rightTokens = vsMatch[2].split(/\s+/).filter(t => t.length > 0);
+
+    if (leftTokens.length < 1 || rightTokens.length < 1) {
+      seal.replyToSender(ctx, msg, '用法：.btast TEAM1的全体 vs TEAM2的全体\n每侧至少1个角色序号或战队编号。');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    // Resolve TN aliases from local team cache
+    const teamCacheRaw = ext.storageGet('pvp_teams_cache');
+    let teamCache = {};
+    if (teamCacheRaw) { try { teamCache = JSON.parse(teamCacheRaw); } catch(e) {} }
+
+    function resolveTokens(tokens) {
+      const result = [];
+      for (const t of tokens) {
+        const upper = t.toUpperCase();
+        if (teamCache[upper] && Array.isArray(teamCache[upper].members)) {
+          result.push(...teamCache[upper].members);
+        } else {
+          result.push(upper);
+        }
+      }
+      return result;
+    }
+
+    const teamA = resolveTokens(leftTokens);
+    const teamB = resolveTokens(rightTokens);
+
+    // Build player_bindings: use reverse mappings from .as command.
+    // .as stores bta_serial_<serial> → [userId, ...] for each binding,
+    // so we can collect ALL player bindings without requiring .bta int.
+    const playerBindings = {};
+    const allSerials = [...teamA, ...teamB];
+    for (const serial of allSerials) {
+      const revKey = `bta_serial_${serial}`;
+      const revRaw = ext.storageGet(revKey);
+      if (!revRaw) continue;
+      try {
+        const userIds = JSON.parse(revRaw);
+        if (!Array.isArray(userIds)) continue;
+        for (const uid of userIds) {
+          if (!playerBindings[uid]) playerBindings[uid] = [];
+          if (!playerBindings[uid].includes(serial)) {
+            playerBindings[uid].push(serial);
+          }
+        }
+      } catch(e) {}
+    }
+
+    const requestData = {
+      group_id: String(gid),
+      mode: 'multi_pvp',
+      team_a: teamA,
+      team_b: teamB,
+      player_bindings: playerBindings,
+      map_size: '10x10',
+    };
+
+    const aDisp = teamA.join('+');
+    const bDisp = teamB.join('+');
+    seal.replyToSender(ctx, msg, `Y队：${aDisp} vs X队：${bDisp}\n正在连接 Python 后端...`);
+
+    pvpFetch('/api/pvp/create', requestData).then(result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+        return;
+      }
+      ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+      if (result.initiative) setInitiative(gid, result.initiative);
+      if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
+      // Display
+      let out = result.output || '';
+      if (result.controlled_characters) {
+        out += '\n\n【玩家绑定】';
+        for (const [pid, chars] of Object.entries(result.controlled_characters)) {
+          const names = chars.map(c => c.name).join(', ');
+          out += `\n  ${pid}: ${names}`;
+        }
+      }
+      seal.replyToSender(ctx, msg, out);
+      // Sync HP
+      if (result.characters) {
+        const hpStore = {};
+        for (const [uid, info] of Object.entries(result.characters)) {
+          hpStore[uid] = info.hp;
+          hpStore['mp_' + uid] = info.mp;
+          hpStore['san_' + uid] = info.san;
+        }
+        setCombatHP(gid, hpStore);
+      }
+    });
+
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // ── Old PvP format: .btastartfull2 (no args, uses existing map/initiative) ──
 
   // Collect player character data
   const playerData = serializeCharacterForEngine(ctx);
@@ -3149,13 +3268,13 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
   let mapData = null;
   if (mapRaw) { try { mapData = JSON.parse(mapRaw); } catch(e) {} }
   if (!mapData) {
-    seal.replyToSender(ctx, msg, '请先使用 .bta map 创建地图！');
+    seal.replyToSender(ctx, msg, '请先使用 .bta map 创建地图！或使用 .btast Y1 Y2 vs Y3 Y4 格式。');
     return seal.ext.newCmdExecuteResult(true);
   }
 
   const initList = getInitiative(gid);
   if (initList.length < 2) {
-    seal.replyToSender(ctx, msg, '至少需要2人加入战斗（使用 .bta int）！');
+    seal.replyToSender(ctx, msg, '至少需要2人加入战斗（使用 .bta int）！或使用 .btast Y1 Y2 vs Y3 Y4 格式。');
     return seal.ext.newCmdExecuteResult(true);
   }
 
@@ -3321,6 +3440,264 @@ cmdBtaStartFullAI.solve = (ctx, msg, cmdArgs) => {
 
   return seal.ext.newCmdExecuteResult(true);
 };
+
+// ============================================================
+//  .bteam new/list/delete  — 固定战队管理
+// ============================================================
+const cmdBteam = seal.ext.newCmdItemInfo();
+cmdBteam.name = 'bteam';
+cmdBteam.help =
+  '.bteam new <名称> <序号...>  // 创建固定战队\n' +
+  '.bteam list                  // 查看全部战队\n' +
+  '.bteam delete <TN>           // 删除自己创建的战队\n' +
+  '战队创建后可用 TN（如 T1）在 .btast 中代替成员列表。';
+cmdBteam.solve = (ctx, msg, cmdArgs) => {
+  const args = (cmdArgs.cleanArgs || '').split(/\s+/).filter(a => a.length > 0);
+  const sub = (args[0] || '').toLowerCase();
+  const playerId = ctx.player.userId;
+
+  if (sub === 'new') {
+    const name = args[1] || '';
+    const members = args.slice(2).map(s => s.toUpperCase()).filter(s => /^[A-Z]?\d+$/i.test(s));
+    if (!name || members.length < 1) {
+      seal.replyToSender(ctx, msg, '用法：.bteam new <名称> <序号1> <序号2> ...\n例：.bteam new 红队 Y1 Y2 Y3');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    pvpFetch('/api/pvp/team/create', {
+      player_id: playerId,
+      name: name,
+      members: members,
+    }).then(result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[战队] ${result.message}`);
+        return;
+      }
+      const cacheRaw = ext.storageGet('pvp_teams_cache');
+      let cache = {};
+      if (cacheRaw) { try { cache = JSON.parse(cacheRaw); } catch(e) {} }
+      cache[result.team_id] = { name: result.name, members: result.members };
+      ext.storageSet('pvp_teams_cache', JSON.stringify(cache));
+      seal.replyToSender(ctx, msg,
+        `战队创建成功：${result.team_id}（${result.name}）\n成员：${result.members.join(' ')}`);
+    });
+
+  } else if (sub === 'list') {
+    const baseUrl = getPvpServerUrl();
+    fetch(`${baseUrl}/api/pvp/team/list`, { method: 'GET' })
+      .then(r => r.json())
+      .then(result => {
+        if (result.error) {
+          seal.replyToSender(ctx, msg, `[战队] ${result.message}`);
+          return;
+        }
+        const cache = {};
+        for (const t of (result.teams || [])) {
+          cache[t.id] = { name: t.name, members: t.members };
+        }
+        ext.storageSet('pvp_teams_cache', JSON.stringify(cache));
+        if (!result.teams || result.teams.length === 0) {
+          seal.replyToSender(ctx, msg, '暂无战队。使用 .bteam new <名称> <序号...> 创建。');
+        } else {
+          let out = '=== 固定战队列表 ===';
+          for (const t of result.teams) {
+            out += `\n  ${t.id}: ${t.name} — ${(t.members || []).join(' ')}`;
+          }
+          out += '\n\n在 .btast 中使用 TN 代替成员列表。';
+          seal.replyToSender(ctx, msg, out);
+        }
+      }).catch(() => {
+        const cacheRaw = ext.storageGet('pvp_teams_cache');
+        if (cacheRaw) {
+          try {
+            const cache = JSON.parse(cacheRaw);
+            const entries = Object.entries(cache);
+            if (entries.length === 0) {
+              seal.replyToSender(ctx, msg, '暂无战队。使用 .bteam new <名称> <序号...> 创建。');
+            } else {
+              let out = '=== 固定战队列表（缓存）===';
+              for (const [id, info] of entries) {
+                out += `\n  ${id}: ${info.name} — ${(info.members || []).join(' ')}`;
+              }
+              out += '\n\n在 .btast 中使用 TN 代替成员列表。\n（无法连接后端，显示的是本地缓存。）';
+              seal.replyToSender(ctx, msg, out);
+            }
+          } catch(e) {
+            seal.replyToSender(ctx, msg, '暂无战队且无法连接后端。');
+          }
+        } else {
+          seal.replyToSender(ctx, msg, '暂无战队且无法连接后端。');
+        }
+      });
+
+  } else if (sub === 'delete') {
+    const teamId = (args[1] || '').toUpperCase();
+    if (!teamId) {
+      seal.replyToSender(ctx, msg, '用法：.bteam delete <TN>\n例：.bteam delete T1');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    pvpFetch('/api/pvp/team/delete', {
+      player_id: playerId,
+      team_id: teamId,
+    }).then(result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[战队] ${result.message}`);
+        return;
+      }
+      const cacheRaw = ext.storageGet('pvp_teams_cache');
+      if (cacheRaw) {
+        try {
+          const cache = JSON.parse(cacheRaw);
+          delete cache[teamId];
+          ext.storageSet('pvp_teams_cache', JSON.stringify(cache));
+        } catch(e) {}
+      }
+      seal.replyToSender(ctx, msg, result.message || `战队 ${teamId} 已删除。`);
+    });
+
+  } else {
+    seal.replyToSender(ctx, msg, '用法：\n.bteam new <名称> <序号...>\n.bteam list\n.bteam delete <TN>');
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+ext.cmdMap['bteam'] = cmdBteam;
+
+
+// ============================================================
+//  .alist  — 输出可用操作表
+// ============================================================
+const cmdAlist = seal.ext.newCmdItemInfo();
+cmdAlist.name = 'alist';
+cmdAlist.help = '.alist // 输出当前可用操作表（sN, .g, .u 等）';
+cmdAlist.solve = (ctx, msg, cmdArgs) => {
+  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const autoMode = getAutoMode(ctx);
+  const battleId = ext.storageGet(`pvp_battle_${gid}`);
+
+  if (autoMode >= 2 && battleId) {
+    const playerId = ctx.player.userId;
+    const baseUrl = getPvpServerUrl();
+    fetch(`${baseUrl}/api/pvp/${battleId}/alist?player_id=${encodeURIComponent(playerId)}`, { method: 'GET' })
+      .then(r => r.json())
+      .then(result => {
+        if (result.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+          return;
+        }
+        let out = '';
+        const chars = result.characters || [];
+        for (const ch of chars) {
+          out += `\n【${ch.name}${ch.serial ? '(' + ch.serial + ')' : ''} HP:${ch.hp}/${ch.hp_max} MP:${ch.mp}/${ch.mp_max}】`;
+          out += `\n主动作(剩余${ch.actions['主动'] || 0}):`;
+          for (const sk of ch.skills) {
+            if (sk.timing.includes('主') || sk.index === 0) {
+              const status = sk.available ? '' : ' [暂不可用]';
+              const mpStr = sk.mp_cost > 0 ? ` MP:${sk.mp_cost}` : '';
+              const skillDetail = sk.index === 0 ? ` [${sk.skill_name}=${sk.skill_val}]` : '';
+              out += `\n  .s${sk.index}  ${sk.name}${mpStr}${skillDetail}${status}`;
+            }
+          }
+          out += `\n附加动作(剩余${ch.actions['附加'] || 0}):`;
+          out += `\n  .a m <坐标>  — 移动`;
+          for (const sk of ch.skills) {
+            if (sk.timing.includes('附')) {
+              const status = sk.available ? '' : ' [暂不可用]';
+              const mpStr = sk.mp_cost > 0 ? ` MP:${sk.mp_cost}` : '';
+              out += `\n  .a s${sk.index}  ${sk.name}${mpStr}${status}`;
+            }
+          }
+          out += `\n其他:`;
+          out += `\n  .i end  — 结束回合`;
+          if (ch.has_eat) out += '\n  .a eat  — 食用治疗物品';
+          if (ch.has_craft) out += '\n  .g <物品名> @目标  — 转移制造物';
+          if (ch.has_items) out += '\n  .u <物品名>  — 使用物品';
+          out += '\n';
+        }
+        if (chars.length === 0) {
+          out = '你当前没有操控任何角色。请使用 .as <序号> 加入战斗。';
+        }
+        seal.replyToSender(ctx, msg, out);
+      });
+
+  } else {
+    seal.replyToSender(ctx, msg, '当前不在 .setab 2 战斗中。请先使用 .btast 开始战斗。');
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+ext.cmdMap['alist'] = cmdAlist;
+
+
+// ============================================================
+//  .clist  — 输出战斗内人物列表
+// ============================================================
+const cmdClist = seal.ext.newCmdItemInfo();
+cmdClist.name = 'clist';
+cmdClist.help = '.clist // 输出当前战斗内人物列表（含控制者信息）';
+cmdClist.solve = (ctx, msg, cmdArgs) => {
+  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const autoMode = getAutoMode(ctx);
+  const battleId = ext.storageGet(`pvp_battle_${gid}`);
+
+  if (autoMode >= 2 && battleId) {
+    const baseUrl = getPvpServerUrl();
+    fetch(`${baseUrl}/api/pvp/${battleId}/clist`, { method: 'GET' })
+      .then(r => r.json())
+      .then(result => {
+        if (result.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+          return;
+        }
+        let out = `=== 第${result.round}回合 战斗角色列表 ===`;
+        const chars = result.characters || [];
+        const yChars = chars.filter(c => c.team === 'Y');
+        const xChars = chars.filter(c => c.team === 'X');
+
+        if (yChars.length > 0) {
+          out += '\n[Y队]';
+          for (const c of yChars) {
+            const active = c.is_active ? ' ◀当前行动' : '';
+            const summonTag = c.is_summon ? '(召)' : '';
+            let ctrlStr = '';
+            if (c.is_summon) {
+              ctrlStr = c.owner_name ? `所属:${c.owner_name}` : '';
+            } else if (c.controller_ids && c.controller_ids.length > 0) {
+              ctrlStr = `控制:${c.controller_ids.join(',')}`;
+            } else {
+              ctrlStr = '控制:AI';
+            }
+            const serialStr = c.serial ? `(${c.serial})` : '';
+            out += `\n  [${c.index}] ${c.name}${serialStr}${summonTag} HP:${c.hp}/${c.hp_max} ${ctrlStr}${active}`;
+          }
+        }
+        if (xChars.length > 0) {
+          out += '\n[X队]';
+          for (const c of xChars) {
+            const active = c.is_active ? ' ◀当前行动' : '';
+            const summonTag = c.is_summon ? '(召)' : '';
+            let ctrlStr = '';
+            if (c.is_summon) {
+              ctrlStr = c.owner_name ? `所属:${c.owner_name}` : '';
+            } else if (c.controller_ids && c.controller_ids.length > 0) {
+              ctrlStr = `控制:${c.controller_ids.join(',')}`;
+            } else {
+              ctrlStr = '控制:AI';
+            }
+            const serialStr = c.serial ? `(${c.serial})` : '';
+            out += `\n  [${c.index}] ${c.name}${serialStr}${summonTag} HP:${c.hp}/${c.hp_max} ${ctrlStr}${active}`;
+          }
+        }
+        if (chars.length === 0) {
+          out += '\n（无存活角色）';
+        }
+        seal.replyToSender(ctx, msg, out);
+      });
+
+  } else {
+    seal.replyToSender(ctx, msg, '当前不在 .setab 2 战斗中。请先使用 .btast 开始战斗。');
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+ext.cmdMap['clist'] = cmdClist;
+
 
 // ============================================================
 //  .s0/.s1...  — 技能使用指令 (.setab 1 & .setab 2)
@@ -4852,6 +5229,7 @@ ext.cmdMap['btastartfull2'] = cmdBtaStartFull2;
 ext.cmdMap['btastt2'] = cmdBtaStartFull2;
 ext.cmdMap['btastartfullai'] = cmdBtaStartFullAI;
 ext.cmdMap['btastai'] = cmdBtaStartFullAI;
+ext.cmdMap['btast'] = cmdBtaStartFull2;  // .btast alias for .btastartfull2
 
 
 // ============================================================

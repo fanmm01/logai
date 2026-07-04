@@ -45,6 +45,52 @@ ALL_COMBAT_SKILLS = MELEE_SKILLS + ['射击','射击:弓','射击:手枪','射�
 # ============================================================
 #  Dice & Math helpers
 # ============================================================
+def _get_beta_params(season_avg):
+    """Map season average status (0-100) to Beta(α, β) parameters.
+
+    - season_avg = 100 → α=2.5, β=1.2  (~70% chance status > 50)
+    - season_avg = 50  → α=1.0, β=1.0  (uniform random)
+    - season_avg = 0   → α=1.2, β=2.5  (~70% chance status < 50)
+
+    Values between are linearly interpolated.
+    """
+    s = max(0, min(100, season_avg)) / 100.0  # normalize to 0-1
+    if s <= 0.5:
+        t = s / 0.5  # 0 → 1 as s goes 0 → 0.5
+        alpha = 1.2 + (1.0 - 1.2) * t
+        beta = 2.5 + (1.0 - 2.5) * t
+    else:
+        t = (s - 0.5) / 0.5  # 0 → 1 as s goes 0.5 → 1.0
+        alpha = 1.0 + (2.5 - 1.0) * t
+        beta = 1.0 + (1.2 - 1.0) * t
+    return alpha, beta
+
+
+def season_status_roll(season_avg, uid=None):
+    """Generate a 0-100 character status using Beta distribution biased by season average.
+
+    Args:
+        season_avg: The season bias. Can be:
+            - None: pure uniform random (backward compat)
+            - int: 0-100, same bias for all characters
+            - dict: {uid → int} per-character season status
+        uid: Character uid, used when season_avg is a dict to look up per-char value.
+
+    Returns:
+        int between 0 and 100.
+    """
+    if season_avg is None:
+        return random.randint(0, 100)
+    if isinstance(season_avg, dict):
+        val = season_avg.get(uid)
+        if val is None:
+            return random.randint(0, 100)
+        season_avg = val
+    alpha, beta = _get_beta_params(season_avg)
+    raw = random.betavariate(alpha, beta)  # 0.0 - 1.0
+    return max(0, min(100, int(round(raw * 100))))
+
+
 def roll_dice(expr):
     if not expr or expr == '0': return 0
     expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
@@ -1738,7 +1784,7 @@ class FullBattleEngine(CombatEngine):
         self._summoned_once = {}  # caster_id -> set of template names ever summoned
         self._summon_counters = {}
 
-    def setup_battle(self, team_a, team_b, map_size="10x10"):
+    def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
         w, h = map(int, map_size.split("x"))
         self.group_id = f"battle_{random.randint(1000,9999)}"
         self._set_map({"width":w, "height":h, "entryRow":math.ceil(h/2), "obstacles":{}, "occupants":{}})
@@ -1778,10 +1824,10 @@ class FullBattleEngine(CombatEngine):
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
         self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
-        # Roll random 状态 (0-100) for each character before battle
+        # Roll 状态 for each character before battle, biased by season average status
         for uid in all_chars:
             char = self.get_char(uid)
-            char.set_attr('状态', random.randint(0, 100))
+            char.set_attr('状态', season_status_roll(season_status, uid))
 
         # Auto-cast passive spells at battle start (with smart targeting)
         for uid in all_chars:
@@ -2470,7 +2516,7 @@ class FastBattleEngine(CombatEngine):
         self._summoned_once = {}  # caster_id -> set of template names ever summoned
         self._summon_counters = {}
 
-    def setup_battle(self, team_a, team_b, map_size="10x10"):
+    def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
         w, h = map(int, map_size.split("x"))
         self.group_id = f"fast_{random.randint(10000,99999)}"
         self._set_map({"width":w, "height":h, "entryRow":math.ceil(h/2), "obstacles":{}, "occupants":{}})
@@ -2510,9 +2556,9 @@ class FastBattleEngine(CombatEngine):
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
         self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
-        # Roll random 状态 for each character
+        # Roll 状态 for each character, biased by season average status
         for uid in all_chars:
-            self.get_char(uid).set_attr('状态', random.randint(0, 100))
+            self.get_char(uid).set_attr('状态', season_status_roll(season_status, uid))
         # Auto-cast passives (with smart targeting)
         for uid in all_chars:
             spells = self.get_char(uid).spells or self.load_spells(uid)

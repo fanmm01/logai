@@ -30,7 +30,8 @@ sys.stderr.reconfigure(line_buffering=True)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FullBattleEngine, roll_dice, parse_coord, format_coord,
-    is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage)
+    is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage,
+    season_status_roll)
 from characters_data import ALL_CHARACTERS, load_character_to_engine
 from ai_trainer_pvp import load_q_table, encode_state, get_available_actions, execute_action
 from ai_trainer_pvp import encode_summon_state, get_summon_actions, execute_summon_action
@@ -87,6 +88,17 @@ MAP_SIZES_2V2 = ['10x10']    # Map sizes used for 2v2 prelim RR
 MAP_SIZES_3V3 = ['20x20']   # Map sizes used for 3v3 prelim RR
                       
 PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
+
+# ── Season average status ──
+# Per-character 0-100 value set once per tournament run. Each character has their
+# own season status, biasing their per-battle 状态 via Beta distribution:
+#   100 → Beta(2.5,1.2) ~70% chance status > 50 (better AI)
+#    50 → uniform random (pure luck)
+#     0 → Beta(1.2,2.5) ~70% chance status < 50 (worse AI)
+# Set to None for random per-character per run.
+# Set to an int (0-100) for all characters to share the same season status.
+# Set to a dict like {'Y1':80, 'Y2':30, ...} for fixed per-character values.
+SEASON_AVG_STATUS = None
 
 # ── Round limits ──
 MAX_ROUNDS_PRELIM = 25              # Max rounds before timeout in prelim
@@ -927,6 +939,7 @@ class Tournament:
         self._rankings_info = {}  # Per-run prelim rankings
         self._run_stats = []  # Per-run (win_counts, battle_counts) for average stats
         self._results_start_idx = 0  # Track where current run's results start
+        self.char_season_status = {}  # Per-run per-character season avg status {serial: 0-100}
 
     def init_characters(self):
         engine = CombatEngine()
@@ -1004,7 +1017,11 @@ class Tournament:
             if ai:
                 engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                 engine._ai_react_counter_w[uid] = ai.react_counter_w
-        engine.setup_battle(a_uids, b_uids, map_size)
+        # Build per-uid season status mapping from per-character dict
+        uid_season = {}
+        for serial, uid in zip(team_a + team_b, a_uids + b_uids):
+            uid_season[uid] = self.char_season_status.get(serial, 50)
+        engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
         result = engine.run_battle(self.ai_map)
         # Update reaction weights: winners get +1 to their reaction type (skip in parallel prelim)
         if not self._parallel_prelim:
@@ -1371,11 +1388,25 @@ class Tournament:
         self.running = True
         self.start_time = datetime.now()
         self.run_index += 1  # Increment run counter (starts at 0)
+
+        # Generate per-character season average status for this run
+        if SEASON_AVG_STATUS is None:
+            self.char_season_status = {s: random.randint(0, 100) for s in self.char_map}
+        elif isinstance(SEASON_AVG_STATUS, dict):
+            self.char_season_status = dict(SEASON_AVG_STATUS)  # copy
+        else:
+            self.char_season_status = {s: int(SEASON_AVG_STATUS) for s in self.char_map}
+
         singles = list(self.char_map.keys())
         battle_log('info', '=' * 60)
         battle_log('info', '锦标赛 — 单循环预赛 + 积分制 + 八强淘汰赛')
         battle_log('info', '  胜=3分 败=0分 | 超时按HP占比分配(1.5~2.5)')
         battle_log('info', '=' * 60)
+        # Log per-character season status
+        nm = {c['serial']: c['name'] for c in ALL_CHARACTERS}
+        status_lines = [f'{nm.get(s,s)}({s}):{self.char_season_status.get(s,"?")}' for s in singles]
+        battle_log('info', f'  赛季平均状态(分角色): {", ".join(status_lines)}')
+        battle_log('info', '')
 
         # Per-player standings (1v1 points)
         player_pts = {s: 0.0 for s in singles}
@@ -2268,7 +2299,11 @@ AI模式: {q_status}
                         if ai:
                             engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                             engine._ai_react_counter_w[uid] = ai.react_counter_w
-                    engine.setup_battle(a_uids, b_uids, map_size)
+                    # Build per-uid season status mapping from per-character dict
+                    uid_season = {}
+                    for serial, uid in zip(team_a + team_b, a_uids + b_uids):
+                        uid_season[uid] = tournament.char_season_status.get(serial, 50)
+                    engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
                     return a_uids, b_uids
 
                 # Phase 0: Silent preview — estimate win rates

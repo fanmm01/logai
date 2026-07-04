@@ -3,14 +3,15 @@
 Quick battle simulator — run N battles between teams and report win rates.
 
 Usage:
-  python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED]
-  python sim.py --mode table --format 1v1 [-n N] [-s SEED]
-  python sim.py --mode table --format 2v2 --teams "A+B,C+D,..." [-n N]
+  python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S]
+  python sim.py --mode table --format 1v1 [-n N] [-s SEED] [--season S]
+  python sim.py --mode table --format 2v2 --teams "A+B,C+D,..." [-n N] [--season S]
 
 Options:
   -n N         Battles per matchup (default 100 for single, 50 for table)
   -m WxH       Map size (default 10x10)
   -s SEED      Random seed
+  --season S   Season average status 0-100 (default random). Higher = better AI.
   --mode       'single' (default) or 'table' (NxN win-rate matrix)
   --format     1v1 | 2v2 | 3v3
   --teams      Comma-separated team list for 2v2/3v3 table mode
@@ -29,29 +30,31 @@ from characters_data import ALL_CHARACTERS, load_character_to_engine
 
 
 def parse_single_args(argv):
-    """Parse single-match args. Returns (team_a, team_b, num, map_size, seed)."""
+    """Parse single-match args. Returns (team_a, team_b, num, map_size, seed, season_status)."""
     args = ' '.join(argv[1:])
     parts = re.split(r'\s+vs\s+', args, flags=re.IGNORECASE)
     if len(parts) != 2:
-        print('Usage: python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED]')
+        print('Usage: python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S]')
         sys.exit(1)
     left, right = parts[0].strip(), parts[1].strip()
-    num, map_size, seed = 100, '10x10', random.randint(0, 99999)
+    num, map_size, seed, season_status = 100, '10x10', random.randint(0, 99999), None
     m_n = re.search(r'-n\s+(\d+)', right)
     if m_n: num = int(m_n.group(1)); right = right.replace(m_n.group(0), '')
     m_m = re.search(r'-m\s+(\S+)', right)
     if m_m: map_size = m_m.group(1); right = right.replace(m_m.group(0), '')
     m_s = re.search(r'-s\s+(\d+)', right)
     if m_s: seed = int(m_s.group(1)); right = right.replace(m_s.group(0), '')
+    m_season = re.search(r'--season\s+(\d+)', right)
+    if m_season: season_status = int(m_season.group(1)); right = right.replace(m_season.group(0), '')
     team_a = [t for t in re.split(r'[\s+]+', left) if t and not t.startswith('-')]
     team_b = [t for t in re.split(r'[\s+]+', right) if t and not t.startswith('-')]
-    return team_a, team_b, num, map_size, seed
+    return team_a, team_b, num, map_size, seed, season_status
 
 
 def parse_table_args(argv):
     """Parse table-mode args."""
     fmt = '1v1'; teams_list = None; num = 50; map_size = '10x10'
-    seed = random.randint(0, 99999)
+    seed = random.randint(0, 99999); season_status = None
     i = 2
     while i < len(argv):
         if argv[i] == '--format' and i + 1 < len(argv):
@@ -64,13 +67,21 @@ def parse_table_args(argv):
             map_size = argv[i + 1]; i += 2
         elif argv[i] == '-s' and i + 1 < len(argv):
             seed = int(argv[i + 1]); i += 2
+        elif argv[i] == '--season' and i + 1 < len(argv):
+            season_status = int(argv[i + 1]); i += 2
         else:
             i += 1
-    return fmt, teams_list, num, map_size, seed
+    return fmt, teams_list, num, map_size, seed, season_status
 
 
-def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True):
-    """Run N battles between two teams. Returns (wins_a, wins_b, avg_rds, timeouts, elapsed)."""
+def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=None):
+    """Run N battles between two teams. Returns (wins_a, wins_b, avg_rds, timeouts, elapsed).
+
+    season_status can be:
+      - None: pure uniform random per character (backward compat)
+      - int: same season bias for all characters
+      - dict: {serial: int} per-character season status
+    """
     a_uids = [t.char_map[s] for s in team_a]
     b_uids = [t.char_map[s] for s in team_b]
 
@@ -88,7 +99,14 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True):
             if ai:
                 engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                 engine._ai_react_counter_w[uid] = ai.react_counter_w
-        engine.setup_battle(a_uids, b_uids, map_size)
+        # Build per-uid season status mapping
+        if isinstance(season_status, dict):
+            uid_season = {}
+            for serial, uid in zip(team_a + team_b, a_uids + b_uids):
+                uid_season[uid] = season_status.get(serial, 50)
+        else:
+            uid_season = season_status  # None or int
+        engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
 
     if quiet: set_terminal_quiet(True)
     wins_a = wins_b = timeouts = total_rds = 0
@@ -156,15 +174,23 @@ def print_contribution(contrib):
 
 
 def mode_single(argv):
-    team_a, team_b, N, map_size, seed = parse_single_args(argv)
+    team_a, team_b, N, map_size, seed, season_status = parse_single_args(argv)
     random.seed(seed)
     print('初始化...', flush=True)
     t = Tournament(); t.init_characters()
+    # Build per-character season status
+    if season_status is None:
+        char_season = {s: random.randint(0, 100) for s in t.char_map}
+    else:
+        char_season = {s: int(season_status) for s in t.char_map}
     nm = {c['serial']: c['name'] for c in ALL_CHARACTERS}
     a_disp = '+'.join(nm.get(s, s) for s in team_a)
     b_disp = '+'.join(nm.get(s, s) for s in team_b)
+    # Show season status for involved characters
+    status_str = ', '.join(f'{nm.get(s,s)}:{char_season.get(s,"?")}' for s in team_a + team_b)
     print(f'{a_disp} v.s. {b_disp} — {N}场 [{map_size}]  seed={seed}', flush=True)
-    wins_a, wins_b, avg_rds, timeouts, elapsed = run_battle_pair(t, team_a, team_b, map_size, N, quiet=False)
+    print(f'  赛季状态: {status_str}', flush=True)
+    wins_a, wins_b, avg_rds, timeouts, elapsed = run_battle_pair(t, team_a, team_b, map_size, N, quiet=False, season_status=char_season)
     rate_a = wins_a / N * 100; rate_b = wins_b / N * 100
     print(f'\n{"="*55}')
     print(f'  {a_disp}  v.s.  {b_disp}')
@@ -182,10 +208,15 @@ def mode_single(argv):
 
 
 def mode_table(argv):
-    fmt, teams_str, N, map_size, seed = parse_table_args(argv)
+    fmt, teams_str, N, map_size, seed, season_status = parse_table_args(argv)
     random.seed(seed)
     print('初始化...', flush=True)
     t = Tournament(); t.init_characters()
+    # Build per-character season status
+    if season_status is None:
+        char_season = {s: random.randint(0, 100) for s in t.char_map}
+    else:
+        char_season = {s: int(season_status) for s in t.char_map}
     nm = {c['serial']: c['name'] for c in ALL_CHARACTERS}
 
     # Build team list
@@ -205,7 +236,10 @@ def mode_table(argv):
 
     team_names = ['+'.join(nm.get(s, s) for s in team) for team in teams]
     n = len(teams)
+    # Show per-character season status
+    status_str = ', '.join(f'{nm.get(s,s)}:{char_season.get(s,"?")}' for s in sorted(t.char_map.keys()))
     print(f'胜率矩阵: {fmt}  {n}×{n}  每格{N}场 [{map_size}]  seed={seed}', flush=True)
+    print(f'  赛季状态: {status_str}', flush=True)
 
     # Compute matrix
     matrix = [[0.0] * n for _ in range(n)]
@@ -216,7 +250,7 @@ def mode_table(argv):
     for i in range(n):
         for j in range(n):
             if i == j: matrix[i][j] = 0.5; continue
-            wins_a, wins_b, _, _, _ = run_battle_pair(t, teams[i], teams[j], map_size, N, quiet=True)
+            wins_a, wins_b, _, _, _ = run_battle_pair(t, teams[i], teams[j], map_size, N, quiet=True, season_status=char_season)
             matrix[i][j] = wins_a / N
             matrix[j][i] = wins_b / N  # symmetric, already computed
             done += 1

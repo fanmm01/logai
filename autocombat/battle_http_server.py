@@ -68,6 +68,11 @@ _battles: dict = {}           # group_id → FullBattleEngine instance
 _pending_reactions: dict = {} # group_id → saved reaction state dict
 _lock = threading.Lock()
 
+# Team storage for .bteam command
+_teams: dict = {}            # team_id (e.g. "T1") → {name, members: [serial,...], creator}
+_next_team_id: int = 1
+_teams_lock = threading.Lock()
+
 # ═══════════════════════════════════════════════════════════════
 #  Character data helpers
 # ═══════════════════════════════════════════════════════════════
@@ -254,6 +259,34 @@ def _char_summary(engine, uid: str) -> dict:
         'mp': mp, 'mp_max': mp_max,
         'san': san,
     }
+
+
+def _get_all_human_player_ids(engine) -> set:
+    """Collect all player_ids registered as controllers across all characters."""
+    controllers = getattr(engine, '_player_controllers', {})
+    result = set()
+    for player_list in controllers.values():
+        if isinstance(player_list, list):
+            result.update(player_list)
+    return result
+
+
+def _get_player_controlled_characters(engine) -> dict:
+    """Return {player_id: [char_name, ...]} mapping for all human controllers."""
+    controllers = getattr(engine, '_player_controllers', {})
+    result: dict = {}
+    il = engine._get_initiative()
+    for base_uid, player_list in controllers.items():
+        if not isinstance(player_list, list):
+            continue
+        # Find character name
+        entry = next((e for e in il if e.get('baseUserId', e['userId']) == base_uid or e['userId'] == base_uid), None)
+        name = entry.get('name', base_uid) if entry else base_uid
+        for pid in player_list:
+            if pid not in result:
+                result[pid] = []
+            result[pid].append({'uid': base_uid, 'name': name})
+    return result
 
 
 def _serialize_battle_state(engine) -> dict:
@@ -711,15 +744,24 @@ def _ai_decide_action(engine, uid: str, Q=None) -> str:
     return random.choice(available)
 
 
-def _run_ai_turns(engine, player_uid: str, Q=None) -> list:
-    """Advance battle through all AI turns until it's the player's turn again or battle ends.
-    If an AI attack triggers a reaction from the human player, stops and stores the
+def _run_ai_turns(engine, player_uid: str = None, Q=None) -> list:
+    """Advance battle through all AI turns until a human-controlled character is active or battle ends.
+    If an AI attack triggers a reaction from a human player, stops and stores the
     pending reaction (caller must check _pending_reactions afterward).
+
+    When player_uid is None, auto-detects all human players from engine._player_controllers.
     Returns list of output strings, one per AI action.
     """
     outputs = []
     max_steps = 50  # safety limit
     last_round = 0
+
+    # Collect all human player IDs (from _player_controllers dict)
+    human_ids = _get_all_human_player_ids(engine)
+    # Also include explicit player_uid if provided (for backward compat)
+    if player_uid:
+        human_ids.add(player_uid)
+
     for _ in range(max_steps):
         state = engine._get_state()
         if not state or state.get('phase') != 'active':
@@ -732,10 +774,11 @@ def _run_ai_turns(engine, player_uid: str, Q=None) -> list:
         entry = il[idx]
         uid = entry['userId']
 
-        # Check if it's the player's turn (check controllers list for multi-player binding)
+        # Check if a human player controls this character
         base_uid = entry.get('baseUserId', uid)
         controllers = getattr(engine, '_player_controllers', {}).get(base_uid, [])
-        if uid == player_uid or player_uid in controllers:
+        is_human = bool(controllers) or uid in human_ids
+        if is_human:
             break
 
         # Round start display
@@ -829,7 +872,11 @@ def _run_ai_turns(engine, player_uid: str, Q=None) -> list:
                         outputs.append("\n".join(lines))
                     except ReactionNeeded as e:
                         def_uid = e.data.get('def_uid', '')
-                        if def_uid == player_uid:
+                        # Check if defender is human (in human_ids or has controllers)
+                        def_base = def_uid.split('__act')[0] if '__act' in str(def_uid) else def_uid
+                        def_controllers = getattr(engine, '_player_controllers', {}).get(def_base, [])
+                        is_human_defender = def_uid in human_ids or bool(def_controllers)
+                        if is_human_defender:
                             # ── Human defender → store pending reaction, stop AI turns ──
                             e.data['battle_id'] = engine.group_id
                             e.data['target_uid'] = def_uid
@@ -924,14 +971,24 @@ def _build_global_list(engine) -> list:
     return result
 
 
-def _initiative_list_text(engine) -> str:
-    """Formatted initiative order with global numbers (all characters)."""
+def _initiative_list_text(engine, mode='pvp') -> str:
+    """Formatted initiative order with global numbers (all characters).
+
+    Args:
+        engine: The battle engine instance.
+        mode: 'pvp', 'pve', or 'multi_pvp'. In multi_pvp, both sides may have
+              human players, so teams are labeled [Y队]/[X队] instead of [己方]/[敌方].
+    """
     entries = _build_global_list(engine)
     if not entries:
         return '\n（无存活角色）'
     lines = ['\n=== 先攻顺序 ===']
+    is_multi = (mode == 'multi_pvp')
     for e in entries:
-        team_tag = '[己方]' if e['team'] == 'Y' else '[敌方]'
+        if is_multi:
+            team_tag = '[Y队]' if e['team'] == 'Y' else '[X队]'
+        else:
+            team_tag = '[己方]' if e['team'] == 'Y' else '[敌方]'
         summon_tag = ' [召唤]' if e['isSummon'] else ''
         active_mark = ' ◀当前行动' if e['isActive'] else ''
         lines.append(
@@ -991,9 +1048,126 @@ def _parse_target_index(args: str) -> int | None:
     return None
 
 
+def _resolve_target_by_serial(engine, player_uid: str, args: str) -> str | None:
+    """Resolve a target from args by serial number (e.g. 'Y4', 'Y5').
+
+    Searches the initiative list for a character whose serial (or name) matches
+    the first token in args. Only returns enemies (different team from player_uid).
+    Returns userId if found, None otherwise.
+    """
+    if not args:
+        return None
+    token = args.strip().split()[0].upper()
+    il = engine._get_initiative()
+    player_entry = next((e for e in il if e['userId'] == player_uid), None)
+    player_team = player_entry.get('team', 'Y') if player_entry else 'Y'
+    for e in il:
+        if e.get('team') == player_team:
+            continue  # skip same-team
+        if (engine._get_combat_hp(e['userId']) or 0) <= 0:
+            continue  # skip dead
+        # Match by serial (stored in initiative entry)
+        if e.get('serial', '').upper() == token:
+            return e['userId']
+        # Match by name (case-insensitive)
+        if e.get('name', '').upper() == token:
+            return e['userId']
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════
 #  API Endpoints
 # ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+#  Team CRUD (.bteam)
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/pvp/team/create', methods=['POST'])
+def team_create():
+    """Create a fixed team for later use in .btast T1 vs T2."""
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({'error': True, 'message': '请求数据格式错误'}), 400
+    player_id = data.get('player_id', '')
+    name = data.get('name', '').strip()
+    members = data.get('members', [])
+
+    if not name:
+        return jsonify({'error': True, 'message': '战队名称不能为空'}), 400
+    if not members or len(members) < 1:
+        return jsonify({'error': True, 'message': '战队至少需要1名成员'}), 400
+
+    # Validate serials against chData
+    valid_serials = {c.get('serial', '') for c in characters_data_pvp.ALL_CHARACTERS}
+    for s in members:
+        if s.upper() not in valid_serials:
+            return jsonify({'error': True, 'message': f'无效角色序号: {s}'}), 400
+
+    with _teams_lock:
+        global _next_team_id
+        team_id = f"T{_next_team_id}"
+        _next_team_id += 1
+        _teams[team_id] = {
+            'name': name,
+            'members': [s.upper() for s in members],
+            'creator': player_id,
+            'created_at': time.time(),
+        }
+
+    return jsonify({
+        'team_id': team_id,
+        'name': name,
+        'members': _teams[team_id]['members'],
+    })
+
+
+@app.route('/api/pvp/team/list', methods=['GET'])
+def team_list():
+    """List all fixed teams."""
+    with _teams_lock:
+        teams = [{'id': tid, 'name': t['name'], 'members': t['members'], 'creator': t['creator']}
+                 for tid, t in _teams.items()]
+    return jsonify({'teams': teams})
+
+
+@app.route('/api/pvp/team/delete', methods=['POST'])
+def team_delete():
+    """Delete a fixed team (creator only)."""
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({'error': True, 'message': '请求数据格式错误'}), 400
+    player_id = data.get('player_id', '')
+    team_id = data.get('team_id', '').upper()
+
+    with _teams_lock:
+        if team_id not in _teams:
+            return jsonify({'error': True, 'message': f'战队 {team_id} 不存在'}), 404
+        team = _teams[team_id]
+        if team['creator'] != player_id:
+            return jsonify({'error': True, 'message': f'只有战队创建者可以删除 {team_id}'}), 403
+        del _teams[team_id]
+
+    return jsonify({'status': 'ok', 'message': f'战队 {team_id}（{team["name"]}）已删除'})
+
+
+# ── Resolve team aliases ──
+
+def _resolve_team_tokens(tokens: list) -> list:
+    """Resolve a list of tokens (serials like 'Y1' or team aliases like 'T1')
+    into a flat list of serials."""
+    result = []
+    with _teams_lock:
+        for token in tokens:
+            t = token.strip().upper()
+            if t in _teams:
+                result.extend(_teams[t]['members'])
+            else:
+                result.append(t)
+    return result
+
 
 @app.route('/api/pvp/ping', methods=['GET'])
 def ping():
@@ -1094,15 +1268,115 @@ def create_battle():
 
             engine._human_uid = human_uid  # store on engine for AI turn logic
 
-        # ── Setup map ──
-        map_data = data.get('map')
-        if not map_data:
-            # Default 10x10 map
-            map_data = {'width': 10, 'height': 10, 'entryRow': 5, 'obstacles': {}, 'occupants': {}}
+        # ── Multi-PvP mode: team_a vs team_b with optional player bindings ──
+        if mode == 'multi_pvp':
+            from characters_data_pvp import load_character_to_engine
 
-        # ── Setup initiative ──
-        init_list = data.get('initiative', [])
-        if not init_list:
+            team_a_serials = data.get('team_a', [])
+            team_b_serials = data.get('team_b', [])
+            player_bindings = data.get('player_bindings', {})
+
+            if not team_a_serials or not team_b_serials:
+                return jsonify({'error': True, 'message': 'multi_pvp模式需要 team_a 和 team_b'}), 400
+
+            # Clear existing characters (from js_characters merge above, if any)
+            engine.characters.clear()
+            all_uids.clear()
+
+            # Initialize player controllers
+            if not hasattr(engine, '_player_controllers'):
+                engine._player_controllers = {}
+
+            # ── Load team_a characters (Team Y) ──
+            for serial in team_a_serials:
+                cdata = _find_chdata_by_serial(serial.upper())
+                if not cdata:
+                    return jsonify({'error': True, 'message': f'未找到角色: {serial}'}), 400
+                uid = f"y_{serial}_{random.randint(1000, 9999)}"
+                load_character_to_engine(engine, cdata, uid)
+                engine.get_char(uid).name = cdata.get('name', serial)
+                engine.get_char(uid).serial = serial.upper()
+                if not cdata.get('pre_transformed'):
+                    engine.process_command(uid, '.hs')
+                all_uids.append(uid)
+
+            # ── Load team_b characters (Team X) ──
+            for serial in team_b_serials:
+                cdata = _find_chdata_by_serial(serial.upper())
+                if not cdata:
+                    return jsonify({'error': True, 'message': f'未找到角色: {serial}'}), 400
+                uid = f"x_{serial}_{random.randint(1000, 9999)}"
+                load_character_to_engine(engine, cdata, uid)
+                engine.get_char(uid).name = cdata.get('name', serial)
+                engine.get_char(uid).serial = serial.upper()
+                if not cdata.get('pre_transformed'):
+                    engine.process_command(uid, '.hs')
+                all_uids.append(uid)
+
+            # ── Set player bindings ──
+            for player_id, serials in player_bindings.items():
+                if not isinstance(serials, list):
+                    serials = [serials]
+                for serial in serials:
+                    target_uid = None
+                    for uid in all_uids:
+                        char = engine.get_char(uid)
+                        if char.serial and char.serial.upper() == serial.upper():
+                            target_uid = uid
+                            break
+                    if target_uid:
+                        base_uid = target_uid.split('__act')[0] if '__act' in str(target_uid) else target_uid
+                        if base_uid not in engine._player_controllers:
+                            engine._player_controllers[base_uid] = []
+                        if player_id not in engine._player_controllers[base_uid]:
+                            engine._player_controllers[base_uid].append(player_id)
+
+            # Get map_size
+            map_size_str = data.get('map_size', '10x10')
+            try:
+                w_str, h_str = map_size_str.split('x')
+                w, h = int(w_str), int(h_str)
+            except Exception:
+                w, h = 10, 10
+            map_data = {'width': w, 'height': h, 'entryRow': math.ceil(h / 2),
+                        'obstacles': {}, 'occupants': {}}
+
+            # ── Setup initiative ──
+            engine._set_map(map_data)
+            team_a_uids = [u for u in all_uids if u.startswith('y_')]
+            team_b_uids = [u for u in all_uids if u.startswith('x_')]
+            il = []
+            for i, uid in enumerate(team_a_uids):
+                char = engine.get_char(uid)
+                row = min(h - 1, math.ceil(h / 2) + i - len(team_a_uids) // 2)
+                coord = format_coord(1, row)
+                il.append({'userId': uid, 'name': char.name, 'team': 'Y',
+                           'dex': char.get_attr('敏捷', 50), 'initRoll': random.randint(1, 100),
+                           'coord': coord, 'serial': char.serial})
+                map_data['occupants'][coord] = uid
+            for i, uid in enumerate(team_b_uids):
+                char = engine.get_char(uid)
+                row = min(h - 1, math.ceil(h / 2) + i - len(team_b_uids) // 2)
+                coord = format_coord(w - 2, row)
+                il.append({'userId': uid, 'name': char.name, 'team': 'X',
+                           'dex': char.get_attr('敏捷', 50), 'initRoll': random.randint(1, 100),
+                           'coord': coord, 'serial': char.serial})
+                map_data['occupants'][coord] = uid
+            il.sort(key=lambda e: (-e['initRoll'], -e['dex']))
+            engine._set_map(map_data)
+            engine._set_initiative(il)
+            init_list = il
+        if mode != 'multi_pvp':
+            map_data = data.get('map')
+        if mode != 'multi_pvp':
+            if not map_data:
+                # Default 10x10 map
+                map_data = {'width': 10, 'height': 10, 'entryRow': 5, 'obstacles': {}, 'occupants': {}}
+
+        # ── Setup initiative (skip for multi_pvp — already handled above) ──
+        if mode != 'multi_pvp':
+            init_list = data.get('initiative', [])
+        if mode != 'multi_pvp' and not init_list:
             # Auto-generate initiative
             # Team Y: self + allies (uids not starting with 'opp_')
             # Team X: opponents (uids starting with 'opp_')
@@ -1132,7 +1406,7 @@ def create_battle():
             engine._set_map(map_data)
             engine._set_initiative(il)
             init_list = il
-        else:
+        elif mode != 'multi_pvp':
             engine._set_map(map_data)
             engine._set_initiative(init_list)
             il = init_list
@@ -1176,7 +1450,11 @@ def create_battle():
         active_entry = il[0] if il else None
         output_lines = [f"=== 第 1 回合 === 战斗开始！==="]
         # Initiative order with global numbering
-        output_lines.append(_initiative_list_text(engine))
+        output_lines.append(_initiative_list_text(engine, mode))
+        # ── DEBUG: verify mode and team distribution ──
+        output_lines.append(f"\n[DEBUG] mode={mode!r} is_multi={mode == 'multi_pvp'!r}")
+        output_lines.append(f"[DEBUG] il teams: {[(e.get('name','?'), e.get('team','?')) for e in il]}")
+        output_lines.append(f"[DEBUG] all_uids count={len(all_uids)} uids={all_uids}")
         if active_entry:
             output_lines.append(f"\n当前行动: {active_entry['name']}（主动×2 附加×3）")
 
@@ -1191,6 +1469,20 @@ def create_battle():
             'output': '\n'.join(output_lines),
         }
 
+        # ── Compute next_player_ids for multi-player modes ──
+        if mode == 'multi_pvp' or getattr(engine, '_player_controllers', None):
+            controlled = _get_player_controlled_characters(engine)
+            result['controlled_characters'] = controlled
+            if active_entry:
+                active_base = active_entry.get('baseUserId', active_entry['userId'])
+                controllers = getattr(engine, '_player_controllers', {}).get(active_base, [])
+                result['next_player_ids'] = controllers
+                if controllers:
+                    active_char = engine.get_char(active_base)
+                    result['output'] += f"\n\n当前行动: {active_entry['name']}（{'/'.join(controllers)}控制）"
+            else:
+                result['next_player_ids'] = []
+
         # PvE mode: run AI turns if AI goes first (any non-human character)
         if mode == 'pve' and active_entry and active_entry['userId'] != human_uid:
             Q = _load_q_table_pvp()
@@ -1201,6 +1493,32 @@ def create_battle():
             refreshed = _serialize_battle_state(engine)
             result['state'] = refreshed['state']
             result['current_turn'] = refreshed['current_turn']
+
+        # Multi-PvP mode: run AI turns until a human-controlled character is active
+        if mode == 'multi_pvp':
+            Q = _load_q_table_pvp()
+            ai_outputs = _run_ai_turns(engine, player_uid=None, Q=Q)
+            if ai_outputs:
+                result['output'] += '\n\n[AI回合]\n' + '\n'.join(ai_outputs)
+            # Refresh state after AI turns
+            refreshed = _serialize_battle_state(engine)
+            result['state'] = refreshed['state']
+            result['current_turn'] = refreshed['current_turn']
+            # Update next_player_ids after AI turns
+            il2 = engine._get_initiative()
+            st2 = engine._get_state()
+            if st2 and il2 and st2.get('phase') == 'active':
+                idx2 = st2.get('activeIndex', 0)
+                if idx2 < len(il2):
+                    active_entry2 = il2[idx2]
+                    active_base2 = active_entry2.get('baseUserId', active_entry2['userId'])
+                    controllers2 = getattr(engine, '_player_controllers', {}).get(active_base2, [])
+                    result['next_player_ids'] = controllers2
+                    result['output'] += _enemy_list_text(engine, active_entry2['userId'])
+                else:
+                    result['next_player_ids'] = []
+            else:
+                result['next_player_ids'] = []
 
         # PvE: if it's now the player's turn, show enemy list
         if mode == 'pve' and human_uid:
@@ -1252,8 +1570,18 @@ def submit_action(battle_id):
         if active_entry['userId'] != player_id and player_id not in controllers:
             return jsonify({'error': True, 'message': f"不是你的回合！当前行动: {active_entry.get('name', '?')}"}), 403
 
+        # ── Resolve effective character uid ──
+        # In multi-PvP mode, player_id is a QQ number / user ID, not the
+        # character's engine userId (e.g. "y_Y4_1234").  When the player is
+        # listed in _player_controllers for the active character we use the
+        # base_uid; otherwise player_id IS the character uid (PvE / legacy).
+        if player_id in controllers:
+            effective_uid = base_uid
+        else:
+            effective_uid = player_id
+
         actions = engine._get_actions()
-        my_acts = actions.get(player_id, {'主动': 0, '附加': 0})
+        my_acts = actions.get(effective_uid, {'主动': 0, '附加': 0})
 
         output = ''
         needs_reaction = False
@@ -1267,11 +1595,11 @@ def submit_action(battle_id):
                 # ── End turn ──
                 remaining_main = my_acts.get('主动', 0)
                 remaining_extra = my_acts.get('附加', 0)
-                char_name = engine.get_char(player_id).name
+                char_name = engine.get_char(effective_uid).name
                 my_acts['主动'] = 0
                 my_acts['附加'] = 0
                 engine._set_actions(actions)
-                output = engine._end_turn(player_id)
+                output = engine._end_turn(effective_uid)
                 if isinstance(output, str):
                     pass
                 else:
@@ -1282,9 +1610,9 @@ def submit_action(battle_id):
                 # ── Basic melee attack ──
                 if my_acts.get('主动', 0) <= 0:
                     return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
-                char = engine.get_char(player_id)
+                char = engine.get_char(effective_uid)
                 bn, bv = char.get_best_melee()
-                # Find target — check in order: explicit userId, numeric index from args, first enemy
+                # Find target — check in order: explicit userId, serial from args, numeric index from args, first enemy
                 enemies = [e for e in il
                            if e.get('team') != active_entry.get('team', 'Y')
                            and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -1295,23 +1623,26 @@ def submit_action(battle_id):
                 # 1) Explicit target userId (from @mention)
                 if target and any(e['userId'] == target for e in enemies):
                     tid = target
-                # 2) Numeric index from args (e.g. .s0 1)
+                # 2) Serial number from args (e.g. .s0 Y5)
+                if not tid:
+                    tid = _resolve_target_by_serial(engine, effective_uid, args)
+                # 3) Numeric index from args (e.g. .s0 1)
                 if not tid:
                     tgt_idx = _parse_target_index(args)
                     if tgt_idx is not None:
-                        tid = _resolve_enemy_index(engine, player_id, tgt_idx)
+                        tid = _resolve_enemy_index(engine, effective_uid, tgt_idx)
                         if not tid:
                             return jsonify({'error': True, 'message': f'无效的敌方编号: {tgt_idx}'}), 400
-                # 3) Default: first living enemy
+                # 4) Default: first living enemy
                 if not tid:
                     tid = enemies[0]['userId']
 
-                dd = engine._get_damage_dice(player_id, bn)
+                dd = engine._get_damage_dice(effective_uid, bn)
                 p = char.get_attr('伤害贯穿', 1)
                 l = char.get_attr('致死骰', 1) or 0
 
                 try:
-                    _, _, lines = engine._coc7_attack(player_id, tid, bn, bv, dd, p, l)
+                    _, _, lines = engine._coc7_attack(effective_uid, tid, bn, bv, dd, p, l)
                     output = '\n'.join(lines)
                     my_acts['主动'] = my_acts.get('主动', 0) - 1
                 except ReactionNeeded as e:
@@ -1354,8 +1685,8 @@ def submit_action(battle_id):
                 if my_acts.get('主动', 0) <= 0:
                     return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
 
-                char = engine.get_char(player_id)
-                spells = char.spells or engine.load_spells(player_id)
+                char = engine.get_char(effective_uid)
+                spells = char.spells or engine.load_spells(effective_uid)
                 spell = next((s for s in spells if s['index'] == sn), None)
                 if not spell:
                     # Build helpful message listing available skills
@@ -1372,14 +1703,16 @@ def submit_action(battle_id):
                     return jsonify({'error': True, 'message': f'【{spell["name"]}】不能在主动作阶段使用'}), 400
 
                 try:
-                    # Resolve target: numeric index from args > smart target
+                    # Resolve target: serial from args > numeric index from args > smart target
                     tgt = None
-                    tgt_idx = _parse_target_index(args)
-                    if tgt_idx is not None:
-                        tgt = _resolve_enemy_index(engine, player_id, tgt_idx)
+                    tgt = _resolve_target_by_serial(engine, effective_uid, args)
                     if not tgt:
-                        tgt = engine._smart_target(player_id, spell)
-                    out = engine._execute_spell(player_id, tgt, spell)
+                        tgt_idx = _parse_target_index(args)
+                        if tgt_idx is not None:
+                            tgt = _resolve_enemy_index(engine, effective_uid, tgt_idx)
+                    if not tgt:
+                        tgt = engine._smart_target(effective_uid, spell)
+                    out = engine._execute_spell(effective_uid, tgt, spell)
                     output = out if isinstance(out, str) else str(out)
                     if not is_passive:
                         my_acts['主动'] = my_acts.get('主动', 0) - 1
@@ -1399,16 +1732,16 @@ def submit_action(battle_id):
                     mp = engine._get_map()
                     if mp:
                         for c, occ in list(mp.get('occupants', {}).items()):
-                            if occ == player_id:
+                            if occ == effective_uid:
                                 del mp['occupants'][c]
-                        mp['occupants'][coord] = player_id
+                        mp['occupants'][coord] = effective_uid
                         engine._set_map(mp)
-                    output = f"{engine.get_char(player_id).name} 移动至 {coord}"
+                    output = f"{engine.get_char(effective_uid).name} 移动至 {coord}"
                     my_acts['附加'] = my_acts.get('附加', 0) - 1
                 elif sub.startswith('s'):
                     sn = int(sub[1:])
-                    char = engine.get_char(player_id)
-                    spells = char.spells or engine.load_spells(player_id)
+                    char = engine.get_char(effective_uid)
+                    spells = char.spells or engine.load_spells(effective_uid)
                     spell = next((s for s in spells if s['index'] == sn), None)
                     if not spell:
                         # Build helpful message listing available skills
@@ -1421,14 +1754,16 @@ def submit_action(battle_id):
                     timing = spell.get('时机', '2')
                     if not has_timing(timing, '3'):
                         return jsonify({'error': True, 'message': f'【{spell["name"]}】不能在附加动作阶段使用'}), 400
-                    # Resolve target: numeric index from args > smart target
+                    # Resolve target: serial from args > numeric index from args > smart target
                     tgt = None
-                    tgt_idx = _parse_target_index(args)
-                    if tgt_idx is not None:
-                        tgt = _resolve_enemy_index(engine, player_id, tgt_idx)
+                    tgt = _resolve_target_by_serial(engine, effective_uid, args)
                     if not tgt:
-                        tgt = engine._smart_target(player_id, spell)
-                    out = engine._execute_spell(player_id, tgt, spell)
+                        tgt_idx = _parse_target_index(args)
+                        if tgt_idx is not None:
+                            tgt = _resolve_enemy_index(engine, effective_uid, tgt_idx)
+                    if not tgt:
+                        tgt = engine._smart_target(effective_uid, spell)
+                    out = engine._execute_spell(effective_uid, tgt, spell)
                     output = out if isinstance(out, str) else str(out)
                     my_acts['附加'] = my_acts.get('附加', 0) - 1
                 elif sub.startswith('eat'):
@@ -1442,7 +1777,7 @@ def submit_action(battle_id):
                             target_id = target_entry['userId']
                         else:
                             return jsonify({'error': True, 'message': f'未找到目标: {target_name}'}), 404
-                    out, success = engine._eat_cake(player_id, target_id)
+                    out, success = engine._eat_cake(effective_uid, target_id)
                     output = out if isinstance(out, str) else str(out)
                     if success:
                         my_acts['附加'] = my_acts.get('附加', 0) - 1
@@ -1455,7 +1790,7 @@ def submit_action(battle_id):
                     target_entry = next((e for e in il if e.get('name', '') == target_name), None)
                     if not target_entry:
                         return jsonify({'error': True, 'message': f'未找到目标: {target_name}'}), 404
-                    out, success = engine._eat_cake(player_id, target_entry['userId'])
+                    out, success = engine._eat_cake(effective_uid, target_entry['userId'])
                     output = out if isinstance(out, str) else str(out)
                     if success:
                         my_acts['附加'] = my_acts.get('附加', 0) - 1
@@ -1465,7 +1800,7 @@ def submit_action(battle_id):
             elif action.startswith('.g '):
                 # ── Transfer craft item ──
                 item_name = action[3:].strip()
-                out, success = engine._eat_cake(player_id)
+                out, success = engine._eat_cake(effective_uid)
                 output = out if isinstance(out, str) else str(out)
 
             else:
@@ -1484,7 +1819,7 @@ def submit_action(battle_id):
             # ── Check if turn should advance ──
             if not needs_reaction and my_acts.get('主动', 0) <= 0 and not action.startswith('.a '):
                 try:
-                    end_out = engine._end_turn(player_id)
+                    end_out = engine._end_turn(effective_uid)
                     if isinstance(end_out, str) and len(end_out) > 0:
                         output += '\n' + end_out
                 except Exception:
@@ -1550,6 +1885,18 @@ def submit_action(battle_id):
             refreshed2 = _serialize_battle_state(engine)
             result['current_turn'] = refreshed2['current_turn']
             result['state'] = refreshed2['state']
+
+        # ── Add next_player_ids for multi-player modes ──
+        if getattr(engine, '_player_controllers', None):
+            il = engine._get_initiative()
+            st = engine._get_state()
+            if st and il and st.get('phase') == 'active':
+                idx = st.get('activeIndex', 0)
+                if idx < len(il):
+                    active_entry = il[idx]
+                    active_base = active_entry.get('baseUserId', active_entry['userId'])
+                    result['next_player_ids'] = getattr(engine, '_player_controllers', {}).get(active_base, [])
+
 
         # PvE: if it's now the player's turn, show enemy list
         human_uid = getattr(engine, '_human_uid', None)
@@ -1664,6 +2011,18 @@ def submit_reaction(battle_id):
                 result['pending_attack'] = pending_attack
             if auto_turns:
                 result['auto_turns'] = auto_turns
+
+            # ── Add next_player_ids for multi-player modes ──
+            if getattr(engine, '_player_controllers', None):
+                il3 = engine._get_initiative()
+                st3 = engine._get_state()
+                if st3 and il3 and st3.get('phase') == 'active':
+                    idx3 = st3.get('activeIndex', 0)
+                    if idx3 < len(il3):
+                        active3 = il3[idx3]
+                        active_base3 = active3.get('baseUserId', active3['userId'])
+                        result['next_player_ids'] = getattr(engine, '_player_controllers', {}).get(active_base3, [])
+
             return jsonify(result)
 
         except Exception as e:
@@ -1722,6 +2081,143 @@ def get_state(battle_id):
         if not engine:
             return jsonify({'error': True, 'message': '战斗不存在'}), 404
         return jsonify(_serialize_battle_state(engine))
+
+
+@app.route('/api/pvp/<battle_id>/alist', methods=['GET'])
+def get_alist(battle_id):
+    """Return available actions for a player's controlled characters."""
+    player_id = request.args.get('player_id', '')
+    with _lock:
+        engine = _battles.get(battle_id)
+        if not engine:
+            return jsonify({'error': True, 'message': '战斗不存在'}), 404
+
+        il = engine._get_initiative()
+        actions = engine._get_actions()
+
+        # Find all characters controlled by this player
+        controlled = []
+        controllers = getattr(engine, '_player_controllers', {})
+        for base_uid, player_list in controllers.items():
+            if player_id in (player_list if isinstance(player_list, list) else []):
+                entry = next((e for e in il if e.get('baseUserId', e['userId']) == base_uid or e['userId'] == base_uid), None)
+                if entry and (engine._get_combat_hp(entry['userId']) or 0) > 0:
+                    controlled.append(entry)
+
+        # If no controller entry but player_id matches a character userId directly
+        if not controlled:
+            direct = next((e for e in il if (e.get('baseUserId', e['userId']) == player_id or e['userId'] == player_id) and (engine._get_combat_hp(e['userId']) or 0) > 0), None)
+            if direct:
+                controlled.append(direct)
+
+        characters_info = []
+        for entry in controlled:
+            uid = entry['userId']
+            char = engine.get_char(uid)
+            my_acts = actions.get(uid, {'主动': 0, '附加': 0})
+            spells = char.spells or engine.load_spells(uid)
+            hp = engine._get_combat_hp(uid) or 0
+            hp_max = char.get_attr('体力上限', hp)
+            mp = char.get_attr('魔力', 0) or 0
+            mp_max = char.get_attr('魔力上限', mp)
+
+            skills = []
+            # .s0 basic attack
+            bn, bv = char.get_best_melee()
+            if bv > 0:
+                skills.append({
+                    'index': 0, 'name': '基本攻击', 'skill_name': bn, 'skill_val': bv,
+                    'timing': '主', 'mp_cost': 0, 'available': my_acts.get('主动', 0) > 0,
+                })
+            # .sN spells
+            for s in spells:
+                timing = s.get('时机', '2')
+                timing_labels = []
+                if has_timing(timing, '1'): timing_labels.append('被')
+                if has_timing(timing, '2'): timing_labels.append('主')
+                if has_timing(timing, '3'): timing_labels.append('附')
+                timing_str = '/'.join(timing_labels) if timing_labels else '?'
+                mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
+                is_main = has_timing(timing, '2')
+                is_extra = has_timing(timing, '3')
+                available = (is_main and my_acts.get('主动', 0) > 0) or (is_extra and my_acts.get('附加', 0) > 0)
+                skills.append({
+                    'index': s['index'], 'name': s['name'],
+                    'timing': timing_str, 'mp_cost': mp_cost, 'available': available,
+                })
+
+            # Check items
+            has_eat = engine._has_healing_item(uid) if hasattr(engine, '_has_healing_item') else False
+            has_craft = any(e.get('type') == 'create' and e.get('craftRoundsRemaining', 1) <= 0
+                           for e in engine._get_effects() if e.get('sourceUserId') == uid)
+
+            characters_info.append({
+                'name': char.name,
+                'serial': getattr(char, 'serial', ''),
+                'hp': hp, 'hp_max': hp_max,
+                'mp': mp, 'mp_max': mp_max,
+                'actions': my_acts,
+                'skills': skills,
+                'has_eat': has_eat,
+                'has_craft': has_craft,
+                'has_items': bool(hasattr(char, 'inventory') and char.inventory),
+            })
+
+        # Global ops
+        global_ops = ['sN', '.i end', '.a m <坐标>']
+        if any(c['has_craft'] for c in characters_info):
+            global_ops.append('.g')
+        if any(c['has_items'] for c in characters_info) or any(c['has_eat'] for c in characters_info):
+            global_ops.append('.u')
+            global_ops.append('.a eat')
+
+        return jsonify({
+            'characters': characters_info,
+            'global_ops': global_ops,
+        })
+
+
+@app.route('/api/pvp/<battle_id>/clist', methods=['GET'])
+def get_clist(battle_id):
+    """Return full character roster with initiative indices."""
+    with _lock:
+        engine = _battles.get(battle_id)
+        if not engine:
+            return jsonify({'error': True, 'message': '战斗不存在'}), 404
+
+        state = engine._get_state()
+        round_num = state.get('round', 1) if state else 1
+        active_idx = state.get('activeIndex', 0) if state else 0
+
+        entries = _build_global_list(engine)
+        il = engine._get_initiative()
+        controllers = getattr(engine, '_player_controllers', {})
+
+        characters = []
+        for e in entries:
+            uid = e['userId']
+            base_uid = il[e['index'] - 1].get('baseUserId', uid) if e['index'] - 1 < len(il) else uid
+            ctrls = controllers.get(base_uid, [])
+            char = engine.get_char(uid)
+            characters.append({
+                'index': e['index'],
+                'name': e['name'],
+                'team': e['team'],
+                'hp': e['hp'],
+                'hp_max': e['hpMax'],
+                'mp': e['mp'],
+                'mp_max': e['mpMax'],
+                'serial': getattr(char, 'serial', ''),
+                'is_summon': e['isSummon'],
+                'controller_ids': ctrls,
+                'is_active': e['index'] - 1 == active_idx,
+                'owner_name': next((ie.get('name', '') for ie in il if ie.get('isSummon') and ie['userId'] == uid), ''),
+            })
+
+        return jsonify({
+            'round': round_num,
+            'characters': characters,
+        })
 
 
 @app.route('/api/pvp/<battle_id>/sync', methods=['POST'])
@@ -1794,9 +2290,22 @@ def pvp_bind(battle_id):
         engine._player_controllers[base_uid].append(player_id)
 
     char_name = engine.get_char(base_uid).name if engine.get_char(base_uid) else base_uid
+    serial = getattr(engine.get_char(base_uid), 'serial', '') if engine.get_char(base_uid) else ''
+
+    # Get all characters controlled by this player
+    my_characters = []
+    for b_uid, player_list in getattr(engine, '_player_controllers', {}).items():
+        if player_id in (player_list if isinstance(player_list, list) else []):
+            c = engine.get_char(b_uid) if engine.get_char(b_uid) else None
+            my_characters.append({
+                'uid': b_uid,
+                'name': c.name if c else b_uid,
+                'serial': getattr(c, 'serial', '') if c else '',
+            })
 
     # If this character is currently active, run AI turns to check if human input needed
     auto_turns = []
+    next_player_ids = []
     state = engine._get_state()
     if state and state.get('phase') == 'active':
         il2 = engine._get_initiative()
@@ -1806,14 +2315,32 @@ def pvp_bind(battle_id):
             active_uid = active_entry.get('baseUserId', active_entry['userId'])
             if active_uid == base_uid:
                 try:
-                    auto_turns = _run_ai_turns(engine, player_id)
+                    auto_turns = _run_ai_turns(engine, player_uid=None)
+                    # After AI turns, check who controls the next active character
+                    st3 = engine._get_state()
+                    il3 = engine._get_initiative()
+                    if st3 and il3 and st3.get('phase') == 'active':
+                        idx3 = st3.get('activeIndex', 0)
+                        if idx3 < len(il3):
+                            active3 = il3[idx3]
+                            base3 = active3.get('baseUserId', active3['userId'])
+                            next_player_ids = getattr(engine, '_player_controllers', {}).get(base3, [])
                 except Exception:
                     pass
 
     return jsonify({
         'char_name': char_name,
+        'serial': serial,
+        'my_characters': my_characters,
         'auto_turns': auto_turns,
+        'next_player_ids': next_player_ids,
     })
+
+
+@app.route('/api/pvp/<battle_id>/join', methods=['POST'])
+def pvp_join(battle_id):
+    """Alias for /bind — join a battle by serial or initiative index."""
+    return pvp_bind(battle_id)
 
 
 @app.route('/api/pvp/<battle_id>/end', methods=['POST'])
