@@ -42,19 +42,131 @@ def bucket(val, max_val):
     if r < 0.75: return 2
     return 3
 
+
+def fine_bucket(val, max_val):
+    """Bucket a ratio 0-1 into 0-9 (10 levels, ~10% each)."""
+    if max_val <= 0: return 0
+    r = val / max_val
+    if r < 0.10: return 0   # 0-10%
+    if r < 0.20: return 1   # 10-20%
+    if r < 0.30: return 2   # 20-30%
+    if r < 0.40: return 3   # 30-40%
+    if r < 0.50: return 4   # 40-50%
+    if r < 0.60: return 5   # 50-60%
+    if r < 0.70: return 6   # 60-70%
+    if r < 0.80: return 7   # 70-80%
+    if r < 0.90: return 8   # 80-90%
+    return 9                 # 90-100%
+
+
+def get_character_combat_value(engine, uid):
+    """Estimate a character's combat value as their best avg damage per action.
+    Used to differentiate healing priorities: healing a DPS is more valuable
+    than healing a support."""
+    char = engine.get_char(uid)
+    if not char: return 5.0  # default average
+
+    # Best melee damage
+    try:
+        bn, bv = char.get_best_melee()
+        basic_dice = engine._get_damage_dice(uid, bn)
+        basic_avg = avg_damage(basic_dice) if basic_dice else 0.0
+    except Exception:
+        basic_avg = 0.0
+
+    # Best skill damage
+    spells = char.spells or engine.load_spells(uid)
+    best_skill_avg = 0.0
+    for s in spells:
+        if has_timing(s.get('时机', '2'), '2'):
+            for eff in s.get('effects', []):
+                if eff.get('type') == 1:
+                    dmg_dice = eff.get('伤害骰', '')
+                    if dmg_dice:
+                        best_skill_avg = max(best_skill_avg, avg_damage(dmg_dice))
+
+    return max(basic_avg, best_skill_avg, 1.0)
+
+
+# Precomputed average combat value for normalization
+_COMBAT_VALUE_AVG = 8.0
+
+
+def cake_reward_modifier(engine, actor_uid, ak):
+    """Compute reward modifier for cake actions (EAT_CAKE / GIVE_CAKE).
+
+    Two factors:
+    1. Target combat value — healing a high-DPS ally is more valuable
+       than self-healing a low-damage support.
+    2. Overheal penalty — healing a near-full-HP target is mostly wasted,
+       scaled by the target's HP ratio before the heal.
+
+    Returns a multiplier in [0.0, ~2.5].
+    """
+    base_ak, target_strat = parse_action(ak)
+
+    if base_ak == 'EAT_CAKE':
+        target_uid = actor_uid
+    elif base_ak == 'GIVE_CAKE':
+        init_list = engine._get_initiative()
+        my_entry = next((e for e in init_list if e['userId'] == actor_uid), None)
+        if not my_entry: return 1.0
+        my_team = my_entry.get('team', 'Y')
+        teammates = [e for e in init_list if e['team'] == my_team
+                     and e['userId'] != actor_uid
+                     and not e.get('isSummon')
+                     and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        if not teammates: return 1.0
+        target_uid = select_teammate_by_strategy(engine, actor_uid, target_strat, teammates)
+        if not target_uid: return 1.0
+    else:
+        return 1.0
+
+    # ── Target HP ratio (BEFORE the heal took effect) ──
+    # We read current HP after the action, so we approximate:
+    # the heal already happened; use the result HP minus typical cake
+    # heal (~2d8+4 ≈ 13) to estimate pre-heal HP. This is approximate
+    # but directionally correct.
+    target_hp = engine._get_combat_hp(target_uid) or 0
+    target_char = engine.get_char(target_uid)
+    target_max_hp = target_char.get_attr('体力上限', max(target_hp, 1))
+    hp_ratio = target_hp / max(target_max_hp, 1)
+
+    # ── Overheal penalty ──
+    if hp_ratio >= 0.95:
+        overheal_factor = 0.10   # almost all wasted
+    elif hp_ratio >= 0.85:
+        overheal_factor = 0.25
+    elif hp_ratio >= 0.70:
+        overheal_factor = 0.50
+    elif hp_ratio >= 0.50:
+        overheal_factor = 0.75
+    elif hp_ratio >= 0.30:
+        overheal_factor = 0.90
+    else:
+        overheal_factor = 1.00   # critical save, full value
+
+    # ── Target combat value ──
+    target_cv = get_character_combat_value(engine, target_uid)
+    cv_factor = target_cv / _COMBAT_VALUE_AVG
+
+    return cv_factor * overheal_factor
+
+
 def encode_state(engine, uid):
-    """Encode combat state for a character into a hashable key."""
+    """Encode combat state for a character into a 16-dim hashable key."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
-    if not my_entry: return None  # sentinel: character not in initiative
+    if not my_entry: return None
     my_team = my_entry.get('team', 'Y')
 
+    # Dim 0: own HP (fine bucket, 10 levels)
     my_hp = engine._get_combat_hp(uid) or 0
     my_max_hp = char.get_attr('体力上限', max(my_hp, 1))
-    my_b = bucket(my_hp, my_max_hp)
+    my_b = fine_bucket(my_hp, my_max_hp)
 
-    # Team HP
+    # Dim 1-2: team HP (coarse bucket)
     team_hps = [engine._get_combat_hp(e['userId']) or 0 for e in init_list if e['team'] == my_team]
     enemy_hps = [engine._get_combat_hp(e['userId']) or 0 for e in init_list if e['team'] != my_team]
     team_avg = sum(team_hps) / max(1, len(team_hps))
@@ -64,46 +176,100 @@ def encode_state(engine, uid):
     tb = bucket(team_avg, team_max)
     eb = bucket(enemy_avg, enemy_max)
 
-    # Distance to nearest enemy
+    # Dim 3: distance
     my_coord = my_entry.get('coord', '')
     enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
-    dist = 3  # far
+    dist = 3
     if enemies and my_coord:
         for e in enemies:
             ec = e.get('coord', '')
             if ec:
-                mp, ep = parse_coord(my_coord), parse_coord(ec)
-                if mp and ep:
-                    d = abs(mp[0] - ep[0]) + abs(mp[1] - ep[1])
+                mp_xy, ep_xy = parse_coord(my_coord), parse_coord(ec)
+                if mp_xy and ep_xy:
+                    d = abs(mp_xy[0] - ep_xy[0]) + abs(mp_xy[1] - ep_xy[1])
                     if d == 0: dist = min(dist, 0)
                     elif d <= 2: dist = min(dist, 1)
                     else: dist = min(dist, 2)
 
-    # Spell availability
+    # Dim 4: MP ratio
+    cur_mp = char.get_attr('魔力', 0) or 0
+    max_mp = char.get_attr('魔力上限', max(cur_mp, 1))
+    mp_b = bucket(cur_mp, max_mp)
+
+    # Dim 5: n_enemies (exact, capped at 6)
+    n_enemies = min(len(enemies), 6)
+
+    # Dim 6: n_allies (living non-summon allies on same team, excluding self)
+    allies = [e for e in init_list if e['team'] == my_team
+              and e['userId'] != uid
+              and not e.get('isSummon')
+              and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    n_allies = min(len(allies), 6)
+
+    # Spells
     spells = char.spells or engine.load_spells(uid)
-    has_dmg = any(any(e['type'] == 1 for e in s.get('effects', [])) and has_timing(s.get('时机', '2'), '2') for s in spells)
-    has_heal = any(any(e['type'] in (3, 8) and e.get('回复hp') for e in s.get('effects', [])) and has_timing(s.get('时机', '2'), '2') for s in spells)
-    has_buff = any(any(e['type'] == 4 for e in s.get('effects', [])) and has_timing(s.get('时机', '2'), '2') for s in spells)
-    has_summon = any(any(e['type'] == 5 for e in s.get('effects', [])) and has_timing(s.get('时机', '2'), '2') for s in spells)
 
-    # Active buffs
-    buffs_active = len(engine._get_active_buffs(uid)) > 0
+    # Dim 7: n_skills (available active skills, capped at 4)
+    n_skills = min(len([s for s in spells
+                        if has_timing(s.get('时机','2'), '2')
+                        and not has_timing(s.get('时机','2'), '1')]), 4)
 
-    n_enemies = min(len(enemies), 4)
+    # Dim 8: skill_power = best damage skill / basic attack ratio
+    bn, bv = char.get_best_melee()
+    basic_dice = engine._get_damage_dice(uid, bn)
+    basic_avg = avg_damage(basic_dice) if basic_dice else 1.0
+    basic_avg = max(basic_avg, 0.5)
+    best_skill_dmg = 0.0
+    has_unreactable = False
+    for s in spells:
+        if has_timing(s.get('时机','2'), '2'):
+            for eff in s.get('effects', []):
+                if eff.get('type') == 1:
+                    dmg_dice = eff.get('伤害骰', '')
+                    if dmg_dice:
+                        dmg_avg = avg_damage(dmg_dice)
+                        best_skill_dmg = max(best_skill_dmg, dmg_avg)
+                    if eff.get('可反应性', 1) == 0:
+                        has_unreactable = True
+    ratio = best_skill_dmg / basic_avg if best_skill_dmg > 0 else 0.0
+    if ratio < 0.5: skill_power = 0
+    elif ratio < 1.0: skill_power = 1
+    elif ratio < 1.5: skill_power = 2
+    elif ratio < 2.0: skill_power = 3
+    elif ratio < 3.0: skill_power = 4
+    elif ratio < 4.0: skill_power = 5
+    elif ratio < 6.0: skill_power = 6
+    elif ratio < 8.0: skill_power = 7
+    elif ratio < 10.0: skill_power = 8
+    else: skill_power = 9
 
-    # Active zone check — summons don't cast zones, always 0
-    has_zone_active = 0
+    # Dim 9: has_unreactable damage skill
+    has_ur = int(has_unreactable)
 
-    # Dying state
-    is_dying = int(engine._is_dying(uid) is not None)
+    # Dim 10: has_heal
+    has_heal = int(any(any(e.get('type') in (3, 8) and e.get('回复hp')
+                           for e in s.get('effects', []))
+                       and has_timing(s.get('时机','2'), '2') for s in spells))
 
-    # Phase dimension (for dual-phase characters like 木落)
-    phase = getattr(char, 'phase', 1)
+    # Dim 11: has_buff
+    has_buff = int(any(any(e.get('type') == 4 for e in s.get('effects', []))
+                       and has_timing(s.get('时机','2'), '2') for s in spells))
 
-    # Ready cake available (for 比哈米 cake-giving / eating decisions)
+    # Dim 12: buffs_active
+    buffs_active = int(len(engine._get_active_buffs(uid)) > 0)
+
+    # Dim 13: has_cake
     has_cake = int(hasattr(engine, '_has_ready_cake') and engine._has_ready_cake())
 
-    return (my_b, tb, eb, dist, int(has_dmg), int(has_heal), int(has_buff), int(has_summon), int(buffs_active), n_enemies, phase, has_cake, has_zone_active, is_dying)
+    # Dim 14: phase
+    phase = getattr(char, 'phase', 1)
+
+    # Dim 15: is_dying
+    is_dying = int(engine._is_dying(uid) is not None)
+
+    return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
+            skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
+            has_cake, phase, is_dying)
 
 
 def encode_summon_state(engine, uid):
@@ -180,10 +346,16 @@ def _mp_run_battle(args):
         load_character_to_engine(engine, c, uid)
         if not c.get('pre_transformed'):
             engine.process_command(uid, '.hs')
+        # Phase2 injection for 木落(Y9): 30% chance to start in Phase2
+        if c['serial'] == 'Y9' and random.random() < 0.3:
+            char = engine.get_char(uid)
+            char.phase = 2
+            char.spells = None  # force reload of Phase2 spells
     engine.setup_battle(a_uids, b_uids, map_size)
     engine._set_actions({uid: {'主动': 2, '附加': 3} for uid in a_uids + b_uids})
     engine._react_dw = {uid: 50 for uid in a_uids + b_uids}
     engine._react_cw = {uid: 50 for uid in a_uids + b_uids}
+    engine._react_bw = {uid: 0 for uid in a_uids + b_uids}
 
     updates = []
     winner = None
@@ -302,6 +474,21 @@ def _mp_run_battle(args):
         curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
         max_hp = max(abs(prev_diff), abs(curr_diff), 1)
         reward = (curr_diff - prev_diff) / max_hp
+        if ak.startswith('SKILL_'):
+            # Tiered skill bonus based on skill_power (dim 8 of state)
+            sp = st[8] if st and len(st) > 8 else 0
+            reward += 0.01 * (sp + 1)
+            # Healing bonus: boost when team HP is low
+            skill_num = int(ak.split('_')[1])
+            char = engine.get_char(uid)
+            spells = char.spells or engine.load_spells(uid)
+            spell = next((s for s in spells if s['index'] == skill_num), None)
+            if spell and any(e.get('type') in (3, 8) and e.get('回复hp') for e in spell.get('effects', [])):
+                team_hp_b = st[1] if st and len(st) > 1 else 3
+                reward *= 1.0 + 0.3 * (3 - team_hp_b) / 3  # up to 1.3x when team badly hurt
+        # Cake reward modifier: target combat value + overheal penalty
+        if ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE'):
+            reward *= cake_reward_modifier(engine, uid, ak)
         next_st = encode_state(engine, uid)
         # Use serial for char key
         ck = None
@@ -314,7 +501,7 @@ def _mp_run_battle(args):
         for s in team_a + team_b:
             uid = char_map_dict[s]
             ck = s
-            st = encode_state(engine, uid) if hasattr(engine, '_get_state') else (0,)*12
+            st = encode_state(engine, uid)
             if st is None: continue
             mt2 = 'Y' if s in team_a else 'X'
             term_r = 3.0 if winner == mt2 else -3.0
@@ -643,13 +830,14 @@ def execute_summon_action(engine, uid, action_key):
     leth_val = entry.get("lethality", 0) or sk.get("lethality", 0)
     exp_dmg = avg_damage(dmg_dice)
     if leth_val and exp_dmg > 6:
-        lr = random.randint(1, max(2, cur_hp * 2))
+        leth_die = max(2, cur_hp * 2)
+        lr = random.randint(1, leth_die)
         if lr <= int(exp_dmg):
             cur_hp = 0
-            dmg_details.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} ≤ {int(exp_dmg)} 成功! {tname}死亡")
+            dmg_details.append(f"  致死骰: 1d{leth_die}={lr} ≤ {int(exp_dmg)} 成功! {tname}死亡")
         else:
             cur_hp = max(0, cur_hp - total_dmg)
-            dmg_details.append(f"  致死骰: 1d{max(2,cur_hp*2)}={lr} > {int(exp_dmg)} 失败")
+            dmg_details.append(f"  致死骰: 1d{leth_die}={lr} > {int(exp_dmg)} 失败")
     else:
         cur_hp = max(0, cur_hp - total_dmg)
 
@@ -956,6 +1144,7 @@ class QTrainer:
         self.battle_counts = defaultdict(int)
         self._react_dw = defaultdict(lambda: 50)  # Trainable dodge weight
         self._react_cw = defaultdict(lambda: 50)  # Trainable counter weight
+        self._react_bw = defaultdict(lambda: 0)   # Trainable block weight
 
     def init_characters(self):
         engine = CombatEngine()
@@ -988,6 +1177,7 @@ class QTrainer:
         # Inject trainable reaction weights
         engine._react_dw = {uid: self._react_dw[uid] for uid in a_uids+b_uids}
         engine._react_cw = {uid: self._react_cw[uid] for uid in a_uids+b_uids}
+        engine._react_bw = {uid: self._react_bw[uid] for uid in a_uids+b_uids}
         updates = []; winner = None; rc = 0; sc = 0
         while rc < 20 and sc < 200:
             sc += 1; state = engine._get_state()
@@ -1113,6 +1303,21 @@ class QTrainer:
             if acts['主动']<=0: engine._end_turn(uid)
             cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
             reward = (cd-pd)/max(abs(pd),abs(cd),1)
+            if ak.startswith('SKILL_'):
+                # Tiered skill bonus based on skill_power (dim 8 of state)
+                sp = st[8] if st and len(st) > 8 else 0
+                reward += 0.01 * (sp + 1)
+                # Healing bonus: boost when team HP is low
+                skill_num = int(ak.split('_')[1])
+                char = engine.get_char(uid)
+                spells = char.spells or engine.load_spells(uid)
+                spell = next((s for s in spells if s['index'] == skill_num), None)
+                if spell and any(e.get('type') in (3, 8) and e.get('回复hp') for e in spell.get('effects', [])):
+                    team_hp_b = st[1] if st and len(st) > 1 else 3
+                    reward *= 1.0 + 0.3 * (3 - team_hp_b) / 3
+            # Cake reward modifier: target combat value + overheal penalty
+            if ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE'):
+                reward *= cake_reward_modifier(engine, uid, ak)
             ns = encode_state(engine, uid)
             if ns is not None:
                 updates.append((table_type, ck, st, ak, reward, ns))
@@ -1123,27 +1328,34 @@ class QTrainer:
                 if won:
                     self._react_dw[ck] = min(200, self._react_dw[ck] + 0.5)
                     self._react_cw[ck] = min(200, self._react_cw[ck] + 0.5)
+                    self._react_bw[ck] = min(200, self._react_bw[ck] + 0.5)
                 else:
                     self._react_dw[ck] = max(1, self._react_dw[ck] - 0.1)
                     self._react_cw[ck] = max(1, self._react_cw[ck] - 0.1)
+                    self._react_bw[ck] = max(0, self._react_bw[ck] - 0.1)
         if winner:
             for s in team_a+team_b:
-                ck = self._char_key(uid := self.char_map[s])
-                st = (0,)*12; mt2 = 'Y' if s in team_a else 'X'
+                uid = self.char_map[s]
+                ck = self._char_key(uid)
+                st = encode_state(engine, uid)
+                if st is None: continue
+                mt2 = 'Y' if s in team_a else 'X'
                 tr = 3.0 if winner==mt2 else -3.0
                 # Determine table type for terminal state
                 il_end = engine._get_initiative()
-                me_end = next((e for e in il_end if e['userId'] == self.char_map[s]), None)
+                me_end = next((e for e in il_end if e['userId'] == uid), None)
                 my_team_end = me_end.get('team', mt2) if me_end else mt2
                 living_allies_end = [e for e in il_end if e['team'] == my_team_end
-                                     and e['userId'] != self.char_map[s]
+                                     and e['userId'] != uid
                                      and not e.get('isSummon')
                                      and (engine._get_combat_hp(e['userId']) or 0) > 0]
                 end_table = 'solo' if not living_allies_end else 'team'
-                terminal_aks = ['BASIC_ATTACK__T0','BASIC_ATTACK__T1','END_TURN','MOVE_TOWARD',
-                               'EAT_CAKE__SELF','GIVE_CAKE__T0','GIVE_CAKE__T1','GIVE_CAKE__T2']
-                for ak in terminal_aks:
+                for ak, _ in get_available_actions(engine, uid):
                     updates.append((end_table, ck, st, ak, tr, None))
+                # Cross-pollinate other table (matching _mp_run_battle behavior)
+                other_table = 'team' if end_table == 'solo' else 'solo'
+                for ak, _ in get_available_actions(engine, uid):
+                    updates.append((other_table, ck, st, ak, tr * 0.3, None))
         return updates
 
     def train(self):
@@ -1166,7 +1378,7 @@ class QTrainer:
             # Build all character battle specs
             specs = []
             for _ in range(BATTLES_PER_GEN):
-                if random.random() < 0.5:
+                if random.random() < 0.7:  # 70% 1v1 for better solo Q-learning
                     a,b = random.sample(singles,2)
                     specs.append(([a],[b],random.choice(['6x6','8x8','10x10'])))
                 else:
@@ -1280,11 +1492,10 @@ def load_q_table(path=None):
                     state = tuple(int(v) for v in state_str.split('|'))
                 except ValueError:
                     skipped += 1; continue  # skip corrupted entries (e.g. 'dead' state)
-                # Backward compat: old dims → 12
-                if len(state) == 10:
-                    state = state + (1, 0)
-                elif len(state) == 11:
-                    state = state + (0,)
+                # Backward compat: pad old dimensions to 16
+                if len(state) < 16:
+                    padding_needed = 16 - len(state)
+                    state = state + (0,) * padding_needed
                 Q[ck][(state, action)] = val
         if skipped:
             print(f'[load_q_table] Skipped {skipped} malformed Q-entries (will be cleaned on next save)')

@@ -93,12 +93,13 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
                 engine.process_command(uid, '.hs')
         for uid in a_uids: t.ai_map[uid].team = 'Y'
         for uid in b_uids: t.ai_map[uid].team = 'X'
-        engine._ai_react_dodge_w = {}; engine._ai_react_counter_w = {}
+        engine._ai_react_dodge_w = {}; engine._ai_react_counter_w = {}; engine._ai_react_block_w = {}
         for uid in a_uids + b_uids:
             ai = t.ai_map.get(uid)
             if ai:
                 engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                 engine._ai_react_counter_w[uid] = ai.react_counter_w
+                engine._ai_react_block_w[uid] = getattr(ai, 'react_block_w', 0)
         # Build per-uid season status mapping
         if isinstance(season_status, dict):
             uid_season = {}

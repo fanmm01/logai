@@ -33,8 +33,8 @@ from battle_engine import (CombatEngine, FullBattleEngine, roll_dice, parse_coor
     is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage,
     season_status_roll)
 from characters_data import ALL_CHARACTERS, load_character_to_engine
-from ai_trainer_pvp import load_q_table, encode_state, get_available_actions, execute_action
-from ai_trainer_pvp import encode_summon_state, get_summon_actions, execute_summon_action
+from ai_trainer import load_q_table, encode_state, get_available_actions, execute_action
+from ai_trainer import encode_summon_state, get_summon_actions, execute_summon_action
 from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
 
 # ============================================================
@@ -57,7 +57,7 @@ DELAY_PRELIM_TURN = 0               # Delay between turns in prelim (0 = fast as
 DELAY_KNOCKOUT_TURN = 0.4           # Delay between turns in knockout / BoN series
 DELAY_CUSTOM_TURN = 0.4             # Delay between turns in custom /game/ battles
 DELAY_PRELIM_BETWEEN_BATTLES = 0    # Delay between prelim battles (0 = no pause)
-DELAY_KNOCKOUT_BETWEEN_GAMES = 0.3  # Delay between games within a BoN series
+DELAY_KNOCKOUT_BETWEEN_GAMES = 1  # Delay between games within a BoN series
 DELAY_DRAW_DISPLAY = 30             # Seconds to show draw results before continuing
 DELAY_STANDINGS_DISPLAY = 40        # Seconds to show standings before knockouts
 
@@ -772,7 +772,12 @@ class BattleEngine(FullBattleEngine):
                     if end_result.get('mutual_death'):
                         y_ov = end_result.get('y_overflow', 0)
                         x_ov = end_result.get('x_overflow', 0)
-                        battle_log('info', f'  [同归于尽] Y队[{y_disp}]溢出{y_ov} X队[{x_disp}]溢出{x_ov} → {end_result["winner"]}胜')
+                        tie_info = ''
+                        if end_result.get('tie'):
+                            tie_info = ' [随机胜者]'
+                        elif end_result.get('tie_pct'):
+                            tie_info = ' [溢出比判定]'
+                        battle_log('info', f'  [同归于尽] Y队[{y_disp}]溢出{y_ov} X队[{x_disp}]溢出{x_ov}{tie_info} → {end_result["winner"]}胜')
                     else:
                         # Normal end: file-only (debug) in prelim; terminal+file in knockout
                         battle_log('debug', f'  [战斗结束] Y队[{y_disp}] X队[{x_disp}] → {end_result["winner"]}胜 ({rc}回合)')
@@ -1012,11 +1017,13 @@ class Tournament:
         # Inject reaction weights into engine for _coc7_attack
         engine._ai_react_dodge_w = {}
         engine._ai_react_counter_w = {}
+        engine._ai_react_block_w = {}
         for uid in a_uids + b_uids:
             ai = self.ai_map.get(uid)
             if ai:
                 engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                 engine._ai_react_counter_w[uid] = ai.react_counter_w
+                engine._ai_react_block_w[uid] = getattr(ai, 'react_block_w', 0)
         # Build per-uid season status mapping from per-character dict
         uid_season = {}
         for serial, uid in zip(team_a + team_b, a_uids + b_uids):
@@ -2299,6 +2306,7 @@ AI模式: {q_status}
                         if ai:
                             engine._ai_react_dodge_w[uid] = ai.react_dodge_w
                             engine._ai_react_counter_w[uid] = ai.react_counter_w
+                            engine._ai_react_block_w[uid] = getattr(ai, 'react_block_w', 0)
                     # Build per-uid season status mapping from per-character dict
                     uid_season = {}
                     for serial, uid in zip(team_a + team_b, a_uids + b_uids):

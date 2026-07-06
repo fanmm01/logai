@@ -433,6 +433,15 @@ def expand_short_alias(raw):
     支持 F14→[file]-14, P0→[permanent]-0, TG1→[testgroup]-1 等。
     也支持跨群 F14-123456、倒数 F-1/P-1、倒数跨群 F-1-123456。"""
     s = str(raw or '').strip()
+
+    # First: backward-compatible handler for known category names (e.g. file-14, history-5).
+    # Must precede the generic multi-letter pattern so "file-14" resolves to [file]-14
+    # (forward index), not [file]~14 (reverse index).
+    m = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$', s)
+    if m and m.group(1).lower() in CATEGORY_META:
+        return f'[{m.group(1).lower()}]-{m.group(2)}'
+
+    # Second: generic short alias (F14, H-1, FILE-5-123456, etc.)
     m = re.match(r'^([A-Za-z]+)(-?\d+)(?:-(\d+))?$', s)
     if m:
         letters = m.group(1); num_str = m.group(2); gid = m.group(3)
@@ -451,9 +460,6 @@ def expand_short_alias(raw):
                 return f'[{cat_name}]~{idx}-{gid}' if gid else f'[{cat_name}]~{idx}'
             else:
                 return f'[{cat_name}]-{num_str}-{gid}' if gid else f'[{cat_name}]-{num_str}'
-    m = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$', s)
-    if m and m.group(1).lower() in CATEGORY_META:
-        return f'[{m.group(1).lower()}]-{m.group(2)}'
     return raw
 
 

@@ -101,12 +101,22 @@ function getBridgeTokenHeader() {
 const FASTNAME_MAP = {F:'file',L:'link',H:'history',P:'permanent',A:'audio',M:'mod'};
 function expandShortAlias(raw) {
     let s = String(raw || '').trim();
+
+    // First: backward-compatible handler for known category names (e.g. file-14, history-5).
+    // Must precede the generic multi-letter pattern so "file-14" resolves to [file]-14
+    // (forward index), not [file]~14 (reverse index).
+    let bm = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$/);
+    if (bm) { return `[${bm[1].toLowerCase()}]-${bm[2]}`; }
+
+    // Second: multi-letter category patterns (e.g. fastname aliases with optional group-id)
     let mcm = s.match(/^([A-Za-z]{2,})(-?\d+)(?:-(\d+))?$/);
     if (mcm) {
         let pfx=mcm[1], n=mcm[2], g=mcm[3];
         if (n.startsWith('-')) { let idx=n.slice(1); return g?`[${pfx.toLowerCase()}]~${idx}-${g}`:`[${pfx.toLowerCase()}]~${idx}`; }
         else { return g?`[${pfx.toLowerCase()}]-${n}-${g}`:`[${pfx.toLowerCase()}]-${n}`; }
     }
+
+    // Third: single-letter fastname (F14, H-1)
     let km = s.match(/^([A-Za-z])(-?\d+)(?:-(\d+))?$/);
     if (km) {
         let pfx=km[1].toUpperCase(), n=km[2], g=km[3];
@@ -114,8 +124,7 @@ function expandShortAlias(raw) {
         if (n.startsWith('-')) { let idx=n.slice(1); return g?`[${cat}]~${idx}-${g}`:`[${cat}]~${idx}`; }
         else { return g?`[${cat}]-${n}-${g}`:`[${cat}]-${n}`; }
     }
-    let bm = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*)-(\d+)$/);
-    if (bm) { return `[${bm[1].toLowerCase()}]-${bm[2]}`; }
+
     return raw;
 }
 
@@ -133,11 +142,11 @@ function dbgLog(tag, message, data) {
     if (!seal.ext.getBoolConfig(ext, "调试日志")) return;
     if (data !== undefined) {
         try {
-            console.log(`[logutil][${tag}] ${message}`, data);
+            console.log('UI:1002', `[logutil][${tag}] ${message}`, data);
             return;
         } catch (e) {}
     }
-    console.log(`[logutil][${tag}] ${message}`);
+    console.log('UI:1002', `[logutil][${tag}] ${message}`);
 }
 
 async function readLastLogFileFromHttpBridge(groupId) {
