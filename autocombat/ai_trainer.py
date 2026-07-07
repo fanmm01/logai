@@ -15,7 +15,7 @@ import multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, roll_d100,
     is_in_melee_range, has_timing, parse_coord, format_coord, avg_damage,
-    success_rank, rank_text)
+    success_rank, rank_text, _get_attack_range, chebyshev_dist)
 from characters_data import ALL_CHARACTERS, load_character_to_engine, SUMMON_TEMPLATES
 import battle_engine
 battle_engine._SUMMON_TEMPLATES = SUMMON_TEMPLATES
@@ -229,7 +229,7 @@ def encode_state(engine, uid):
                     if dmg_dice:
                         dmg_avg = avg_damage(dmg_dice)
                         best_skill_dmg = max(best_skill_dmg, dmg_avg)
-                    if eff.get('可反应性', 1) == 0:
+                    if eff.get('可闪避性', eff.get('可反应性', 1)) == 0:
                         has_unreactable = True
     ratio = best_skill_dmg / basic_avg if best_skill_dmg > 0 else 0.0
     if ratio < 0.5: skill_power = 0
@@ -403,6 +403,8 @@ def _mp_run_battle(args):
         if y_alive == 0: winner = 'X'; break
         if x_alive == 0: winner = 'Y'; break
 
+        if state['activeIndex'] >= len(init_list):
+            state['activeIndex'] = state['activeIndex'] % max(1, len(init_list))
         entry = init_list[state['activeIndex']]
         uid = entry['userId']
         hp = engine._get_combat_hp(uid) or 0
@@ -413,6 +415,7 @@ def _mp_run_battle(args):
             state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
             if state['activeIndex'] == 0:
                 state['round'] = state.get('round', 1) + 1
+                engine._reset_move_power()
                 acts_r = engine._get_actions()
                 for k in list(acts_r.keys()): acts_r[k] = {'主动': 2, '附加': 3}
                 engine._set_actions(acts_r)
@@ -441,6 +444,7 @@ def _mp_run_battle(args):
             state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
             if state['activeIndex'] == 0:
                 state['round'] = state.get('round', 1) + 1
+                engine._reset_move_power()
                 acts_r = engine._get_actions()
                 for k in list(acts_r.keys()): acts_r[k] = {'主动': 2, '附加': 3}
                 engine._set_actions(acts_r)
@@ -611,6 +615,49 @@ def get_available_actions(engine, uid):
                     continue
         filtered.append((ak, an))
 
+    # ── 射程过滤: 仅对敌方伤害动作检查可达性 ──
+    my_entry = next((e for e in il if e['userId'] == uid), None)
+    my_coord = my_entry.get('coord', '') if my_entry else ''
+    enemies_range = [e for e in il if e['team'] != (my_entry.get('team','Y') if my_entry else 'Y')
+                     and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    if enemies_range and my_coord:
+        mv = engine._get_move_power(uid)
+        # 预解析敌方坐标（避免每次chebyshev_dist重复parse）
+        enemy_coords = []
+        for e in enemies_range:
+            ec = e.get('coord', '')
+            if ec:
+                ep = parse_coord(ec)
+                if ep: enemy_coords.append(ep)
+        my_ep = parse_coord(my_coord)
+        range_filtered = []
+        for ak, an in filtered:
+            need_range_check = False
+            atk_range = 2
+            if ak.startswith('SKILL_'):
+                idx = int(ak.split('_')[1])
+                sp = next((s for s in spells if s['index'] == idx), None)
+                if sp:
+                    dmg_eff = next((e for e in sp.get('effects', [])
+                                    if e.get('type') == 1
+                                    and str(e.get('客体',0)) in ('4','5','45')), None)
+                    if dmg_eff:
+                        need_range_check = True
+                        atk_range = _get_attack_range(spell_effect=dmg_eff)
+            elif ak.startswith('BASIC_ATTACK'):
+                need_range_check = True
+                atk_range = _get_attack_range(skill_name=char.get_best_melee()[0])
+            if need_range_check and my_ep:
+                max_dist = atk_range + mv
+                reachable = any(
+                    max(abs(my_ep[0]-ep[0]), abs(my_ep[1]-ep[1])) <= max_dist
+                    for ep in enemy_coords
+                )
+                if not reachable:
+                    continue
+            range_filtered.append((ak, an))
+        filtered = range_filtered
+
     # CAKE actions: available when ready cakes exist (type 6 制造物)
     if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
         # EAT_CAKE: 自己食用蛋糕 → self-heal
@@ -640,6 +687,72 @@ def parse_action(action_key):
     return action_key, 'T0'
 
 
+def _compute_threat(engine, enemy_entry):
+    """计算敌方单位的单回合伤害期望（考虑命中率、行动轮数）。
+
+    公式: threat = max(普攻期望, 技能期望) × 回合行动数
+    其中: 普攻期望 = avg_damage(伤害值) × 斗殴/100
+          技能期望 = max(avg_damage(伤害骰) × 成功率/100)
+    召唤物: threat = Σ(avg_damage(dice) × val/100 × hits)
+    """
+    uid = enemy_entry['userId']
+
+    # 召唤物：直接从 entry 取 skills
+    if enemy_entry.get('isSummon'):
+        total_threat = 0.0
+        for sk in enemy_entry.get('skills', []):
+            dice = sk.get('dice', '1d4')
+            val = sk.get('val', 50)
+            hits = sk.get('hits', 1)
+            dmg_avg = avg_damage(dice)
+            hit_rate = val / 100.0
+            total_threat += dmg_avg * hit_rate * hits
+        return total_threat if total_threat > 0 else enemy_entry.get('dex', 50)
+
+    # 玩家角色
+    char = engine.get_char(uid)
+    if not char:
+        return enemy_entry.get('dex', 50)  # fallback
+
+    # 基本攻击期望
+    bn, bv = char.get_best_melee()
+    basic_dice = engine._get_damage_dice(uid, bn)
+    basic_avg = avg_damage(basic_dice) if basic_dice else 1.0
+    basic_hit = bv / 100.0 if bv > 0 else 0.5
+    basic_threat = basic_avg * basic_hit
+
+    # 技能期望：取所有主动伤害技能的最大值（多效果法术累加）
+    spells = char.spells or engine.load_spells(uid)
+    best_skill_threat = 0.0
+    for s in spells:
+        if not has_timing(s.get('时机', '2'), '2'):
+            continue
+        spell_threat = 0.0
+        for eff in s.get('effects', []):
+            if eff.get('type') != 1:
+                continue
+            dmg_dice = eff.get('伤害骰', '')
+            if not dmg_dice:
+                continue
+            dmg_avg = avg_damage(dmg_dice)
+            sr = eff.get('成功率', 0)
+            hit_rate = sr / 100.0 if sr > 0 else 1.0  # sr=0 = 必中
+            spell_threat += dmg_avg * hit_rate
+        if spell_threat > best_skill_threat:
+            best_skill_threat = spell_threat
+
+    best_threat = max(basic_threat, best_skill_threat)
+
+    # 行动轮数：优先用引擎的动态行动数，fallback 到回合行动数属性
+    actions_per_round = 1
+    if hasattr(engine, '_get_dynamic_action_count'):
+        actions_per_round = engine._get_dynamic_action_count(uid)
+    if actions_per_round <= 1:
+        actions_per_round = char.get_attr('回合行动数', 1) or 1
+
+    return best_threat * actions_per_round
+
+
 def select_target_by_strategy(engine, uid, strategy, enemies):
     """Select target from enemy list based on strategy. Returns enemy userId or None."""
     if not enemies: return None
@@ -650,8 +763,8 @@ def select_target_by_strategy(engine, uid, strategy, enemies):
         return min(enemies, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
     elif strategy == 'T1':  # 最近
         return enemies[0]['userId']
-    elif strategy == 'T2':  # 最高威胁
-        return max(enemies, key=lambda e: e.get('dex', 50))['userId']
+    elif strategy == 'T2':  # 最高威胁 = 单回合伤害期望最大
+        return max(enemies, key=lambda e: _compute_threat(engine, e))['userId']
     elif strategy == 'T3':  # 最低HP召唤物
         summons = [e for e in enemies if e.get('isSummon')]
         if summons:
@@ -880,10 +993,16 @@ def execute_action(engine, uid, action_key):
         char = engine.get_char(uid); bn, bv = char.get_best_melee()
         dd = engine._get_damage_dice(uid, bn); p = char.get_attr("伤害贯穿",1); l = char.get_attr("致死骰",1) or 0
         if not tid: tid = engine._find_enemy(uid)
-        if tid: engine._fast_coc7_attack(uid, tid, bn, bv, dd, p, l)
+        if tid:
+            if hasattr(engine, '_fast_coc7_attack'):
+                engine._fast_coc7_attack(uid, tid, bn, bv, dd, p, l)
+            else:
+                engine._coc7_attack(uid, tid, bn, bv, dd, p, l)
         return ""
     elif base == 'MOVE_TOWARD':
-        return engine._fast_move(uid)
+        if hasattr(engine, '_fast_move'):
+            return engine._fast_move(uid)
+        return ""
     elif base == 'END_TURN':
         engine._end_turn(uid)
         return ''
@@ -1215,6 +1334,7 @@ class QTrainer:
                 state['activeIndex']=(state['activeIndex']+1)%len(il)
                 if state['activeIndex']==0:
                     state['round']=state.get('round',1)+1
+                    engine._reset_move_power()
                     acts_r = engine._get_actions()
                     for k in list(acts_r.keys()): acts_r[k]={'主动':2,'附加':3}
                     engine._set_actions(acts_r)
@@ -1253,6 +1373,7 @@ class QTrainer:
                 state['activeIndex']=(state['activeIndex']+1)%len(il)
                 if state['activeIndex']==0:
                     state['round']=state.get('round',1)+1
+                    engine._reset_move_power()
                     acts_r = engine._get_actions()
                     for k in list(acts_r.keys()): acts_r[k]={'主动':2,'附加':3}
                     engine._set_actions(acts_r)

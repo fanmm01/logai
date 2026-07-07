@@ -50,6 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ============================================================
 #  Constants
 # ============================================================
+MAX_DYNAMIC_ACTIONS = 5  # 每实体最多预掷行动槽数 (用于动态行动数系统)
 CN_NUMS = ['零','一','二','三','四','五','六','七','八','九','十',
            '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十']
 CAT_LETTERS = ['a','b','c','d','e','f']
@@ -57,15 +58,27 @@ CAT_NAMES = {1:'伤害',2:'护盾',3:'回复',4:'辅助',5:'召唤',6:'制造',7
 TIMING_NAMES = {1:'被动',2:'主动作',3:'附加动作',4:'反应'}
 
 AUX_EFFECT_TYPES = {
-    1:'受到伤害+',2:'受到伤害-',3:'造成伤害+',4:'造成伤害-',
-    5:'mp回复+',6:'mp回复-',7:'hp回复+',8:'hp回复-',
-    9:'魔能消耗+',10:'魔能消耗-',11:'致死骰优势',12:'致死骰劣势',
+    1:'受到伤害百分比',2:'受到伤害加值',3:'造成伤害百分比',4:'伤害骰加值',
+    5:'mp回复百分比',6:'mp回复加值',7:'hp回复百分比',8:'hp回复加值',
+    9:'魔能消耗百分比',10:'魔能消耗加值',
+    11:'致死骰优势',12:'致死骰劣势',
     13:'伤害骰优势',14:'伤害骰劣势',15:'伤害成功率加减',16:'伤害成功率奖励惩罚',
     17:'技能奖励骰',18:'技能惩罚骰',
     19:'伤害骰倍增/倍减',20:'技能值倍增/倍减',
-    21:'暴击率',22:'暴击值'
+    21:'暴击率',22:'暴击值',
+    23:'行动力+',24:'行动力-',
+    25:'移动力+',26:'移动力-',
+    27:'MOV+',28:'MOV-',
 }
 AUX_NAME_TO_CODE = {v: k for k, v in AUX_EFFECT_TYPES.items()}
+
+def _eff_get(eff, key):
+    """兼容新旧字段名：辅助效果/其他辅助效果a, 辅助效果值/辅助效果值a"""
+    if key == 'auxType':
+        return eff.get('辅助效果') or eff.get('其他辅助效果a', '')
+    if key == 'auxVal':
+        return eff.get('辅助效果值') or eff.get('辅助效果值a', '')
+    return eff.get(key)
 
 MELEE_SKILLS = ['格斗','斗殴','斧','链锯','连枷','绞索','矛','剑','鞭']
 ALL_COMBAT_SKILLS = MELEE_SKILLS + ['射击','射击:弓','射击:手枪','射击:重武器','射击:火焰喷射器',
@@ -136,6 +149,49 @@ def roll_dice(expr):
             except (ValueError, TypeError): pass
     return total
 
+
+def roll_dice_detailed(expr):
+    """Roll dice and return (total, breakdown_string).
+
+    Breakdown format:
+      2d3+1d4 → "2d3(2+1=3)+1d4(4)=7"
+      1d6     → "1d6=6"
+      Static: "2d6+4" → "2d6(3+5=8)+4=12"
+      If expr is empty or '0', returns (0, '0').
+    """
+    if not expr or expr == '0':
+        return (0, '0')
+    expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
+    total = 0
+    parts_detail = []
+    for part in re.findall(r'[+-]?\s*\d*d\d+|[+-]?\s*\d+', expr_n, re.IGNORECASE):
+        sign = -1 if part.strip().startswith('-') else 1
+        sign_str = '-' if sign < 0 else '+'
+        clean = part.strip().lstrip('+-').strip()
+        m = re.match(r'^(\d*)d(\d+)$', clean, re.IGNORECASE)
+        if m:
+            cnt = int(m.group(1)) if m.group(1) else 1
+            sides = int(m.group(2))
+            rolls = [random.randint(1, sides) for _ in range(cnt)]
+            subtotal = sum(rolls)
+            total += sign * subtotal
+            if cnt == 1:
+                dice_str = f'{sign_str}1d{sides}({rolls[0]})' if (parts_detail or sign_str == '-') else f'1d{sides}({rolls[0]})'
+                parts_detail.append(dice_str)
+            else:
+                inner = '+'.join(str(r) for r in rolls)
+                dice_str = f'{sign_str}{cnt}d{sides}({inner}={subtotal})' if (parts_detail or sign_str == '-') else f'{cnt}d{sides}({inner}={subtotal})'
+                parts_detail.append(dice_str)
+        else:
+            val = int(clean)
+            total += sign * val
+            parts_detail.append(f'{sign_str}{val}' if (parts_detail or sign_str == '-') else str(val))
+    # Clean up leading '+' on first part
+    detail = ''.join(parts_detail)
+    if detail.startswith('+'):
+        detail = detail[1:]
+    return (total, f'{detail}={total}')
+
 def avg_damage(expr):
     if not expr: return 0
     expr = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
@@ -170,18 +226,24 @@ def rank_text(rank):
 
 def roll_d100(bp_str=''):
     tens = random.randint(0, 9); units = random.randint(0, 9)
+    base_detail = f'10位{tens}, 个位{units}'
     bp_match = re.match(r'^([bp])(\d*)$', bp_str.lower()) if bp_str else None
-    detail = ''
+    detail = base_detail
     if bp_match:
         btype = bp_match.group(1); count = int(bp_match.group(2) or '1')
         best_tens = tens; extras = [str(random.randint(0,9)) for _ in range(count)]
         for et_str in extras:
             et = int(et_str)
+            # When units==0, a tens of 0 gives result 100 (worst), not 0 (best).
+            # Treat it as 10 for comparison so it's correctly ranked as largest.
+            eff_et = 10 if (units == 0 and et == 0) else et
+            eff_best = 10 if (units == 0 and best_tens == 0) else best_tens
             if btype == 'b':
-                if et < best_tens: best_tens = et
+                if eff_et < eff_best: best_tens = et
             else:
-                if et > best_tens: best_tens = et
-        detail = f'{"奖励" if btype=="b" else "惩罚"}{",".join(extras)}'
+                if eff_et > eff_best: best_tens = et
+        bp_label = f'{"奖励" if btype=="b" else "惩罚"}{",".join(extras)}'
+        detail = f'{base_detail}, {bp_label}'
         tens = best_tens
     result = 100 if (tens == 0 and units == 0) else tens * 10 + units
     return (result, detail)
@@ -287,6 +349,23 @@ def is_in_melee_range(a, b):
 def has_timing(ts, code):
     return str(code) in str(ts) if ts else False
 
+def chebyshev_dist(a, b):
+    """Chebyshev distance between two coords."""
+    ap, bp = parse_coord(a), parse_coord(b)
+    if not ap or not bp: return 999
+    return max(abs(ap[0]-bp[0]), abs(ap[1]-bp[1]))
+
+def _get_attack_range(spell_effect=None, skill_name=None):
+    """获取攻击的射程。法术效果优先读取其'射程'字段；未声明默认2(近战)。
+    普攻: MELEE_SKILLS中的技能=2, 其他=99。"""
+    if spell_effect:
+        return spell_effect.get('射程', 2)
+    if skill_name:
+        if any(ms in str(skill_name) for ms in MELEE_SKILLS):
+            return 2
+        return 99
+    return 2
+
 def has_object(os, code):
     return str(code) in str(os) if os else False
 
@@ -328,6 +407,9 @@ class CombatEngine:
     def __init__(self):
         self.characters = {}
         self.storage = {}
+        self._cache = {}          # Deserialized object cache — avoids repeated json.loads
+        self._fast_store = False  # When True, skip json.dumps (for training/sim)
+        self._buff_cache = {}     # Per-uid active buff cache — cleared on effect changes
         self.group_id = 'default'
         # Dying system: when HP reaches 0, CON save → dying state instead of instant death.
         # Set to False to revert to old behaviour (HP≤0 → instant death, no death saves).
@@ -358,11 +440,17 @@ class CombatEngine:
         elif key in self.storage: del self.storage[key]
 
     def get_json(self, key, default=None):
+        if key in self._cache:
+            return self._cache[key]
         raw = self.storage_get(key)
-        return json.loads(raw) if raw else default
+        val = json.loads(raw) if raw else default
+        self._cache[key] = val
+        return val
 
     def set_json(self, key, data):
-        self.storage_set(key, json.dumps(data, ensure_ascii=False))
+        self._cache[key] = data
+        if not self._fast_store:
+            self.storage_set(key, json.dumps(data, ensure_ascii=False))
 
     def _combat_hp_key(self): return f"combat_hp_{self.group_id}"
     def _resolve_uid(self, uid):
@@ -481,21 +569,285 @@ class CombatEngine:
     def _set_state(self, s): self.set_json(f"combat_state_{self.group_id}", s)
     def _get_initiative(self):
         il = self.get_json(f"combat_initiative_{self.group_id}", [])
-        if il:
+        if _ENGINE_DEBUG_ENABLED and il:
             teams = [(e.get('name', e.get('userId', '?')), e.get('team', '?')) for e in il]
             _engine_debug_log(f"_get_initiative gid={self.group_id} len={len(il)} teams={teams}")
         return il
     def _set_initiative(self, l):
-        teams = [(e.get('name', e.get('userId', '?')), e.get('team', '?')) for e in l]
-        _engine_debug_log(f"_set_initiative gid={self.group_id} len={len(l)} teams={teams}")
+        if _ENGINE_DEBUG_ENABLED:
+            teams = [(e.get('name', e.get('userId', '?')), e.get('team', '?')) for e in l]
+            _engine_debug_log(f"_set_initiative gid={self.group_id} len={len(l)} teams={teams}")
         self.set_json(f"combat_initiative_{self.group_id}", l)
     def _get_actions(self): return self.get_json(f"combat_actions_{self.group_id}", {})
     def _set_actions(self, a): self.set_json(f"combat_actions_{self.group_id}", a)
+    def _get_my_actions(self, uid):
+        """Get actions for uid, resolving multi-action UIDs (Y5__act1 → Y5)."""
+        base = self._resolve_uid(uid)
+        return self._get_actions().get(base, {'主动': 0, '附加': 0})
+    def _consume_action(self, uid, action_type='主动', amount=1):
+        """Consume one action point for uid, resolving multi-action UIDs."""
+        base = self._resolve_uid(uid)
+        actions = self._get_actions()
+        my_acts = actions.get(base, {'主动': 0, '附加': 0})
+        my_acts[action_type] = max(0, my_acts.get(action_type, 0) - amount)
+        actions[base] = my_acts
+        self._set_actions(actions)
+        return my_acts
     def _get_effects(self): return self.get_json(f"combat_effects_{self.group_id}", [])
     def _set_effects(self, e):
-        self.storage_set(f"combat_effects_{self.group_id}", json.dumps(e, ensure_ascii=False) if e else '')
+        self._buff_cache = {}  # Invalidate buff cache
+        self.set_json(f"combat_effects_{self.group_id}", e if e else [])
     def _get_map(self): return self.get_json(f"combat_map_{self.group_id}")
     def _set_map(self, m): self.set_json(f"combat_map_{self.group_id}", m)
+
+    # ---- 行动力/移动力 (Movement/Action Power) methods ----
+    def _get_move_power(self, uid):
+        """获取角色的移动力(每回合可移动距离)。MOV默认=行动力。"""
+        char = self.get_char(uid)
+        base = char.get_attr('行动力', 8)
+        if char.get_attr('分离行动力移动力', 0):
+            base = char.get_attr('移动力', base)
+        # Zone debuff (temporary, per-round)
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if entry:
+            base -= entry.get('_zone_penalty_移动力', 0)
+            base -= entry.get('_zone_penalty_行动力', 0)
+        return max(0, base + self._get_buff_move_mod(uid))
+
+    def _get_action_power(self, uid):
+        """获取角色的行动力(影响反应/先攻)。默认=行动力=MOV。"""
+        char = self.get_char(uid)
+        base = char.get_attr('行动力', 8)
+        # Zone debuff (temporary, per-round)
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if entry:
+            base -= entry.get('_zone_penalty_行动力', 0)
+        return max(1, base + self._get_buff_move_mod(uid))
+
+    def _get_buff_move_mod(self, uid):
+        """从活跃buff中提取MOV/行动力/移动力修改量（每回合缓存）。"""
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if entry and '_cached_buff_mov_mod' in entry:
+            return entry['_cached_buff_mov_mod']
+        mod = 0
+        for b in self._get_active_buffs(uid):
+            sm = str(b.get('skillMod', ''))
+            m = re.match(r'(?:MOV|行动力|移动力)([+-]\d+)', sm)
+            if m:
+                mod += int(m.group(1))
+        if entry:
+            entry['_cached_buff_mov_mod'] = mod
+        return mod
+
+    def _consume_move_power(self, uid, amount):
+        """消耗移动力。返回实际可消耗量。
+        多动角色的所有行动槽共享 _move_used。"""
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if not entry: return 0
+        base_uid = entry.get('baseUserId', uid)
+        # 读取同角色所有行动槽中最大的 _move_used（同步读取）
+        used = 0
+        for e in il:
+            if e.get('baseUserId', e['userId']) == base_uid:
+                used = max(used, e.get('_move_used', 0))
+        max_move = self._get_move_power(uid)
+        available = max(0, max_move - used)
+        consumed = min(amount, available)
+        new_used = used + consumed
+        # 同步写入所有行动槽
+        for e in il:
+            if e.get('baseUserId', e['userId']) == base_uid:
+                e['_move_used'] = new_used
+        return consumed
+
+    def _reset_move_power(self):
+        """每回合开始时重置所有角色移动力消耗和zone临时debuff，保存锚点坐标。"""
+        il = self._get_initiative()
+        for entry in il:
+            entry['_move_used'] = 0
+            entry['_anchor_coord'] = entry.get('coord', '')  # 回合开始时的位置作为锚点
+            entry.pop('_cached_buff_mov_mod', None)
+            for k in list(entry.keys()):
+                if k.startswith('_zone_penalty_'):
+                    del entry[k]
+
+    def _move_to_attack_range(self, uid, target_id, atk_range):
+        """移动到可攻击目标的位置。返回 (can_attack, original_coord)。"""
+        il = self._get_initiative()
+        my_entry = next((e for e in il if e['userId'] == uid), None)
+        t_entry = next((e for e in il if e['userId'] == target_id), None)
+        if not my_entry or not t_entry: return (False, '')
+        my_coord = my_entry.get('coord', '')
+        t_coord = t_entry.get('coord', '')
+        if not my_coord or not t_coord: return (False, '')
+        mp, tp = parse_coord(my_coord), parse_coord(t_coord)
+        if not mp or not tp: return (False, '')
+        dist = max(abs(mp[0]-tp[0]), abs(mp[1]-tp[1]))
+        if dist <= atk_range:
+            return (True, my_coord)  # 已在射程内
+        move_needed = dist - atk_range
+        actual_move = self._consume_move_power(uid, move_needed)
+        if actual_move <= 0:
+            return (False, my_coord)
+        dc = 0 if tp[0] == mp[0] else (1 if tp[0] > mp[0] else -1)
+        dr = 0 if tp[1] == mp[1] else (1 if tp[1] > mp[1] else -1)
+        new_col = mp[0] + dc * actual_move
+        new_row = mp[1] + dr * actual_move
+        new_coord = format_coord(new_col, new_row)
+        map_data = self._get_map()
+        if map_data and new_coord not in map_data.get('occupants', {}):
+            if my_coord in map_data.get('occupants', {}):
+                del map_data['occupants'][my_coord]
+            map_data['occupants'][new_coord] = uid
+            self._set_map(map_data)
+            my_entry['coord'] = new_coord
+            # 同步同角色其他行动槽的坐标（多动角色共享位置）
+            base_uid = my_entry.get('baseUserId', uid)
+            for e in il:
+                if e['userId'] != uid and e.get('baseUserId', e['userId']) == base_uid:
+                    e['coord'] = new_coord
+        can_attack = (actual_move >= move_needed)
+        return (can_attack, my_coord)
+
+    def _return_to_anchor(self, uid):
+        """回合结束时，消耗剩余移动力尝试退回锚点坐标。
+        移动力在前压和退回之间共享——前压用得越多，退回越少。"""
+        il = self._get_initiative()
+        my_entry = next((e for e in il if e['userId'] == uid), None)
+        if not my_entry: return
+        my_coord = my_entry.get('coord', '')
+        anchor = my_entry.get('_anchor_coord', '')
+        if not my_coord or not anchor or my_coord == anchor: return
+        mp, ap = parse_coord(my_coord), parse_coord(anchor)
+        if not mp or not ap: return
+        dist = max(abs(mp[0]-ap[0]), abs(mp[1]-ap[1]))
+        if dist <= 0: return
+        # 消耗剩余移动力退回
+        actual_move = self._consume_move_power(uid, dist)
+        if actual_move <= 0: return
+        dc = 0 if ap[0] == mp[0] else (1 if ap[0] > mp[0] else -1)
+        dr = 0 if ap[1] == mp[1] else (1 if ap[1] > mp[1] else -1)
+        new_col = mp[0] + dc * actual_move
+        new_row = mp[1] + dr * actual_move
+        new_coord = format_coord(new_col, new_row)
+        map_data = self._get_map()
+        if map_data and new_coord not in map_data.get('occupants', {}):
+            if my_coord in map_data.get('occupants', {}):
+                del map_data['occupants'][my_coord]
+            map_data['occupants'][new_coord] = uid
+            self._set_map(map_data)
+            my_entry['coord'] = new_coord
+            # 同步同角色其他行动槽的坐标
+            base_uid = my_entry.get('baseUserId', uid)
+            for e in il:
+                if e['userId'] != uid and e.get('baseUserId', e['userId']) == base_uid:
+                    e['coord'] = new_coord
+
+    def _calc_action_power_bp(self, atk_uid, def_uid):
+        """行动力差→奖惩骰。差≥5且攻方>10→攻方奖励骰；否则防方>10→防方惩罚骰。"""
+        atk_ap = self._get_action_power(atk_uid)
+        def_ap = self._get_action_power(def_uid)
+        atk_bonus = ''
+        def_penalty = ''
+        if atk_ap >= def_ap + 5 and atk_ap > 10:
+            atk_bonus = 'b'
+        elif def_ap > 10:
+            def_penalty = 'p'
+        return (atk_bonus, def_penalty)
+
+    # ---- 动态行动数 (Dynamic Action Count) methods ----
+    def _get_dynamic_action_count(self, uid):
+        """计算基于行动力的动态行动槽数。
+        公式: ((行动力 - 1) // 10) + 回合行动数，最小1，最大MAX_DYNAMIC_ACTIONS。
+        对玩家角色和召唤物统一适用。
+        召唤物需预先设置 char.行动力 和 char.回合行动数。"""
+        ap = self._get_action_power(uid)
+        char = self.get_char(self._resolve_uid(uid))
+        base_actions = char.get_attr('回合行动数', 1)
+        count = ((ap - 1) // 10) + base_actions
+        return max(1, min(MAX_DYNAMIC_ACTIONS, count))
+
+    def _sync_initiative_slots(self, uid):
+        """根据当前行动力动态调整行动槽的抑制状态。适用于所有实体（玩家+召唤物）。
+        保留所有预掷条目，仅切换 _suppressed 标记。"""
+        base_uid = self._resolve_uid(uid)
+        dynamic_count = self._get_dynamic_action_count(uid)
+        il = self._get_initiative()
+        changed = False
+        for e in il:
+            if e.get('baseUserId', e['userId']) != base_uid:
+                continue
+            ai = e.get('actionIdx', 0)
+            should_suppress = ai >= dynamic_count
+            is_suppressed = e.get('_suppressed', False)
+            if should_suppress != is_suppressed:
+                if should_suppress:
+                    e['_suppressed'] = True
+                else:
+                    e.pop('_suppressed', None)
+                changed = True
+        if changed:
+            self._set_initiative(il)
+
+    def _sync_all_initiative_slots(self):
+        """对所有实体重新计算行动槽抑制状态。"""
+        il = self._get_initiative()
+        # 清除buff移动力缓存，确保重新读取最新buff值
+        for e in il:
+            e.pop('_cached_buff_mov_mod', None)
+        seen = set()
+        for e in il:
+            base = e.get('baseUserId', e['userId'])
+            if base not in seen:
+                seen.add(base)
+                self._sync_initiative_slots(base)
+
+    def _ensure_dynamic_slots(self, uid):
+        """确保 uid 有 MAX_DYNAMIC_ACTIONS 个先攻条目（带 baseUserId/actionIdx）。
+        如果实体当前只有1个条目（如新召唤物），扩展为 MAX_DYNAMIC_ACTIONS 个。
+        如果已有多个条目，移除超出 MAX_DYNAMIC_ACTIONS 的，补齐不足的。
+        用于召唤物创建/合并后的槽位初始化。"""
+        base_uid = self._resolve_uid(uid)
+        il = self._get_initiative()
+        # 找到模板条目（actionIdx=0 或唯一的条目）
+        existing = [e for e in il if e.get('baseUserId', e['userId']) == base_uid]
+        template = next((e for e in existing if e.get('actionIdx', 0) == 0), None)
+        if not template and existing:
+            template = existing[0]
+            template['baseUserId'] = base_uid
+            template['actionIdx'] = 0
+        if not template:
+            return  # 没有模板条目，无法扩展
+
+        existing_ids = {e['userId'] for e in existing}
+
+        # 移除超出 MAX 的旧条目
+        for e in list(existing):
+            if e.get('actionIdx', 0) >= MAX_DYNAMIC_ACTIONS:
+                il.remove(e)
+
+        # 补齐不足的条目
+        for ai in range(MAX_DYNAMIC_ACTIONS):
+            entry_id = base_uid if ai == 0 else f"{base_uid}__act{ai}"
+            if entry_id in existing_ids:
+                continue
+            dex_val = template.get('dex', 50)
+            init_roll, _ = roll_d100("")
+            init_rank = success_rank(init_roll, dex_val)
+            label = f" (行动{ai+1})" if MAX_DYNAMIC_ACTIONS > 1 else ""
+            new_entry = {**template,
+                'userId': entry_id, 'baseUserId': base_uid, 'actionIdx': ai,
+                'dex': dex_val, 'initRoll': init_roll, 'initRank': init_rank,
+                'name': (template.get('name', '') + label)}
+            il.append(new_entry)
+
+        il.sort(key=lambda e: (-e.get("initRank", 0), -e.get("dex", 0), -e.get("initRoll", 0)))
+        self._set_initiative(il)
+        self._sync_initiative_slots(base_uid)
 
     # ---- 物品栏 (Inventory) methods ----
     def get_inventory(self, uid):
@@ -593,61 +945,49 @@ class CombatEngine:
 
     def _get_active_buffs(self, uid):
         resolved = self._resolve_uid(uid)
-        return [e for e in self._get_effects()
+        cache = getattr(self, '_buff_cache', None)
+        if cache is not None and resolved in cache:
+            return cache[resolved]
+        result = [e for e in self._get_effects()
                 if e.get('type') in ('buff','debuff') and self._resolve_uid(e.get('targetUserId','')) == resolved and e.get('remainingRounds',0)!=0]
+        if cache is not None:
+            cache[resolved] = result
+        return result
 
     # ======== AUX helper methods ========
 
     def _get_buff_dmg_mult(self, attacker_uid, defender_uid):
-        """auxCode 1-4: net damage multiplier from 受到伤害± and 造成伤害±."""
+        """auxCode 1,3: net damage multiplier (sign on auxVal)."""
         net_pct = 0
         for b in self._get_active_buffs(attacker_uid):
-            code = b.get('auxCode', 0)
-            if code == 3:
+            if b.get('auxCode') == 3:  # 造成伤害百分比
                 try: net_pct += int(b.get('auxVal', '0'))
-                except: pass
-            elif code == 4:
-                try: net_pct -= int(b.get('auxVal', '0'))
                 except: pass
         for b in self._get_active_buffs(defender_uid):
-            code = b.get('auxCode', 0)
-            if code == 1:
+            if b.get('auxCode') == 1:  # 受到伤害百分比
                 try: net_pct += int(b.get('auxVal', '0'))
-                except: pass
-            elif code == 2:
-                try: net_pct -= int(b.get('auxVal', '0'))
                 except: pass
         return max(0.01, 1.0 + net_pct / 100.0)
 
     def _get_buff_heal_pct(self, uid, heal_type='hp'):
-        """auxCode 5-8: heal amount multiplier (hp回复± / mp回复±)."""
+        """auxCode 5,7: heal amount multiplier (sign on auxVal)."""
         net_pct = 0
         for b in self._get_active_buffs(uid):
             code = b.get('auxCode', 0)
-            if heal_type == 'hp' and code == 7:
+            if heal_type == 'hp' and code == 7:  # hp回复百分比
                 try: net_pct += int(b.get('auxVal', '0'))
                 except: pass
-            elif heal_type == 'hp' and code == 8:
-                try: net_pct -= int(b.get('auxVal', '0'))
-                except: pass
-            elif heal_type == 'mp' and code == 5:
+            elif heal_type == 'mp' and code == 5:  # mp回复百分比
                 try: net_pct += int(b.get('auxVal', '0'))
-                except: pass
-            elif heal_type == 'mp' and code == 6:
-                try: net_pct -= int(b.get('auxVal', '0'))
                 except: pass
         return max(0.01, 1.0 + net_pct / 100.0)
 
     def _get_buff_mp_cost_pct(self, uid):
-        """auxCode 9-10: MP cost multiplier."""
+        """auxCode 9: MP cost multiplier (sign on auxVal)."""
         net_pct = 0
         for b in self._get_active_buffs(uid):
-            code = b.get('auxCode', 0)
-            if code == 9:
+            if b.get('auxCode') == 9:  # 魔能消耗百分比
                 try: net_pct += int(b.get('auxVal', '0'))
-                except: pass
-            elif code == 10:
-                try: net_pct -= int(b.get('auxVal', '0'))
                 except: pass
         return max(0.01, 1.0 + net_pct / 100.0)
 
@@ -697,6 +1037,55 @@ class CombatEngine:
                 try: mult *= float(b.get('auxVal', '1.0'))
                 except: pass
         return mult
+
+    def _eval_buff_flat_val(self, aux_val):
+        """Parse auxVal as either a dice expression (e.g. '1d3') or a flat integer."""
+        if not aux_val:
+            return 0
+        s = str(aux_val).strip()
+        if 'd' in s.lower():
+            return roll_dice(s)
+        try:
+            return int(s)
+        except (ValueError, TypeError):
+            return 0
+
+    def _get_buff_dmg_flat(self, uid):
+        """auxCode 2: net flat damage modifier (受到伤害加值). Supports dice expressions."""
+        net = 0
+        for b in self._get_active_buffs(uid):
+            if b.get('auxCode') == 2:
+                net += self._eval_buff_flat_val(b.get('auxVal'))
+        return net
+
+    def _get_buff_dmg_dice_bonus(self, uid):
+        """Return bonus damage dice string from code 4 (伤害骰加值) + legacy bonusDmgDice.
+        Code 4 takes priority; legacy bonusDmgDice only used when auxCode != 4 (avoids double-count)."""
+        parts = []
+        for b in self._get_active_buffs(uid):
+            if b.get('auxCode') == 4 and b.get('auxVal'):
+                parts.append(str(b['auxVal']))
+            elif b.get('bonusDmgDice') and b.get('auxCode') != 4:
+                # Legacy fallback — only when new AUX is not present on this buff
+                parts.append(str(b['bonusDmgDice']))
+        return '+'.join(parts) if parts else ''
+
+    def _get_buff_heal_flat(self, uid, heal_type='hp'):
+        """auxCode 6,8: flat heal bonus. Supports dice expressions."""
+        net = 0
+        target_code = 6 if heal_type == 'mp' else 8
+        for b in self._get_active_buffs(uid):
+            if b.get('auxCode') == target_code:
+                net += self._eval_buff_flat_val(b.get('auxVal'))
+        return net
+
+    def _get_buff_mp_cost_flat(self, uid):
+        """auxCode 10: flat MP cost modifier (魔能消耗加值). Supports dice expressions."""
+        net = 0
+        for b in self._get_active_buffs(uid):
+            if b.get('auxCode') == 10:
+                net += self._eval_buff_flat_val(b.get('auxVal'))
+        return net
 
     def _get_active_shields(self, uid):
         resolved = self._resolve_uid(uid)
@@ -789,7 +1178,7 @@ class CombatEngine:
                     9 if char.get_attr(f"{pl}引发延迟回合") == 0 and char.get_attr(f"{pl}触发HP比例") else
                     char.get_attr(f"{pl}type") or 0))
                 eff = {'type': ct, 'letter': letter}
-                for k in ['客体','作用半径','可调节性','成功率','成功率奖惩骰','可反应性','可贯穿性',
+                for k in ['客体','作用半径','可调节性','成功率','成功率奖惩骰','可闪避性','可反击性','可格挡性','可贯穿性',
                           '致死值','致死值优劣','附加效果时长','持续回合','引发目标法术','引发延迟回合',
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
@@ -798,7 +1187,8 @@ class CombatEngine:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
-                          '其他辅助效果a','辅助效果值a','召唤个数','召唤物模板','制造物模板',
+                          '辅助效果','辅助效果值','其他辅助效果a','辅助效果值a',
+                          '召唤个数','召唤物模板','制造物模板',
                           '每回合伤害骰','吸血比例','属性削减',
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
                           '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff']:
@@ -954,6 +1344,18 @@ class CombatEngine:
         state = self._get_state(); il = self._get_initiative()
         if not state: return
 
+        # ── 回合结束：最后一个行动槽结束后，消耗剩余移动力退回锚点 ──
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if entry and (self._get_combat_hp(uid) or 0) > 0:
+            base_uid = entry.get('baseUserId', uid)
+            # 仅考虑非抑制条目判断是否为最后一个行动槽
+            active_slots = [e for e in il
+                            if e.get('baseUserId', e['userId']) == base_uid
+                            and not e.get('_suppressed', False)]
+            last_active_idx = max((e.get('actionIdx', 0) for e in active_slots), default=-1)
+            if entry.get('actionIdx', 0) >= last_active_idx:
+                self._return_to_anchor(base_uid)
+
         if not il:
             # All characters dead — check end immediately (mutual annihilation)
             self._check_and_mark_end(state)
@@ -962,15 +1364,51 @@ class CombatEngine:
         state['activeIndex'] = (state['activeIndex'] + 1) % len(il)
         if state['activeIndex'] == 0:
             state['round'] = state.get('round', 1) + 1
+            self._reset_move_power()
             acts = {}
             for e in il:
-                acts[e['userId']] = {'主动': 2, '附加': 3}
+                base = e.get('baseUserId', e['userId'])
+                if base not in acts:
+                    acts[base] = {'主动': 2, '附加': 3}
             self._set_actions(acts)
             self._tick_down(); self._apply_zone_effects()
+            # 回合边界：重算所有实体的动态行动槽（zone效果可能改变了行动力）
+            self._sync_all_initiative_slots()
         self._set_state(state)
 
         # Check battle end after every turn
         self._check_and_mark_end(state)
+
+        # ── Auto-skip suppressed and dead entries after advancing ──
+        # This ensures PVP/PvE callers don't land on inactive slots.
+        il2 = self._get_initiative()
+        safety = 0
+        while il2 and safety < len(il2) * 2:
+            safety += 1
+            cur = il2[state['activeIndex']]
+            cuid = cur['userId']
+            should_skip = cur.get('_suppressed', False)
+            if not should_skip:
+                chp = self._get_combat_hp(cuid)
+                if chp is not None and chp <= 0 and not cur.get('isSummon'):
+                    should_skip = True
+            if not should_skip:
+                break
+            state['activeIndex'] = (state['activeIndex'] + 1) % len(il2)
+            if state['activeIndex'] == 0:
+                state['round'] = state.get('round', 1) + 1
+                self._reset_move_power()
+                acts = {}
+                for e in il2:
+                    base = e.get('baseUserId', e['userId'])
+                    if base not in acts:
+                        acts[base] = {'主动': 2, '附加': 3}
+                self._set_actions(acts)
+                self._tick_down(); self._apply_zone_effects()
+                self._sync_all_initiative_slots()
+                il2 = self._get_initiative()
+            self._set_state(state)
+            self._check_and_mark_end(state)
 
         return state['activeIndex'] == 0 if state else False  # is_new_round
 
@@ -1070,18 +1508,22 @@ class CombatEngine:
         return None  # Battle continues
 
     def _get_initiative_display(self):
-        """Format initiative table with DEX rolls and HPs."""
+        """Format initiative table with DEX rolls and HPs. Suppressed entries are hidden."""
         il = self._get_initiative()
         state = self._get_state()
         rnd = state.get('round', 1) if state else 1
         lines = [f"===== 第{rnd}回合 =====", "先攻表:"]
-        for i, e in enumerate(il):
+        idx = 0
+        for e in il:
+            if e.get('_suppressed', False):
+                continue
+            idx += 1
             name = e.get('displayName', e.get('name', e['userId']))
             dex_v = e.get('dex', '?')
             roll = e.get('initRoll', '?')
             rank = e.get('initRank', 0)
             hp = self._get_combat_hp(e['userId']) or 0
-            lines.append(f"  {i+1}. {name} D100={roll}/DEX={dex_v} {rank_text(rank)} HP:{hp}")
+            lines.append(f"  {idx}. {name} D100={roll}/DEX={dex_v} {rank_text(rank)} HP:{hp}")
         return '\n'.join(lines)
 
     def _get_member_status_display(self, uid):
@@ -1090,7 +1532,14 @@ class CombatEngine:
         entry = next((e for e in il if e['userId'] == uid), None)
         name = entry.get('displayName', entry.get('name', uid)) if entry else uid
         lines = [f"【{name} 的回合！】", "成员状态:"]
+        seen = set()
         for e in il:
+            if e.get('_suppressed', False):
+                continue
+            base = e.get('baseUserId', e['userId'])
+            if base in seen:
+                continue
+            seen.add(base)
             n = e.get('displayName', e.get('name', e['userId']))
             hp = self._get_combat_hp(e['userId']) or 0
             lines.append(f"  {n} HP:{hp}")
@@ -1229,9 +1678,21 @@ class CombatEngine:
         else:
             san_cost = int(san_cost_raw) if san_cost_raw else 0
 
-        # AUX 9/10: MP cost modifier
+        # ── 射程检查: type=1 敌方效果 (MP扣除前) ──
+        dmg_effs = [e for e in spell.get('effects', []) if e.get('type') == 1
+                    and str(e.get('客体', 0)) in ('4', '5', '45')]
+        _orig_coord = ''
+        if dmg_effs:
+            atk_range = _get_attack_range(spell_effect=dmg_effs[0])
+            can_atk, _orig_coord = self._move_to_attack_range(caster_id, target_id, atk_range)
+            if not can_atk:
+                return f'{char.name} 无法接近目标！（射程={atk_range}）'
+
+        # AUX 9/10: MP cost modifiers
         if mp_cost > 0:
             mp_cost = max(1, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
+            mp_cost += self._get_buff_mp_cost_flat(caster_id)  # AUX code 10
+            mp_cost = max(1, mp_cost)
 
         if mp_cost > 0:
             cur_mp = char.get_attr('魔力', 0) or 0
@@ -1257,8 +1718,10 @@ class CombatEngine:
             elif ct == 3:  # Heal (HP/SAN/MP with caps)
                 tid = target_id or caster_id
                 hp_heal = int(roll_dice(eff.get('回复hp','0')) * self._get_buff_heal_pct(tid, 'hp'))
+                hp_heal += self._get_buff_heal_flat(tid, 'hp')  # AUX code 8
                 san_heal = roll_dice(eff.get('回复san','0'))
                 mp_heal = int(roll_dice(eff.get('回复mp','0')) * self._get_buff_heal_pct(tid, 'mp'))
+                mp_heal += self._get_buff_heal_flat(tid, 'mp')  # AUX code 6
                 tchar = self.get_char(tid)
                 if hp_heal > 0:
                     chp = self._hp_safe(tid, 10)
@@ -1293,8 +1756,9 @@ class CombatEngine:
                     tchar.set_attr('魔力', min(cm+mp_heal, mx)); out += f'  回复 MP +{mp_heal}\n'
 
             elif ct == 4:  # Buff (with auxCode)
-                dur = eff.get('持续回合',1); aux_type = eff.get('其他辅助效果a','')
+                dur = eff.get('持续回合',1); aux_type = _eff_get(eff, 'auxType')
                 aux_code = AUX_NAME_TO_CODE.get(aux_type, 0)
+                aux_val = _eff_get(eff, 'auxVal')
                 stackable = eff.get('可叠加', 0)
                 tid = target_id or caster_id
                 effects = self._get_effects()
@@ -1308,15 +1772,20 @@ class CombatEngine:
                             existing = e; break
                 if existing:
                     existing['remainingRounds'] = max(existing.get('remainingRounds', 0), dur)
-                    out += f'  刷新辅助效果: {aux_type} {eff.get("辅助效果值a","")} (延长至{existing["remainingRounds"]}回合)\n'
+                    out += f'  刷新辅助效果: {aux_type} {aux_val} (延长至{existing["remainingRounds"]}回合)\n'
                 else:
-                    effects.append({'type':'buff','remainingRounds':dur,'skillMod':eff.get('技能加减值',''),
-                        'auxType':aux_type,'auxVal':eff.get('辅助效果值a',''),'auxCode':aux_code,
+                    bonus_dmg = eff.get('伤害骰', '')
+                    buff_entry = {'type':'buff','remainingRounds':dur,'skillMod':eff.get('技能加减值',''),
+                        'auxType':aux_type,'auxVal':aux_val,'auxCode':aux_code,
                         'sourceUserId':caster_id,'targetUserId':tid,
                         'spellName':spell['name'],'spellIndex':spell['index'],
                         'persistent':spell.get('默认延续性',0),
-                        'stackable':stackable})
-                    out += f'  施加辅助效果: {aux_type} {eff.get("辅助效果值a","")}\n'
+                        'stackable':stackable}
+                    if bonus_dmg:
+                        buff_entry['bonusDmgDice'] = bonus_dmg
+                    effects.append(buff_entry)
+                    bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
+                    out += f'  施加辅助效果: {aux_type} {aux_val}{bonus_note}\n'
                 self._set_effects(effects)
 
             elif ct == 5:  # Summon — handled by subclass
@@ -1472,19 +1941,32 @@ class CombatEngine:
         When atk_rank > 1, applies COC7 rank-based damage (rank 2=advantage, rank 3=max/pen, rank 4=×2).
         Returns output string for the damage application step."""
         out = ''
+        # AUX code 4: merge bonus damage dice into dmg_dice expression
+        bonus_dice = self._get_buff_dmg_dice_bonus(caster_id)
+        if bonus_dice:
+            dmg_dice = f"{dmg_dice}+{bonus_dice}" if dmg_dice else bonus_dice
         mx = max_damage(dmg_dice)
+        dmg_detail = ''
         if atk_rank == 2:
-            dmg_val = max(roll_dice(dmg_dice), roll_dice(dmg_dice))
+            r1, d1 = roll_dice_detailed(dmg_dice); r2, d2 = roll_dice_detailed(dmg_dice)
+            dmg_val = max(r1, r2); dmg_detail = f'优势({d1}, {d2})→{dmg_val}'
         elif atk_rank == 3:
-            if pen: dmg_val = mx + roll_dice(dmg_dice)
-            else: dmg_val = mx
+            if pen:
+                r1, d1 = roll_dice_detailed(dmg_dice)
+                dmg_val = mx + r1; dmg_detail = f'贯穿!满值{mx}+{d1}={dmg_val}'
+            else:
+                dmg_val = mx; dmg_detail = f'满值={mx}'
         elif atk_rank == 4:
-            if atk_roll == 1 or pen: dmg_val = mx * 2
-            else: dmg_val = mx + roll_dice(dmg_dice)
+            if atk_roll == 1 or pen:
+                dmg_val = mx * 2; dmg_detail = f'大成功!满值{mx}×2={dmg_val}'
+            else:
+                r1, d1 = roll_dice_detailed(dmg_dice)
+                dmg_val = mx + r1; dmg_detail = f'满值{mx}+{d1}={dmg_val}'
         else:
-            dmg_val = roll_dice(dmg_dice)
-        # AUX 1-4,19: apply damage multipliers before shield
+            dmg_val, dmg_detail = roll_dice_detailed(dmg_dice)
+        # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(caster_id, target_id) * self._get_buff_dmg_dice_mult(caster_id))
+        dmg_val += self._get_buff_dmg_flat(target_id); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
         eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
         cur_hp = self._get_combat_hp(target_id) or 10
         # Lethality: d(2×cur_hp) ≤ 致死值 → instant death
@@ -1498,11 +1980,15 @@ class CombatEngine:
                 lr = min(random.randint(1, leth_die_size), random.randint(1, leth_die_size))
             else:
                 lr = random.randint(1, leth_die_size)
-            if lr <= leth: cur_hp = 0
-            else: cur_hp = cur_hp - eff_dmg
+            if lr <= leth:
+                cur_hp = 0
+                out += f'  致死骰: 1d{leth_die_size}={lr} ≤ {leth} 即死!\n'
+            else:
+                cur_hp = cur_hp - eff_dmg
+                out += f'  致死骰: 1d{leth_die_size}={lr} > {leth} 失败\n'
         else: cur_hp = cur_hp - eff_dmg
         self._set_combat_hp(target_id, cur_hp, source_dmg=eff_dmg)
-        out += f'  伤害: {dmg_dice}={dmg_val} → {eff_dmg}点 (HP:{cur_hp})\n'
+        out += f'  伤害: {dmg_detail} → {eff_dmg}点 (HP:{cur_hp})\n'
 
         # Lifesteal: heal caster based on damage dealt
         if lifesteal_ratio > 0 and eff_dmg > 0:
@@ -1548,8 +2034,20 @@ class CombatEngine:
             is_friendly = ce and te and ce.get('team') == te.get('team')
 
         # Success rate check with COC7 rank
-        atk_rank = 4; check_roll = 1  # default: auto-success
+        # If no explicit 成功率, fall back to caster's best melee skill for enemy-targeting spells.
+        # Self-targeting effects (客体=1) without 成功率 are auto-success (e.g. self-buffs).
+        if sr <= 0:
+            obj = eff.get('客体', 4)
+            if obj == 1:
+                # Self-targeting: auto-success (e.g. 灵牛 附魔术 self-buff)
+                atk_rank = 4; check_roll = 1
+            else:
+                # Enemy-targeting: use caster's best melee skill as default success rate
+                char = self.get_char(caster_id)
+                _, sr = char.get_best_melee()
+                sr = max(1, sr)  # Ensure at least 1 to force a roll
         if sr > 0:
+            atk_rank = 4; check_roll = 1  # will be overwritten by roll below
             sr_bp_raw = eff.get('成功率奖惩骰', 0) or 0
             if isinstance(sr_bp_raw, int):
                 if sr_bp_raw > 0:
@@ -1572,14 +2070,14 @@ class CombatEngine:
         if is_friendly:
             # Friend-target damage: deal friendly damage, schedule delayed heal
             fdmg_dice = eff.get('友方伤害骰', dmg_dice)
-            dmg_val = roll_dice(fdmg_dice)
+            dmg_val, dmg_detail = roll_dice_detailed(fdmg_dice)
             eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
             cur_hp = self._get_combat_hp(target_id) or 10
             actual_lost = min(cur_hp, eff_dmg)
             cur_hp = cur_hp - actual_lost
             self._set_combat_hp(target_id, cur_hp, source_dmg=actual_lost)
             tname_f = self.get_char(target_id).name if target_id else '目标'
-            out += f'  友方伤害: {fdmg_dice}={dmg_val} → {actual_lost}点 (HP:{cur_hp})\n'
+            out += f'  友方伤害: {dmg_detail} → {actual_lost}点 (HP:{cur_hp})\n'
             # Schedule delayed heal
             heal_formula = eff.get('友方延迟回复公式', '')
             heal_dice = eff.get('友方延迟回复骰', '4d6')
@@ -2110,6 +2608,7 @@ class FullBattleEngine(CombatEngine):
         self._ai_react_block_w = {}
         self._summoned_once = {}  # caster_id -> set of template names ever summoned
         self._summon_counters = {}
+        self._allow_failed_reaction = True  # 是否允许失败/大失败的攻击触发反应
 
     # ── Aliases for FastBattleEngine / ai_trainer compatibility ──
     @property
@@ -2140,36 +2639,36 @@ class FullBattleEngine(CombatEngine):
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            n_actions = char.get_attr('回合行动数', 1)
-            for ai in range(n_actions):
+            for ai in range(MAX_DYNAMIC_ACTIONS):
                 entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                 row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
                 coord = format_coord(1, row)
                 dex_val = char.get_attr("敏捷",50)
                 init_roll, _ = roll_d100("")
                 init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                label = f" (行动{ai+1})"
                 init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
                                   "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
                 if ai == 0:
                     map_data["occupants"][coord] = uid
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            n_actions = char.get_attr('回合行动数', 1)
-            for ai in range(n_actions):
+            for ai in range(MAX_DYNAMIC_ACTIONS):
                 entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                 row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
                 coord = format_coord(w-2, row)
                 dex_val = char.get_attr("敏捷",50)
                 init_roll, _ = roll_d100("")
                 init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                label = f" (行动{ai+1})"
                 init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
                                   "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
                 if ai == 0:
                     map_data["occupants"][coord] = uid
         self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], -e["initRoll"]))
         self._set_initiative(init_list)
+        # Save original team roster for timeout HP ratio (one entry per unique non-summon char)
+        self._team_roster = [(uid, 'Y') for uid in team_a] + [(uid, 'X') for uid in team_b]
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
         self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
@@ -2185,15 +2684,54 @@ class FullBattleEngine(CombatEngine):
                 if has_timing(s.get("时机","2"), "1"):
                     target = self._smart_target(uid, s)
                     self._execute_spell(uid, target, s)
+
+        # 初始化动态行动槽抑制状态（在被动技能生效后，确保buff已应用）
+        for uid in all_chars:
+            self._sync_initiative_slots(uid)
+
         self._set_state({"phase":"active", "round":1, "activeIndex":0})
+        # 跳过初始被抑制/死亡条目，找到第一个有效行动者
+        self._skip_to_valid_active()
+
+    def _skip_to_valid_active(self):
+        """Advance activeIndex past suppressed and dead entries without triggering round logic."""
+        il = self._get_initiative()
+        state = self._get_state()
+        if not il or not state:
+            return
+        safety = 0
+        while safety < len(il):
+            safety += 1
+            cur = il[state['activeIndex']]
+            cuid = cur['userId']
+            skip = cur.get('_suppressed', False)
+            if not skip:
+                chp = self._get_combat_hp(cuid)
+                if chp is not None and chp <= 0 and not cur.get('isSummon'):
+                    skip = True
+            if not skip:
+                break
+            state['activeIndex'] = (state['activeIndex'] + 1) % len(il)
+            self._set_state(state)
 
     def _coc7_attack(self, atk_uid, def_uid, skill_name, skill_val, dmg_dice, pen, leth, bp_suffix="", dmg_adv=False, dmg_dis=False):
         """Full COC7 attack: roll → reaction → rank compare → damage by success level → shield → lethality."""
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
         aname = achar.name; dname = dchar.name; lines = []
+        # ── 射程移动 ──
+        atk_range = _get_attack_range(skill_name=skill_name)
+        can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
+        if not can_atk:
+            lines.append(f'{aname} 无法接近目标！（射程={atk_range}）')
+            return (def_uid, atk_uid, lines)
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
-        eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
+        # 行动力优势合并到攻击BP
+        ap_atk_b, ap_def_p = self._calc_action_power_bp(atk_uid, def_uid)
+        merged_bp = bp_suffix
+        if ap_atk_b:
+            merged_bp = (merged_bp or '') + ap_atk_b
+        eff_bp = _calc_net_bp(atk_buffs, merged_bp, skill_name)
         # AUX 21/22: crit rate modifier
         crit_pct, crit_flat = self._get_buff_crit_adjustment(atk_uid)
         atk_result, bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill, crit_pct, crit_flat)
@@ -2201,16 +2739,25 @@ class FullBattleEngine(CombatEngine):
         buf_dmg_adv, buf_dmg_dis = self._get_buff_dmg_dice_adv_dis(atk_uid)
         dmg_adv = dmg_adv or buf_dmg_adv
         dmg_dis = dmg_dis or buf_dmg_dis
+        # AUX code 4: merge bonus damage dice into dmg_dice
+        bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
+        if bonus_dice:
+            dmg_dice = f"{dmg_dice}+{bonus_dice}" if dmg_dice else bonus_dice
         bp_str = f", {bp_detail}" if bp_detail else ""
         lines.append(f"{aname} 的【{skill_name}】检定:"); lines.append(f"  D100={atk_result}/{eff_skill}{bp_str} {rank_text(atk_rank)}")
         if atk_rank <= 0:
             fn = " [大失败! 反击等级+1]" if atk_rank == -2 else ""
-            lines.append(f"  {aname} 攻击失败！{fn}"); return (def_uid, atk_uid, lines)
+            lines.append(f"  {aname} 攻击失败！{fn}")
+            # 即使攻击失败也允许防御方反应——大失败闪避/格挡可能使攻方意外命中，
+            # 成功反击也可能在攻方失败时命中造成伤害。
+            if not self._allow_failed_reaction:
+                return (def_uid, atk_uid, lines)
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val); bmv = self._apply_buff_skill_mod(def_uid, bmv)
         def_buffs = self._get_active_buffs(def_uid)
-        def_bp = _calc_net_bp(def_buffs, "", skill_name)
+        _, ap_def_p2 = self._calc_action_power_bp(atk_uid, def_uid)
+        def_bp = _calc_net_bp(def_buffs, ap_def_p2, skill_name)
 
         # ── 格挡可用性检查 ──
         block_name, block_val = self._get_block_skill(def_uid)
@@ -2241,7 +2788,9 @@ class FullBattleEngine(CombatEngine):
             if react_rank > 0: eff_atk -= react_rank
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
-            if eff_atk <= 0: lines.append(f"  {dname} 闪避成功！"); return (def_uid, atk_uid, lines)
+            if eff_atk <= 0:
+                lines.append(f"  {dname} 闪避成功！")
+                return (def_uid, atk_uid, lines)
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
         elif react_choice == 'counter':
@@ -2285,9 +2834,10 @@ class FullBattleEngine(CombatEngine):
                     else:
                         if dmg_adv: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); adv = max(r1, r2); adetail = f"优势({dmg_dice}={r1},{r2})→{adv}"
                         elif dmg_dis: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); adv = min(r1, r2); adetail = f"劣势({dmg_dice}={r1},{r2})→{adv}"
-                        else: adv = roll_dice(dmg_dice); adetail = f"{dmg_dice}={adv}"
-                    # AUX 1-4,19: apply damage multipliers before shield
+                        else: adv, adetail = roll_dice_detailed(dmg_dice)
+                    # AUX 1,3,19: apply damage multipliers before shield
                     adv = int(adv * self._get_buff_dmg_mult(atk_uid, def_uid) * self._get_buff_dmg_dice_mult(atk_uid))
+                    adv += self._get_buff_dmg_flat(def_uid); adv = max(0, adv)  # AUX code 2: before shield
                     asr = self._absorb_damage_with_shield(def_uid, adv); aeff = asr[0]
                     if asr[1] > 0: lines.append(f"  护盾吸收(atk): {asr[1]}点")
                     achp = self._get_combat_hp(def_uid) or 10
@@ -2311,9 +2861,10 @@ class FullBattleEngine(CombatEngine):
                             elif cpen: ddmg = dmx * 2; ddetail = f"贯穿!满值{dmx}×2={ddmg}"
                             else: extra = roll_dice(cdmg); ddmg = dmx + extra; ddetail = f"{cdmg}满值{dmx}+{extra}={ddmg}"
                         else:
-                            ddmg = roll_dice(cdmg); ddetail = f"{cdmg}={ddmg}"
-                        # AUX 1-4,19: apply damage multipliers before shield
+                            ddmg, ddetail = roll_dice_detailed(cdmg)
+                        # AUX 1,3,19: apply damage multipliers before shield
                         ddmg = int(ddmg * self._get_buff_dmg_mult(def_uid, atk_uid) * self._get_buff_dmg_dice_mult(def_uid))
+                        ddmg += self._get_buff_dmg_flat(atk_uid); ddmg = max(0, ddmg)  # AUX code 2: before shield
                         dsr = self._absorb_damage_with_shield(atk_uid, ddmg); deff = dsr[0]
                         if dsr[1] > 0: lines.append(f"  护盾吸收(def): {dsr[1]}点")
                         dchp = self._get_combat_hp(atk_uid) or 10
@@ -2326,7 +2877,8 @@ class FullBattleEngine(CombatEngine):
                     lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
                     return (atk_uid, def_uid, lines)
                 else:
-                    lines.append("  无人得手！"); return (None, None, lines)
+                    lines.append("  无人得手！")
+                    return (None, None, lines)
         else:  # react_choice == 'block'
             # ── 格挡反应 ──
             rr, rd = roll_d100(def_bp); react_rank = success_rank(rr, block_val)
@@ -2356,8 +2908,9 @@ class FullBattleEngine(CombatEngine):
                 else:
                     if dmg_adv: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); blk_dmg = max(r1, r2); blk_detail = f"优势({dmg_dice}={r1},{r2})→{blk_dmg}"
                     elif dmg_dis: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); blk_dmg = min(r1, r2); blk_detail = f"劣势({dmg_dice}={r1},{r2})→{blk_dmg}"
-                    else: blk_dmg = roll_dice(dmg_dice); blk_detail = f"{dmg_dice}={blk_dmg}"
+                    else: blk_dmg, blk_detail = roll_dice_detailed(dmg_dice)
                 blk_dmg = int(blk_dmg * self._get_buff_dmg_mult(atk_uid, def_uid) * self._get_buff_dmg_dice_mult(atk_uid))
+                blk_dmg += self._get_buff_dmg_flat(def_uid); blk_dmg = max(0, blk_dmg)  # AUX code 2: before shield
                 # 法术护盾吸收
                 blk_sr = self._absorb_damage_with_shield(def_uid, blk_dmg); blk_eff = blk_sr[0]
                 if blk_sr[1] > 0: lines.append(f"  护盾吸收: {blk_sr[1]}点")
@@ -2401,11 +2954,12 @@ class FullBattleEngine(CombatEngine):
         else:
             if dmg_adv: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); dmg_val = max(r1, r2); dmg_detail = f"优势({dmg_dice}={r1},{r2})→{dmg_val}"
             elif dmg_dis: r1, r2 = roll_dice(dmg_dice), roll_dice(dmg_dice); dmg_val = min(r1, r2); dmg_detail = f"劣势({dmg_dice}={r1},{r2})→{dmg_val}"
-            else: dmg_val = roll_dice(dmg_dice); dmg_detail = f"{dmg_dice}={dmg_val}"
+            else: dmg_val, dmg_detail = roll_dice_detailed(dmg_dice)
 
         lines.append(f"  {winner_name} 胜利! {rank_text(winner_rank)}")
-        # AUX 1-4,19: apply damage multipliers before shield
+        # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(winner_uid, loser_uid) * self._get_buff_dmg_dice_mult(winner_uid))
+        dmg_val += self._get_buff_dmg_flat(loser_uid); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
         sr = self._absorb_damage_with_shield(loser_uid, dmg_val); eff_dmg = sr[0]
         if sr[1] > 0: lines.append(f"  护盾吸收: {sr[1]}点")
         cur_hp = self._get_combat_hp(loser_uid) or 10
@@ -2466,9 +3020,20 @@ class FullBattleEngine(CombatEngine):
             is_friendly = ce and te and ce.get('team') == te.get('team')
 
         # Success rate check with COC7 rank
-        atk_rank = 4  # default: auto-success
-        check_roll = 1
+        # If no explicit 成功率, fall back to caster's best melee skill for enemy-targeting spells.
+        # Self-targeting effects (客体=1) without 成功率 are auto-success (e.g. self-buffs).
+        if sr <= 0:
+            obj = eff.get('客体', 4)
+            if obj == 1:
+                # Self-targeting: auto-success (e.g. 灵牛 附魔术 self-buff)
+                atk_rank = 4; check_roll = 1
+            else:
+                # Enemy-targeting: use caster's best melee skill as default success rate
+                char = self.get_char(caster_id)
+                _, sr = char.get_best_melee()
+                sr = max(1, sr)  # Ensure at least 1 to force a roll
         if sr > 0:
+            atk_rank = 4; check_roll = 1  # will be overwritten by roll below
             sr_bp_raw = eff.get('成功率奖惩骰', 0) or 0
             if isinstance(sr_bp_raw, int):
                 if sr_bp_raw > 0:
@@ -2486,20 +3051,24 @@ class FullBattleEngine(CombatEngine):
             atk_rank = success_rank(check_roll, sr, crit_pct, crit_flat)
             if atk_rank <= 0:
                 out += f'  成功率检定: D100={check_roll}/{sr}{bp_str} {rank_text(atk_rank)}！\n'
-                return out
-            out += f'  成功率检定: D100={check_roll}/{sr}{bp_str} {rank_text(atk_rank)}！\n'
+                # 法术失败也允许反应——大失败闪避/格挡可能使法术意外命中，
+                # 成功反击也可能在法术失败时命中造成伤害。
+                if not self._allow_failed_reaction:
+                    return out
+            else:
+                out += f'  成功率检定: D100={check_roll}/{sr}{bp_str} {rank_text(atk_rank)}！\n'
 
         if is_friendly:
             # Friend-target damage — no reactions (same as base)
             fdmg_dice = eff.get('友方伤害骰', dmg_dice)
-            dmg_val = roll_dice(fdmg_dice)
+            dmg_val, dmg_detail = roll_dice_detailed(fdmg_dice)
             eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
             cur_hp = self._get_combat_hp(target_id) or 10
             actual_lost = min(cur_hp, eff_dmg)
             cur_hp = cur_hp - actual_lost
             self._set_combat_hp(target_id, cur_hp, source_dmg=actual_lost)
             tname_f = self.get_char(target_id).name if target_id else '目标'
-            out += f'  友方伤害: {fdmg_dice}={dmg_val} → {actual_lost}点 (HP:{cur_hp})\n'
+            out += f'  友方伤害: {dmg_detail} → {actual_lost}点 (HP:{cur_hp})\n'
             # Schedule delayed heal (same as base)
             heal_formula = eff.get('友方延迟回复公式', '')
             heal_dice = eff.get('友方延迟回复骰', '4d6')
@@ -2552,7 +3121,7 @@ class FullBattleEngine(CombatEngine):
                 spell_prefix = [out.rstrip('\n')] if out and out.strip() else []
                 dodged, countered, react_lines = self._trigger_spell_reaction(
                     caster_id, target_id, eff, spell, dmg_dice,
-                    can_dodge, can_counter, can_block_spell, atk_rank=atk_rank, prefix_lines=spell_prefix)
+                    can_dodge, can_counter, can_block_spell, atk_rank=atk_rank, atk_roll=check_roll, prefix_lines=spell_prefix)
                 if react_lines:
                     out += '\n'.join(react_lines) + '\n'
 
@@ -2568,7 +3137,7 @@ class FullBattleEngine(CombatEngine):
         return out
 
     def _trigger_spell_reaction(self, caster_id, target_id, eff, spell, dmg_dice,
-                                 can_dodge, can_counter, can_block=False, atk_rank=4, prefix_lines=None):
+                                 can_dodge, can_counter, can_block=False, atk_rank=4, atk_roll=1, prefix_lines=None):
         """Resolve defender reaction to a spell damage effect.
         Base (FullBattleEngine): auto-resolve for AI-vs-AI using trained weights.
         PvP (PvPFullBattleEngine): override to raise ReactionNeeded.
@@ -2629,6 +3198,12 @@ class FullBattleEngine(CombatEngine):
 
         def_buffs = self._get_active_buffs(target_id)
         def_bp = _calc_net_bp(def_buffs, "", "")
+        # Spell effect imposes penalty on reactions (e.g. 挥动镰刀)
+        if _eff_get(eff, 'auxType') == '技能惩罚骰' and _eff_get(eff, 'auxVal') == 'p':
+            if def_bp == '': def_bp = 'p'
+            elif def_bp == 'b': def_bp = ''
+            elif def_bp == 'b2': def_bp = 'b'
+            elif def_bp == 'b3': def_bp = 'b2'
         rr, rd = roll_d100(def_bp)
         react_rank = success_rank(rr, dodge_val)
         rbs = f", {rd}" if rd else ""
@@ -2659,6 +3234,12 @@ class FullBattleEngine(CombatEngine):
 
         def_buffs = self._get_active_buffs(target_id)
         def_bp = _calc_net_bp(def_buffs, "", "")
+        # Spell effect imposes penalty on reactions (e.g. 挥动镰刀)
+        if _eff_get(eff, 'auxType') == '技能惩罚骰' and _eff_get(eff, 'auxVal') == 'p':
+            if def_bp == '': def_bp = 'p'
+            elif def_bp == 'b': def_bp = ''
+            elif def_bp == 'b2': def_bp = 'b'
+            elif def_bp == 'b3': def_bp = 'b2'
         rr, rd = roll_d100(def_bp)
         react_rank = success_rank(rr, counter_val)
         rbs = f", {rd}" if rd else ""
@@ -2696,7 +3277,7 @@ class FullBattleEngine(CombatEngine):
                     extra = roll_dice(cdmg); dmg_val = mx + extra
                     dmg_detail = f"{cdmg}满值{mx}+{extra}={dmg_val}"
             else:
-                dmg_val = roll_dice(cdmg); dmg_detail = f"{cdmg}={dmg_val}"
+                dmg_val, dmg_detail = roll_dice_detailed(cdmg)
 
             sr_abs = self._absorb_damage_with_shield(target_uid, dmg_val)
             eff_dmg = sr_abs[0]
@@ -2951,7 +3532,8 @@ class FullBattleEngine(CombatEngine):
             "shield_block":tmpl.get("shield_block",0),"shield_block_hp":tmpl.get("shield_block",0),
             "shield_block_rate":tmpl.get("shield_block_rate",0.70),
             "ignore_unreactable_block":tmpl.get("ignore_unreactable_block",0),
-            "flying":tmpl.get("flying",False)})
+            "flying":tmpl.get("flying",False),
+            "max_simultaneous":tmpl.get("max_simultaneous"), "max_total_spawned":tmpl.get("max_total_spawned")})
         state_s = self._get_state()
         old_idx = state_s.get('activeIndex', -1) if state_s else -1
         tracked_uid = init_list[old_idx]['userId'] if 0 <= old_idx < len(init_list) else None
@@ -2966,6 +3548,11 @@ class FullBattleEngine(CombatEngine):
         # Set summon character's display name to avoid internal ID leaks
         summon_char = self.get_char(sid)
         summon_char.name = summon_display_name
+        # 设置动态行动数所需的属性（召唤物也使用统一公式）
+        summon_char.set_attr('行动力', tmpl.get('MOV', 6))
+        summon_char.set_attr('回合行动数', tmpl.get('行动次数', 1))
+        # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
+        self._ensure_dynamic_slots(sid)
         acts = self._get_actions(); acts[sid] = {"主动":tmpl.get("行动次数",1),"附加":1}; self._set_actions(acts)
         # Fix #6: 2x2 tile occupation for large summons
         if tmpl.get("size_2x2"):
@@ -3070,6 +3657,11 @@ class FullBattleEngine(CombatEngine):
             return lines
 
         # Apply rank-based damage per hit
+        # AUX code 4: merge bonus damage dice from summon owner's buffs
+        owner_id = entry.get("ownerId", summon_id)
+        bonus_dice = self._get_buff_dmg_dice_bonus(owner_id)
+        if bonus_dice:
+            dmg_dice = f"{dmg_dice}+{bonus_dice}" if dmg_dice else bonus_dice
         mx = max_damage(dmg_dice)
         def _ranked_dmg():
             dmg_val = 0
@@ -3089,6 +3681,7 @@ class FullBattleEngine(CombatEngine):
             if hits > 1 and random.randint(1,100) > sv: continue
             dmg = _ranked_dmg()
             dmg_display = f"{dmg_dice}={dmg}"
+            dmg += self._get_buff_dmg_flat(tid); dmg = max(0, dmg)  # AUX code 2: before shields
             eff_dmg, shield_abs, _ = self._absorb_damage_with_shield(tid, dmg)
             eff_dmg = self._apply_shield_block(tid, eff_dmg)
             total_dmg += eff_dmg
@@ -3186,12 +3779,19 @@ class FullBattleEngine(CombatEngine):
                     if not stackable and pos_key in processed_zone_positions:
                         continue
                     processed_zone_positions.add(pos_key)
-                    dmg = roll_dice(eff["tickDmg"])
+                    # AUX code 4: merge bonus damage dice into zone tick
+                    tick_dice = eff["tickDmg"]
+                    src_uid = eff.get('sourceUserId')
+                    if src_uid:
+                        bonus_dice = self._get_buff_dmg_dice_bonus(src_uid)
+                        if bonus_dice:
+                            tick_dice = f"{tick_dice}+{bonus_dice}"
+                    dmg = roll_dice(tick_dice)
                     if dmg > 0:
-                        # AUX 1-4,19: apply damage multipliers from zone source
-                        src_uid = eff.get('sourceUserId')
+                        # AUX 1,3,19: apply damage multipliers from zone source
                         if src_uid:
                             dmg = int(dmg * self._get_buff_dmg_mult(src_uid, entry["userId"]) * self._get_buff_dmg_dice_mult(src_uid))
+                        dmg += self._get_buff_dmg_flat(entry["userId"]); dmg = max(0, dmg)  # AUX code 2: before shield
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
                         hp = self._get_combat_hp(entry["userId"]) or 10
                         self._set_combat_hp(entry["userId"], hp - ed, source_dmg=ed)
@@ -3210,6 +3810,7 @@ class FullBattleEngine(CombatEngine):
                     heal = roll_dice(eff["tickHealHp"])
                     if heal > 0:
                         heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'hp'))
+                        heal += self._get_buff_heal_flat(entry["userId"], 'hp')  # AUX code 8
                         hp = self._get_combat_hp(entry["userId"]) or 10
                         ch = self.get_char(entry["userId"])
                         mhp = ch.get_attr("体力上限", hp) if ch else hp
@@ -3228,9 +3829,24 @@ class FullBattleEngine(CombatEngine):
                     heal = roll_dice(eff["tickHealMp"])
                     if heal > 0:
                         heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'mp'))
+                        heal += self._get_buff_heal_flat(entry["userId"], 'mp')  # AUX code 6
                         ch = self.get_char(entry["userId"])
                         cm = ch.get_attr("魔力",0) or 0; mx = ch.get_attr("魔力上限",cm) or cm
                         ch.set_attr("魔力", min(cm+heal, mx))
+            # Attribute debuff per round (属性削减, e.g. 行动力-5) — temporary on entry
+            ad = eff.get("attributeDebuff", "")
+            if ad:
+                match = re.match(r'^(.+?)([+-]\d+)$', ad)
+                if match:
+                    attr_name = match.group(1)
+                    delta = int(match.group(2))
+                    for entry in il:
+                        ec = entry.get("coord", ""); ep = parse_coord(ec) if ec else None
+                        if not ep: continue
+                        if max(abs(ep[0]-cp[0]), abs(ep[1]-cp[1])) > eff["radius"]: continue
+                        if attr_name in ('行动力', '移动力'):
+                            key = '_zone_penalty_' + attr_name
+                            entry[key] = max(entry.get(key, 0), abs(delta))
             # Fix #1: Update zone center if follows caster
             if eff.get("centerFollows"):
                 src = eff.get("sourceUserId")
@@ -3360,6 +3976,14 @@ class FullBattleEngine(CombatEngine):
             # Update action count
             acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
             self._set_actions(acts)
+            # 设置动态行动数所需的角色属性（合并后stats变了）
+            merged_char = self.get_char(merged["userId"])
+            merged_char.set_attr('行动力', result_tmpl.get('MOV', 6))
+            merged_char.set_attr('回合行动数', result_tmpl.get('行动次数', 1))
+            # 给合并条目加上 baseUserId 和 actionIdx，然后扩展动态槽
+            merged["baseUserId"] = merged["userId"]
+            merged["actionIdx"] = 0
+            self._ensure_dynamic_slots(merged["userId"])
             self._set_initiative(il)
 
 class FastBattleEngine(FullBattleEngine):
@@ -3369,6 +3993,7 @@ class FastBattleEngine(FullBattleEngine):
     Only overrides methods where training-specific optimizations differ."""
     def __init__(self):
         super().__init__(fast_mode=True)
+        self._fast_store = True  # Skip json.dumps for training
         # Note: max_rounds=20, _ai_react_*_w dicts, _summoned_once, _summon_counters
         # are all initialized by FullBattleEngine.__init__(fast_mode=True)
 
@@ -3379,36 +4004,36 @@ class FastBattleEngine(FullBattleEngine):
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            n_actions = char.get_attr('回合行动数', 1)
-            for ai in range(n_actions):
+            for ai in range(MAX_DYNAMIC_ACTIONS):
                 entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                 row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
                 coord = format_coord(1, row)
                 dex_val = char.get_attr("敏捷",50)
                 init_roll, _ = roll_d100("")
                 init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                label = f" (行动{ai+1})"
                 init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
                                   "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
                 if ai == 0:
                     map_data["occupants"][coord] = uid
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            n_actions = char.get_attr('回合行动数', 1)
-            for ai in range(n_actions):
+            for ai in range(MAX_DYNAMIC_ACTIONS):
                 entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                 row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
                 coord = format_coord(w-2, row)
                 dex_val = char.get_attr("敏捷",50)
                 init_roll, _ = roll_d100("")
                 init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})" if n_actions > 1 else ""
+                label = f" (行动{ai+1})"
                 init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
                                   "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
                 if ai == 0:
                     map_data["occupants"][coord] = uid
         self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], -e["initRoll"]))
         self._set_initiative(init_list)
+        # Save original team roster for timeout HP ratio (one entry per unique non-summon char)
+        self._team_roster = [(uid, 'Y') for uid in team_a] + [(uid, 'X') for uid in team_b]
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
         self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
@@ -3422,7 +4047,14 @@ class FastBattleEngine(FullBattleEngine):
                 if has_timing(s.get("时机","2"), "1"):
                     target = self._smart_target(uid, s)
                     self._execute_spell(uid, target, s)
+
+        # 初始化动态行动槽抑制状态（在被动技能生效后，确保buff已应用）
+        for uid in all_chars:
+            self._sync_initiative_slots(uid)
+
         self._set_state({"phase":"active", "round":1, "activeIndex":0})
+        # 跳过初始被抑制/死亡条目，找到第一个有效行动者
+        self._skip_to_valid_active()
 
     # ---- Summon system (same as FullBattleEngine) ----
     def _create_summon(self, caster_id, template_name):
@@ -3518,7 +4150,8 @@ class FastBattleEngine(FullBattleEngine):
             "shield_block":tmpl.get("shield_block",0),"shield_block_hp":tmpl.get("shield_block",0),
             "shield_block_rate":tmpl.get("shield_block_rate",0.70),
             "ignore_unreactable_block":tmpl.get("ignore_unreactable_block",0),
-            "flying":tmpl.get("flying",False)})
+            "flying":tmpl.get("flying",False),
+            "max_simultaneous":tmpl.get("max_simultaneous"), "max_total_spawned":tmpl.get("max_total_spawned")})
         state_s = self._get_state()
         old_idx = state_s.get('activeIndex', -1) if state_s else -1
         tracked_uid = init_list[old_idx]['userId'] if 0 <= old_idx < len(init_list) else None
@@ -3533,6 +4166,11 @@ class FastBattleEngine(FullBattleEngine):
         # Set summon character's display name to avoid internal ID leaks
         summon_char_fast = self.get_char(sid)
         summon_char_fast.name = summon_display_name
+        # 设置动态行动数所需的属性（召唤物也使用统一公式）
+        summon_char_fast.set_attr('行动力', tmpl.get('MOV', 6))
+        summon_char_fast.set_attr('回合行动数', tmpl.get('行动次数', 1))
+        # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
+        self._ensure_dynamic_slots(sid)
         acts = self._get_actions(); acts[sid] = {"主动":tmpl.get("行动次数",1),"附加":1}; self._set_actions(acts)
         # 2x2占据
         if tmpl.get("size_2x2"):
@@ -3589,12 +4227,19 @@ class FastBattleEngine(FullBattleEngine):
                     if not stackable and pos_key in processed_zone_positions:
                         continue
                     processed_zone_positions.add(pos_key)
-                    dmg = roll_dice(eff["tickDmg"])
+                    # AUX code 4: merge bonus damage dice into zone tick
+                    tick_dice = eff["tickDmg"]
+                    src_uid = eff.get('sourceUserId')
+                    if src_uid:
+                        bonus_dice = self._get_buff_dmg_dice_bonus(src_uid)
+                        if bonus_dice:
+                            tick_dice = f"{tick_dice}+{bonus_dice}"
+                    dmg = roll_dice(tick_dice)
                     if dmg > 0:
-                        # AUX 1-4,19: apply damage multipliers from zone source
-                        src_uid = eff.get('sourceUserId')
+                        # AUX 1,3,19: apply damage multipliers from zone source
                         if src_uid:
                             dmg = int(dmg * self._get_buff_dmg_mult(src_uid, entry["userId"]) * self._get_buff_dmg_dice_mult(src_uid))
+                        dmg += self._get_buff_dmg_flat(entry["userId"]); dmg = max(0, dmg)  # AUX code 2: before shield
                         ed, _, _ = self._absorb_damage_with_shield(entry["userId"], dmg)
                         hp = self._get_combat_hp(entry["userId"]) or 10
                         self._set_combat_hp(entry["userId"], hp - ed, source_dmg=ed)
@@ -3613,6 +4258,7 @@ class FastBattleEngine(FullBattleEngine):
                     heal = roll_dice(eff["tickHealHp"])
                     if heal > 0:
                         heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'hp'))
+                        heal += self._get_buff_heal_flat(entry["userId"], 'hp')  # AUX code 8
                         hp = self._get_combat_hp(entry["userId"]) or 10
                         ch = self.get_char(entry["userId"])
                         mhp = ch.get_attr("体力上限", hp) if ch else hp
@@ -3631,9 +4277,24 @@ class FastBattleEngine(FullBattleEngine):
                     heal = roll_dice(eff["tickHealMp"])
                     if heal > 0:
                         heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'mp'))
+                        heal += self._get_buff_heal_flat(entry["userId"], 'mp')  # AUX code 6
                         ch = self.get_char(entry["userId"])
                         cm = ch.get_attr("魔力",0) or 0; mx = ch.get_attr("魔力上限",cm) or cm
                         ch.set_attr("魔力", min(cm+heal, mx))
+            # Attribute debuff per round (属性削减, e.g. 行动力-5) — temporary on entry
+            ad = eff.get("attributeDebuff", "")
+            if ad:
+                match = re.match(r'^(.+?)([+-]\d+)$', ad)
+                if match:
+                    attr_name = match.group(1)
+                    delta = int(match.group(2))
+                    for entry in il:
+                        ec = entry.get("coord", ""); ep = parse_coord(ec) if ec else None
+                        if not ep: continue
+                        if max(abs(ep[0]-cp[0]), abs(ep[1]-cp[1])) > eff["radius"]: continue
+                        if attr_name in ('行动力', '移动力'):
+                            key = '_zone_penalty_' + attr_name
+                            entry[key] = max(entry.get(key, 0), abs(delta))
             # Fix #1: Update zone center if follows caster
             if eff.get("centerFollows"):
                 src = eff.get("sourceUserId")
@@ -3763,6 +4424,14 @@ class FastBattleEngine(FullBattleEngine):
             # Update action count
             acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
             self._set_actions(acts)
+            # 设置动态行动数所需的角色属性（合并后stats变了）
+            merged_char = self.get_char(merged["userId"])
+            merged_char.set_attr('行动力', result_tmpl.get('MOV', 6))
+            merged_char.set_attr('回合行动数', result_tmpl.get('行动次数', 1))
+            # 给合并条目加上 baseUserId 和 actionIdx，然后扩展动态槽
+            merged["baseUserId"] = merged["userId"]
+            merged["actionIdx"] = 0
+            self._ensure_dynamic_slots(merged["userId"])
             self._set_initiative(il)
 
     # ---- Conditional effects ----
@@ -3785,20 +4454,34 @@ class FastBattleEngine(FullBattleEngine):
     def _fast_coc7_attack(self, atk_uid, def_uid, skill_name, skill_val, dmg_dice, pen, leth):
         """Full COC7 attack for training: rank-based damage + trainable reaction."""
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
+        # ── 射程移动 ──
+        atk_range = _get_attack_range(skill_name=skill_name)
+        can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
+        if not can_atk:
+            return (def_uid, atk_uid, 0, f"射程不足 (range={atk_range})")
+        # AUX code 4: merge bonus damage dice
+        bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
+        if bonus_dice:
+            dmg_dice = f"{dmg_dice}+{bonus_dice}" if dmg_dice else bonus_dice
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
-        eff_bp = _calc_net_bp(atk_buffs, "", skill_name)
+        # 行动力优势合并到攻击BP
+        ap_atk_b, ap_def_p = self._calc_action_power_bp(atk_uid, def_uid)
+        eff_bp = _calc_net_bp(atk_buffs, ap_atk_b, skill_name)
         crit_pct, crit_flat = self._get_buff_crit_adjustment(atk_uid)
         atk_result, atk_bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill, crit_pct, crit_flat)
         bp_str = f", {atk_bp_detail}" if atk_bp_detail else ""
-        if atk_rank <= 0:
+        # 即使攻击失败也允许防御方反应——大失败闪避/格挡可能使攻方意外命中，
+        # 成功反击也可能在攻方失败时命中造成伤害。
+        if atk_rank <= 0 and not getattr(self, '_allow_failed_reaction', True):
             return (def_uid, atk_uid, 0, f"D100={atk_result}/{eff_skill}{bp_str} {rank_text(atk_rank)}")
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
         dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
         bmv = self._apply_buff_skill_mod(def_uid, bmv)
         def_buffs = self._get_active_buffs(def_uid)
-        def_bp = _calc_net_bp(def_buffs, "", skill_name)
+        _, ap_def_p2 = self._calc_action_power_bp(atk_uid, def_uid)
+        def_bp = _calc_net_bp(def_buffs, ap_def_p2, skill_name)
 
         # ── 格挡可用性 ──
         block_name, block_val = self._get_block_skill(def_uid)
@@ -3860,6 +4543,7 @@ class FastBattleEngine(FullBattleEngine):
                 elif atk_rank == 4: blk_dmg = blk_mx * 2 if (atk_result == 1 or pen) else blk_mx + roll_dice(dmg_dice)
                 else: blk_dmg = roll_dice(dmg_dice)
                 blk_dmg = int(blk_dmg * self._get_buff_dmg_mult(atk_uid, def_uid) * self._get_buff_dmg_dice_mult(atk_uid))
+                blk_dmg += self._get_buff_dmg_flat(def_uid); blk_dmg = max(0, blk_dmg)  # AUX code 2: before shield
                 blk_eff, _, _ = self._absorb_damage_with_shield(def_uid, blk_dmg)
                 if blk_eff > 0 and block_hp > 0:
                     absorbed = min(blk_eff, block_hp)
@@ -3894,8 +4578,9 @@ class FastBattleEngine(FullBattleEngine):
             else:
                 dmg_val = roll_dice(dmg_dice)
 
-        # AUX 1-4,19: apply damage multipliers before shield
+        # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(winner_uid, loser_uid) * self._get_buff_dmg_dice_mult(winner_uid))
+        dmg_val += self._get_buff_dmg_flat(loser_uid); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
         eff_dmg, _, _ = self._absorb_damage_with_shield(loser_uid, dmg_val)
         cur_hp = self._get_combat_hp(loser_uid) or 10
         exp_dmg = avg_damage(dmg_dice)
@@ -3929,17 +4614,34 @@ class FastBattleEngine(FullBattleEngine):
         if not self._can_basic_attack(uid, char): return ""
         enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
         if not enemies: return ""
-        grounded = [e for e in enemies if self._can_melee(uid, e["userId"])]
-        if not grounded: return ""
-        target = grounded[0]
-        if tid and any(e["userId"]==tid for e in grounded): target = next(e for e in grounded if e["userId"]==tid)
+        # ── 射程过滤 + 移动 ──
+        bn_tmp, bv_tmp = char.get_best_melee()
+        atk_range = _get_attack_range(skill_name=bn_tmp)
+        reachable = []
+        for e in enemies:
+            if self._can_melee(uid, e["userId"]):
+                can, orig = self._move_to_attack_range(uid, e["userId"], atk_range)
+                if can:
+                    reachable.append((e, orig))
+        if not reachable:
+            return ""
+        target, _orig_coord = reachable[0]
+        if tid and any(e["userId"]==tid for e, _ in reachable):
+            for e, oc in reachable:
+                if e["userId"]==tid: target, _orig_coord = e, oc; break
         tid = target["userId"]
         bn, bv = char.get_best_melee(); bv = self._apply_buff_skill_mod(uid, bv)
-        if random.randint(1,100) > bv: return ""
+        if random.randint(1,100) > bv:
+            return ""
         dd = self._get_damage_dice(uid, bn); p = char.get_attr("伤害贯穿",1); l = char.get_attr("致死骰",1) or 0
+        # AUX code 4: merge bonus damage dice
+        bonus_dice = self._get_buff_dmg_dice_bonus(uid)
+        if bonus_dice:
+            dd = f"{dd}+{bonus_dice}" if dd else bonus_dice
         dmg_val = roll_dice(dd)
-        # AUX 1-4,19: apply damage multipliers before shield
+        # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(uid, tid) * self._get_buff_dmg_dice_mult(uid))
+        dmg_val += self._get_buff_dmg_flat(tid); dmg_val = max(0, dmg_val)  # AUX code 2: before shields
         eff_dmg, _, _ = self._absorb_damage_with_shield(tid, dmg_val)
         eff_dmg = self._apply_shield_block(tid, eff_dmg)
         cur_hp = self._get_combat_hp(tid) or 10

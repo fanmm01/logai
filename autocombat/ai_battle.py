@@ -85,7 +85,7 @@ RANDOM_BONUS_2V2 = 56               # Extra random 2v2 bonus matches
 RANDOM_BONUS_3V3 = 65               # Extra random 3v3 bonus matches
 
 MAP_SIZES_2V2 = ['10x10']    # Map sizes used for 2v2 prelim RR
-MAP_SIZES_3V3 = ['20x20']   # Map sizes used for 3v3 prelim RR
+MAP_SIZES_3V3 = ['10x10']   # Map sizes used for 3v3 prelim RR
                       
 PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
 
@@ -101,8 +101,11 @@ PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
 SEASON_AVG_STATUS = None
 
 # ── Round limits ──
-MAX_ROUNDS_PRELIM = 25              # Max rounds before timeout in prelim
+MAX_ROUNDS_PRELIM = 35              # Max rounds before timeout in prelim (raised from 25 to match knockout — dead summons no longer bloat initiative)
 MAX_ROUNDS_KNOCKOUT = 35            # Max rounds before timeout in knockout
+# Per-format overrides for prelim: larger formats need proportionally more rounds.
+# Without this, 3v3 battles (6+ chars, many summons) nearly always time out even at 35.
+MAX_ROUNDS_PRELIM_BY_FORMAT = {'1v1': 20, '2v2': 30, '3v3': 45}
 
 # Knockout draw weights — ranks 5-8 vs seeds 1-4
 # rows: rank5, rank6, rank7, rank8; cols: vs#1, vs#2, vs#3, vs#4
@@ -431,7 +434,8 @@ class AIController:
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return None
         my_coord = my_entry.get('coord', '')
-        enemies = [e for e in init_list if e['team'] != self.team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        my_team = my_entry.get('team', 'Y')
+        enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
         if not enemies or not my_coord: return None
         nearest = self._nearest(engine, user_id, enemies)
         if nearest:
@@ -458,7 +462,8 @@ class AIController:
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return '.i end'
 
-        enemies = [e for e in init_list if e['team'] != self.team]
+        my_team_rd = my_entry.get('team', 'Y')
+        enemies = [e for e in init_list if e['team'] != my_team_rd]
         my_coord = my_entry.get('coord', 'A1')
 
         # Build blocked-spell sets (same logic as get_available_actions dynamic filters)
@@ -623,25 +628,45 @@ class BattleEngine(FullBattleEngine):
         self.display_level = display_level  # DisplayLevel: 0=WINLOSS, 1=ROUND, 2=DEBUG
         self.delay = delay  # Seconds between turns (0 = skip)
         self.quiet = quiet  # Suppress terminal output (for custom battles)
+        # Enable fast store (skip json.dumps) when in sim/training mode (delay=0)
+        if delay == 0:
+            self._fast_store = True
 
     def _timeout_verdict(self):
-        """25回合不分胜负 → 按非召唤物HP占最大体力比例（队内人均）判定胜负"""
-        il = self._get_initiative()
+        """25回合不分胜负 → 按非召唤物HP占最大体力比例（队内人均）判定胜负
+        使用原始队伍名单（含已阵亡角色，HP比=0），而非仅存活角色。
+        多动角色只算一次。"""
+        roster = getattr(self, '_team_roster', None)
         y_sum = 0.0; x_sum = 0.0
         y_cnt = 0; x_cnt = 0
-        for e in il:
-            if e.get('isSummon'):
-                continue
-            uid = e['userId']
-            chp = self._get_combat_hp(uid) or 0
-            char = self.get_char(uid)
-            mhp = char.get_attr('体力上限', chp) if char else chp
-            if mhp > 0:
-                ratio = chp / mhp
-                if e['team'] == 'Y':
-                    y_sum += ratio; y_cnt += 1
-                else:
-                    x_sum += ratio; x_cnt += 1
+        if roster:
+            # Use original team roster — dead chars have combat_hp=0 → ratio=0
+            for uid, team in roster:
+                chp = self._get_combat_hp(uid) or 0
+                char = self.get_char(uid)
+                mhp = char.get_attr('体力上限', chp) if char else chp
+                if mhp > 0:
+                    ratio = chp / mhp
+                    if team == 'Y':
+                        y_sum += ratio; y_cnt += 1
+                    else:
+                        x_sum += ratio; x_cnt += 1
+        else:
+            # Fallback: iterate initiative list (legacy path)
+            for e in self._get_initiative():
+                if e.get('isSummon'):
+                    continue
+                uid = e['userId']
+                base = uid.rsplit('__act', 1)[0] if '__act' in str(uid) else uid
+                chp = self._get_combat_hp(uid) or 0
+                char = self.get_char(uid)
+                mhp = char.get_attr('体力上限', chp) if char else chp
+                if mhp > 0:
+                    ratio = chp / mhp
+                    if e['team'] == 'Y':
+                        y_sum += ratio; y_cnt += 1
+                    else:
+                        x_sum += ratio; x_cnt += 1
         y_avg = y_sum / y_cnt if y_cnt > 0 else 0.0
         x_avg = x_sum / x_cnt if x_cnt > 0 else 0.0
         if y_avg > x_avg:
@@ -651,8 +676,20 @@ class BattleEngine(FullBattleEngine):
         else:
             # Equal ratios (including 0.00 vs 0.00) → random winner
             winner = random.choice(['Y', 'X'])
-        y_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'Y' and not e.get('isSummon')) or '?'
-        x_names = '+'.join(e.get('name', '?') for e in il if e['team'] == 'X' and not e.get('isSummon')) or '?'
+        # Use original team roster (all participants) rather than surviving initiative
+        roster = getattr(self, '_team_roster', None)
+        y_names_list = []; x_names_list = []
+        if roster:
+            for uid, team in roster:
+                char = self.get_char(uid)
+                name = char.name if char and char.name else uid
+                name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
+                if team == 'Y':
+                    y_names_list.append(name)
+                else:
+                    x_names_list.append(name)
+        y_names = '+'.join(y_names_list) or '?'
+        x_names = '+'.join(x_names_list) or '?'
         battle_log('info', f'  [超时] Y队[{y_names}] X队[{x_names}] Y队人均HP比={y_avg:.2f} X队人均HP比={x_avg:.2f} → {winner}胜' + (' (平局随机)' if y_avg == x_avg else ''))
         return {'winner': winner, 'rounds': self.max_rounds, 'timeout': True,
                 'y_ratio': round(y_avg, 4), 'x_ratio': round(x_avg, 4)}
@@ -671,8 +708,8 @@ class BattleEngine(FullBattleEngine):
         else:  # DisplayLevel.DEBUG
             _bl = battle_log
         try:
-            rc = 0; last_round = 0; header_shown = False
-            while rc < self.max_rounds:
+            rc = 0; last_round = 0; header_shown = False; step_count = 0
+            while rc < self.max_rounds and step_count < 2000:
                 if self.delay > 0: time.sleep(self.delay)
                 state = self._get_state()
                 if not state or state.get('phase') != 'active': break
@@ -684,15 +721,30 @@ class BattleEngine(FullBattleEngine):
                         if end_result:
                             self._battle_result = end_result
                     break
-                rc = state.get('round', 1)
+                rc = state.get('round', 1); step_count += 1
                 if rc != last_round:
                     last_round = rc; self._moved_this_turn = set()
                     if not header_shown:
                         header_shown = True
-                        y_chars = [e.get('name','?') for e in il if e['team']=='Y' and not e.get('isSummon') and (self._get_combat_hp(e['userId'])or 0)>0]
-                        x_chars = [e.get('name','?') for e in il if e['team']=='X' and not e.get('isSummon') and (self._get_combat_hp(e['userId'])or 0)>0]
-                        y_display = '+'.join(y_chars) if y_chars else '?'
-                        x_display = '+'.join(x_chars) if x_chars else '?'
+                        import re as _re_hd
+                        _ACT_SUFFIX_RE = _re_hd.compile(r'\s*\(行动\d+\)\s*')
+                        y_header_seen = set(); x_header_seen = set()
+                        y_header = []; x_header = []
+                        for _he in il:
+                            if _he.get('isSummon') or _he.get('_suppressed'): continue
+                            _hbase = _he.get('baseUserId', _he['userId'])
+                            if _he['team'] == 'Y':
+                                if _hbase in y_header_seen: continue
+                                y_header_seen.add(_hbase)
+                                _hn = _ACT_SUFFIX_RE.sub('', _he.get('name','?'))
+                                if (self._get_combat_hp(_he['userId'])or 0)>0: y_header.append(_hn)
+                            else:
+                                if _hbase in x_header_seen: continue
+                                x_header_seen.add(_hbase)
+                                _hn = _ACT_SUFFIX_RE.sub('', _he.get('name','?'))
+                                if (self._get_combat_hp(_he['userId'])or 0)>0: x_header.append(_hn)
+                        y_display = '+'.join(y_header) if y_header else '?'
+                        x_display = '+'.join(x_header) if x_header else '?'
                         _bl('info', f'  ---- Y队：{y_display} v.s. X队：{x_display} ----')
                     if self.display_level >= DisplayLevel.ROUND:
                         # Collect summon HP by owner (living summons only)
@@ -700,12 +752,13 @@ class BattleEngine(FullBattleEngine):
                         summon_detail = {}       # ownerId → {summon_name: hp} for 斯瑞提卡
                         for e in il:
                             if not e.get('isSummon'): continue
+                            if e.get('_suppressed', False): continue  # 跳过被抑制的召唤物槽
                             owner = e.get('ownerId')
                             if not owner: continue
                             shp = self._get_combat_hp(e['userId']) or 0
                             if shp <= 0: continue
                             summon_total[owner] = summon_total.get(owner, 0) + shp
-                            sname = e.get('name', '?')
+                            sname = re.sub(r'\s*\(行动\d+\)\s*', '', e.get('name', '?'))
                             d = summon_detail.setdefault(owner, {})
                             d[sname] = d.get(sname, 0) + shp
 
@@ -715,17 +768,21 @@ class BattleEngine(FullBattleEngine):
                         seen_x_uids = set()
                         for e in il:
                             if e.get('isSummon'): continue
+                            if e.get('_suppressed', False): continue  # 不显示被抑制条目
+                            base = e.get('baseUserId', e['userId'])
                             uid = e['userId']
                             if e['team'] == 'Y':
-                                if uid in seen_y_uids:
+                                if base in seen_y_uids:
                                     continue
-                                seen_y_uids.add(uid)
+                                seen_y_uids.add(base)
                             else:
-                                if uid in seen_x_uids:
+                                if base in seen_x_uids:
                                     continue
-                                seen_x_uids.add(uid)
+                                seen_x_uids.add(base)
                             hp = self._get_combat_hp(uid) or 0
                             name = e.get('name', uid)
+                            # Strip " (行动N)" suffix from multi-action slot names
+                            name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
                             # Append summon HP suffix
                             shp = summon_total.get(uid, 0)
                             if shp > 0:
@@ -762,6 +819,22 @@ class BattleEngine(FullBattleEngine):
                     if state['activeIndex'] >= len(il):
                         state['activeIndex'] = state['activeIndex'] % max(1, len(il))
                         self._set_state(state)
+                # Remove ALL dead summons (including those whose owner is still alive)
+                # to prevent initiative list bloat that causes premature step_count timeouts.
+                dead_summons = {e['userId'] for e in il if e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
+                if dead_summons:
+                    il = [e for e in il if e['userId'] not in dead_summons]
+                    # Clean map for dead summons
+                    md = self._get_map()
+                    if md:
+                        for sid in dead_summons:
+                            for c, o in list(md.get('occupants', {}).items()):
+                                if o == sid: del md['occupants'][c]
+                        self._set_map(md)
+                    self._set_initiative(il)
+                    if state['activeIndex'] >= len(il):
+                        state['activeIndex'] = state['activeIndex'] % max(1, len(il))
+                        self._set_state(state)
                 # Check battle end: count non-summon alive characters per team
                 end_result = self._check_battle_end()
                 if end_result:
@@ -786,16 +859,45 @@ class BattleEngine(FullBattleEngine):
                             'y_overflow': end_result.get('y_overflow', 0),
                             'x_overflow': end_result.get('x_overflow', 0)}
                 entry = il[state['activeIndex']]; uid = entry['userId']
+
+                # 跳过被抑制的行动槽（动态行动数未激活的额外槽，玩家和召唤物统一处理）
+                if entry.get('_suppressed', False):
+                    self._end_turn(uid)
+                    continue
+
                 char_name = entry.get('name', uid); hp = self._get_combat_hp(uid) or 0
                 is_summon = entry.get('isSummon', False)
                 if hp <= 0:
                     if is_summon:
+                        # Remove dead summon from map
                         md = self._get_map()
                         if md:
                             for c, o in list(md.get('occupants', {}).items()):
                                 if o == uid: del md['occupants'][c]; break
                             self._set_map(md)
+                        # Also remove from initiative list to prevent bloat
+                        # (dead summons with alive owners were never cleaned up)
+                        idx = state['activeIndex']
+                        il = [e for e in il if e['userId'] != uid]
+                        self._set_initiative(il)
+                        if not il:
+                            # All entries removed — check end
+                            self._check_and_mark_end(state)
+                            break
+                        # Adjust activeIndex: the removed entry was at idx;
+                        # the next entry slides into that position, so keep idx
+                        # unless it's now out of bounds.
+                        if idx >= len(il):
+                            idx = idx % len(il)
+                        state['activeIndex'] = idx
+                        self._set_state(state)
+                        continue
                     self._end_turn(uid); continue
+
+                # 处理前即时重算：首个行动槽出现时根据当前行动力调整抑制状态
+                if entry.get('actionIdx', 0) == 0:
+                    self._sync_initiative_slots(uid)
+
                 if is_summon:
                     # Use summon Q-table if available
                     if AIController.Q_SUMMON is not None:
@@ -1005,7 +1107,11 @@ class Tournament:
         if not self._parallel_prelim:
             battle_log('info', f'  [Battle] Y队：{a_display} v.s. X队：{b_display} [{map_size}]')
         engine = BattleEngine(display_level=display_level, delay=delay, max_rounds=max_rounds)
+        # Only load fighting characters (not all 12) for speed
+        fighting_serials = set(team_a + team_b)
         for c in ALL_CHARACTERS:
+            if c['serial'] not in fighting_serials:
+                continue
             uid = self.char_map[c['serial']]
             load_character_to_engine(engine, c, uid)
             if not c.get('pre_transformed'):
@@ -1243,7 +1349,10 @@ class Tournament:
             for i, j in itertools.combinations(range(len(teams)), 2):
                 for rr in range(2):
                     ta = teams[i]; tb = teams[j]
-                    winner, loser, rds, _ = self.battle(ta, tb, map_size, f'{label_prefix} RR {map_size}', display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN)
+                    team_size = len(ta)  # 1→1v1, 2→2v2, 3→3v3
+                    fmt_tag = f'{team_size}v{team_size}'
+                    fmt_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(fmt_tag, MAX_ROUNDS_PRELIM)
+                    winner, loser, rds, _ = self.battle(ta, tb, map_size, f'{label_prefix} RR {map_size}', display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN, max_rounds=fmt_rounds)
                     winner_set = set(winner.split('+'))
                     for idx in [i, j]:
                         team_set = set(teams[idx])
@@ -1476,7 +1585,8 @@ class Tournament:
             with ThreadPoolExecutor(max_workers=PRELIM_WORKERS) as executor:
                 for args in full_pool:
                     phase_tag, label, map_size, ta, tb, i, j = args
-                    fut = executor.submit(self.battle, ta, tb, map_size, label, 1, DisplayLevel.WINLOSS, 0)
+                    fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
+                    fut = executor.submit(self.battle, ta, tb, map_size, label, 1, DisplayLevel.WINLOSS, 0, fmt_max_rounds)
                     future_map[fut] = args
                 # Collect results
                 completed = 0
@@ -1521,6 +1631,10 @@ class Tournament:
                             elif ts == ls:
                                 v3_standings[idx]['pts'] += l_pts
                                 v3_standings[idx]['battles'] += 1
+                    # Record result (parallel path skips append inside battle())
+                    a_name = '+'.join(ta)
+                    b_name = '+'.join(tb)
+                    self.results.append((a_name, b_name, winner, rds, map_size, label, False))
                     if completed % 50 == 0:
                         battle_log('info', f'  预赛进度: {completed}/{total_matches}')
             self._parallel_prelim = False
@@ -1529,7 +1643,8 @@ class Tournament:
             for phase_tag, label, map_size, ta, tb, i, j in full_pool:
                 completed += 1
                 try:
-                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN)
+                    fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
+                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN, max_rounds=fmt_max_rounds)
                 except Exception as e:
                     battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
                     import traceback

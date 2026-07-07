@@ -3,7 +3,7 @@
 Quick battle simulator — run N battles between teams and report win rates.
 
 Usage:
-  python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S]
+  python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S] [--verbose]
   python sim.py --mode table --format 1v1 [-n N] [-s SEED] [--season S]
   python sim.py --mode table --format 2v2 --teams "A+B,C+D,..." [-n N] [--season S]
 
@@ -12,20 +12,23 @@ Options:
   -m WxH       Map size (default 10x10)
   -s SEED      Random seed
   --season S   Season average status 0-100 (default random). Higher = better AI.
+  --verbose    详细战斗回放模式：只模拟1场，输出每回合掷骰、技能、伤害等完整细节
   --mode       'single' (default) or 'table' (NxN win-rate matrix)
   --format     1v1 | 2v2 | 3v3
   --teams      Comma-separated team list for 2v2/3v3 table mode
 
 Examples:
   python sim.py Y5+Y6+Y7+Y8 vs Y9+Y12 -n 100
+  python sim.py Y3+Y9 vs Y1+Y7+Y8 --verbose            # 详细回放单场
+  python sim.py Y5 vs Y1 --verbose -s 12345             # 固定种子的详细回放
   python sim.py --mode table --format 1v1 -n 50
   python sim.py --mode table --format 2v2 --teams "Y5+Y6,Y7+Y8,Y1+Y2" -n 30
 """
 
-import sys, os, random, time, json, csv, re
+import sys, os, random, time, json, csv, re, logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ai_battle import BattleEngine, Tournament, AIController, set_terminal_quiet
+from ai_battle import BattleEngine, Tournament, AIController, set_terminal_quiet, DisplayLevel
 from characters_data import ALL_CHARACTERS, load_character_to_engine
 
 
@@ -86,7 +89,11 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     b_uids = [t.char_map[s] for s in team_b]
 
     def _setup(engine):
+        # Only load fighting characters (not all 12) for speed
+        fighting_serials = set(team_a + team_b)
         for c in ALL_CHARACTERS:
+            if c['serial'] not in fighting_serials:
+                continue
             uid = t.char_map[c['serial']]
             load_character_to_engine(engine, c, uid)
             if not c.get('pre_transformed'):
@@ -112,7 +119,7 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     if quiet: set_terminal_quiet(True)
     wins_a = wins_b = timeouts = total_rds = 0
     t0 = time.time()
-    for _ in range(N):
+    for bi in range(N):
         eng = BattleEngine(delay=0, quiet=True)
         _setup(eng)
         r = eng.run_battle(t.ai_map)
@@ -120,6 +127,13 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
         else: wins_b += 1
         total_rds += r.get('rounds', 0)
         if r.get('timeout'): timeouts += 1
+        # Progress indicator: print every 10 battles or every 5 seconds
+        if (bi + 1) % 10 == 0 or (bi == 0 and N >= 10):
+            elapsed_sofar = time.time() - t0
+            rate = (bi + 1) / elapsed_sofar if elapsed_sofar > 0 else 0
+            eta = (N - bi - 1) / rate if rate > 0 else 0
+            print(f'  [{bi+1}/{N}] Y胜:{wins_a} X胜:{wins_b} 均回合:{total_rds/(bi+1):.1f} '
+                  f'耗时:{elapsed_sofar:.1f}s ETA:{eta:.0f}s', flush=True)
     elapsed = time.time() - t0
     if quiet: set_terminal_quiet(False)
     return wins_a, wins_b, total_rds / N, timeouts, elapsed
@@ -161,6 +175,30 @@ def compute_contribution_from_matrix(matrix, teams, nm):
     return {'algo1': algo1, 'algo2': algo2, 'algo3': algo3}
 
 
+def compute_avg_points_ranking(matrix, team_names):
+    """Compute average points (win rate) ranking per team from the matrix."""
+    n = len(team_names)
+    rankings = []
+    for i in range(n):
+        opponents = [matrix[i][j] for j in range(n) if i != j]
+        avg = sum(opponents) / len(opponents) if opponents else 0
+        rankings.append((team_names[i], avg, opponents))
+    rankings.sort(key=lambda x: -x[1])
+    return rankings
+
+
+def print_avg_points_ranking(rankings, fmt):
+    """Print average points ranking for a competition mode."""
+    print(f'\n{"="*80}')
+    print(f'平均积分排名 — {fmt}')
+    print(f'{"="*80}')
+    print(f'  {"排名":<4} {"队伍":<30} {"平均胜率":>10}  {"对手胜率明细"}')
+    print(f'  {"-"*70}')
+    for rank, (name, avg, details) in enumerate(rankings, 1):
+        detail_str = '  '.join(f'{d*100:.0f}%' for d in details)
+        print(f'  {rank:<4} {name:<30} {avg*100:>9.1f}%  {detail_str}')
+
+
 def print_contribution(contrib):
     """Print contribution ranking."""
     names = {'algo1': '算法一: 同格式内胜率差',
@@ -174,8 +212,10 @@ def print_contribution(contrib):
             print(f'  {rank:<4} {s:<8} {name:<6} {val:>+8.4f}')
 
 
-def mode_single(argv):
+def mode_single(argv, verbose=False):
     team_a, team_b, N, map_size, seed, season_status = parse_single_args(argv)
+    if verbose:
+        N = 1  # Force single battle in verbose mode
     random.seed(seed)
     print('初始化...', flush=True)
     t = Tournament(); t.init_characters()
@@ -189,6 +229,68 @@ def mode_single(argv):
     b_disp = '+'.join(nm.get(s, s) for s in team_b)
     # Show season status for involved characters
     status_str = ', '.join(f'{nm.get(s,s)}:{char_season.get(s,"?")}' for s in team_a + team_b)
+
+    if verbose:
+        # ── Verbose mode: single battle with full dice-roll detail ──
+        print(f'{a_disp} v.s. {b_disp} — 详细战斗回放 [{map_size}]  seed={seed}', flush=True)
+        print(f'  赛季状态: {status_str}', flush=True)
+
+        # Boost console log level to DEBUG so dice-roll details are shown on terminal
+        ai_logger = logging.getLogger('ai_battle')
+        console_handlers = [h for h in ai_logger.handlers
+                           if isinstance(h, logging.StreamHandler) and h.stream == sys.stdout]
+        old_levels = [h.level for h in console_handlers]
+        for h in console_handlers:
+            h.setLevel(logging.DEBUG)
+
+        # Setup fighting characters (same logic as run_battle_pair)
+        a_uids = [t.char_map[s] for s in team_a]
+        b_uids = [t.char_map[s] for s in team_b]
+        fighting_serials = set(team_a + team_b)
+        eng = BattleEngine(display_level=DisplayLevel.DEBUG, delay=0.4, quiet=False)
+        for c in ALL_CHARACTERS:
+            if c['serial'] not in fighting_serials:
+                continue
+            uid = t.char_map[c['serial']]
+            load_character_to_engine(eng, c, uid)
+            if not c.get('pre_transformed'):
+                eng.process_command(uid, '.hs')
+        for uid in a_uids: t.ai_map[uid].team = 'Y'
+        for uid in b_uids: t.ai_map[uid].team = 'X'
+        eng._ai_react_dodge_w = {}; eng._ai_react_counter_w = {}; eng._ai_react_block_w = {}
+        for uid in a_uids + b_uids:
+            ai = t.ai_map.get(uid)
+            if ai:
+                eng._ai_react_dodge_w[uid] = ai.react_dodge_w
+                eng._ai_react_counter_w[uid] = ai.react_counter_w
+                eng._ai_react_block_w[uid] = getattr(ai, 'react_block_w', 0)
+        # Build per-uid season status mapping
+        if isinstance(char_season, dict):
+            uid_season = {}
+            for serial, uid in zip(team_a + team_b, a_uids + b_uids):
+                uid_season[uid] = char_season.get(serial, 50)
+        else:
+            uid_season = char_season
+        eng.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
+
+        print(f'\n{"="*60}')
+        print(f'  详细战斗回放: {a_disp} v.s. {b_disp}')
+        print(f'{"="*60}\n')
+        r = eng.run_battle(t.ai_map)
+        print(f'\n{"="*60}')
+        print(f'  结果: {"Y队" if r["winner"]=="Y" else "X队"} 胜 ({r["rounds"]}回合)')
+        if r.get('timeout'):
+            print(f'  [超时判定] Y队人均HP比={r.get("y_ratio", 0):.2f}  X队人均HP比={r.get("x_ratio", 0):.2f}')
+        if r.get('mutual_death'):
+            print(f'  [同归于尽] Y溢出={r.get("y_overflow", 0)}  X溢出={r.get("x_overflow", 0)}')
+        print(f'{"="*60}')
+
+        # Restore console log level
+        for h, old_lvl in zip(console_handlers, old_levels):
+            h.setLevel(old_lvl)
+        return
+
+    # ── Normal batch mode ──
     print(f'{a_disp} v.s. {b_disp} — {N}场 [{map_size}]  seed={seed}', flush=True)
     print(f'  赛季状态: {status_str}', flush=True)
     wins_a, wins_b, avg_rds, timeouts, elapsed = run_battle_pair(t, team_a, team_b, map_size, N, quiet=False, season_status=char_season)
@@ -299,6 +401,10 @@ def mode_table(argv):
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     print(f'JSON: {json_path}')
 
+    # Average points ranking (per competition mode)
+    rankings = compute_avg_points_ranking(matrix, team_names)
+    print_avg_points_ranking(rankings, fmt)
+
     # Contribution ranking
     print(f'\n{"="*80}')
     print('团队贡献率排行榜')
@@ -311,10 +417,12 @@ def mode_table(argv):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--mode':
-        if len(sys.argv) > 2 and sys.argv[2] == 'table':
-            mode_table(sys.argv)
+    verbose = '--verbose' in sys.argv or '-v' in sys.argv
+    argv = [a for a in sys.argv if a not in ('--verbose', '-v')]
+    if len(argv) > 1 and argv[1] == '--mode':
+        if len(argv) > 2 and argv[2] == 'table':
+            mode_table(argv)
         else:
             print('Usage: --mode table --format 1v1|2v2|3v3 [--teams "..."]')
     else:
-        mode_single(sys.argv)
+        mode_single(argv, verbose=verbose)

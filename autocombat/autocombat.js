@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         半自动战斗扩展
 // @author       fanmm
-// @version      0.7.0
+// @version      1.1.0
 // @description  CoC魔法少女半自动战斗规则扩展。支持.setab 0(最小自动化)与.setab 1(完全自动化)。
 //               前置：loganalyser/logutil v5.0+ 与 coc7扩展。
-//               v0.7.0: 召唤物战斗系统、领域效果、DOT持续伤害、Buff/Debuff应用、护盾吸收、吸血、HP阈值触发。
+//               v1.1.0: 行动力/移动力/射程系统、zone属性削减、雪人+蓝增强、AUX 23-28。
 // @timestamp    1759931652
 // @diceRequireVer 1.4.0
 // @license      MIT
@@ -15,7 +15,7 @@
 // ============================================================
 let ext = seal.ext.find('autocombat');
 if (!ext) {
-  ext = seal.ext.new('autocombat', 'fanmm', '0.6.0');
+  ext = seal.ext.new('autocombat', 'fanmm', '1.1.0');
   seal.ext.register(ext);
 }
 
@@ -23,6 +23,7 @@ if (!ext) {
 seal.ext.registerStringConfig(ext, "PvP战斗后端地址", "http://127.0.0.1:8889", "Python 战斗引擎后端地址（battle_http_server.py），用于 .setab 2 模式。");
 seal.ext.registerIntConfig(ext, "AI暂停时长下限", 5, "AI 回合之间的随机暂停时长下限（秒）。设为 0 或负数则关闭 AI 回合延迟。");
 seal.ext.registerIntConfig(ext, "AI暂停时长上限", 15, "AI 回合之间的随机暂停时长上限（秒）。必须大于下限，否则使用固定下限时长。");
+seal.ext.registerStringConfig(ext, "失败攻击允许反应", "1", "控制失败/大失败的攻击是否允许防御方反应（闪避/反击/格挡）。1=开启 0=关闭。开启时，防御方大失败闪避可能使攻方意外命中，成功反击也可在攻方攻击失败时造成伤害。");
 
 // 模式通过 .setab / .setrestim 指令切换，使用 $g 变量存储
 
@@ -34,12 +35,12 @@ seal.ext.registerIntConfig(ext, "AI暂停时长上限", 15, "AI 回合之间的�
     name: 'autocombat',
     fullName: '魔法少女半自动战斗规则',
     authors: ['fanmm'],
-    version: '0.7.0',
+    version: '1.1.0',
     updatedTime: '20260701',
     templateVer: '1.0',
     setConfig: {
       diceSides: 100,
-      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v0.5.0)',
+      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v1.1.0)',
       keys: ['autocombat', '魔法少女', 'mg', 'battleauto'],
       relatedExt: ['coc7'],
     },
@@ -577,13 +578,11 @@ function getBuffDmgMult(groupId, attackerId, defenderId) {
   let netPct = 0;
   const atkBuffs = getActiveBuffs(groupId, attackerId);
   for (const b of atkBuffs) {
-    if (b.auxCode === 3) netPct += parseInt(b.auxVal || '0') || 0;
-    else if (b.auxCode === 4) netPct -= parseInt(b.auxVal || '0') || 0;
+    if (b.auxCode === 3) netPct += parseInt(b.auxVal || '0') || 0;  // 造成伤害百分比
   }
   const defBuffs = getActiveBuffs(groupId, defenderId);
   for (const b of defBuffs) {
-    if (b.auxCode === 1) netPct += parseInt(b.auxVal || '0') || 0;
-    else if (b.auxCode === 2) netPct -= parseInt(b.auxVal || '0') || 0;
+    if (b.auxCode === 1) netPct += parseInt(b.auxVal || '0') || 0;  // 受到伤害百分比
   }
   return Math.max(0.01, 1.0 + netPct / 100.0);
 }
@@ -593,21 +592,18 @@ function getBuffHealPct(groupId, userId, healType) {
   let netPct = 0;
   const buffs = getActiveBuffs(groupId, userId);
   for (const b of buffs) {
-    if (healType === 'hp' && b.auxCode === 7) netPct += parseInt(b.auxVal || '0') || 0;
-    else if (healType === 'hp' && b.auxCode === 8) netPct -= parseInt(b.auxVal || '0') || 0;
-    else if (healType === 'mp' && b.auxCode === 5) netPct += parseInt(b.auxVal || '0') || 0;
-    else if (healType === 'mp' && b.auxCode === 6) netPct -= parseInt(b.auxVal || '0') || 0;
+    if (healType === 'hp' && b.auxCode === 7) netPct += parseInt(b.auxVal || '0') || 0;  // hp回复百分比
+    else if (healType === 'mp' && b.auxCode === 5) netPct += parseInt(b.auxVal || '0') || 0;  // mp回复百分比
   }
   return Math.max(0.01, 1.0 + netPct / 100.0);
 }
 
-/** auxCode 9-10: MP cost multiplier. */
+/** auxCode 9: MP cost multiplier (sign on auxVal). */
 function getBuffMpCostPct(groupId, userId) {
   let netPct = 0;
   const buffs = getActiveBuffs(groupId, userId);
   for (const b of buffs) {
-    if (b.auxCode === 9) netPct += parseInt(b.auxVal || '0') || 0;
-    else if (b.auxCode === 10) netPct -= parseInt(b.auxVal || '0') || 0;
+    if (b.auxCode === 9) netPct += parseInt(b.auxVal || '0') || 0;  // 魔能消耗百分比
   }
   return Math.max(0.01, 1.0 + netPct / 100.0);
 }
@@ -1535,8 +1531,16 @@ function makeBtaCmd(baseName) {
       const npcReact = npcReactions[tName] || npcReactions[tid];
       if (npcReact) {
         let autoResult = '';
-        // Simple auto-resolution: roll NPC's dodge/best melee
-        if (npcReact === 'd') {
+        // 检查是否所有攻击均失败且关闭了失败反应机制
+        const failedReactionOff = (ext.storageGet('失败攻击允许反应') || '1') === '0';
+        const allAttacksFailed = atkResults.every(ar => ar.rank <= 0);
+        if (failedReactionOff && allAttacksFailed) {
+          // 失败反应已关闭且所有攻击均失败，跳过反应
+          ext.storageSet(pKey, '');
+          autoResolveOut += `  ${tName} 攻击失败，无需反应。\n`;
+        } else {
+          // Simple auto-resolution: roll NPC's dodge/best melee
+          if (npcReact === 'd') {
           const dodgeVal = getAttr(tctx, '闪避', 25);
           const reactRoll = rollD100(tctx, '');
           const reactRank = successRank(reactRoll.result, dodgeVal);
@@ -1591,6 +1595,7 @@ function makeBtaCmd(baseName) {
         // Clear pending for auto-resolved NPC
         ext.storageSet(pKey, '');
         autoResolveOut += autoResult;
+        }  // end else (failedReaction guard)
       } else {
         targets.push({ name: tName, subTarget: tSub, userId: tid });
       }
@@ -1949,6 +1954,14 @@ function makeECmd(baseName) {
     gid = pending.groupId || gid;  // prefer pending's groupId, fallback to already-declared gid
     const attackerName = pending.attackerName;
     const defenderName = seal.format(defCtx, '{$t玩家}');
+
+    // 检查失败反应机制开关：若关闭且所有攻击均失败，则跳过反应
+    const failedReactionOff = (ext.storageGet('失败攻击允许反应') || '1') === '0';
+    const allAttacksFailed = atkResults.every(ar => ar.rank <= 0);
+    if (failedReactionOff && allAttacksFailed) {
+      seal.replyToSender(ctx, msg, '攻击已失败，当前配置下无需反应。可通过 .bta failedreaction on 开启失败反应机制。');
+      return seal.ext.newCmdExecuteResult(true);
+    }
 
     // Check if this is a spell pending → only dodge allowed
     const isSpellPending = pending.type === 'spell';
@@ -3681,6 +3694,28 @@ function handleKpCommand(ctx, msg, cmdArgs) {
     return true;
   }
 
+  if (sub === 'failedreaction') {
+    // .bta failedreaction on/off — 控制失败/大失败的攻击是否允许反应
+    // 对应海豹配置项「失败攻击允许反应」，可通过 .ext config 或此指令修改
+    const configKey = '失败攻击允许反应';
+    if (args.length < 2) {
+      const curVal = ext.storageGet(configKey) || '1';
+      const status = curVal === '0' ? '关闭（失败攻击跳过反应）' : '开启（失败攻击允许反应）';
+      seal.replyToSender(ctx, msg, `【失败反应机制】当前状态：${status}\n用法：.bta failedreaction on / off（或通过 .ext config 配置）`);
+      return true;
+    }
+    const toggle = args[1].toLowerCase();
+    if (toggle !== 'on' && toggle !== 'off' && toggle !== '1' && toggle !== '0') {
+      seal.replyToSender(ctx, msg, '用法：.bta failedreaction on/off（或 1/0）');
+      return true;
+    }
+    const val = (toggle === 'on' || toggle === '1') ? '1' : '0';
+    ext.storageSet(configKey, val);
+    const label = val === '1' ? '开启（失败攻击允许反应）' : '关闭（失败攻击跳过反应）';
+    seal.replyToSender(ctx, msg, `【失败反应机制】已设为：${label}`);
+    return true;
+  }
+
   if (sub === 'new') {
     const tplName = args[1] || 'default';
     const gid = ctx.group ? ctx.group.groupId : 'private';
@@ -4957,11 +4992,11 @@ const CAT_NAMES = { 1:'伤害', 2:'护盾', 3:'回复', 4:'辅助', 5:'召唤', 
 
 // Standard auxiliary effect types (for dropdown-based parsing)
 const AUX_EFFECT_TYPES = {
-  1:'受到伤害+', 2:'受到伤害-',
-  3:'造成伤害+', 4:'造成伤害-',
-  5:'mp回复+', 6:'mp回复-',
-  7:'hp回复+', 8:'hp回复-',
-  9:'魔能消耗+', 10:'魔能消耗-',
+  1:'受到伤害百分比', 2:'受到伤害加值',
+  3:'造成伤害百分比', 4:'伤害骰加值',
+  5:'mp回复百分比', 6:'mp回复加值',
+  7:'hp回复百分比', 8:'hp回复加值',
+  9:'魔能消耗百分比', 10:'魔能消耗加值',
   11:'致死骰优势', 12:'致死骰劣势',
   13:'伤害骰优势', 14:'伤害骰劣势',
   15:'伤害成功率加减', 16:'伤害成功率奖励惩罚',
@@ -5438,7 +5473,9 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
             mp: stats.mp, maxMp: stats.maxMp,
             dex: stats.dex, dodge: stats.dodge, mov: stats.mov,
             actions: stats.actions, canCounter: stats.canCounter,
-            canReact: stats.canReact, skills: stats.skills
+            canReact: stats.canReact, skills: stats.skills,
+            max_simultaneous: stats.max_simultaneous,
+            max_total_spawned: stats.max_total_spawned,
           });
 
           // Add to initiative (summon acts on summoner's team)
@@ -5626,7 +5663,8 @@ function loadSummonTemplates(ctx) {
     if (!name) continue;
     const tmpl = { index: i, name };
     const baseKeys = ['HP','MP','SAN','STR','CON','SIZ','DEX','APP','INT','POW','EDU',
-                      '闪避','MOV','行动次数','可反击','可反应'];
+                      '闪避','MOV','行动次数','可反击','可反应',
+                      'max_simultaneous', 'max_total_spawned'];
     for (const k of baseKeys) {
       const v = seal.vars.intGet(ctx, `${prefix}${k}`);
       if (v[1]) tmpl[k] = v[0];
@@ -5683,7 +5721,9 @@ function getSummonStats(tmpl) {
     canReact: tmpl['可反应'] || 1,
     skills: tmpl.skills || [],
     str: tmpl.STR || 50, con: tmpl.CON || 50, siz: tmpl.SIZ || 50,
-    app: tmpl.APP || 50, int: tmpl.INT || 50, pow: tmpl.POW || 50, edu: tmpl.EDU || 50
+    app: tmpl.APP || 50, int: tmpl.INT || 50, pow: tmpl.POW || 50, edu: tmpl.EDU || 50,
+    max_simultaneous: tmpl.max_simultaneous,
+    max_total_spawned: tmpl.max_total_spawned,
   };
 }
 
@@ -6973,6 +7013,6 @@ ext.onCommandReceived = (ctx, msg, cmdArgs) => {
   }
 };
 
-console.log('[autocombat] 半自动战斗扩展 v0.7.0 已加载');
+console.log('[autocombat] 半自动战斗扩展 v1.1.0 已加载');
 console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end');
-console.log('[autocombat] v0.7.0: 召唤物战斗系统、领域效果、DOT持续伤害、Buff/Debuff应用、护盾吸收、吸血、HP阈值触发');
+console.log('[autocombat] v1.1.0: 行动力/移动力/射程系统、zone属性削减、雪人+蓝增强、AUX 23-28');
