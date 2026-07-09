@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         半自动战斗扩展
 // @author       fanmm
-// @version      1.1.0
+// @version      1.3.0
 // @description  CoC魔法少女半自动战斗规则扩展。支持.setab 0(最小自动化)与.setab 1(完全自动化)。
 //               前置：loganalyser/logutil v5.0+ 与 coc7扩展。
+//               v1.3.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端。
+//               v1.2.0: .setaiact AI策略手动注入、同步setab=2全部功能。
 //               v1.1.0: 行动力/移动力/射程系统、zone属性削减、雪人+蓝增强、AUX 23-28。
-// @timestamp    1759931652
+// @timestamp    1751983200
 // @diceRequireVer 1.4.0
 // @license      MIT
 // ==/UserScript==
@@ -15,15 +17,19 @@
 // ============================================================
 let ext = seal.ext.find('autocombat');
 if (!ext) {
-  ext = seal.ext.new('autocombat', 'fanmm', '1.1.0');
+  ext = seal.ext.new('autocombat', 'fanmm', '1.3.0');
   seal.ext.register(ext);
 }
 
 // ── 扩展配置项 ──
 seal.ext.registerStringConfig(ext, "PvP战斗后端地址", "http://127.0.0.1:8889", "Python 战斗引擎后端地址（battle_http_server.py），用于 .setab 2 模式。");
-seal.ext.registerIntConfig(ext, "AI暂停时长下限", 5, "AI 回合之间的随机暂停时长下限（秒）。设为 0 或负数则关闭 AI 回合延迟。");
-seal.ext.registerIntConfig(ext, "AI暂停时长上限", 15, "AI 回合之间的随机暂停时长上限（秒）。必须大于下限，否则使用固定下限时长。");
-seal.ext.registerStringConfig(ext, "失败攻击允许反应", "1", "控制失败/大失败的攻击是否允许防御方反应（闪避/反击/格挡）。1=开启 0=关闭。开启时，防御方大失败闪避可能使攻方意外命中，成功反击也可在攻方攻击失败时造成伤害。");
+seal.ext.registerIntConfig(ext, "AI暂停时长下限", 1, "AI 回合之间的随机暂停时长下限（秒）。设为 0 或负数则关闭 AI 回合延迟。");
+seal.ext.registerIntConfig(ext, "AI暂停时长上限", 5, "AI 回合之间的随机暂停时长上限（秒）。必须大于下限，否则使用固定下限时长。");
+seal.ext.registerIntConfig(ext, "失败攻击允许反应", 1, "控制失败/大失败的攻击是否允许防御方反应（闪避/反击/格挡）。1=开启 0=关闭。开启时，防御方大失败闪避可能使攻方意外命中，成功反击也可在攻方攻击失败时造成伤害。");
+seal.ext.registerIntConfig(ext, "pictmode", 1, "战斗消息图片模式: 0=纯文本, 1=渲染为图片。需要 battle_http_server.py 运行中。");
+seal.ext.registerIntConfig(ext, "自动战斗模式", 1, "0=最小自动化(.setab 0), 1=完全自动化(.setab 1), 2=Python后端(.setab 2)。可通过 .setab <N> 指令切换。");
+seal.ext.registerIntConfig(ext, "检定公布时机", 0, "0=攻击时立即公布(.setrestim 0), 1=反应后一并公布(.setrestim 1)。可通过 .setrestim <N> 指令切换。");
+seal.ext.registerBoolConfig(ext, "AI回合延迟", true, "AI 回合之间随机延迟 1-5 秒，模拟真人操作节奏。关闭后 AI 行动合并转发。");
 
 // 模式通过 .setab / .setrestim 指令切换，使用 $g 变量存储
 
@@ -35,12 +41,12 @@ seal.ext.registerStringConfig(ext, "失败攻击允许反应", "1", "控制失�
     name: 'autocombat',
     fullName: '魔法少女半自动战斗规则',
     authors: ['fanmm'],
-    version: '1.1.0',
-    updatedTime: '20260701',
+    version: '1.3.0',
+    updatedTime: '20260708',
     templateVer: '1.0',
     setConfig: {
       diceSides: 100,
-      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v1.1.0)',
+      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v1.3.0)',
       keys: ['autocombat', '魔法少女', 'mg', 'battleauto'],
       relatedExt: ['coc7'],
     },
@@ -151,11 +157,14 @@ function rollD100(ctx, bpStr) {
   }
 
   // Apply bonus (take lowest tens) or penalty (take highest tens)
+  // When units===0, tens of 0 means result=100 (worst), so treat as 10 for comparison
   for (const t of extraTens) {
+    const effectiveT = (units === 0 && t === 0) ? 10 : t;
+    const effectiveBest = (units === 0 && bestTens === 0) ? 10 : bestTens;
     if (type === 'b') {
-      if (t < bestTens) bestTens = t;
+      if (effectiveT < effectiveBest) bestTens = t;
     } else {
-      if (t > bestTens) bestTens = t;
+      if (effectiveT > effectiveBest) bestTens = t;
     }
   }
 
@@ -253,9 +262,8 @@ function calcNetBp(buffs, bpSuffix, skillName) {
 function successRank(d100, skillVal, critModPct = 0.0, critModFlat = 0) {
   if (skillVal <= 0) return d100 <= 5 ? 4 : (d100 >= 96 ? -2 : -1);
   if (d100 === 1) return 4;
-  if (d100 === 100) return -2;
+  if (d100 >= 96) return -2;  // 96-100 = 大失败 (aligned with Python engine)
   if (d100 > skillVal) {
-    if (skillVal < 50 && d100 >= 96) return -2;
     return -1;
   }
   let rank = 1;
@@ -827,10 +835,10 @@ function calcDamageValue(diceCtx, loserUserId, winnerUserId, groupId,
     if (lethRoll <= lethThreshold) {
       curHP = 0;
     } else {
-      curHP = Math.max(0, Math.floor(curHP - effectiveDmg));
+      curHP = Math.max(0, curHP - effectiveDmg);
     }
   } else {
-    curHP = Math.max(0, Math.floor(curHP - effectiveDmg));
+    curHP = Math.max(0, curHP - effectiveDmg);
   }
 
   hpStore[loserUserId] = curHP;
@@ -921,10 +929,15 @@ function resolveDamage(diceCtx, loserUserId, winnerUserId, groupId,
       curHP = 0;
     } else {
       out += `> ${lethThreshold}，失败，战斗继续\n`;
-      curHP = Math.max(0, Math.floor(curHP - dmgValue));
+      curHP = Math.max(0, curHP - dmgValue);
     }
   } else {
-    curHP = Math.max(0, Math.floor(curHP - dmgValue));
+    // Apply shield absorption before subtracting from HP
+    const shieldResult = absorbDamageWithShield(groupId, loserUserId, dmgValue);
+    if (shieldResult.shieldMsgs.length > 0) {
+      out += shieldResult.shieldMsgs.map(m => `  ${m}`).join('\n') + '\n';
+    }
+    curHP = Math.max(0, curHP - shieldResult.remainingDamage);
   }
 
   // Write HP back to combat store
@@ -997,10 +1010,12 @@ cmdSetrestim.solve = (ctx, msg, cmdArgs) => {
   switch (val) {
     case '0':
       seal.vars.intSet(ctx, '$gRestimMode', 0);
+      ext.storageSet(`bta_restim_${ctx.player.userId}`, '0');
       seal.replyToSender(ctx, msg, '已切换：攻击时立即公布检定结果。');
       break;
     case '1':
       seal.vars.intSet(ctx, '$gRestimMode', 1);
+      ext.storageSet(`bta_restim_${ctx.player.userId}`, '1');
       seal.replyToSender(ctx, msg, '已切换：反应动作后才一并公布双方检定结果。');
       break;
     default:
@@ -1213,7 +1228,7 @@ function makeBtaCmd(baseName) {
     `.btap ...  // 惩罚骰\n` +
     `.btab2 ... // 2个奖励骰（以此类推）`;
   cmd.allowDelegate = true;  // mctx=@对象, ctx=自身
-  cmd.solve = (ctx, msg, cmdArgs) => {
+  cmd.solve = async (ctx, msg, cmdArgs) => {
     // --- Check for kp GM sub-commands first (no @target needed) ---
     const _cleanArgs_str = (cmdArgs.cleanArgs || '');
     console.log('UI:1002', `[DEBUG bta] makeBtaCmd('${baseName}') 入口 cleanArgs="${_cleanArgs_str}"`);
@@ -1223,28 +1238,93 @@ function makeBtaCmd(baseName) {
     }
 
     // --- .setab 2 HTTP path: route attack through Python backend ---
-    const _gid = ctx.group ? ctx.group.groupId : 'private';
+    const _gid = getGid(ctx);
     const _autoMode = getAutoMode(ctx);
     const _battleId = ext.storageGet(`pvp_battle_${_gid}`);
     console.log('UI:1002', `[DEBUG bta] autoMode=${_autoMode} battleId=${_battleId}`);
     if (_autoMode >= 2 && _battleId) {
-      const _targetMctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      const _proxyMctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      const _actingPlayerId = (_proxyMctx && _proxyMctx.player && _proxyMctx.player.userId !== ctx.player.userId)
+          ? _proxyMctx.player.userId : ctx.player.userId;
       let _targetId = '';
-      if (_targetMctx && _targetMctx.player && _targetMctx.player.userId !== ctx.player.userId) {
-        _targetId = _targetMctx.player.userId;
+      // ── Full .bta arg parsing for .setab 2 (mirrors local path) ──
+      const _cmdNameS2 = cmdArgs.command.toLowerCase();
+      let _bpSuffixS2 = '';
+      if (_cmdNameS2.startsWith('btab')) _bpSuffixS2 = 'b' + (_cmdNameS2.substring(4) || '');
+      else if (_cmdNameS2.startsWith('btap')) _bpSuffixS2 = 'p' + (_cmdNameS2.substring(4) || '');
+
+      let _argsS2 = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+
+      // Extract count (n#) from any position
+      let _countS2 = 1;
+      _argsS2 = _argsS2.filter(a => {
+        const m = a.match(/^(\d+)#$/);
+        if (m) { _countS2 = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+        return true;
+      });
+
+      let _skillNameS2 = '', _skillValueS2 = null, _dmgDiceS2 = '', _penS2 = null, _lethS2 = null;
+      let _aiS2 = 0;
+
+      if (_argsS2.length >= 1) {
+        const first = _argsS2[0];
+        if (/^\d*d\d+/i.test(first)) {
+          // First arg is damage dice pattern (e.g. "4d10") → use default best melee skill
+          _dmgDiceS2 = normalizeDice(first);
+          _aiS2 = 1;
+        } else if (/^\d+$/.test(first)) {
+          // Pure number → custom skill value (e.g. "70")
+          _skillValueS2 = parseInt(first);
+          _aiS2 = 1;
+          // Next arg may be damage dice (e.g. "70 4d10")
+          if (_aiS2 < _argsS2.length && /d/i.test(_argsS2[_aiS2])) {
+            _dmgDiceS2 = normalizeDice(_argsS2[_aiS2]);
+            _aiS2++;
+          }
+        } else {
+          // Named skill (e.g. "斗殴", "斗殴a")
+          const _sp = parseSkillValue(ctx, first);
+          _skillNameS2 = _sp.name;
+          if (_sp.isRaw) _skillValueS2 = _sp.value;
+          else _skillValueS2 = null;  // null → Python uses character default
+          _aiS2 = 1;
+        }
       }
+
+      // Parse optional: damage_dice, penetration (0/1), lethality (0/1)
+      if (_aiS2 < _argsS2.length && !_dmgDiceS2) {
+        let cand = _argsS2[_aiS2];
+        if (/d/i.test(cand)) { _dmgDiceS2 = normalizeDice(cand); _aiS2++; }
+        else if (/^\d+$/.test(cand)) { _dmgDiceS2 = cand; _aiS2++; }
+      }
+      if (_aiS2 < _argsS2.length && /^[01]$/.test(_argsS2[_aiS2])) { _penS2 = parseInt(_argsS2[_aiS2]); _aiS2++; }
+      if (_aiS2 < _argsS2.length && /^[01]$/.test(_argsS2[_aiS2])) { _lethS2 = parseInt(_argsS2[_aiS2]); _aiS2++; }
+
+      // Remaining args → target spec (e.g. "1" for target #1, "RP" for random)
+      const _targetArgS2 = _argsS2.slice(_aiS2).join(' ');
+
+      const _restimMode = ext.storageGet(`bta_restim_${_actingPlayerId}`) || '0';
+      const _failedReaction = seal.ext.getIntConfig(ext, '失败攻击允许反应');
       pvpFetch(`/api/pvp/${_battleId}/action`, {
-        player_id: ctx.player.userId,
+        player_id: _actingPlayerId,
         action: '.s0',
         target: _targetId,
-        args: cmdArgs.cleanArgs,
-      }).then(_result => {
+        args: _targetArgS2,
+        count: _countS2,
+        skill_name: _skillNameS2,
+        skill_value: _skillValueS2,
+        damage_dice: _dmgDiceS2 || '',
+        penetration: _penS2,
+        lethality: _lethS2,
+        bp_suffix: _bpSuffixS2,
+        restim_mode: _restimMode,
+        allow_failed_reaction: _failedReaction,
+      }).then(async _result => {
         if (_result.error) {
           seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
           return;
         }
-        const _out = renderBattleResponse(_gid, _result, ctx, msg);
-        seal.replyToSender(ctx, msg, _out);
+        if (renderBattleResponse) await renderBattleResponse(_gid, _result, ctx, msg);
       });
       return seal.ext.newCmdExecuteResult(true);
     }
@@ -1272,7 +1352,7 @@ function makeBtaCmd(baseName) {
     let atkCount = 1;
     args = args.filter(a => {
       const m = a.match(/^(\d+)#$/);
-      if (m) { atkCount = Math.max(1, Math.min(20, parseInt(m[1]))); return false; }
+      if (m) { atkCount = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
       return true;
     });
 
@@ -1386,7 +1466,7 @@ function makeBtaCmd(baseName) {
     // Roll attack(s) — one D100 per attack
     const attackerName = seal.format(ctx, '{$t玩家}');
     const targetName = seal.format(mctx, '{$t玩家}');
-    const groupId = ctx.group ? ctx.group.groupId : 'private';
+    const groupId = getGid(ctx);
     initCombatHP(groupId, ctx.player.userId, ctx, mctx.player.userId, mctx);
 
     // --- Apply active buffs/debuffs to attacker's skill ---
@@ -1450,7 +1530,7 @@ function makeBtaCmd(baseName) {
     }
 
     // Melee: store pending attacks for each target (even fumbles — defender may counter)
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
 
     // --- Melee range check: attacker & target must be within 5x5 square ---
     if (!isRangedSkill(displaySkillName)) {
@@ -1528,11 +1608,36 @@ function makeBtaCmd(baseName) {
       ext.storageSet(pKey, JSON.stringify(pendingData));
 
       // Check if NPC has preset reaction → auto-resolve
-      const npcReact = npcReactions[tName] || npcReactions[tid];
+      let npcReact = npcReactions[tName] || npcReactions[tid];
+      // Also check per-serial reaction count (Feature 3: .ec N# stored preferences)
+      if (!npcReact) {
+        const tBindRaw = ext.storageGet(`bta_bind_${gid}_${tid}`);
+        let tSerial = '';
+        if (tBindRaw) { try { tSerial = JSON.parse(tBindRaw).serial; } catch(e) {} }
+        if (tSerial) {
+          const rctKey = `bta_react_count_${gid}_${tSerial}`;
+          const rctRaw = ext.storageGet(rctKey);
+          if (rctRaw) {
+            try {
+              const rct = JSON.parse(rctRaw);
+              if (rct.remaining > 0) {
+                npcReact = rct.type === 'dodge' ? 'd' : rct.type === 'block' ? 'b' : 'c';
+                // Decrement remaining count
+                rct.remaining--;
+                if (rct.remaining <= 0) {
+                  ext.storageSet(rctKey, '');
+                } else {
+                  ext.storageSet(rctKey, JSON.stringify(rct));
+                }
+              }
+            } catch(e) {}
+          }
+        }
+      }
       if (npcReact) {
         let autoResult = '';
         // 检查是否所有攻击均失败且关闭了失败反应机制
-        const failedReactionOff = (ext.storageGet('失败攻击允许反应') || '1') === '0';
+        const failedReactionOff = seal.ext.getIntConfig(ext, '失败攻击允许反应') === 0;
         const allAttacksFailed = atkResults.every(ar => ar.rank <= 0);
         if (failedReactionOff && allAttacksFailed) {
           // 失败反应已关闭且所有攻击均失败，跳过反应
@@ -1663,18 +1768,88 @@ function makeECmd(baseName) {
     '.e c 技能a ...  // 反击使用后缀a的技能和伤害值\n' +
     '.eb / .ep // 奖惩骰变体';
   cmd.allowDelegate = true;
-  cmd.solve = (ctx, msg, cmdArgs) => {
+  cmd.solve = async (ctx, msg, cmdArgs) => {
     // ctx = 自身(反应者)
     const defCtx = ctx;
-    let gid = ctx.group ? ctx.group.groupId : 'private';
+    let gid = getGid(ctx);
 
     // --- .setab 2 HTTP path: route reaction through Python backend ---
     const _autoMode = getAutoMode(ctx);
     const _battleId = ext.storageGet(`pvp_battle_${gid}`);
     if (_autoMode >= 2 && _battleId) {
+      const _eMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+      const _eActingId = _eMctx.player ? _eMctx.player.userId : ctx.player.userId;
       const pendingRaw = ext.storageGet(`pvp_pending_${gid}`);
+      // ── Parse args early (needed for both pending and non-pending paths) ──
+      let args3 = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+      let reactCount3 = 1;
+      args3 = args3.filter(a => {
+        const m = a.match(/^(\d+)#$/);
+        if (m) { reactCount3 = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+        return true;
+      });
+      if (args3.length < 1) {
+        seal.replyToSender(ctx, msg, '[.setab 2] 请指定反应类型：\n.e 闪避 / .e d\n.e 反击 / .e c');
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      const reactType3 = args3[0].toLowerCase();
+      const isDodge3 = reactType3 === '闪避' || reactType3 === 'd' || reactType3 === '闪' || reactType3 === 'dodge';
+      const isBlock3 = reactType3 === '格挡' || reactType3 === 'block' || reactType3 === 'b' || reactType3 === '盾';
+      const isCounter3 = reactType3 === '反击' || reactType3 === 'c' || reactType3 === 'counter' || reactType3 === '反';
+      if (!isDodge3 && !isCounter3 && !isBlock3) {
+        seal.replyToSender(ctx, msg, `[.setab 2] 未识别的反应类型 "${args3[0]}"，默认使用反击。`);
+      }
+      const choice3 = isDodge3 ? 'dodge' : isBlock3 ? 'block' : 'counter';
+
       if (!pendingRaw) {
-        seal.replyToSender(ctx, msg, '[.setab 2] 当前没有待处理的反应！');
+        // ── 无待处理反应：仅设置自动反应偏好（非自身回合/战斗外也允许） ──
+        if (reactCount3 <= 1) {
+          seal.replyToSender(ctx, msg, '[.setab 2] 当前没有待处理的反应！\n（提示：使用 .e c 99# 或 .e d 99# 可预设自动反应方式）');
+          return seal.ext.newCmdExecuteResult(true);
+        }
+        // Determine player's controlled serial
+        let mySerial = null;
+        const bindRaw2 = ext.storageGet(`bta_bind_${gid}_${_eActingId}`);
+        if (bindRaw2) {
+          try { const b2 = JSON.parse(bindRaw2); mySerial = b2.serial; } catch(_e) {}
+        }
+        if (!mySerial) {
+          // Try reverse lookup: find any serial this player controls
+          for (let _si = 1; _si <= 20; _si++) {
+            const revRaw2 = ext.storageGet(`bta_serial_${gid}_Y${_si}`);
+            if (revRaw2) {
+              try { if (JSON.parse(revRaw2).includes(_eActingId)) { mySerial = `Y${_si}`; break; } } catch(_e) {}
+            }
+          }
+        }
+        if (!mySerial) {
+          seal.replyToSender(ctx, msg, '[.setab 2] 未找到你绑定的角色。请先使用 .as <序号> 绑定角色再设置自动反应。');
+          return seal.ext.newCmdExecuteResult(true);
+        }
+        // Store auto-react preference locally
+        const rctKeyLocal = `bta_react_count_${gid}_${mySerial}`;
+        const rctTypeLocal = choice3;
+        ext.storageSet(rctKeyLocal, JSON.stringify({ type: rctTypeLocal, remaining: reactCount3 }));
+        // Send to Python backend
+        const autoReactPayload = {
+          player_id: _eActingId,
+          choice: choice3,
+          react_count: reactCount3,
+          react_type: choice3,
+          set_auto_only: true,
+          serial: mySerial,
+        };
+        try {
+          const _arResult = await pvpFetch(`/api/pvp/${_battleId}/react`, autoReactPayload);
+          if (_arResult.error) {
+            seal.replyToSender(ctx, msg, `[.setab 2] ${_arResult.message}`);
+          } else {
+            const labLabel = isDodge3 ? '闪避' : isBlock3 ? '格挡' : '反击';
+            seal.replyToSender(ctx, msg, `[.setab 2] 已为【${mySerial}】设定自动反应：${labLabel} ×${reactCount3}（非自身回合/战斗外预设）`);
+          }
+        } catch (e2) {
+          seal.replyToSender(ctx, msg, `[.setab 2] 自动反应设置失败: ${e2.message || e2}`);
+        }
         return seal.ext.newCmdExecuteResult(true);
       }
       let pending;
@@ -1683,13 +1858,13 @@ function makeECmd(baseName) {
         ext.storageSet(`pvp_pending_${gid}`, '');
         return seal.ext.newCmdExecuteResult(true);
       }
-      if (pending.defender_id && pending.defender_id !== ctx.player.userId) {
+      if (pending.defender_id && pending.defender_id !== _eActingId) {
         // In multi-PvP mode, the player may control the defender via .as binding.
         // Check if the player is bound to the defender's serial number.
         let canReact = false;
         if (pending.defender_serial) {
           // Check personal binding
-          const bindRaw = ext.storageGet(`bta_bind_${ctx.player.userId}`);
+          const bindRaw = ext.storageGet(`bta_bind_${gid}_${ctx.player.userId}`);
           if (bindRaw) {
             try {
               const bind = JSON.parse(bindRaw);
@@ -1700,7 +1875,7 @@ function makeECmd(baseName) {
           }
           // Also check reverse mapping (shared control via multiple .as)
           if (!canReact) {
-            const revRaw = ext.storageGet(`bta_serial_${pending.defender_serial}`);
+            const revRaw = ext.storageGet(`bta_serial_${gid}_${pending.defender_serial}`);
             if (revRaw) {
               try {
                 const rev = JSON.parse(revRaw);
@@ -1710,44 +1885,86 @@ function makeECmd(baseName) {
               } catch(_e) {}
             }
           }
+        } else {
+          // No serial: summon or other entity — defer to server-side _player_controllers check
+          canReact = true;
         }
         if (!canReact) {
           seal.replyToSender(ctx, msg, `[.setab 2] 该反应的目标是 ${pending.defender_name}，不是你！`);
           return seal.ext.newCmdExecuteResult(true);
         }
       }
-      // Parse reaction type
-      const args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
-      if (args.length < 1) {
-        seal.replyToSender(ctx, msg, '[.setab 2] 请指定反应类型：\n.e 闪避 / .e d\n.e 反击 / .e c');
-        return seal.ext.newCmdExecuteResult(true);
-      }
-      const reactType = args[0];
-      const isDodge = reactType === '闪避' || reactType === 'd' || reactType === '闪' || reactType === 'dodge';
-      const isBlock = reactType === '格挡' || reactType === 'block' || reactType === 'b' || reactType === '盾';
-      const isCounter = reactType === '反击' || reactType === 'c' || reactType === 'counter' || reactType === '反';
-      if (!isDodge && !isCounter && !isBlock) {
-        seal.replyToSender(ctx, msg, '[.setab 2] 不支持的反应类型。请使用：闪避/d、格挡/b 或 反击/c');
-        return seal.ext.newCmdExecuteResult(true);
-      }
-      const choice = isDodge ? 'dodge' : isBlock ? 'block' : 'counter';
-      // 格挡需要检查可格挡能力
-      if (isBlock && pending.can_block === false) {
+      // Pending-specific: block availability check
+      if (isBlock3 && pending.can_block === false) {
         seal.replyToSender(ctx, msg, '[.setab 2] 该角色不具备格挡能力（需要可格挡属性），无法使用格挡反应。');
         return seal.ext.newCmdExecuteResult(true);
       }
-      pvpFetch(`/api/pvp/${_battleId}/react`, {
-        player_id: ctx.player.userId,
-        choice: choice,
-      }).then(_result => {
-        if (_result.error) {
-          seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
+      // Store reaction count preference per serial for auto-reactions
+      if (reactCount3 > 1) {
+        const ser3 = pending.defender_serial || '';
+        if (ser3) {
+          const rctKey3 = `bta_react_count_${gid}_${ser3}`;
+          const rctType3 = isDodge3 ? 'dodge' : isBlock3 ? 'block' : 'counter';
+          ext.storageSet(rctKey3, JSON.stringify({ type: rctType3, remaining: reactCount3 - 1 }));
+        }
+      }
+      // Build auto-reaction payload for Python backend persistence
+      const _reactPayload = {
+        player_id: _eActingId,
+        choice: choice3,
+      };
+      if (reactCount3 > 1) {
+        _reactPayload.react_count = reactCount3 - 1;
+        _reactPayload.react_type = choice3;
+      }
+      pvpFetch(`/api/pvp/${_battleId}/react`, _reactPayload).then(async _result3 => {
+        if (_result3.error) {
+          seal.replyToSender(ctx, msg, `[.setab 2] ${_result3.message}`);
           return;
         }
-        ext.storageSet(`pvp_pending_${gid}`, '');  // clear the reaction we just resolved
-        const _out = renderBattleResponse(gid, _result, ctx, msg);
-        seal.replyToSender(ctx, msg, _out);
+        ext.storageSet(`pvp_pending_${gid}`, '');
+        if (reactCount3 > 1) {
+          const lab3 = isDodge3 ? '闪避' : isBlock3 ? '格挡' : '反击';
+          _result3.output = (_result3.output || '') + `\n（自动反应已设定：${lab3} ×${reactCount3 - 1}）`;
+        }
+        await renderBattleResponse(gid, _result3, ctx, msg);
       });
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    // ── setab=2 模式但无活跃战斗：仍允许设置自动反应偏好（仅本地存储） ──
+    if (_autoMode >= 2 && !_battleId) {
+      let argsNB = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+      let reactCountNB = 1;
+      argsNB = argsNB.filter(a => {
+        const m = a.match(/^(\d+)#$/);
+        if (m) { reactCountNB = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+        return true;
+      });
+      if (argsNB.length < 1 || reactCountNB <= 1) {
+        seal.replyToSender(ctx, msg, '[.setab 2] 当前无活跃战斗，无需反应。\n（提示：使用 .e c 99# 或 .e d 99# 可预设自动反应方式）');
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      const reactTypeNB = argsNB[0].toLowerCase();
+      const isDodgeNB = reactTypeNB === '闪避' || reactTypeNB === 'd' || reactTypeNB === '闪' || reactTypeNB === 'dodge';
+      const isBlockNB = reactTypeNB === '格挡' || reactTypeNB === 'block' || reactTypeNB === 'b' || reactTypeNB === '盾';
+      const isCounterNB = reactTypeNB === '反击' || reactTypeNB === 'c' || reactTypeNB === 'counter' || reactTypeNB === '反';
+      const choiceNB = isDodgeNB ? 'dodge' : isBlockNB ? 'block' : 'counter';
+      // Determine player's controlled serial
+      let mySerialNB = null;
+      const bindRawNB = ext.storageGet(`bta_bind_${gid}_${ctx.player.userId}`);
+      if (bindRawNB) {
+        try { const bNB = JSON.parse(bindRawNB); mySerialNB = bNB.serial; } catch(_e) {}
+      }
+      if (!mySerialNB) {
+        seal.replyToSender(ctx, msg, '[.setab 2] 未找到你绑定的角色。请先使用 .as <序号> 绑定角色再设置自动反应。');
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      // Store locally — will be applied when a battle is created
+      const rctKeyNB = `bta_react_count_${gid}_${mySerialNB}`;
+      ext.storageSet(rctKeyNB, JSON.stringify({ type: choiceNB, remaining: reactCountNB }));
+      const labNB = isDodgeNB ? '闪避' : isBlockNB ? '格挡' : '反击';
+      seal.replyToSender(ctx, msg, `[.setab 2] 已为【${mySerialNB}】预设自动反应：${labNB} ×${reactCountNB}（战斗外预存，进入战斗后生效）`);
       return seal.ext.newCmdExecuteResult(true);
     }
 
@@ -1801,7 +2018,14 @@ function makeECmd(baseName) {
     else if (cmdName.startsWith('ep')) bpSuffix = 'p' + (cmdName.substring(2) || '');
 
     // Parse reaction type
-    const args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+    let args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+    // --- Extract n# count suffix (e.g. .ec 3# or .ec3#) ---
+    let reactCount = 1;
+    args = args.filter(a => {
+      const m = a.match(/^(\d+)#$/);
+      if (m) { reactCount = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+      return true;
+    });
     if (args.length < 1) {
       seal.replyToSender(ctx, msg, '请指定反应类型：\n.e 闪避 或 .e d\n.e 格挡 或 .e b\n.e 反击 [技能名] 或 .e c [技能名]');
       return seal.ext.newCmdExecuteResult(true);
@@ -2064,6 +2288,20 @@ function makeECmd(baseName) {
     }
     if (atkHits === 0 && defHits === 0) {
       out += `无人得手！`;
+    }
+
+    // --- Store reaction count preference (per serial) ---
+    if (reactCount > 1) {
+      const bindRaw = ext.storageGet(`bta_bind_${gid}_${ctx.player.userId}`);
+      let serial = '';
+      if (bindRaw) { try { serial = JSON.parse(bindRaw).serial; } catch(e) {} }
+      if (serial) {
+        const rctKey = `bta_react_count_${gid}_${serial}`;
+        const remaining = reactCount - 1;  // consumed 1 for current reaction
+        const rctType = isDodge ? 'dodge' : isBlock ? 'block' : 'counter';
+        ext.storageSet(rctKey, JSON.stringify({ type: rctType, remaining }));
+        out += `\n（自动反应已设定：${rctType === 'counter' ? '反击' : rctType === 'dodge' ? '闪避' : '格挡'} ×${remaining}）`;
+      }
     }
 
     ext.storageSet(pendingKey, '');
@@ -2593,22 +2831,24 @@ cmdAs.help =
   '  战斗中：.as 3 → 绑定先攻表第3位（一次性位次绑定）\n' +
   '  战斗中：.as Y1 → 绑定魔法少女序号（持久绑定）\n' +
   '已加入时追加操控角色，不替换已有绑定。';
+cmdAs.allowDelegate = true;
 cmdAs.solve = (ctx, msg, cmdArgs) => {
-  const val = cmdArgs.getArgN(1);
-  const uid = ctx.player.userId;
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const allArgs = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+  const _asMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+  const uid = _asMctx.player.userId;
+  const gid = getGid(ctx);
   const pn = seal.format(ctx, '{$t玩家}');
   const romanMap = { 'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10 };
 
-  if (!val) {
+  if (allArgs.length === 0) {
     // ── No argument: show current bindings ──
-    const mySerialsKey = `bta_my_serials_${uid}`;
+    const mySerialsKey = `bta_my_serials_${gid}_${uid}`;
     const myRaw = ext.storageGet(mySerialsKey);
     let mySerials = [];
     if (myRaw) { try { mySerials = JSON.parse(myRaw); } catch(e) {} }
     if (mySerials.length === 0) {
       // Fallback to single binding
-      const bindRaw = ext.storageGet(`bta_bind_${uid}`);
+      const bindRaw = ext.storageGet(`bta_bind_${gid}_${uid}`);
       if (bindRaw) {
         try { const b = JSON.parse(bindRaw); if (b.serial) mySerials = [b.serial]; } catch(e) {}
       }
@@ -2636,44 +2876,44 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
     return seal.ext.newCmdExecuteResult(true);
   }
 
-  // ── Parse input ──
-  const lower = val.toLowerCase();
-  const isNumeric = /^\d+$/.test(val);
-  let serial = val;
-  if (romanMap[lower] !== undefined) serial = String(romanMap[lower]);
-
+  // ── Process each argument ──
   const abMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
-  let turnIndex = null;       // non-null if bound via initiative index
-  let resolvedSerial = serial;
-  let charInfo = null;        // resolved character info for rich output
+  const outputs = [];
+  const pvpPromises = [];  // for setab=2 batch mode
 
-  // ══════════════════════════════════════════════════════════
-  //  Resolve binding target
-  // ══════════════════════════════════════════════════════════
+  for (const val of allArgs) {
+    const lower = val.toLowerCase();
+    const isNumeric = /^\d+$/.test(val);
+    let serial = val;
+    if (romanMap[lower] !== undefined) serial = String(romanMap[lower]);
 
-  if (abMode === 2 && battleId) {
-    // ── /setab2 mode: delegate to server ──
-    const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
-    const sendPayload = { player_id: uid };
-    if (isNumeric) {
-      sendPayload.init_index = parseInt(val);
-      turnIndex = parseInt(val);
-    } else {
-      sendPayload.serial = serial;
-    }
-    fetch(serverUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sendPayload),
-    }).then(r => r.json()).then(result => {
-      if (result.error) {
-        // Server battle gone (e.g. server restart) — clear stale id, fall back to local binding
-        ext.storageSet(`pvp_battle_${gid}`, '');
-        storeLocalBinding(uid, resolvedSerial, gid);
-        seal.replyToSender(ctx, msg, `${pn} 已绑定【${resolvedSerial}】（本地）`);
+    let turnIndex = null;
+    let resolvedSerial = serial;
+    let charInfo = null;
+
+    // ══════════════════════════════════════════════════════════
+    //  Resolve binding target
+    // ══════════════════════════════════════════════════════════
+
+    if (abMode === 2 && battleId) {
+      // ── /setab2 mode: delegate to server ──
+      const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
+      const sendPayload = { player_id: uid };
+      if (isNumeric) {
+        sendPayload.init_index = parseInt(val);
+        turnIndex = parseInt(val);
       } else {
-        // Also store local tracking
+        sendPayload.serial = serial;
+      }
+      const promise = fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sendPayload),
+      }).then(r => r.json()).then(result => {
+        if (result.error) {
+          return `⚠ 绑定失败：${result.message || '未找到指定角色'}`;
+        }
         storeLocalBinding(uid, result.serial || serial, gid);
         const charName = result.char_name || serial;
         const label = turnIndex ? `先攻表#${turnIndex}` : serial;
@@ -2685,18 +2925,15 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
             `【${c.serial || '?'}】${c.name}${c.is_summon ? '(召)' : ''}`).join(', ');
           bindMsg += `\n你当前控制: ${names}`;
         }
-        // Display initiative list and player bindings
-        if (result.initiative_text) {
-          bindMsg += '\n' + result.initiative_text;
-        }
+        if (result.initiative_text) bindMsg += '\n' + result.initiative_text;
         if (result.controlled_characters) {
           bindMsg += '\n\n【玩家绑定】';
           for (const [pid, chars] of Object.entries(result.controlled_characters)) {
-            const names = chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ');
+            const names = chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ');
             bindMsg += `\n  ${pid}: ${names}`;
           }
         }
-        seal.replyToSender(ctx, msg, bindMsg);
+        // Auto-turns (only show for last binding result)
         if (result.auto_turns && result.auto_turns.length > 0) {
           const nodes = result.auto_turns.map((t, i) => {
             const label = (result.turn_labels && result.turn_labels[i]) || `行动 ${i+1}`;
@@ -2704,176 +2941,180 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
           });
           sendForwardMessage(ctx, msg, nodes, 'AI 自动战斗');
         }
-      }
-    }).catch(err => {
-      // Server unreachable — clear stale id, fall back to local binding
-      ext.storageSet(`pvp_battle_${gid}`, '');
-      storeLocalBinding(uid, resolvedSerial, gid);
-      seal.replyToSender(ctx, msg, `${pn} 已绑定【${resolvedSerial}】（本地，服务端无响应）`);
-    });
-    return seal.ext.newCmdExecuteResult(true);
-  }
+        return bindMsg;
+      }).catch(err => {
+        ext.storageSet(`pvp_battle_${gid}`, '');
+        storeLocalBinding(uid, resolvedSerial, gid);
+        return `${pn} 已绑定【${resolvedSerial}】（本地，服务端无响应）`;
+      });
+      pvpPromises.push(promise);
+      continue;
+    }
 
-  if (abMode === 1) {
-    // ── /setab1 mode: resolve locally ──
-    const initList = getInitiative(gid);
+    if (abMode === 1) {
+      // ── /setab1 mode: resolve locally ──
+      const initList = getInitiative(gid);
 
-    if (isNumeric && initList.length > 0) {
-      // Numeric input in battle → try initiative index first (1-based)
-      const idx = parseInt(val) - 1;
-      if (idx >= 0 && idx < initList.length) {
-        const entry = initList[idx];
-        turnIndex = parseInt(val);
-        // Find the serial for this initiative entry
-        const bindRaw = ext.storageGet(`bta_bind_${entry.userId}`);
-        let foundSerial = null;
-        if (bindRaw) {
-          try { foundSerial = JSON.parse(bindRaw).serial; } catch(e) {}
-        }
-        if (!foundSerial) {
-          // Also try to resolve by name via bta_serial_ reverse mappings
-          const info = resolveCharInfo(gid, entry.name);
-          if (info && info.serial) foundSerial = info.serial;
-        }
-        if (!foundSerial) {
-          // No absolute serial found — refuse relative binding
-          seal.replyToSender(ctx, msg,
-            `先攻表第 ${val} 位【${entry.name}】未绑定绝对魔法少女序号。\n` +
-            `请先使用 .as <绝对序号> 绑定该角色（如 .as Y8），再使用位次绑定。\n` +
-            `可用位次（仅已绑定绝对序号者）：\n` +
-            initList.map((e, i) => {
-              const bRaw = ext.storageGet(`bta_bind_${e.userId}`);
-              let s = '';
-              if (bRaw) { try { s = JSON.parse(bRaw).serial; } catch(_e) {} }
-              return `  ${i+1}. ${e.name}${s ? ' 【' + s + '】' : ' （未绑定序号）'} [${e.team}队] ${e.coord || ''}`;
-            }).join('\n'));
-          return seal.ext.newCmdExecuteResult(true);
-        }
-        resolvedSerial = foundSerial;
-        charInfo = {
-          serial: resolvedSerial, name: entry.name, team: entry.team,
-          userId: entry.userId, coord: entry.coord, isSummon: !!entry.summonId,
-          ownerSerial: entry.ownerSerial || null,
-        };
-        // Also look up HP
-        const hpStore = getCombatHP(gid);
-        if (hpStore[entry.userId] !== undefined) {
-          charInfo.hp = hpStore[entry.userId];
+      if (isNumeric && initList.length > 0) {
+        const idx = parseInt(val) - 1;
+        if (idx >= 0 && idx < initList.length) {
+          const entry = initList[idx];
+          turnIndex = parseInt(val);
+          const bindRaw = ext.storageGet(`bta_bind_${gid}_${entry.userId}`);
+          let foundSerial = null;
+          if (bindRaw) { try { foundSerial = JSON.parse(bindRaw).serial; } catch(e) {} }
+          if (!foundSerial) {
+            const info = resolveCharInfo(gid, entry.name);
+            if (info && info.serial) foundSerial = info.serial;
+          }
+          if (!foundSerial) {
+            outputs.push(
+              `先攻表第 ${val} 位【${entry.name}】未绑定绝对魔法少女序号。\n` +
+              `请先使用 .as <绝对序号> 绑定该角色（如 .as Y8），再使用位次绑定。\n` +
+              `可用位次（仅已绑定绝对序号者）：\n` +
+              initList.map((e, i) => {
+                const bRaw = ext.storageGet(`bta_bind_${gid}_${e.userId}`);
+                let s = '';
+                if (bRaw) { try { s = JSON.parse(bRaw).serial; } catch(_e) {} }
+                return `  ${i+1}. ${e.name}${s ? ' 【' + s + '】' : ' （未绑定序号）'} [${e.team}队] ${e.coord || ''}`;
+              }).join('\n'));
+            continue;
+          }
+          resolvedSerial = foundSerial;
+          charInfo = {
+            serial: resolvedSerial, name: entry.name, team: entry.team,
+            userId: entry.userId, coord: entry.coord, isSummon: !!entry.summonId,
+            ownerSerial: entry.ownerSerial || null,
+          };
+          const hpStore = getCombatHP(gid);
+          if (hpStore[entry.userId] !== undefined) charInfo.hp = hpStore[entry.userId];
+        } else {
+          outputs.push(
+            `先攻表中没有第 ${val} 位角色（当前共 ${initList.length} 人）。\n` +
+            `可用位次：\n` +
+            initList.map((e, i) => `  ${i+1}. ${e.name} [${e.team}队] ${e.coord || ''}`).join('\n') +
+            `\n或使用 .as <序号> 按魔法少女序号绑定。`);
+          continue;
         }
       } else {
-        // Out of range — show available
-        seal.replyToSender(ctx, msg,
-          `先攻表中没有第 ${val} 位角色（当前共 ${initList.length} 人）。\n` +
-          `可用位次：\n` +
-          initList.map((e, i) => `  ${i+1}. ${e.name} [${e.team}队] ${e.coord || ''}`).join('\n') +
-          `\n或使用 .as <序号> 按魔法少女序号绑定。`);
-        return seal.ext.newCmdExecuteResult(true);
-      }
-    } else {
-      // Non-numeric or no initiative → resolve by serial
-      charInfo = resolveCharInfo(gid, resolvedSerial);
-      if (!charInfo && initList.length > 0) {
-        // Try to find by name match
-        const nameMatch = initList.find(e =>
-          e.name && e.name.toLowerCase().includes(resolvedSerial.toLowerCase()));
-        if (nameMatch) {
-          charInfo = {
-            serial: resolvedSerial, name: nameMatch.name, team: nameMatch.team,
-            userId: nameMatch.userId, coord: nameMatch.coord,
-          };
+        charInfo = resolveCharInfo(gid, resolvedSerial);
+        if (!charInfo && initList.length > 0) {
+          const nameMatch = initList.find(e =>
+            e.name && e.name.toLowerCase().includes(resolvedSerial.toLowerCase()));
+          if (nameMatch) {
+            charInfo = {
+              serial: resolvedSerial, name: nameMatch.name, team: nameMatch.team,
+              userId: nameMatch.userId, coord: nameMatch.coord,
+            };
+          }
         }
       }
+    } else {
+      // ── Not in battle: just store the binding ──
+      charInfo = resolveCharInfo(gid, resolvedSerial);
     }
-  } else {
-    // ── Not in battle: just store the binding ──
-    charInfo = resolveCharInfo(gid, resolvedSerial);
-  }
 
-  // ══════════════════════════════════════════════════════════
-  //  Store bindings
-  // ══════════════════════════════════════════════════════════
-  storeLocalBinding(uid, resolvedSerial, gid);
+    // ══════════════════════════════════════════════════════════
+    //  Store bindings
+    // ══════════════════════════════════════════════════════════
+    storeLocalBinding(uid, resolvedSerial, gid);
 
-  // /setab1 mode: update controller list
-  if (abMode === 1) {
-    const ctrlKey = `bta_ctrl_${gid}_${resolvedSerial}`;
-    const existingCtrl = ext.storageGet(ctrlKey);
-    let controllers = [];
-    if (existingCtrl) { try { controllers = JSON.parse(existingCtrl); } catch(e) {} }
-    if (!controllers.includes(uid)) {
-      controllers.push(uid);
-      ext.storageSet(ctrlKey, JSON.stringify(controllers));
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════
-  //  Build output
-  // ══════════════════════════════════════════════════════════
-  let out = '';
-  if (turnIndex) {
-    out += `${pn} 已按先攻位次绑定 #${turnIndex}`;
-  } else {
-    out += `${pn} 已绑定`;
-  }
-
-  if (charInfo) {
-    out += `【${charInfo.serial || resolvedSerial}】${charInfo.name || ''}`;
-    if (charInfo.team) out += ` [${charInfo.team}队]`;
-    if (charInfo.isSummon) {
-      out += ` (召唤物`;
-      if (charInfo.ownerSerial) out += `，所属:${charInfo.ownerSerial}`;
-      out += `)`;
-    }
-    if (charInfo.hp !== undefined) {
-      out += ` HP:${charInfo.hp}`;
-    }
-    if (charInfo.coord) out += ` 位置:${charInfo.coord}`;
-  } else {
-    out += `【${resolvedSerial}】`;
     if (abMode === 1) {
-      out += `\n⚠ 该序号未在战斗中，但绑定已保存。`;
-    }
-  }
-
-  // Show all currently controlled
-  const mySerialsKey = `bta_my_serials_${uid}`;
-  const myRaw = ext.storageGet(mySerialsKey);
-  let mySerials = [];
-  if (myRaw) { try { mySerials = JSON.parse(myRaw); } catch(e) {} }
-  if (mySerials.length > 1) {
-    const details = [];
-    for (const s of mySerials) {
-      if (s === resolvedSerial) continue;
-      const info = resolveCharInfo(gid, s);
-      details.push(info ? formatCharBrief(info) : `【${s}】`);
-    }
-    if (details.length > 0) {
-      out += `\n你同时控制: ` + details.join(', ');
-    }
-  }
-
-  seal.replyToSender(ctx, msg, out);
-
-  // ══════════════════════════════════════════════════════════
-  //  Handle failure: target not found in battle
-  // ══════════════════════════════════════════════════════════
-  if (!charInfo && abMode === 1) {
-    const initList = getInitiative(gid);
-    if (initList.length > 0) {
-      // Show available characters in initiative
-      const availList = [];
-      for (let i = 0; i < initList.length; i++) {
-        const e = initList[i];
-        const bindRaw = ext.storageGet(`bta_bind_${e.userId}`);
-        let es = '';
-        if (bindRaw) { try { es = JSON.parse(bindRaw).serial; } catch(_e) {} }
-        availList.push(`  ${i+1}. ${e.name}${es ? '(' + es + ')' : ''} [${e.team}队] ${e.coord || ''}`);
+      const ctrlKey = `bta_ctrl_${gid}_${resolvedSerial}`;
+      const existingCtrl = ext.storageGet(ctrlKey);
+      let controllers = [];
+      if (existingCtrl) { try { controllers = JSON.parse(existingCtrl); } catch(e) {} }
+      if (!controllers.includes(uid)) {
+        controllers.push(uid);
+        ext.storageSet(ctrlKey, JSON.stringify(controllers));
       }
-      // Don't duplicate the output; append available list
-      seal.replyToSender(ctx, msg,
-        out + `\n\n当前战斗中可用角色：\n` + availList.join('\n') +
-        `\n使用 .as <数字> 按位次绑定，或 .as <序号> 按魔法少女序号绑定。`);
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  Build output for this binding
+    // ══════════════════════════════════════════════════════════
+    let out = '';
+    if (turnIndex) {
+      out += `${pn} 已按先攻位次绑定 #${turnIndex}`;
+    } else {
+      out += `${pn} 已绑定`;
+    }
+
+    if (charInfo) {
+      out += `【${charInfo.serial || resolvedSerial}】${charInfo.name || ''}`;
+      if (charInfo.team) out += ` [${charInfo.team}队]`;
+      if (charInfo.isSummon) {
+        out += ` (召唤物`;
+        if (charInfo.ownerSerial) out += `，所属:${charInfo.ownerSerial}`;
+        out += `)`;
+      }
+      if (charInfo.hp !== undefined) out += ` HP:${charInfo.hp}`;
+      if (charInfo.coord) out += ` 位置:${charInfo.coord}`;
+    } else {
+      out += `【${resolvedSerial}】`;
+      if (abMode === 1) out += `\n⚠ 该序号未在战斗中，但绑定已保存。`;
+    }
+
+    outputs.push(out);
+
+    // Handle failure: target not found in battle
+    if (!charInfo && abMode === 1) {
+      const initList2 = getInitiative(gid);
+      if (initList2.length > 0) {
+        const availList = [];
+        for (let i = 0; i < initList2.length; i++) {
+          const e = initList2[i];
+          const bindRaw = ext.storageGet(`bta_bind_${gid}_${e.userId}`);
+          let es = '';
+          if (bindRaw) { try { es = JSON.parse(bindRaw).serial; } catch(_e) {} }
+          availList.push(`  ${i+1}. ${e.name}${es ? '(' + es + ')' : ''} [${e.team}队] ${e.coord || ''}`);
+        }
+        outputs.push(`当前战斗中可用角色：\n` + availList.join('\n') +
+          `\n使用 .as <数字> 按位次绑定，或 .as <序号> 按魔法少女序号绑定。`);
+      }
+    }
+  }  // end for each val
+
+  // ══════════════════════════════════════════════════════════
+  //  Send output
+  // ══════════════════════════════════════════════════════════
+  if (abMode === 2 && battleId && pvpPromises.length > 0) {
+    Promise.all(pvpPromises).then(results => {
+      const validResults = results.filter(r => r);
+      // Show all controlled after batch binding
+      const mySerialsKey2 = `bta_my_serials_${gid}_${uid}`;
+      const myRaw2 = ext.storageGet(mySerialsKey2);
+      let mySerials2 = [];
+      if (myRaw2) { try { mySerials2 = JSON.parse(myRaw2); } catch(e) {} }
+      let finalOut = validResults.join('\n');
+      if (mySerials2.length > 1) {
+        const details = [];
+        for (const s of mySerials2) {
+          const info = resolveCharInfo(gid, s);
+          details.push(info ? formatCharBrief(info) : `【${s}】`);
+        }
+        finalOut += `\n你当前控制 (${mySerials2.length}): ` + details.join(', ');
+      }
+      seal.replyToSender(ctx, msg, finalOut);
+    });
+  } else if (outputs.length > 0) {
+    // Show all controlled at end (only for batch, single already shows per-item)
+    let finalOut = outputs.join('\n');
+    if (allArgs.length > 1) {
+      const mySerialsKey2 = `bta_my_serials_${gid}_${uid}`;
+      const myRaw2 = ext.storageGet(mySerialsKey2);
+      let mySerials2 = [];
+      if (myRaw2) { try { mySerials2 = JSON.parse(myRaw2); } catch(e) {} }
+      if (mySerials2.length > 1) {
+        const details = [];
+        for (const s of mySerials2) {
+          const info = resolveCharInfo(gid, s);
+          details.push(info ? formatCharBrief(info) : `【${s}】`);
+        }
+        finalOut += `\n你当前控制 (${mySerials2.length}): ` + details.join(', ');
+      }
+    }
+    seal.replyToSender(ctx, msg, finalOut);
   }
 
   return seal.ext.newCmdExecuteResult(true);
@@ -2881,16 +3122,16 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
 
 // ── Helper: store all local binding keys ──
 function storeLocalBinding(uid, serial, gid) {
-  // Personal binding
-  ext.storageSet(`bta_bind_${uid}`, JSON.stringify({ serial, boundAt: Date.now() }));
-  // Reverse mapping
-  const revKey = `bta_serial_${serial}`;
+  // Personal binding (per-group)
+  ext.storageSet(`bta_bind_${gid}_${uid}`, JSON.stringify({ serial, boundAt: Date.now() }));
+  // Reverse mapping (per-group)
+  const revKey = `bta_serial_${gid}_${serial}`;
   const existingRaw = ext.storageGet(revKey);
   let existing = [];
   if (existingRaw) { try { existing = JSON.parse(existingRaw); } catch(e) {} }
   if (!existing.includes(uid)) { existing.push(uid); ext.storageSet(revKey, JSON.stringify(existing)); }
-  // Player's my_serials tracking
-  const myKey = `bta_my_serials_${uid}`;
+  // Player's my_serials tracking (per-group)
+  const myKey = `bta_my_serials_${gid}_${uid}`;
   const myRaw = ext.storageGet(myKey);
   let mySerials = [];
   if (myRaw) { try { mySerials = JSON.parse(myRaw); } catch(e) {} }
@@ -2907,7 +3148,7 @@ function storeLocalBinding(uid, serial, gid) {
 // Returns {serial, name, team, userId, coord, isSummon, ownerSerial, hp} or null
 function resolveCharInfo(gid, serial) {
   // 1. Check serial reverse mapping → find userId → look up in initiative
-  const revRaw = ext.storageGet(`bta_serial_${serial}`);
+  const revRaw = ext.storageGet(`bta_serial_${gid}_${serial}`);
   if (revRaw) {
     try {
       const uids = JSON.parse(revRaw);
@@ -2981,14 +3222,14 @@ const cmdPr = seal.ext.newCmdItemInfo();
 cmdPr.name = 'pr';
 cmdPr.help = '.pr // 战斗正式开始，从准备阶段切换到激活状态。';
 cmdPr.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (!battleId) {
     seal.replyToSender(ctx, msg, '当前没有进行中的战斗。请先使用 .btast 创建战斗。');
     return seal.ext.newCmdExecuteResult(true);
   }
   pvpFetch(`/api/pvp/${battleId}/pr`, { method: 'POST', body: JSON.stringify({}) })
-    .then(result => {
+    .then(async result => {
       if (result.error) {
         seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
         return;
@@ -2996,27 +3237,39 @@ cmdPr.solve = (ctx, msg, cmdArgs) => {
       // Sync state
       if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
       if (result.initiative) setInitiative(gid, result.initiative);
+      // Build output+bindings+map as one page (分条 with PANEL_SEP, not 分页)
       let out = result.output || '战斗正式开始！';
+
       // Player bindings
       if (result.controlled_characters) {
         out += '\n\n【玩家绑定】';
         for (const [pid, chars] of Object.entries(result.controlled_characters)) {
-          const names = chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ');
+          const names = chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ');
           out += `\n  ${pid}: ${names}`;
         }
       }
-      // Map
+
+      // Map — merged into same page with PANEL_SEP (not separate page)
       if (result.map) {
         ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
-        out += '\n\n' + renderMap(gid);
+        const mapText = renderMap(gid);
+        if (mapText.trim()) {
+          out += '\n' + PANEL_SEP + '\n' + mapText.trim();
+        }
       }
-      // AI turns
+
+      // Send the combined page
+      if (out.trim()) {
+        await sendTurnMessages(ctx, msg, [out.trim()]);
+      }
+
+      // AI turns (awaited so they complete before any further output)
       if (result.auto_turns && result.auto_turns.length > 0) {
         const delayLower = seal.ext.getIntConfig(ext, "AI暂停时长下限");
         const delayUpper = seal.ext.getIntConfig(ext, "AI暂停时长上限");
         const delayEnabled = delayLower > 0 && delayUpper > delayLower;
         if (delayEnabled) {
-          sendAITurnsWithDelay(result.auto_turns, ctx, msg, result.turn_labels);
+          await sendAITurnsWithDelay(result.auto_turns, ctx, msg, result.turn_labels);
         } else {
           const nodes = result.auto_turns.map((t, i) => `【行动 ${i+1}】\n${t}`);
           sendForwardMessage(ctx, msg, nodes, 'AI 自动战斗');
@@ -3026,7 +3279,6 @@ cmdPr.solve = (ctx, msg, cmdArgs) => {
       if (result.needs_reaction && result.pending_attack) {
         ext.storageSet(`pvp_pending_${gid}`, JSON.stringify(result.pending_attack));
       }
-      seal.replyToSender(ctx, msg, out);
     });
   return seal.ext.newCmdExecuteResult(true);
 };
@@ -3041,7 +3293,7 @@ cmdApp.help = '.app <魔法少女序号> <Y|X> // 添加角色到指定阵营\n'
   '  .app Y6 X  // 添加 Y6 到 X队\n' +
   '  战斗开始后也可以使用 .app';
 cmdApp.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (!battleId) {
     seal.replyToSender(ctx, msg, '当前没有进行中的战斗。');
@@ -3061,7 +3313,7 @@ cmdApp.solve = (ctx, msg, cmdArgs) => {
   pvpFetch(`/api/pvp/${battleId}/app`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serial, team, player_id: ctx.player.userId }),
+    body: JSON.stringify({ serial, team, player_id: uid }),
   }).then(result => {
     if (result.error) {
       seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
@@ -3083,7 +3335,7 @@ cmdRem.name = 'rem';
 cmdRem.help = '.rem <魔法少女序号> // 移除角色（如 .rem Y5）\n' +
   '  战斗开始后也可以使用，移除后视同死亡。';
 cmdRem.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (!battleId) {
     seal.replyToSender(ctx, msg, '当前没有进行中的战斗。');
@@ -3097,7 +3349,7 @@ cmdRem.solve = (ctx, msg, cmdArgs) => {
   pvpFetch(`/api/pvp/${battleId}/rem`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ serial, player_id: ctx.player.userId }),
+    body: JSON.stringify({ serial, player_id: uid }),
   }).then(result => {
     if (result.error) {
       seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
@@ -3124,7 +3376,7 @@ cmdAsfull.help =
 cmdAsfull.solve = (ctx, msg, cmdArgs) => {
   const val = cmdArgs.getArgN(1);
   const uid = ctx.player.userId;
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const pn = seal.format(ctx, '{$t玩家}');
   const abMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
@@ -3150,7 +3402,7 @@ cmdAsfull.solve = (ctx, msg, cmdArgs) => {
       } else {
         storeLocalBinding(uid, result.serial || serial, gid);
         // Also mark as full-binding in local tracking
-        const fullKey = `bta_asfull_${uid}`;
+        const fullKey = `bta_asfull_${gid}_${uid}`;
         const existing = ext.storageGet(fullKey);
         let fullList = [];
         if (existing) { try { fullList = JSON.parse(existing); } catch(e) {} }
@@ -3164,7 +3416,7 @@ cmdAsfull.solve = (ctx, msg, cmdArgs) => {
           (result.initiative_text ? '\n' + result.initiative_text : '') +
           (result.controlled_characters ? '\n\n【玩家绑定】' +
             Object.entries(result.controlled_characters).map(([pid, chars]) =>
-              '\n  ' + pid + ': ' + chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ')
+              '\n  ' + pid + ': ' + chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ')
             ).join('') : ''));
         // Show auto_turns if any
         if (result.auto_turns && result.auto_turns.length > 0) {
@@ -3193,16 +3445,18 @@ cmdUnbind.help =
   '.unbind all // 解绑群内全部魔法少女绑定关系\n' +
   '不指定序号：清除当前玩家的所有绑定。\n' +
   '指定序号：仅解绑该魔法少女。';
+cmdUnbind.allowDelegate = true;
 cmdUnbind.solve = (ctx, msg, cmdArgs) => {
-  const val = cmdArgs.getArgN(1);
-  const uid = ctx.player.userId;
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const allArgs = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+  const _ubMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+  const uid = _ubMctx.player.userId;
+  const gid = getGid(ctx);
   const abMode = getAutoMode(ctx);
   const romanMap = { 'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10 };
 
   /** Remove one player from a bta_serial_* reverse mapping, clearing if empty. */
   function removeFromRevMapping(serial, playerId) {
-    const revKey = `bta_serial_${serial}`;
+    const revKey = `bta_serial_${gid}_${serial}`;
     const raw = ext.storageGet(revKey);
     if (!raw) return;
     try {
@@ -3227,7 +3481,8 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
   // ──────────────────────────────────────────────
   //  .unbind all  — 群内全部解绑
   // ──────────────────────────────────────────────
-  if (val && val.toLowerCase() === 'all') {
+  const hasAll = allArgs.some(a => a.toLowerCase() === 'all');
+  if (hasAll) {
     const allSerialsKey = `bta_all_serials_${gid}`;
     const allSerialsRaw = ext.storageGet(allSerialsKey);
     let allSerials = [];
@@ -3243,7 +3498,7 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
     // Collect all affected player IDs BEFORE clearing storage
     const affectedPlayers = new Set();
     for (const serial of allSerials) {
-      const revRaw = ext.storageGet(`bta_serial_${serial}`);
+      const revRaw = ext.storageGet(`bta_serial_${gid}_${serial}`);
       if (revRaw) {
         try {
           const uids = JSON.parse(revRaw);
@@ -3256,11 +3511,20 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
 
     // Clear all reverse mappings, ctrl mappings, and serial tracking
     for (const serial of allSerials) {
-      ext.storageSet(`bta_serial_${serial}`, '');
+      ext.storageSet(`bta_serial_${gid}_${serial}`, '');
       ext.storageSet(`bta_ctrl_${gid}_${serial}`, '');
     }
 
     // Clear each affected player's personal binding and my_serials
+    for (const puid of affectedPlayers) {
+      ext.storageSet(`bta_bind_${gid}_${puid}`, '');
+      ext.storageSet(`bta_my_serials_${gid}_${puid}`, '');
+    }
+
+    // ── Legacy cleanup: also clear old global keys (without gid) from pre-group-isolation ──
+    for (const serial of allSerials) {
+      ext.storageSet(`bta_serial_${serial}`, '');
+    }
     for (const puid of affectedPlayers) {
       ext.storageSet(`bta_bind_${puid}`, '');
       ext.storageSet(`bta_my_serials_${puid}`, '');
@@ -3298,125 +3562,122 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
   }
 
   // ──────────────────────────────────────────────
-  //  .unbind <serial>  — 解绑指定序号
+  //  .unbind <serial> [<serial2> ...] — 解绑指定序号(支持批量)
   // ──────────────────────────────────────────────
-  if (val) {
-    let serial = val;
-    const lower = val.toLowerCase();
-    if (romanMap[lower] !== undefined) serial = String(romanMap[lower]);
+  if (allArgs.length > 0) {
+    const outputs = [];
 
-    // Resolve char info BEFORE clearing storage
-    const charInfo = resolveCharInfo(gid, serial);
+    for (const val of allArgs) {
+      let serial = val;
+      const lower = val.toLowerCase();
+      if (romanMap[lower] !== undefined) serial = String(romanMap[lower]);
 
-    // Remove from reverse mapping
-    removeFromRevMapping(serial, uid);
+      // Resolve char info BEFORE clearing storage
+      const charInfo = resolveCharInfo(gid, serial);
 
-    // Remove from ctrl mapping (setab1)
-    removeFromCtrlMapping(serial, uid);
+      // Remove from reverse mapping
+      removeFromRevMapping(serial, uid);
 
-    // If reverse mapping is now empty, remove serial from bta_all_serials_<gid>
-    const revAfterRaw = ext.storageGet(`bta_serial_${serial}`);
-    if (!revAfterRaw || revAfterRaw === '') {
-      const allSerialsKey2 = `bta_all_serials_${gid}`;
-      const allRaw = ext.storageGet(allSerialsKey2);
-      if (allRaw) {
+      // Remove from ctrl mapping (setab1)
+      removeFromCtrlMapping(serial, uid);
+
+      // Legacy cleanup: also clear old global key (pre-group-isolation)
+      ext.storageSet(`bta_serial_${serial}`, '');
+
+      // If reverse mapping is now empty, remove serial from bta_all_serials_<gid>
+      const revAfterRaw = ext.storageGet(`bta_serial_${gid}_${serial}`);
+      if (!revAfterRaw || revAfterRaw === '') {
+        const allSerialsKey2 = `bta_all_serials_${gid}`;
+        const allRaw = ext.storageGet(allSerialsKey2);
+        if (allRaw) {
+          try {
+            let allList = JSON.parse(allRaw);
+            allList = allList.filter(s => s !== serial);
+            ext.storageSet(allSerialsKey2, allList.length > 0 ? JSON.stringify(allList) : '');
+          } catch(e) {}
+        }
+      }
+
+      // Remove this serial from player's my_serials list
+      const mySerialsKey = `bta_my_serials_${gid}_${uid}`;
+      const mySerialsRaw = ext.storageGet(mySerialsKey);
+      if (mySerialsRaw) {
         try {
-          let allList = JSON.parse(allRaw);
-          allList = allList.filter(s => s !== serial);
-          ext.storageSet(allSerialsKey2, allList.length > 0 ? JSON.stringify(allList) : '');
+          let mySerials = JSON.parse(mySerialsRaw);
+          mySerials = mySerials.filter(s => s !== serial);
+          ext.storageSet(mySerialsKey, mySerials.length > 0 ? JSON.stringify(mySerials) : '');
         } catch(e) {}
       }
-    }
 
-    // Remove this serial from player's my_serials list
-    const mySerialsKey = `bta_my_serials_${uid}`;
-    const mySerialsRaw = ext.storageGet(mySerialsKey);
-    if (mySerialsRaw) {
-      try {
-        let mySerials = JSON.parse(mySerialsRaw);
-        mySerials = mySerials.filter(s => s !== serial);
-        ext.storageSet(mySerialsKey, mySerials.length > 0 ? JSON.stringify(mySerials) : '');
-      } catch(e) {}
-    }
-
-    // Update or clear personal binding
-    const bindKey = `bta_bind_${uid}`;
-    const bindRaw = ext.storageGet(bindKey);
-    if (bindRaw) {
-      try {
-        const bind = JSON.parse(bindRaw);
-        if (bind.serial === serial) {
-          // Try to fall back to another serial the player still controls
-          const mySerialsRaw2 = ext.storageGet(mySerialsKey);
-          let remaining = [];
-          if (mySerialsRaw2) {
-            try { remaining = JSON.parse(mySerialsRaw2); } catch(e) {}
-          }
-          if (remaining.length > 0) {
-            ext.storageSet(bindKey, JSON.stringify({ serial: remaining[0], boundAt: Date.now() }));
-          } else {
-            ext.storageSet(bindKey, '');
-          }
-        }
-      } catch(e) {}
-    }
-
-    // ── Server-side unbind ──
-    const battleId = ext.storageGet(`pvp_battle_${gid}`);
-    if (abMode === 2 && battleId) {
-      const isNumeric = /^\d+$/.test(val);
-      const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/unbind';
-      const sendPayload = { player_id: uid };
-      if (isNumeric) {
-        sendPayload.init_index = parseInt(val);
-      } else {
-        sendPayload.serial = serial;
-      }
-      fetch(serverUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sendPayload),
-      }).then(r => r.json()).then(result => {
-        if (result.error) {
-          // Server battle gone — clear stale id, proceed with local unbind
-          ext.storageSet(`pvp_battle_${gid}`, '');
-          const charLabel = charInfo && charInfo.name ? `【${serial}】${charInfo.name}` : `【${serial}】`;
-          seal.replyToSender(ctx, msg, `${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制`);
-        } else {
-          const charLabel = result.char_name ? `【${serial}】${result.char_name}` : `【${serial}】`;
-          let msg2 = `${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制`;
-          if (result.remaining && result.remaining.length > 0) {
-            const names = result.remaining.map(c => `【${c.serial || '?'}】${c.name}`).join(', ');
-            msg2 += `\n你仍控制: ${names}`;
-          } else {
-            msg2 += '\n你当前不控制任何角色。';
-          }
-          // Display initiative list and player bindings
-          if (result.initiative_text) {
-            msg2 += '\n' + result.initiative_text;
-          }
-          if (result.controlled_characters) {
-            msg2 += '\n\n【玩家绑定】';
-            for (const [pid, chars] of Object.entries(result.controlled_characters)) {
-              const names = chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ');
-              msg2 += `\n  ${pid}: ${names}`;
+      // Update or clear personal binding
+      const bindKey = `bta_bind_${gid}_${uid}`;
+      const bindRaw = ext.storageGet(bindKey);
+      if (bindRaw) {
+        try {
+          const bind = JSON.parse(bindRaw);
+          if (bind.serial === serial) {
+            const mySerialsRaw2 = ext.storageGet(mySerialsKey);
+            let remaining = [];
+            if (mySerialsRaw2) {
+              try { remaining = JSON.parse(mySerialsRaw2); } catch(e) {}
+            }
+            if (remaining.length > 0) {
+              ext.storageSet(bindKey, JSON.stringify({ serial: remaining[0], boundAt: Date.now() }));
+            } else {
+              ext.storageSet(bindKey, '');
             }
           }
-          seal.replyToSender(ctx, msg, msg2);
+        } catch(e) {}
+      }
+
+      // ── Server-side unbind ──
+      const battleId = ext.storageGet(`pvp_battle_${gid}`);
+      if (abMode === 2 && battleId) {
+        const isNumeric = /^\d+$/.test(val);
+        const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/unbind';
+        const sendPayload = { player_id: uid };
+        if (isNumeric) {
+          sendPayload.init_index = parseInt(val);
+        } else {
+          sendPayload.serial = serial;
         }
-      }).catch(err => {
-        // Server unreachable — clear stale id, proceed with local unbind
-        ext.storageSet(`pvp_battle_${gid}`, '');
-        const charLabel = charInfo && charInfo.name ? `【${serial}】${charInfo.name}` : `【${serial}】`;
-        seal.replyToSender(ctx, msg, `${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制`);
-      });
-    } else if (abMode === 1) {
+        // Fire-and-forget for server sync (result accumulated after Promise.all)
+        fetch(serverUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sendPayload),
+        }).then(r => r.json()).catch(err => {
+          ext.storageSet(`pvp_battle_${gid}`, '');
+        });
+      }
+
       const charLabel = charInfo && charInfo.name ? `【${serial}】${charInfo.name}` : `【${serial}】`;
-      seal.replyToSender(ctx, msg, `${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制`);
+      if (abMode === 2) {
+        outputs.push(`${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制（服务端同步中）`);
+      } else if (abMode === 1) {
+        outputs.push(`${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的控制`);
+      } else {
+        outputs.push(`${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的绑定`);
+      }
+    }  // end for each val
+
+    // Show remaining bindings after batch unbind
+    const mySerialsKey3 = `bta_my_serials_${gid}_${uid}`;
+    const mySerialsRaw3 = ext.storageGet(mySerialsKey3);
+    let mySerials3 = [];
+    if (mySerialsRaw3) { try { mySerials3 = JSON.parse(mySerialsRaw3); } catch(e) {} }
+    let finalOut = outputs.join('\n');
+    if (mySerials3.length > 0) {
+      const details = [];
+      for (const s of mySerials3) {
+        const info = resolveCharInfo(gid, s);
+        details.push(info ? formatCharBrief(info) : `【${s}】`);
+      }
+      finalOut += `\n你仍控制: ` + details.join(', ');
     } else {
-      const charLabel = charInfo && charInfo.name ? `【${serial}】${charInfo.name}` : `【${serial}】`;
-      seal.replyToSender(ctx, msg, `${seal.format(ctx, '{$t玩家}')} 已解除对${charLabel}的绑定`);
+      finalOut += '\n你当前不控制任何角色。';
     }
+    seal.replyToSender(ctx, msg, finalOut);
     return seal.ext.newCmdExecuteResult(true);
   }
 
@@ -3442,13 +3703,13 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
     const found = new Set();
 
     // Source 1: bta_my_serials_<uid> (current tracking)
-    const myRaw = ext.storageGet(`bta_my_serials_${playerId}`);
+    const myRaw = ext.storageGet(`bta_my_serials_${gid}_${playerId}`);
     if (myRaw) {
       try { const arr = JSON.parse(myRaw); if (Array.isArray(arr)) arr.forEach(s => found.add(s)); } catch(e) {}
     }
 
     // Source 2: bta_bind_<uid> (old single-serial binding)
-    const bindRaw = ext.storageGet(`bta_bind_${playerId}`);
+    const bindRaw = ext.storageGet(`bta_bind_${gid}_${playerId}`);
     if (bindRaw) {
       try {
         const b = JSON.parse(bindRaw);
@@ -3464,7 +3725,7 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
         if (Array.isArray(allList)) {
           for (const s of allList) {
             if (found.has(s)) continue;
-            const revRaw = ext.storageGet(`bta_serial_${s}`);
+            const revRaw = ext.storageGet(`bta_serial_${gid}_${s}`);
             if (!revRaw) continue;
             try {
               const uids = JSON.parse(revRaw);
@@ -3485,7 +3746,7 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
             if (typeof occ !== 'string' || occ.length === 0) continue;
             if (found.has(occ)) continue;
             // Check if this serial's reverse mapping includes this player
-            const revRaw = ext.storageGet(`bta_serial_${occ}`);
+            const revRaw = ext.storageGet(`bta_serial_${gid}_${occ}`);
             if (!revRaw) continue;
             try {
               const uids = JSON.parse(revRaw);
@@ -3504,13 +3765,13 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
         if (Array.isArray(initList)) {
           for (const entry of initList) {
             if (!entry.userId) continue;
-            const ebRaw = ext.storageGet(`bta_bind_${entry.userId}`);
+            const ebRaw = ext.storageGet(`bta_bind_${gid}_${entry.userId}`);
             if (!ebRaw) continue;
             try {
               const eb = JSON.parse(ebRaw);
               if (eb.serial && !found.has(eb.serial)) {
                 // Check this serial's reverse mapping for our player
-                const revRaw = ext.storageGet(`bta_serial_${eb.serial}`);
+                const revRaw = ext.storageGet(`bta_serial_${gid}_${eb.serial}`);
                 if (!revRaw) continue;
                 try {
                   const uids = JSON.parse(revRaw);
@@ -3554,7 +3815,7 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
   let repairedCount = 0;
   for (const s of discoveredSerials) {
     // Check if this serial was missing from bta_my_serials_<uid>
-    const myRaw2 = ext.storageGet(`bta_my_serials_${uid}`);
+    const myRaw2 = ext.storageGet(`bta_my_serials_${gid}_${uid}`);
     let myList = [];
     if (myRaw2) { try { myList = JSON.parse(myRaw2); } catch(e) {} }
     if (!myList.includes(s)) { repairedCount++; }
@@ -3574,7 +3835,7 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
     removeFromRevMapping(serial, uid);
     removeFromCtrlMapping(serial, uid);
     // Remove serial from bta_all_serials_<gid> if now orphaned
-    const revAfter = ext.storageGet(`bta_serial_${serial}`);
+    const revAfter = ext.storageGet(`bta_serial_${gid}_${serial}`);
     if (!revAfter || revAfter === '') {
       allKnownSerials = allKnownSerials.filter(s => s !== serial);
     }
@@ -3585,8 +3846,14 @@ cmdUnbind.solve = (ctx, msg, cmdArgs) => {
   ext.storageSet(allSerialsKey3, allKnownSerials.length > 0 ? JSON.stringify(allKnownSerials) : '');
 
   // Clear personal tracking keys
+  ext.storageSet(`bta_bind_${gid}_${uid}`, '');
+  ext.storageSet(`bta_my_serials_${gid}_${uid}`, '');
+  // Legacy cleanup: also clear old global keys (pre-group-isolation)
   ext.storageSet(`bta_bind_${uid}`, '');
   ext.storageSet(`bta_my_serials_${uid}`, '');
+  for (const serial of discoveredSerials) {
+    ext.storageSet(`bta_serial_${serial}`, '');
+  }
 
   // ── Server-side unbind all ──
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
@@ -3683,7 +3950,7 @@ function handleKpCommand(ctx, msg, cmdArgs) {
       seal.replyToSender(ctx, msg, '反应类型必须是 d（闪避）或 c（反击）');
       return true;
     }
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
     const reKey = `bta_npc_reaction_${gid}`;
     let reactions = {};
     const raw = ext.storageGet(reKey);
@@ -3699,8 +3966,8 @@ function handleKpCommand(ctx, msg, cmdArgs) {
     // 对应海豹配置项「失败攻击允许反应」，可通过 .ext config 或此指令修改
     const configKey = '失败攻击允许反应';
     if (args.length < 2) {
-      const curVal = ext.storageGet(configKey) || '1';
-      const status = curVal === '0' ? '关闭（失败攻击跳过反应）' : '开启（失败攻击允许反应）';
+      const curVal = seal.ext.getIntConfig(ext, configKey);
+      const status = curVal === 0 ? '关闭（失败攻击跳过反应）' : '开启（失败攻击允许反应）';
       seal.replyToSender(ctx, msg, `【失败反应机制】当前状态：${status}\n用法：.bta failedreaction on / off（或通过 .ext config 配置）`);
       return true;
     }
@@ -3709,16 +3976,16 @@ function handleKpCommand(ctx, msg, cmdArgs) {
       seal.replyToSender(ctx, msg, '用法：.bta failedreaction on/off（或 1/0）');
       return true;
     }
-    const val = (toggle === 'on' || toggle === '1') ? '1' : '0';
-    ext.storageSet(configKey, val);
-    const label = val === '1' ? '开启（失败攻击允许反应）' : '关闭（失败攻击跳过反应）';
+    const val = (toggle === 'on' || toggle === '1') ? 1 : 0;
+    ext.storageSet(configKey, String(val));
+    const label = val === 1 ? '开启（失败攻击允许反应）' : '关闭（失败攻击跳过反应）';
     seal.replyToSender(ctx, msg, `【失败反应机制】已设为：${label}`);
     return true;
   }
 
   if (sub === 'new') {
     const tplName = args[1] || 'default';
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
     const tplKey = `bta_template_${gid}_${tplName}`;
     ext.storageSet(tplKey, JSON.stringify({
       name: tplName, createdAt: Date.now(),
@@ -3743,7 +4010,7 @@ function handleKpCommand(ctx, msg, cmdArgs) {
       return true;
     }
     const w = parseInt(dimMatch[1]), h = parseInt(dimMatch[2]);
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
     const mapKey = `combat_map_${gid}`;
     const entryRow = Math.ceil(h / 2);
     const mapData = {
@@ -3779,7 +4046,7 @@ function handleKpCommand(ctx, msg, cmdArgs) {
       return true;
     }
     const charId = args[1], coord = args[2].toUpperCase();
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
     const mapKey = `combat_map_${gid}`;
     const raw = ext.storageGet(mapKey);
     if (!raw) {
@@ -3811,7 +4078,7 @@ function handleKpCommand(ctx, msg, cmdArgs) {
 
   if (sub === 'import') {
     const tplName = args[1] || 'default';
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+    const gid = getGid(ctx);
     const tplKey = `bta_template_${gid}_${tplName}`;
     const raw = ext.storageGet(tplKey);
     if (!raw) {
@@ -3836,6 +4103,14 @@ function handleKpCommand(ctx, msg, cmdArgs) {
 // ============================================================
 
 /** Get the PvP battle server URL from SealDice config (default: http://127.0.0.1:8889). */
+/** Get a stable isolation key for the current conversation context.
+ *  Groups are keyed by groupId; private chats are keyed by player userId
+ *  so that different private chats (and group vs private) are isolated. */
+function getGid(ctx) {
+  if (ctx.group) return ctx.group.groupId;
+  return 'private_' + (ctx.player ? ctx.player.userId : 'unknown');
+}
+
 function getPvpServerUrl() {
   const url = seal.ext.getStringConfig(ext, 'PvP战斗后端地址');
   return (url || 'http://127.0.0.1:8889').trim().replace(/\/+$/, '');
@@ -3944,9 +4219,12 @@ function applyServerChanges(gid, result) {
  * Unified battle response renderer for .setab 2 actions.
  * Handles: map sync, player bindings, map rendering, pending reactions,
  *          AI auto-turns, and battle-end detection.
- * Returns the assembled output string (side-effects applied to storage).
+ * Now async — sequences messages in correct order:
+ *   1. Action output (immediate)
+ *   2. AI auto-turns (with delay)
+ *   3. Meta info: map + bindings + turn prompt (last)
  */
-function renderBattleResponse(gid, result, ctx, msg) {
+async function renderBattleResponse(gid, result, ctx, msg) {
   applyServerChanges(gid, result);
 
   // Map sync (from server response)
@@ -3954,43 +4232,56 @@ function renderBattleResponse(gid, result, ctx, msg) {
     ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
   }
 
-  let out = result.output || '';
-
-  // Player bindings display
-  if (result.controlled_characters) {
-    out += '\n\n【玩家绑定】';
-    for (const [pid, chars] of Object.entries(result.controlled_characters)) {
-      const names = chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ');
-      out += `\n  ${pid}: ${names}`;
-    }
-  }
-
-  // Map rendering (always if map data exists locally)
-  const mapRaw = ext.storageGet(`combat_map_${gid}`);
-  if (mapRaw) {
-    out += '\n\n' + renderMap(gid);
-  }
+  let actionOut = result.output || '';
 
   // Pending reaction storage
   if (result.needs_reaction && result.pending_attack) {
     ext.storageSet(`pvp_pending_${gid}`, JSON.stringify(result.pending_attack));
+    // Swap: map BEFORE reaction prompt. The reaction prompt may be in actionOut
+    // (if player's own action triggered it) or in auto_turns[-1] (if AI triggered it).
+    const mapText = renderMap(gid);
+    if (mapText.trim()) {
+      // Check actionOut first
+      const reactIdx = actionOut.search(/@[^\n]*请做出反应/);
+      if (reactIdx >= 0) {
+        actionOut = actionOut.substring(0, reactIdx).trimEnd() + '\n\n' + mapText.trim() + '\n\n' + actionOut.substring(reactIdx);
+      } else if (result.auto_turns && result.auto_turns.length > 0) {
+        // Reaction prompt is in the last auto_turn
+        const lastIdx = result.auto_turns.length - 1;
+        const lastTurn = result.auto_turns[lastIdx];
+        const reactIdx2 = lastTurn.search(/@[^\n]*请做出反应/);
+        if (reactIdx2 >= 0) {
+          result.auto_turns[lastIdx] = lastTurn.substring(0, reactIdx2).trimEnd() + '\n\n' + mapText.trim() + '\n\n' + lastTurn.substring(reactIdx2);
+        }
+      }
+    }
+  }
+  const _hasReaction = result.needs_reaction && result.pending_attack;
+
+  // ── Build meta panels (map + bindings + turn prompt + battle-end) ──
+  const metaPanels = [];
+
+  // Player bindings
+  if (result.controlled_characters) {
+    let bindText = '【玩家绑定】';
+    for (const [pid, chars] of Object.entries(result.controlled_characters)) {
+      const names = chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ');
+      bindText += `\n  ${pid}: ${names}`;
+    }
+    metaPanels.push(bindText);
   }
 
-  // AI auto-turns: with delay (default) or merged forward
-  if (result.auto_turns && result.auto_turns.length > 0) {
-    const delayLower2 = seal.ext.getIntConfig(ext, "AI暂停时长下限");
-    const delayUpper2 = seal.ext.getIntConfig(ext, "AI暂停时长上限");
-    const delayEnabled2 = delayLower2 > 0 && delayUpper2 > delayLower2;
-    if (delayEnabled2) {
-      // Send each AI turn as a separate message with configurable random delay
-      sendAITurnsWithDelay(result.auto_turns, ctx, msg, result.turn_labels);
-    } else {
-      const nodes = result.auto_turns.map((t, i) => {
-        const label = (result.turn_labels && result.turn_labels[i]) || `行动 ${i + 1}`;
-        return `【${label}】\n${t}`;
-      });
-      sendForwardMessage(ctx, msg, nodes, 'AI 自动战斗');
+  // Map rendering (skip if already inserted into output for pending reaction)
+  if (!_hasReaction) {
+    const mapRaw = ext.storageGet(`combat_map_${gid}`);
+    if (mapRaw) {
+      metaPanels.push(renderMap(gid));
     }
+  }
+
+  // Turn info (initiative + turn announcement + HP/MP + targets + available actions)
+  if (result.turn_info && result.turn_info.trim()) {
+    metaPanels.push(result.turn_info.trim());
   }
 
   // Battle end detection
@@ -3998,10 +4289,66 @@ function renderBattleResponse(gid, result, ctx, msg) {
     ext.storageSet(`pvp_battle_${gid}`, '');
     ext.storageSet(`pvp_pending_${gid}`, '');
     const winner = result.state.winner ? `\n胜者: ${result.state.winner}` : '';
-    out += `\n\n=== 战斗结束 ===${winner}`;
+    metaPanels.push(`── 战斗结束 ──${winner}`);
   }
 
-  return out;
+  // ── Merge content: action output + AI turns + meta → fewer pages (分条 with PANEL_SEP, not 分页) ──
+  const hasAI = result.auto_turns && result.auto_turns.length > 0;
+  const delayLower2 = seal.ext.getIntConfig(ext, "AI暂停时长下限");
+  const delayUpper2 = seal.ext.getIntConfig(ext, "AI暂停时长上限");
+  const delayEnabled2 = hasAI && delayLower2 > 0 && delayUpper2 > delayLower2;
+
+  if (!hasAI) {
+    // No AI turns: merge action output + meta into one page (分条)
+    const combined = [];
+    if (actionOut.trim()) combined.push(actionOut.trim());
+    if (metaPanels.length > 0) combined.push(metaPanels.join(PANEL_SEP));
+    if (combined.length > 0) {
+      await sendTurnMessages(ctx, msg, [combined.join('\n' + PANEL_SEP + '\n')]);
+    }
+  } else if (!delayEnabled2) {
+    // AI turns but no delay: merge everything into one page with PANEL_SEP
+    const combined = [];
+    if (actionOut.trim()) combined.push(actionOut.trim());
+    combined.push(result.auto_turns.join('\n' + PANEL_SEP + '\n'));
+    if (metaPanels.length > 0) combined.push(metaPanels.join(PANEL_SEP));
+    if (combined.length > 0) {
+      await sendTurnMessages(ctx, msg, [combined.join('\n' + PANEL_SEP + '\n')]);
+    }
+  } else {
+    // Delay mode: merge everything into one or two messages based on restim.
+    // restim controls WHETHER attack roll results are shown before reaction,
+    // NOT how many messages are sent. Both modes should minimize page splits.
+    // AI pause delay is handled by sendTurnMessages' internal _delayMs between PAGE_SEP pages.
+    const actingId = ctx.player.userId;
+    const restimMode = ext.storageGet(`bta_restim_${actingId}`) || '0';
+
+    if (restimMode === '1') {
+      // restim=1: everything in ONE message (action + AI turns + meta)
+      const combined = [];
+      if (actionOut.trim()) combined.push(actionOut.trim());
+      if (result.auto_turns && result.auto_turns.length > 0) {
+        combined.push(result.auto_turns.join('\n' + PANEL_SEP + '\n'));
+      }
+      if (metaPanels.length > 0) combined.push(metaPanels.join(PANEL_SEP));
+      if (combined.length > 0) {
+        await sendTurnMessages(ctx, msg, [combined.join('\n' + PANEL_SEP + '\n')]);
+      }
+    } else {
+      // restim=0: attack roll first (one message), then AI turns + meta (second message)
+      if (actionOut.trim()) {
+        await sendTurnMessages(ctx, msg, [actionOut.trim()]);
+      }
+      const rest = [];
+      if (result.auto_turns && result.auto_turns.length > 0) {
+        rest.push(result.auto_turns.join('\n' + PANEL_SEP + '\n'));
+      }
+      if (metaPanels.length > 0) rest.push(metaPanels.join(PANEL_SEP));
+      if (rest.length > 0) {
+        await sendTurnMessages(ctx, msg, [rest.join('\n' + PANEL_SEP + '\n')]);
+      }
+    }
+  }
 }
 
 /**
@@ -4017,13 +4364,47 @@ async function sendAITurnsWithDelay(autoTurns, ctx, msg, turnLabels) {
   const minMs = lowerSec * 1000;
   const maxMs = upperSec * 1000;
   const rangeMs = maxMs - minMs;
+  const pictmode = seal.ext.getIntConfig(ext, "pictmode");
+  console.log('UI:1002', `[sendAITurnsWithDelay] pictmode=${pictmode} turns=${autoTurns.length} fetchAvail=${typeof fetch !== 'undefined'}`);
 
   for (let i = 0; i < autoTurns.length; i++) {
     const text = autoTurns[i];
     if (!text || !text.trim()) continue;
 
     const label = (turnLabels && turnLabels[i]) || `AI行动 ${i + 1}`;
-    seal.replyToSender(ctx, msg, text);
+    let sent = false;
+
+    if (pictmode === 1 && typeof fetch !== 'undefined') {
+      try {
+        const baseUrl2 = getPvpServerUrl();
+        const renderUrl = `${baseUrl2}/api/render`;
+        console.log('UI:1002', `[sendAITurnsWithDelay] 请求图片渲染 #${i} url=${renderUrl} text_len=${text.length}`);
+        const resp = await fetch(`${baseUrl2}/api/render`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text }),
+        });
+        console.log('UI:1002', `[sendAITurnsWithDelay] 渲染响应 #${i} status=${resp.status} ok=${resp.ok}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          console.log('UI:1002', `[sendAITurnsWithDelay] 渲染返回 #${i} keys=${Object.keys(data).join(',')} images=${data.images ? data.images.length : 'N/A'}`);
+          if (data.images && data.images.length > 0) {
+            for (const b64 of data.images) {
+              console.log('UI:1002', `[sendAITurnsWithDelay] 发送CQ图片 #${i} base64_len=${b64.length}`);
+              seal.replyToSender(ctx, msg, `[CQ:image,file=base64://${b64}]`);
+            }
+            sent = true;
+          }
+        }
+      } catch(e) {
+        console.log('UI:1002', `[sendAITurnsWithDelay] 渲染异常 #${i}: ${e.message || e}，回退文本`);
+      }
+    }
+
+    if (!sent) {
+      console.log('UI:1002', `[sendAITurnsWithDelay] 文本发送 #${i} text_len=${text.length}`);
+      seal.replyToSender(ctx, msg, text);
+    }
 
     // Delay between turns (not after the last one)
     if (i < autoTurns.length - 1 && rangeMs > 0) {
@@ -4035,6 +4416,112 @@ async function sendAITurnsWithDelay(autoTurns, ctx, msg, turnLabels) {
       }
     }
   }
+}
+
+// ── Panel & page separators for message formatting ──
+const PANEL_SEP = '\n===================\n';
+const PAGE_SEP = '【分页符】';
+
+/**
+ * Send turn message chunks with configurable delays between them.
+ * Uses the same AI delay config items as sendAITurnsWithDelay.
+ * @param {object} ctx - seal context
+ * @param {object} msg - seal message
+ * @param {string[]} chunks - message chunks to send
+ */
+async function sendTurnMessages(ctx, msg, chunks) {
+  const delayLower = seal.ext.getIntConfig(ext, "AI暂停时长下限");
+  const delayUpper = seal.ext.getIntConfig(ext, "AI暂停时长上限");
+  const lowerSec = Math.max(0, delayLower);
+  const upperSec = Math.max(lowerSec + 1, delayUpper);
+  const minMs = lowerSec * 1000;
+  const maxMs = upperSec * 1000;
+  const rangeMs = maxMs - minMs;
+  const pictmode = seal.ext.getIntConfig(ext, "pictmode");
+
+  // Flatten chunks into pages: split by 【分页符】 within each chunk
+  const pages = [];
+  for (const c of chunks) {
+    if (!c || !c.trim()) continue;
+    const sub = c.split(PAGE_SEP);
+    for (const s of sub) {
+      if (s.trim()) pages.push(s.trim());
+    }
+  }
+
+  console.log('UI:1002', `[sendTurnMessages] pictmode=${pictmode} chunks=${chunks.length} pages=${pages.length} fetchAvail=${typeof fetch !== 'undefined'}`);
+  for (let i = 0; i < pages.length; i++) {
+    let text = pages[i];
+
+    if (pictmode === 1 && typeof fetch !== 'undefined') {
+      try {
+        const baseUrl2 = getPvpServerUrl();
+        const renderUrl = `${baseUrl2}/api/render`;
+        console.log('UI:1002', `[sendTurnMessages] 请求图片渲染 page=${i} url=${renderUrl} text_len=${text.length}`);
+        const resp = await fetch(renderUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text }),
+        });
+        console.log('UI:1002', `[sendTurnMessages] 渲染响应 page=${i} status=${resp.status} ok=${resp.ok}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.images && data.images.length > 0) {
+            for (const b64 of data.images) {
+              seal.replyToSender(ctx, msg, `[CQ:image,file=base64://${b64}]`);
+            }
+            // Delay between pages in image mode
+            if (i < pages.length - 1 && rangeMs > 0) {
+              await _delayMs(minMs, maxMs, rangeMs);
+            }
+            continue;
+          }
+        }
+      } catch(e) {
+        console.log('UI:1002', `[sendTurnMessages] 渲染异常 page=${i}: ${e.message || e}`);
+      }
+    }
+
+    // Text fallback: show =================== as-is
+    seal.replyToSender(ctx, msg, text);
+    if (i < pages.length - 1 && rangeMs > 0) {
+      await _delayMs(minMs, maxMs, rangeMs);
+    }
+  }
+}
+
+function _delayMs(minMs, maxMs, rangeMs) {
+  const delayMs = minMs + Math.floor(Math.random() * rangeMs);
+  if (typeof seal.ext.sleep === 'function') {
+    return seal.ext.sleep(delayMs);
+  }
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Format battle message sections into pages with panel separators.
+ * Each page can contain multiple panels separated by PANEL_SEP.
+ * @param {Object} sections - { actionResult?, map?, roundInfo?, initiative?, statusLine?, turnPrompt? }
+ * @param {Object} layout - { panelsPerPage?: number }
+ * @returns {string[]} Array of page strings
+ */
+function formatBattleMessage(sections, layout = {}) {
+  const panels = [];
+  if (sections.actionResult) panels.push(sections.actionResult);
+  if (sections.map) panels.push(sections.map);
+  if (sections.roundInfo) panels.push(sections.roundInfo);
+  if (sections.initiative) panels.push(sections.initiative);
+  if (sections.statusLine) panels.push(sections.statusLine);
+  if (sections.turnPrompt) panels.push(sections.turnPrompt);
+
+  if (panels.length === 0) return [];
+
+  const panelsPerPage = layout.panelsPerPage || 3;
+  const pages = [];
+  for (let i = 0; i < panels.length; i += panelsPerPage) {
+    pages.push(panels.slice(i, i + panelsPerPage).join(PANEL_SEP));
+  }
+  return pages;
 }
 
 /** Get the current auto-battle mode. */
@@ -4065,6 +4552,40 @@ function getInitiative(groupId) {
 }
 function setInitiative(groupId, list) {
   ext.storageSet(`combat_initiative_${groupId}`, JSON.stringify(list));
+}
+
+/**
+ * Format initiative table with merged display for same-name summons.
+ * Consecutive entries sharing the same `summonGroup` are merged into one line.
+ * @returns {string} formatted initiative table
+ */
+function formatInitiativeTable(initList, hpStore) {
+  if (!initList || initList.length === 0) return '';
+  // Build merged structure: [{ baseEntry, entries: [{entry, actionNum}] }]
+  const merged = [];
+  for (const e of initList) {
+    const groupKey = e.summonGroup || null;
+    const last = merged.length > 0 ? merged[merged.length - 1] : null;
+    if (groupKey && last && last.groupKey === groupKey) {
+      last.entries.push(e);
+    } else {
+      merged.push({ groupKey, entries: [e] });
+    }
+  }
+  let out = '';
+  let displayIdx = 0;
+  for (const group of merged) {
+    displayIdx++;
+    const base = group.entries[0];
+    const hp = hpStore && hpStore[base.userId] !== undefined ? hpStore[base.userId] : '?';
+    if (group.entries.length === 1) {
+      out += `  ${displayIdx}. ${base.name} D100=${base.initRoll}/DEX=${base.dex} ${rankText(null, base.initRank)} HP:${hp}\n`;
+    } else {
+      const names = group.entries.map((e, j) => `${e.name} (行动${j + 1})`).join(' / ');
+      out += `  ${displayIdx}. ${names} D100=${base.initRoll}/DEX=${base.dex} ${rankText(null, base.initRank)} HP:${hp}\n`;
+    }
+  }
+  return out;
 }
 
 /** Get per-character action counts */
@@ -4245,7 +4766,7 @@ cmdBtaInt.help =
   '使用 .bta start 开始战斗';
 cmdBtaInt.solve = (ctx, msg, cmdArgs) => {
   const mctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
 
   // Parse args
   const args = (cmdArgs.cleanArgs || '').split(/\s+/).filter(a => a.length > 0);
@@ -4321,7 +4842,7 @@ cmdBtaInt.solve = (ctx, msg, cmdArgs) => {
   }
 
   // Place on map — use absolute serial if available, otherwise character name
-  const bindRaw = ext.storageGet(`bta_bind_${userId}`);
+  const bindRaw = ext.storageGet(`bta_bind_${gid}_${userId}`);
   if (bindRaw) {
     try {
       const bind = JSON.parse(bindRaw);
@@ -4462,7 +4983,7 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
     const playerBindings = {};
     const allSerials = [...teamA, ...teamB];
     for (const serial of allSerials) {
-      const revKey = `bta_serial_${serial}`;
+      const revKey = `bta_serial_${gid}_${serial}`;
       const revRaw = ext.storageGet(revKey);
       if (!revRaw) continue;
       try {
@@ -4477,14 +4998,47 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
       } catch(e) {}
     }
 
+    // ── Build full_bindings from .asfull storage ──
+    const fullBindings = {};
+    for (const [uid, serials] of Object.entries(playerBindings)) {
+      const fullKey = `bta_asfull_${gid}_${uid}`;
+      const fullRaw = ext.storageGet(fullKey);
+      if (!fullRaw) continue;
+      try {
+        const fullList = JSON.parse(fullRaw);
+        if (!Array.isArray(fullList)) continue;
+        for (const serial of serials) {
+          if (fullList.includes(serial)) {
+            if (!fullBindings[uid]) fullBindings[uid] = [];
+            if (!fullBindings[uid].includes(serial)) {
+              fullBindings[uid].push(serial);
+            }
+          }
+        }
+      } catch(e) {}
+    }
+
     const requestData = {
       group_id: String(gid),
       mode: 'multi_pvp',
       team_a: teamA,
       team_b: teamB,
       player_bindings: playerBindings,
+      full_bindings: fullBindings,
       map_size: '10x10',
     };
+
+    // ── Inject pre-configured AI overrides (from .setaiact outside battle) ──
+    const aiOverridesKey = `ai_overrides_${gid}`;
+    const storedOverridesRaw = ext.storageGet(aiOverridesKey);
+    if (storedOverridesRaw) {
+      try {
+        const storedOverrides = JSON.parse(storedOverridesRaw);
+        if (storedOverrides && Object.keys(storedOverrides).length > 0) {
+          requestData.ai_overrides = storedOverrides;
+        }
+      } catch (e) {}
+    }
 
     console.log('UI:1002', `[DEBUG btast] 发送 /api/pvp/create: mode=${requestData.mode} team_a=${JSON.stringify(teamA)} team_b=${JSON.stringify(teamB)} bindings=${JSON.stringify(Object.keys(playerBindings))}`);
 
@@ -4492,7 +5046,7 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
     const bDisp = teamB.join('+');
     seal.replyToSender(ctx, msg, `Y队：${aDisp} vs X队：${bDisp}\n正在连接 Python 后端...`);
 
-    pvpFetch('/api/pvp/create', requestData).then(result => {
+    pvpFetch('/api/pvp/create', requestData).then(async result => {
       console.log('UI:1002', `[DEBUG btast] 响应: error=${result.error} bid=${result.battle_id} outLen=${(result.output||'').length}`);
       if (!result.error) {
         console.log('UI:1002', `[DEBUG btast] output预览: ${(result.output || '').substring(0, 400)}`);
@@ -4502,18 +5056,22 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
         return;
       }
       ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+      // Clear consumed AI overrides
+      ext.storageSet(aiOverridesKey, '');
       if (result.initiative) setInitiative(gid, result.initiative);
       if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
-      // Display
-      let out = result.output || '';
+      // Display via sendTurnMessages for pictmode support
+      const chunksMpv = [];
+      let outMpv = result.output || '';
       if (result.controlled_characters) {
-        out += '\n\n【玩家绑定】';
+        outMpv += '\n\n【玩家绑定】';
         for (const [pid, chars] of Object.entries(result.controlled_characters)) {
-          const names = chars.map(c => c.serial ? `【${c.serial}】${c.name}` : c.name).join(', ');
-          out += `\n  ${pid}: ${names}`;
+          const names = chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ');
+          outMpv += `\n  ${pid}: ${names}`;
         }
       }
-      seal.replyToSender(ctx, msg, out);
+      if (outMpv.trim()) chunksMpv.push(outMpv.trim());
+      await sendTurnMessages(ctx, msg, chunksMpv);
       // Sync HP
       if (result.characters) {
         const hpStore = {};
@@ -4577,19 +5135,54 @@ cmdBtaStartFull2.solve = (ctx, msg, cmdArgs) => {
     characters: characters,
   };
 
+  // ── Inject pre-configured AI overrides (from .setaiact outside battle) ──
+  const aiOverridesKey2 = `ai_overrides_${gid}`;
+  const storedOverridesRaw2 = ext.storageGet(aiOverridesKey2);
+  if (storedOverridesRaw2) {
+    try {
+      const storedOverrides2 = JSON.parse(storedOverridesRaw2);
+      if (storedOverrides2 && Object.keys(storedOverrides2).length > 0) {
+        requestData.ai_overrides = storedOverrides2;
+      }
+    } catch (e) {}
+  }
+
+  // ── Inject pre-configured full bindings (from .asfull outside battle) ──
+  const fullBindingsPvp = {};
+  const currentPlayerUid = ctx.player.userId;
+  const fullKeyPvp = `bta_asfull_${gid}_${currentPlayerUid}`;
+  const fullRawPvp = ext.storageGet(fullKeyPvp);
+  if (fullRawPvp) {
+    try {
+      const fullList = JSON.parse(fullRawPvp);
+      if (Array.isArray(fullList) && fullList.length > 0) {
+        fullBindingsPvp[currentPlayerUid] = fullList;
+      }
+    } catch(e) {}
+  }
+  if (Object.keys(fullBindingsPvp).length > 0) {
+    requestData.full_bindings = fullBindingsPvp;
+  }
+
   seal.replyToSender(ctx, msg, '正在连接 Python 后端...');
-  pvpFetch('/api/pvp/create', requestData).then(result => {
+  pvpFetch('/api/pvp/create', requestData).then(async result => {
     if (result.error) {
       seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
       return;
     }
     // Store battle_id
     ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+    // Clear consumed AI overrides
+    ext.storageSet(aiOverridesKey2, '');
     // Sync state
     if (result.initiative) setInitiative(gid, result.initiative);
     if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
-    // Display initial info
-    seal.replyToSender(ctx, msg, result.output + '\n\n' + renderMap(gid));
+    // Display initial info via sendTurnMessages for pictmode support
+    const chunksOld = [];
+    if (result.output && result.output.trim()) chunksOld.push(result.output.trim());
+    const mapText2 = renderMap(gid);
+    if (mapText2 && mapText2.trim()) chunksOld.push(mapText2.trim());
+    await sendTurnMessages(ctx, msg, chunksOld);
     // Sync HP to local storage
     if (result.characters) {
       const hpStore = {};
@@ -4623,7 +5216,7 @@ cmdBtaStartFullAI.help =
   '  .btastartfullai Y3 as Y1 with Y2  // 你操控Y1 + AI队友Y2 vs 对手Y3\n' +
   '  .btastartfullai Y12 Y1 as Y9      // 你操控Y9 vs 对手Y12+Y1';
 cmdBtaStartFullAI.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const rawArgs = (cmdArgs.cleanArgs || '').split(/\s+/).filter(a => a.length > 0);
 
   // ── Parse syntax: <对手编号(s)> as <自己编号> [with <队友编号(s)>] ──
@@ -4684,22 +5277,55 @@ cmdBtaStartFullAI.solve = (ctx, msg, cmdArgs) => {
     player_uid: ctx.player.userId,
   };
 
+  // ── Inject pre-configured AI overrides (from .setaiact outside battle) ──
+  const aiOverridesKey3 = `ai_overrides_${gid}`;
+  const storedOverridesRaw3 = ext.storageGet(aiOverridesKey3);
+  if (storedOverridesRaw3) {
+    try {
+      const storedOverrides3 = JSON.parse(storedOverridesRaw3);
+      if (storedOverrides3 && Object.keys(storedOverrides3).length > 0) {
+        requestData.ai_overrides = storedOverrides3;
+      }
+    } catch (e) {}
+  }
+
+  // ── Inject pre-configured full bindings (from .asfull outside battle) ──
+  const fullBindingsPve = {};
+  const currentPlayerUidPve = ctx.player.userId;
+  const fullKeyPve = `bta_asfull_${gid}_${currentPlayerUidPve}`;
+  const fullRawPve = ext.storageGet(fullKeyPve);
+  if (fullRawPve) {
+    try {
+      const fullList = JSON.parse(fullRawPve);
+      if (Array.isArray(fullList) && fullList.length > 0) {
+        fullBindingsPve[currentPlayerUidPve] = fullList;
+      }
+    } catch(e) {}
+  }
+  if (Object.keys(fullBindingsPve).length > 0) {
+    requestData.full_bindings = fullBindingsPve;
+  }
+
   const oppStr = opponentSerials.length > 0 ? opponentSerials.join(' ') : '随机';
   seal.replyToSender(ctx, msg,
     `对手: ${oppStr} | 玩家: ${selfSerial}` +
     (allySerials.length > 0 ? ` | 队友: ${allySerials.join(' ')}` : '') +
     `\n（所有角色数据来自 chData）\n正在连接 Python 后端...`);
 
-  pvpFetch('/api/pvp/create', requestData).then(result => {
+  pvpFetch('/api/pvp/create', requestData).then(async result => {
     if (result.error) {
       seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
       return;
     }
     ext.storageSet(`pvp_battle_${gid}`, result.battle_id);
+    // Clear consumed AI overrides
+    ext.storageSet(aiOverridesKey3, '');
     ext.storageSet(`pvp_human_${gid}`, result.human_uid || ctx.player.userId);
     if (result.initiative) setInitiative(gid, result.initiative);
     if (result.map) ext.storageSet(`combat_map_${gid}`, JSON.stringify(result.map));
-    seal.replyToSender(ctx, msg, result.output);
+    const chunksAi = [];
+    if (result.output && result.output.trim()) chunksAi.push(result.output.trim());
+    await sendTurnMessages(ctx, msg, chunksAi);
     if (result.characters) {
       const hpStore = {};
       for (const [uid, info] of Object.entries(result.characters)) {
@@ -4771,7 +5397,7 @@ cmdBteam.solve = (ctx, msg, cmdArgs) => {
         if (!result.teams || result.teams.length === 0) {
           seal.replyToSender(ctx, msg, '暂无战队。使用 .bteam new <名称> <序号...> 创建。');
         } else {
-          let out = '=== 固定战队列表 ===';
+          let out = '── 固定战队列表 ──';
           for (const t of result.teams) {
             out += `\n  ${t.id}: ${t.name} — ${(t.members || []).join(' ')}`;
           }
@@ -4841,13 +5467,15 @@ ext.cmdMap['bteam'] = cmdBteam;
 const cmdAlist = seal.ext.newCmdItemInfo();
 cmdAlist.name = 'alist';
 cmdAlist.help = '.alist // 输出当前可用操作表（sN, .g, .u 等）';
+cmdAlist.allowDelegate = true;
 cmdAlist.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const autoMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
 
   if (autoMode >= 2 && battleId) {
-    const playerId = ctx.player.userId;
+    const _alMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+    const playerId = _alMctx.player ? _alMctx.player.userId : ctx.player.userId;
     const baseUrl = getPvpServerUrl();
     fetch(`${baseUrl}/api/pvp/${battleId}/alist?player_id=${encodeURIComponent(playerId)}`, { method: 'GET' })
       .then(r => r.json())
@@ -4905,8 +5533,9 @@ ext.cmdMap['alist'] = cmdAlist;
 const cmdClist = seal.ext.newCmdItemInfo();
 cmdClist.name = 'clist';
 cmdClist.help = '.clist // 输出当前战斗内人物列表（含控制者信息）';
+cmdClist.allowDelegate = true;
 cmdClist.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const autoMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
 
@@ -4919,7 +5548,7 @@ cmdClist.solve = (ctx, msg, cmdArgs) => {
           seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
           return;
         }
-        let out = `=== 第${result.round}回合 战斗角色列表 ===`;
+        let out = `── 第${result.round}回合 战斗角色列表 ──`;
         const chars = result.characters || [];
         const yChars = chars.filter(c => c.team === 'Y');
         const xChars = chars.filter(c => c.team === 'X');
@@ -5453,8 +6082,11 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
           } catch(e) {}
         }
 
-        // Add summons to initiative
+        // Add summons to initiative (same-name summons share one initiative roll)
         const initList = getInitiative(gid);
+        // Shared initiative roll for all same-template summons from this cast
+        const sharedInitRoll = summonCount > 1 ? rollDice(mctx, '1d100') : 0;
+        const sharedInitRank = summonCount > 1 ? successRank(sharedInitRoll, stats.dex) : 0;
         for (let sc = 0; sc < summonCount; sc++) {
           // Summon ID: {caster_serial}_sum_{n} (e.g. Y12_sum_1)
           const casterSerial = getCharSerial(ctx) || ctx.player.userId;
@@ -5481,12 +6113,14 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
           // Add to initiative (summon acts on summoner's team)
           const summonerEntry = initList.find(e => e.userId === ctx.player.userId);
           const team = summonerEntry ? summonerEntry.team : 'Y';
-          const sumInitRoll = rollDice(mctx, '1d100');
-          const sumInitRank = successRank(sumInitRoll, stats.dex);
+          // Use shared roll for same-template summons, individual roll for single summon
+          const sumInitRoll = summonCount > 1 ? sharedInitRoll : rollDice(mctx, '1d100');
+          const sumInitRank = summonCount > 1 ? sharedInitRank : successRank(sumInitRoll, stats.dex);
           initList.push({
             userId: summonId, name: summonTemplateName, displayName: summonDisplay, team,
             dex: stats.dex, initRoll: sumInitRoll, initRank: sumInitRank,
-            coord: '', isSummon: true, ownerUserId: ctx.player.userId
+            coord: '', isSummon: true, ownerUserId: ctx.player.userId,
+            summonGroup: summonTemplateName  // same-name summons share group for display merging
           });
 
           // Place summon on map near caster
@@ -5785,30 +6419,41 @@ function makeSkillCmd(skillNum) {
       `.s${skillNum} @某人  // 目标为@某人绑定的魔法少女序号`;
   }
   cmd.allowDelegate = true;
-  cmd.solve = (ctx, msg, cmdArgs) => {
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+  cmd.solve = async (ctx, msg, cmdArgs) => {
+    const gid = getGid(ctx);
 
     // --- .setab 2 HTTP path (must be checked first — backend manages state) ---
     const _autoMode = getAutoMode(ctx);
     const _battleId = ext.storageGet(`pvp_battle_${gid}`);
     if (_autoMode >= 2 && _battleId) {
-      const _mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      const _skillMctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+      const _skillActingId = (_skillMctx && _skillMctx.player && _skillMctx.player.userId !== ctx.player.userId)
+          ? _skillMctx.player.userId : ctx.player.userId;
       let _targetId = '';
-      if (_mctx && _mctx.player && _mctx.player.userId !== ctx.player.userId) {
-        _targetId = _mctx.player.userId;
-      }
+      // Extract n# count from args before sending to Python
+      const _rawArgs = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
+      let _sCount = 1;
+      const _cleanArgs = _rawArgs.filter(a => {
+        const m = a.match(/^(\d+)#$/);
+        if (m) { _sCount = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+        return true;
+      });
+      const _restimS = ext.storageGet(`bta_restim_${_skillActingId}`) || '0';
+      const _failedReactionS = seal.ext.getIntConfig(ext, '失败攻击允许反应');
       pvpFetch(`/api/pvp/${_battleId}/action`, {
-        player_id: ctx.player.userId,
+        player_id: _skillActingId,
         action: `.s${skillNum}`,
         target: _targetId,
-        args: cmdArgs.cleanArgs,
-      }).then(_result => {
+        args: _cleanArgs.join(' '),
+        count: _sCount,
+        restim_mode: _restimS,
+        allow_failed_reaction: _failedReactionS,
+      }).then(async _result => {
         if (_result.error) {
           seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
           return;
         }
-        const _out = renderBattleResponse(gid, _result, ctx, msg);
-        seal.replyToSender(ctx, msg, _out);
+        await renderBattleResponse(gid, _result, ctx, msg);
       });
       return seal.ext.newCmdExecuteResult(true);
     }
@@ -5826,6 +6471,14 @@ function makeSkillCmd(skillNum) {
       return endPersistentSpell(ctx, msg, gid, skillNum);
     }
 
+    // --- Extract n# count from args (e.g. .s1 Y13 2#) ---
+    let skillCount = 1;
+    const filteredArgs = endArgs.filter(a => {
+      const m = a.match(/^(\d+)#$/);
+      if (m) { skillCount = Math.max(1, Math.min(99, parseInt(m[1]))); return false; }
+      return true;
+    });
+
     // Verify it's this player's turn
     const initList = getInitiative(gid);
     const actions = getActions(gid);
@@ -5837,21 +6490,21 @@ function makeSkillCmd(skillNum) {
     }
     // Check remaining actions
     const myActions = actions[userId] || { 附加: 0, 主动: 0 };
-    if (myActions.主动 <= 0) {
-      seal.replyToSender(ctx, msg, '你的主动作次数已用尽！使用 .a sN 消耗附加动作，或等待下一回合。');
+    if (myActions.主动 < skillCount) {
+      seal.replyToSender(ctx, msg, `主动作不足！需要 ${skillCount} 次，剩余 ${myActions.主动} 次。`);
       return seal.ext.newCmdExecuteResult(true);
     }
 
     let output = '';
     let isPassive = false;  // scoped for use in action decrement
     const mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+    let actualExecCount = skillCount;  // actual executions (may be less if target dies)
 
     if (skillNum === 0) {
-      // Basic melee attack — use best melee skill, go through standard .bta flow
+      // Basic melee attack — use best melee skill
       const best = getBestMeleeSkill(ctx);
       const pn = seal.format(ctx, '{$t玩家}');
       if (mctx) {
-        // Execute as a melee attack with auto hit roll
         const targetName = seal.format(mctx, '{$t玩家}');
         initCombatHP(gid, userId, ctx, mctx.player.userId, mctx);
 
@@ -5876,32 +6529,53 @@ function makeSkillCmd(skillNum) {
           } catch(e) {}
         }
 
-        const atkRollInfo = rollD100(ctx, '');
-        const atkRank = successRank(atkRollInfo.result, best.value);
-        const bpD = atkRollInfo.detail ? `, ${atkRollInfo.detail}` : '';
+        // Roll skillCount attacks, accumulate results
+        const allAtkResults = [];
+        const allAtkLines = [];
+        for (let ec = 0; ec < skillCount; ec++) {
+          const atkRollInfo = rollD100(ctx, '');
+          const atkRank = successRank(atkRollInfo.result, best.value);
+          const bpD = atkRollInfo.detail ? `, ${atkRollInfo.detail}` : '';
+          const line = `D100=${atkRollInfo.result}/${best.value}` +
+            (bpD ? ` (${atkRollInfo.result}[D100=${atkRollInfo.result}${bpD}])` : '') +
+            ` ${rankText(ctx, atkRank)}`;
+          allAtkResults.push({ roll: atkRollInfo.result, rank: atkRank, detail: atkRollInfo.detail });
+          allAtkLines.push(line);
+          // Check if target died (stop rolling if target HP <= 0)
+          if (ec < skillCount - 1) {
+            const hpCheck = getCombatHP(gid);
+            if (hpCheck[mctx.player.userId] !== undefined && hpCheck[mctx.player.userId] <= 0) break;
+          }
+        }
+        const actualMeleeCount = allAtkResults.length;
 
-        output = `${pn} 使用基础近战攻击【${best.name}=${best.value}】→ ${targetName}\n`;
-        output += `D100=${atkRollInfo.result}/${best.value}` +
-          (bpD ? ` (${atkRollInfo.result}[D100=${atkRollInfo.result}${bpD}])` : '') +
-          ` ${rankText(ctx, atkRank)}\n`;
+        output = `${pn} 使用基础近战攻击【${best.name}=${best.value}】→ ${targetName}`;
+        if (skillCount > 1) output += ` ×${actualMeleeCount}`;
+        output += '\n';
+        output += allAtkLines.join('\n') + '\n';
 
         if (isRangedSkill(best.name)) {
-          // Shouldn't happen for melee, but handle
-          if (atkRank > 0) {
-            const dmgVal = calcDamageAndSyncCard(mctx, ctx, mctx.player.userId, userId, gid,
-              atkRank, atkRollInfo.result, '1d4', 1, 0, false, false);
-            output += `直接命中，造成 ${dmgVal} 点伤害。\n`;
+          // Direct damage for each hit
+          let totalDmg = 0;
+          for (const ar of allAtkResults) {
+            if (ar.rank > 0) {
+              totalDmg += calcDamageAndSyncCard(mctx, ctx, mctx.player.userId, userId, gid,
+                ar.rank, ar.roll, '1d4', 1, 0, false, false);
+            }
+          }
+          if (totalDmg > 0) {
+            output += `直接命中 ${actualMeleeCount} 次，造成 ${totalDmg} 点伤害。\n`;
           } else {
-            output += '未命中！\n';
+            output += `${actualMeleeCount} 次攻击均未命中！\n`;
           }
         } else {
-          // Melee: store pending for reaction
+          // Melee: store combined pending for all attacks
           const pKey = `pending_atk_${gid}_${mctx.player.userId}`;
           initCombatHP(gid, userId, ctx, mctx.player.userId, mctx);
           ext.storageSet(pKey, JSON.stringify({
             attackerName: pn, attackerUserId: userId,
             skillName: best.name, skillValue: best.value,
-            atkResults: [{ roll: atkRollInfo.result, rank: atkRank, detail: atkRollInfo.detail }], atkCount: 1,
+            atkResults: allAtkResults, atkCount: actualMeleeCount,
             damageDice: '1d4', penetration: 1, lethality: 0,
             bpSuffix: '', dmgAdvantage: false, dmgDisadvantage: false,
             targetName, targetUserId: mctx.player.userId,
@@ -5914,9 +6588,12 @@ function makeSkillCmd(skillNum) {
           if (tgtRaw) { try { tids = JSON.parse(tgtRaw); } catch(e) {} }
           if (!tids.includes(mctx.player.userId)) { tids.push(mctx.player.userId); ext.storageSet(tgtKey, JSON.stringify(tids)); }
           output += `@${targetName} 请做出反应：\n.e 闪避 / .e d  /  .e 格挡 / .e b  /  .e 反击 / .e c`;
+          if (actualMeleeCount > 1) output += `\n（${actualMeleeCount}次攻击，可使用 .ec ${actualMeleeCount}# 等批量反应）`;
+          actualExecCount = actualMeleeCount;
         }
       } else {
         output = `${pn} 使用基础近战攻击【${best.name}=${best.value}】\n（请 @目标 指定攻击对象）`;
+        actualExecCount = 0;  // no target, no action consumed
       }
     } else {
       // Spell execution: load spells and find spell N
@@ -5930,19 +6607,30 @@ function makeSkillCmd(skillNum) {
       const timing = spell['时机'] || 2;
       isPassive = hasTiming(timing, 1);            // 1 = 被动
       const isMain = hasTiming(timing, 2);       // 2 = 主动作
-      const isExtra = hasTiming(timing, 3);      // 3 = 附加动作
-      const isReaction = hasTiming(timing, 4);   // 4 = 反应
       if (!isMain && !isPassive) {
-        // Only allow 主动作 and 被动 skills in .sN
         seal.replyToSender(ctx, msg, `【${spell.name}】不能在主动作阶段使用（时机: ${TIMING_NAMES[timing]||timing}）`);
         return seal.ext.newCmdExecuteResult(true);
       }
-      output = executeSpell(ctx, mctx, spell, gid, isPassive ? 'passive' : 'main');
+      // Execute spell skillCount times
+      const spellOutputs = [];
+      for (let sc = 0; sc < skillCount; sc++) {
+        spellOutputs.push(executeSpell(ctx, mctx, spell, gid, isPassive ? 'passive' : 'main'));
+        // Check if target still alive
+        if (sc < skillCount - 1 && mctx && mctx.player) {
+          const hpCheck2 = getCombatHP(gid);
+          if (hpCheck2[mctx.player.userId] !== undefined && hpCheck2[mctx.player.userId] <= 0) break;
+        }
+      }
+      actualExecCount = spellOutputs.length;
+      output = spellOutputs.join('\n');
+      if (skillCount > 1) {
+        output = `【${spell.name}】×${spellOutputs.length}:\n` + output;
+      }
     }
 
     // Decrement action (passives don't consume actions)
     if (skillNum === 0 || !isPassive) {
-      myActions.主动 -= 1;
+      myActions.主动 -= actualExecCount;
     } else {
       output += '\n（被动法术，不消耗主动作）';
     }
@@ -5961,7 +6649,7 @@ function makeSkillCmd(skillNum) {
         // Show initiative table for the new round
         const hpStoreRoundStart2 = getCombatHP(gid);
         output += `先攻表:\n`;
-        output += initList.map((e, i) => `  ${i+1}. ${e.name} D100=${e.initRoll}/DEX=${e.dex} HP:${hpStoreRoundStart2[e.userId] || 0}`).join('\n') + '\n';
+        output += formatInitiativeTable(initList, hpStoreRoundStart2);
 
         // --- Tick down combat effects (回合后结算) ---
         const effKey = `combat_effects_${gid}`;
@@ -6185,7 +6873,16 @@ function makeSkillCmd(skillNum) {
       output += `\n剩余主动作: ${myActions.主动}`;
     }
 
-    seal.replyToSender(ctx, msg, output);
+    // Split into action result (chunk 1) and turn info (chunk 2)
+    const chunks = [];
+    const roundStartIdx = output.indexOf('\n===== 第');
+    if (roundStartIdx > 0) {
+      chunks.push(output.substring(0, roundStartIdx).trim());
+      chunks.push(output.substring(roundStartIdx).trim());
+    } else {
+      chunks.push(output);
+    }
+    await sendTurnMessages(ctx, msg, chunks);
     return seal.ext.newCmdExecuteResult(true);
   };
   return cmd;
@@ -6201,8 +6898,11 @@ function makeAdditionalCmd() {
   cmd.help =
     '.a m <坐标>  // 移动（消耗一次附加动作）\n' +
     '.a s<序号>    // 附加动作释放技能（须为附加动作时机）';
-  cmd.solve = (ctx, msg, cmdArgs) => {
-    const gid = ctx.group ? ctx.group.groupId : 'private';
+  cmd.allowDelegate = true;
+  cmd.solve = async (ctx, msg, cmdArgs) => {
+    const gid = getGid(ctx);
+    const _aMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+    const _aActingId = _aMctx.player ? _aMctx.player.userId : ctx.player.userId;
 
     // --- .setab 2 HTTP path: route additional action through Python backend ---
     const _autoMode = getAutoMode(ctx);
@@ -6227,17 +6927,18 @@ function makeAdditionalCmd() {
         return seal.ext.newCmdExecuteResult(true);
       }
       pvpFetch(`/api/pvp/${_battleId}/action`, {
-        player_id: ctx.player.userId,
+        player_id: _aActingId,
         action: _action,
         target: '',
         args: cmdArgs.cleanArgs,
-      }).then(_result => {
+        restim_mode: ext.storageGet(`bta_restim_${_aActingId}`) || '0',
+        allow_failed_reaction: seal.ext.getIntConfig(ext, '失败攻击允许反应'),
+      }).then(async _result => {
         if (_result.error) {
           seal.replyToSender(ctx, msg, `[.setab 2] ${_result.message}`);
           return;
         }
-        const _out = renderBattleResponse(gid, _result, ctx, msg);
-        seal.replyToSender(ctx, msg, _out);
+        await renderBattleResponse(gid, _result, ctx, msg);
       });
       return seal.ext.newCmdExecuteResult(true);
     }
@@ -6356,7 +7057,7 @@ cmdStc.help =
   '如 .as III 后 .stc 力量 50 → 实际设置 III_力量=50';
 cmdStc.solve = (ctx, msg, cmdArgs) => {
   const uid = ctx.player.userId;
-  const bindRaw = ext.storageGet(`bta_bind_${uid}`);
+  const bindRaw = ext.storageGet(`bta_bind_${gid}_${uid}`);
   if (!bindRaw) {
     seal.replyToSender(ctx, msg, '未绑定魔法少女序号！请先使用 .as <序号> 绑定（如 .as II）');
     return seal.ext.newCmdExecuteResult(true);
@@ -6395,6 +7096,681 @@ cmdStc.solve = (ctx, msg, cmdArgs) => {
     seal.replyToSender(ctx, msg, `已设置 ${attrName} = ${val}`);
   } else {
     seal.replyToSender(ctx, msg, '格式错误。用法：.stc <属性> <值>（如 .stc 力量 50 或 .stc 伤害值=1d6）');
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .setaiact  — 手动设定AI角色/召唤物的固定策略（仅setab=2）
+// ============================================================
+function parseSetaiactArgs(cleanArgs) {
+  /** Parse .setaiact arguments into structured override config.
+   *  Returns { target, clear, overrides: {main, addi, react} } or null on error.
+   */
+  const tokens = cleanArgs.split(/\s+/).filter(a => a.length > 0);
+  if (tokens.length < 1) return { error: '缺少目标。用法：.setaiact <Yx|Yx-N> [clear] [main ...] [addi ...] [react ...]' };
+
+  const target = tokens[0].toUpperCase();
+  if (!/^Y\d+(-\d+)?$/.test(target)) {
+    return { error: `目标格式错误: ${tokens[0]}。应为 Yx（角色）或 Yx-N（召唤物，N从1开始）` };
+  }
+
+  let idx = 1;
+  let clear = false;
+  if (idx < tokens.length && tokens[idx].toLowerCase() === 'clear') {
+    clear = true;
+    idx++;
+  }
+
+  // Find section boundaries
+  const sectionStarts = {};
+  const keywords = ['main', 'addi', 'react'];
+  for (let i = idx; i < tokens.length; i++) {
+    const tl = tokens[i].toLowerCase();
+    if (keywords.includes(tl) && !sectionStarts[tl]) {
+      sectionStarts[tl] = i;
+    }
+  }
+
+  // Extract each section's raw tokens
+  function extractSection(key) {
+    if (!(key in sectionStarts)) return [];
+    const start = sectionStarts[key] + 1; // skip keyword itself
+    // Find end: next keyword that appears AFTER this one
+    let end = tokens.length;
+    for (const k of keywords) {
+      if (sectionStarts[k] > sectionStarts[key] && sectionStarts[k] < end) {
+        end = sectionStarts[k];
+      }
+    }
+    return tokens.slice(start, end);
+  }
+
+  // Parse a section into groups: split by 'and', then by 'or', extract (rate N)
+  function parseSection(rawTokens, sectionName) {
+    if (rawTokens.length === 0) return [];
+    // Rejoin and split by ' and ' (the keyword between groups)
+    const joined = rawTokens.join(' ');
+    const groupStrs = joined.split(/\s+and\s+/);
+    const groups = [];
+    for (const gs of groupStrs) {
+      // Split group by ' or '
+      const candStrs = gs.split(/\s+or\s+/);
+      const candidates = [];
+      for (let cs of candStrs) {
+        cs = cs.trim();
+        if (!cs) continue;
+        // Extract (rate N) suffix
+        let weight = null;
+        const rateMatch = cs.match(/^(.+?)\s*\(rate\s+(\d+)\)\s*$/i);
+        if (rateMatch) {
+          cs = rateMatch[1].trim();
+          weight = parseInt(rateMatch[2], 10);
+        }
+        candidates.push([cs, weight]);
+      }
+      if (candidates.length > 0) groups.push(candidates);
+    }
+    return groups;
+  }
+
+  const mainRaw = extractSection('main');
+  const addiRaw = extractSection('addi');
+  const reactRaw = extractSection('react');
+
+  const overrides = {};
+  const mainGroups = parseSection(mainRaw, 'main');
+  const addiGroups = parseSection(addiRaw, 'addi');
+  const reactGroups = parseSection(reactRaw, 'react');
+
+  if (mainGroups.length > 0) overrides.main = mainGroups;
+  if (addiGroups.length > 0) overrides.addi = addiGroups;
+  if (reactGroups.length > 0) overrides.react = reactGroups;
+
+  // If no clear and no overrides and no 'clear' was specified, it's an error
+  if (!clear && Object.keys(overrides).length === 0 && idx === 1) {
+    return { error: '用法：.setaiact <Yx|Yx-N> [clear] [main ...] [addi ...] [react ...]\n至少需要 clear 或 main/addi/react 之一。' };
+  }
+
+  return { target, clear, overrides };
+}
+
+function describeOverride(overrides) {
+  /** Build a human-readable summary of an override config. */
+  const parts = [];
+  if (overrides.main) {
+    const mainDesc = overrides.main.map(g =>
+      g.map(([a, w]) => w ? `${a}(rate ${w})` : a).join(' or ')
+    ).join(' and ');
+    parts.push(`主动作: ${mainDesc}`);
+  }
+  if (overrides.addi) {
+    const addiDesc = overrides.addi.map(g =>
+      g.map(([a, w]) => w ? `${a}(rate ${w})` : a).join(' or ')
+    ).join(' and ');
+    parts.push(`附加: ${addiDesc}`);
+  }
+  if (overrides.react) {
+    const reactDesc = overrides.react[0].map(([a, w]) =>
+      w ? `${a}(rate ${w})` : a
+    ).join(' or ');
+    parts.push(`反应: ${reactDesc}`);
+  }
+  return parts.join('；');
+}
+
+const cmdSetaiact = seal.ext.newCmdItemInfo();
+cmdSetaiact.name = 'setaiact';
+cmdSetaiact.help =
+  '.setaiact <Yx|Yx-N> [clear] [main <ACT> [or ...] [and ...]] [addi <ADA> [or ...] [and ...]] [react <E> [or ...]]\n' +
+  '为AI控制角色/召唤物绑定固定策略（仅setab=2）。\n' +
+  '示例：.setaiact Y4 main s0 (rate 70) or s3 and s1 addi eat or none react d\n' +
+  '     .setaiact Y4 clear  （清空策略）';
+cmdSetaiact.allowDelegate = true;
+cmdSetaiact.solve = async (ctx, msg, cmdArgs) => {
+  const parsed = parseSetaiactArgs(cmdArgs.cleanArgs);
+  if (parsed.error) {
+    seal.replyToSender(ctx, msg, parsed.error);
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  const gid = getGid(ctx);
+  const _autoMode = getAutoMode(ctx);
+  const _battleId = ext.storageGet(`pvp_battle_${gid}`);
+
+  if (_autoMode < 2) {
+    seal.replyToSender(ctx, msg, '.setaiact 仅在 setab=2（Python后端模式）下可用。');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // ── 无活跃战斗 → 持久化存储，下次战斗创建时自动应用 ──
+  if (!_battleId) {
+    const storeKey = `ai_overrides_${gid}`;
+    let stored = {};
+    try { stored = JSON.parse(ext.storageGet(storeKey) || '{}'); } catch (e) {}
+
+    if (parsed.clear && Object.keys(parsed.overrides).length === 0) {
+      // Pure clear: remove this target's override
+      delete stored[parsed.target];
+    }
+    if (Object.keys(parsed.overrides).length > 0) {
+      // Store/update override for this target (clear + set = overwrite)
+      stored[parsed.target] = parsed.overrides;
+    }
+
+    ext.storageSet(storeKey, JSON.stringify(stored));
+
+    let confirm = `[.setaiact] 已为 ${parsed.target} 保存AI策略（下次战斗生效）`;
+    if (parsed.clear && Object.keys(parsed.overrides).length === 0) {
+      confirm = `[.setaiact] 已清空 ${parsed.target} 的预存AI策略`;
+    } else {
+      confirm += `:\n${describeOverride(parsed.overrides)}`;
+    }
+    seal.replyToSender(ctx, msg, confirm);
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // ── 有活跃战斗 → 走现有 API 流程 ──
+  const payload = {
+    player_id: ctx.player.userId,
+    target_serial: parsed.target,
+    clear: parsed.clear,
+    overrides: parsed.overrides,
+  };
+
+  try {
+    const result = await pvpFetch(`/api/pvp/${_battleId}/setaiact`, payload);
+    if (result.error) {
+      seal.replyToSender(ctx, msg, `[.setaiact] ${result.message}`);
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    // Build confirmation message
+    let confirm = `[.setaiact] 已为 ${result.target_name || parsed.target} 设定AI策略`;
+    if (parsed.clear) confirm += '（已清空旧策略）';
+    if (Object.keys(parsed.overrides).length > 0) {
+      confirm += `:\n${describeOverride(parsed.overrides)}`;
+    } else if (parsed.clear) {
+      confirm += '，恢复使用AI学习权重。';
+    }
+    seal.replyToSender(ctx, msg, confirm);
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[.setaiact] 请求失败: ${e.message || e}`);
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .chreload — 手动重载角色卡数据
+// ============================================================
+const cmdChreload = seal.ext.newCmdItemInfo();
+cmdChreload.name = 'chreload';
+cmdChreload.help =
+  '.chreload — 手动重载Python后端角色卡数据（characters_data_pvp.py），无需重启服务器。';
+cmdChreload.allowDelegate = true;
+cmdChreload.solve = async (ctx, msg, cmdArgs) => {
+  try {
+    const serverUrl = getPvpServerUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(`${serverUrl}/api/reload_chardata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({}),
+    });
+    clearTimeout(timeoutId);
+    const result = await resp.json();
+    if (result.ok) {
+      seal.replyToSender(ctx, msg, `[.chreload] ${result.message}`);
+    } else {
+      seal.replyToSender(ctx, msg, `[.chreload] 重载失败: ${result.message}`);
+    }
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[.chreload] 请求失败: ${e.message || e}`);
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .train  — v1.3.0 AI训练指令
+// ============================================================
+const cmdTrain = seal.ext.newCmdItemInfo();
+cmdTrain.name = 'train';
+cmdTrain.help =
+  '.train // 执行一次PVP训练，完成后自动重载Q表';
+cmdTrain.solve = async (ctx, msg, cmdArgs) => {
+  const gid = getGid(ctx);
+  try {
+    const serverUrl = getPvpServerUrl();
+    // Start training
+    const startResp = await fetch(`${serverUrl}/api/train/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const startResult = await startResp.json();
+    if (startResult.error) {
+      seal.replyToSender(ctx, msg, `[.train] 启动失败: ${startResult.message}`);
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    const jobId = startResult.job_id;
+    seal.replyToSender(ctx, msg, `[.train] 训练已启动 (${jobId})，预计需数分钟，完成后将自动通知...`);
+
+    // Poll for completion (every 15 seconds, max 40 minutes)
+    const pollInterval = 15000;
+    const maxPolls = 160;
+    let polled = 0;
+
+    const poll = async () => {
+      if (polled >= maxPolls) {
+        seal.replyToSender(ctx, msg, '[.train] 训练超时（>40分钟），请检查后端日志。');
+        return;
+      }
+      polled++;
+      try {
+        const statusResp = await fetch(`${serverUrl}/api/train/${jobId}/status`);
+        const status = await statusResp.json();
+        if (status.status === 'completed') {
+          seal.replyToSender(ctx, msg, `[.train] ${status.message || '训练完成！'}`);
+          return;
+        } else if (status.status === 'failed') {
+          seal.replyToSender(ctx, msg, `[.train] ${status.message || '训练失败'}`);
+          return;
+        }
+        setTimeout(poll, pollInterval);
+      } catch (e) {
+        setTimeout(poll, pollInterval);
+      }
+    };
+    setTimeout(poll, pollInterval);
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[.train] 请求失败: ${e.message || e}`);
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .jour  — v1.3.0 AI锦标赛指令
+//  语法: .jour [3/2/1/ALL]
+//  全部输出以图片形式发送
+// ============================================================
+const cmdJour = seal.ext.newCmdItemInfo();
+cmdJour.name = 'jour';
+cmdJour.help =
+  '.jour     // 运行全部三种赛制锦标赛 (1v1+2v2+3v3)\n' +
+  '.jour 3   // 仅运行 3v3\n' +
+  '.jour 2   // 仅运行 2v2\n' +
+  '.jour 1   // 仅运行 1v1\n' +
+  '.jour stop // 停止当前正在运行的锦标赛\n' +
+  '输出格式由 pictmode 配置决定（0=文本, 1=图片）。';
+cmdJour.solve = async (ctx, msg, cmdArgs) => {
+  const gid = getGid(ctx);
+  const arg = (cmdArgs.getArgN(1) || 'ALL').toUpperCase();
+
+  // Handle .jour stop
+  if (arg === 'STOP') {
+    try {
+      const serverUrl = getPvpServerUrl();
+      // Find running tournament job
+      const listResp = await fetch(`${serverUrl}/api/jour/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stop_all: true }),
+      });
+      // Try stopping via stored job_id
+      const storedJobId = ext.storageGet(`jour_job_${gid}`);
+      if (storedJobId) {
+        const stopResp = await fetch(`${serverUrl}/api/jour/${storedJobId}/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const stopResult = await stopResp.json();
+        ext.storageSet(`jour_job_${gid}`, '');
+        seal.replyToSender(ctx, msg, `[.jour] ${stopResult.message || '锦标赛已停止'}`);
+      } else {
+        seal.replyToSender(ctx, msg, '[.jour] 当前没有运行中的锦标赛。');
+      }
+    } catch (e) {
+      seal.replyToSender(ctx, msg, `[.jour] 停止失败: ${e.message || e}`);
+    }
+    return seal.ext.newCmdExecuteResult(true);
+  }
+  let mode = 'all';
+  if (arg === '1') mode = '1';
+  else if (arg === '2') mode = '2';
+  else if (arg === '3') mode = '3';
+
+  const modeLabel = mode === 'all' ? '1v1+2v2+3v3' : `${mode}v${mode}`;
+  seal.replyToSender(ctx, msg, `[.jour] 锦标赛已启动（${modeLabel}），请耐心等待...`);
+
+  try {
+    const serverUrl = getPvpServerUrl();
+    const startResp = await fetch(`${serverUrl}/api/jour/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const startResult = await startResp.json();
+    if (startResult.error) {
+      seal.replyToSender(ctx, msg, `[.jour] 启动失败: ${startResult.message}`);
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    const jobId = startResult.job_id;
+    ext.storageSet(`jour_job_${gid}`, jobId);
+
+    const pictmode = seal.ext.getIntConfig(ext, 'pictmode');
+    // Phase accumulators — collect text for each phase
+    let currentPhase = '';
+    let phaseBuffer = [];
+
+    const sendOutput = async (text) => {
+      if (!text || !text.trim()) return;
+      if (pictmode === 1) {
+        // Render as image
+        try {
+          const renderResp = await fetch(`${serverUrl}/api/render`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+          });
+          const renderResult = await renderResp.json();
+          if (renderResult.images && renderResult.images.length > 0) {
+            for (const b64 of renderResult.images) {
+              seal.replyToSender(ctx, msg, `[CQ:image,file=base64://${b64}]`);
+            }
+            return;
+          }
+        } catch (e) { /* fall through to text */ }
+      }
+      // Text mode (or image fallback)
+      seal.replyToSender(ctx, msg, text.substring(0, 4000));
+    };
+
+    // Phases that should be sent to group chat (prelim process is NOT sent)
+    const PUBLIC_PHASES = new Set(['standings', 'bracket', 'ko_result', 'sf_detail', 'final', 'done']);
+
+    const flushPhaseBuffer = async () => {
+      if (phaseBuffer.length === 0) return;
+      const text = phaseBuffer.join('\n');
+      phaseBuffer = [];
+      // Only send to group if this phase is public
+      if (PUBLIC_PHASES.has(currentPhase) || currentPhase === 'done') {
+        await sendOutput(text);
+      }
+    };
+
+    let phaseEntryCount = 0;
+    const pollOutput = async () => {
+      try {
+        const pollResp = await fetch(`${serverUrl}/api/jour/${jobId}/poll`);
+        const pollResult = await pollResp.json();
+
+        if (pollResult.entries && pollResult.entries.length > 0) {
+          for (const entry of pollResult.entries) {
+            if (entry.type === 'done') {
+              await flushPhaseBuffer();
+              ext.storageSet(`jour_job_${gid}`, '');
+              try {
+                const resultsResp = await fetch(`${serverUrl}/api/jour/${jobId}/results`);
+                const resultsData = await resultsResp.json();
+                if (resultsData.results && resultsData.results.result) {
+                  await sendOutput(resultsData.results.result);
+                }
+              } catch (e) { /* ignore */ }
+              return;
+            }
+            if (entry.type === 'error') {
+              ext.storageSet(`jour_job_${gid}`, '');
+              seal.replyToSender(ctx, msg, `[.jour] 错误: ${entry.msg}`);
+              return;
+            }
+            if (entry.type === 'log') {
+              const phase = entry.phase;
+              const logMsg = entry.msg || '';
+
+              // Phase transition: flush previous phase buffer
+              if (phase !== currentPhase && phaseBuffer.length > 0) {
+                await flushPhaseBuffer();
+                phaseEntryCount = 0;
+              }
+              currentPhase = phase;
+              phaseBuffer.push(logMsg);
+              phaseEntryCount++;
+              // Mid-phase flush: every 15 entries to prevent excessive accumulation
+              // (only for public phases; prelim phases are silently buffered and discarded on phase change)
+              if (phaseEntryCount >= 15 && PUBLIC_PHASES.has(phase)) {
+                await flushPhaseBuffer();
+                phaseEntryCount = 0;
+              }
+            }
+          }
+        }
+
+        if (pollResult.status === 'running') {
+          setTimeout(pollOutput, 5000);
+        } else if (pollResult.status === 'completed') {
+          await flushPhaseBuffer();
+          setTimeout(pollOutput, 1000);
+        } else if (pollResult.status === 'failed') {
+          await flushPhaseBuffer();
+          seal.replyToSender(ctx, msg, '[.jour] 锦标赛执行失败，请检查后端日志。');
+        }
+      } catch (e) {
+        setTimeout(pollOutput, 10000);
+      }
+    };
+
+    setTimeout(pollOutput, 5000);
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[.jour] 请求失败: ${e.message || e}`);
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .sim  — v1.3.0 快速战斗模拟
+//  语法同 python sim.py，但 -- 参数去掉双横线
+// ============================================================
+const cmdSim = seal.ext.newCmdItemInfo();
+cmdSim.name = 'sim';
+cmdSim.help =
+  '.sim TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [season S] [verbose]\n' +
+  '.sim mode table format 1v1|2v2|3v3 [-n N] [teams "..."] [-s SEED] [season S]';
+cmdSim.solve = async (ctx, msg, cmdArgs) => {
+  const rawArgs = cmdArgs.cleanArgs || '';
+  const args = rawArgs.split(/\s+/).filter(a => a.length > 0);
+  if (args.length === 0) {
+    seal.replyToSender(ctx, msg, '用法：.sim TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [season S] [verbose]\n.sim mode table format 1v1|2v2|3v3 [-n N] [teams "..."]');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  let params = { mode: 'single' };
+  let isTable = false;
+  let verbose = false;
+
+  // Check for mode table
+  const modeIdx = args.findIndex(a => a === 'mode');
+  if (modeIdx >= 0 && modeIdx + 1 < args.length && args[modeIdx + 1] === 'table') {
+    isTable = true;
+    params.mode = 'table';
+  }
+
+  if (isTable) {
+    // Parse table mode args
+    // format
+    const fmtIdx = args.findIndex(a => a === 'format');
+    if (fmtIdx >= 0 && fmtIdx + 1 < args.length) {
+      params.format = args[fmtIdx + 1];
+    }
+    // teams
+    const teamsIdx = args.findIndex(a => a === 'teams');
+    if (teamsIdx >= 0 && teamsIdx + 1 < args.length) {
+      params.teams = args[teamsIdx + 1];
+    }
+    // -n, -m, -s, season
+    const nIdx = args.findIndex(a => a === '-n');
+    if (nIdx >= 0 && nIdx + 1 < args.length) params.n = parseInt(args[nIdx + 1]) || 50;
+    const mIdx = args.findIndex(a => a === '-m');
+    if (mIdx >= 0 && mIdx + 1 < args.length) params.map_size = args[mIdx + 1];
+    const sIdx = args.findIndex(a => a === '-s');
+    if (sIdx >= 0 && sIdx + 1 < args.length) params.seed = parseInt(args[sIdx + 1]);
+    const seasonIdx = args.findIndex(a => a === 'season');
+    if (seasonIdx >= 0 && seasonIdx + 1 < args.length) params.season = parseInt(args[seasonIdx + 1]);
+  } else {
+    // Single mode: find "vs" separator
+    const vsIdx = args.findIndex(a => a.toLowerCase() === 'vs');
+    if (vsIdx < 0) {
+      seal.replyToSender(ctx, msg, '用法：.sim TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [season S] [verbose]');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    // Left side = team_a, parse tokens (can be + separated)
+    const leftTokens = args.slice(0, vsIdx);
+    const leftStr = leftTokens.join('+');
+    params.team_a = leftStr.split('+').filter(a => a.length > 0);
+
+    // Right side = team_b + options
+    const right = args.slice(vsIdx + 1);
+    const rightParts = [];
+    const optionParts = [];
+    let inOption = false;
+    for (const t of right) {
+      if (t === '-n' || t === '-m' || t === '-s' || t === 'verbose' || t === 'season') {
+        inOption = true;
+        optionParts.push(t);
+      } else if (inOption) {
+        optionParts.push(t);
+        inOption = false;
+      } else {
+        rightParts.push(t);
+      }
+    }
+    const rightStr = rightParts.join('+');
+    params.team_b = rightStr.split('+').filter(a => a.length > 0);
+
+    if (params.team_a.length === 0 || params.team_b.length === 0) {
+      seal.replyToSender(ctx, msg, '错误：双方都需要至少一个角色。语法: .sim Y5 vs Y1');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+
+    // Parse options from combined args and right side options
+    const allOptions = [...args, ...optionParts]; // scan all for options
+    const nIdx2 = allOptions.findIndex((a, i) => a === '-n' && i + 1 < allOptions.length);
+    if (nIdx2 >= 0) params.n = parseInt(allOptions[nIdx2 + 1]) || 100;
+    const mIdx2 = allOptions.findIndex((a, i) => a === '-m' && i + 1 < allOptions.length);
+    if (mIdx2 >= 0) params.map_size = allOptions[mIdx2 + 1];
+    const sIdx2 = allOptions.findIndex((a, i) => a === '-s' && i + 1 < allOptions.length);
+    if (sIdx2 >= 0) params.seed = parseInt(allOptions[sIdx2 + 1]);
+    const seasonIdx2 = allOptions.findIndex((a, i) => a === 'season' && i + 1 < allOptions.length);
+    if (seasonIdx2 >= 0) params.season = parseInt(allOptions[seasonIdx2 + 1]);
+    verbose = right.includes('verbose') || args.includes('verbose');
+    params.verbose = verbose;
+  }
+
+  seal.replyToSender(ctx, msg, '[.sim] 正在模拟，请稍候...');
+
+  try {
+    const result = await pvpFetch('/api/sim', params);
+    if (result.error) {
+      seal.replyToSender(ctx, msg, `[.sim] 错误: ${result.message}`);
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    const output = result.output || '(无输出)';
+    // Display respecting pictmode
+    const pictmode = seal.ext.getIntConfig(ext, 'pictmode');
+    if (pictmode === 1) {
+      const serverUrl = getPvpServerUrl();
+      try {
+        const renderResp = await fetch(`${serverUrl}/api/render`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: output }),
+        });
+        const renderResult = await renderResp.json();
+        if (renderResult.images && renderResult.images.length > 0) {
+          for (const b64 of renderResult.images) {
+            seal.replyToSender(ctx, msg, `[CQ:image,file=base64://${b64}]`);
+          }
+          return seal.ext.newCmdExecuteResult(true);
+        }
+      } catch (e) { /* fall through to text */ }
+    }
+    // Text mode (or image fallback)
+    seal.replyToSender(ctx, msg, output.substring(0, 4000));
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[.sim] 请求失败: ${e.message || e}`);
+  }
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .tlist — 显示完整先攻表，按队伍分组
+// ============================================================
+const cmdTlist = seal.ext.newCmdItemInfo();
+cmdTlist.name = 'tlist';
+cmdTlist.help = '.tlist — 显示当前先攻表，按队伍分组显示所有角色及召唤物。';
+cmdTlist.solve = (ctx, msg, cmdArgs) => {
+  const gid = getGid(ctx);
+  const battleId = ext.storageGet(`pvp_battle_${gid}`);
+
+  // Setab=2: fetch from server
+  if (battleId) {
+    const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/initiative';
+    fetch(serverUrl).then(r => r.json()).then(result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[tlist] ${result.message}`);
+        return;
+      }
+      seal.replyToSender(ctx, msg, result.display || '无先攻数据');
+    }).catch(e => {
+      seal.replyToSender(ctx, msg, `[tlist] 请求失败: ${e.message || e}`);
+    });
+    return seal.ext.newCmdExecuteResult(true);
+  }
+
+  // Setab=0/1: read from local storage
+  const initRaw = ext.storageGet(`combat_initiative_${gid}`);
+  if (!initRaw) {
+    seal.replyToSender(ctx, msg, '当前无战斗，无法显示先攻表。');
+    return seal.ext.newCmdExecuteResult(true);
+  }
+  try {
+    const il = JSON.parse(initRaw);
+    const stateRaw = ext.storageGet(`combat_state_${gid}`);
+    const state = stateRaw ? JSON.parse(stateRaw) : null;
+    const rnd = state ? (state.round || 1) : 1;
+
+    // Group by team
+    const teams = {};
+    for (const e of il) {
+      const t = e.team || '?';
+      if (!teams[t]) teams[t] = [];
+      teams[t].push(e);
+    }
+
+    let out = `===== 先攻表（第${rnd}回合）=====`;
+    let idx = 0;
+    for (const [team, entries] of Object.entries(teams).sort()) {
+      const teamLabel = team === 'Y' ? 'Y队（友方）' : team === 'X' ? 'X队（敌方）' : `${team}队`;
+      out += `\n【${teamLabel}】`;
+      for (const e of entries) {
+        idx++;
+        const label = e.serial ? `【${e.serial}】${e.name || ''}` : (e.name || e.userId);
+        const hp = e.hp !== undefined ? e.hp : '?';
+        const hpMax = e.hpMax || hp;
+        const dex = e.dex || '?';
+        const roll = e.initRoll || '?';
+        const rankText = e.initRank !== undefined ? (e.initRank === 4 ? '大成功' : e.initRank === 3 ? '极难成功' : e.initRank === 2 ? '困难成功' : e.initRank === 1 ? '成功' : e.initRank === -1 ? '失败' : e.initRank === -2 ? '大失败' : '') : '';
+        const summonTag = e.isSummon ? '(召)' : '';
+        const actionLabel = e.isSummon ? '' : (e.actionLabel || '');
+        out += `\n  ${idx}. ${label}${summonTag}${actionLabel} D100=${roll}/DEX=${dex} ${rankText} HP:${hp}/${hpMax}`;
+      }
+    }
+    seal.replyToSender(ctx, msg, out.substring(0, 4000));
+  } catch (e) {
+    seal.replyToSender(ctx, msg, `[tlist] 读取先攻数据失败: ${e.message || e}`);
   }
   return seal.ext.newCmdExecuteResult(true);
 };
@@ -6501,6 +7877,12 @@ ext.cmdMap['btastt2'] = cmdBtaStartFull2;
 ext.cmdMap['btastartfullai'] = cmdBtaStartFullAI;
 ext.cmdMap['btastai'] = cmdBtaStartFullAI;
 ext.cmdMap['btast'] = cmdBtaStartFull2;  // .btast alias for .btastartfull2
+ext.cmdMap['setaiact'] = cmdSetaiact;
+ext.cmdMap['chreload']  = cmdChreload;
+ext.cmdMap['train']     = cmdTrain;
+ext.cmdMap['jour']      = cmdJour;
+ext.cmdMap['sim']       = cmdSim;
+ext.cmdMap['tlist']     = cmdTlist;
 
 
 // ============================================================
@@ -6509,31 +7891,38 @@ ext.cmdMap['btast'] = cmdBtaStartFull2;  // .btast alias for .btastartfull2
 const cmdI = seal.ext.newCmdItemInfo();
 cmdI.name = 'i';
 cmdI.help = '.i end // 手动结束当前回合，剩余主动作和附加动作清零，推进至下一角色';
-cmdI.solve = (ctx, msg, cmdArgs) => {
+cmdI.allowDelegate = true;
+cmdI.solve = async (ctx, msg, cmdArgs) => {
   const args = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
   if (args.length < 1 || args[0].toLowerCase() !== 'end') {
     seal.replyToSender(ctx, msg, '用法：.i end // 结束当前回合');
     return seal.ext.newCmdExecuteResult(true);
   }
 
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
+  const _iMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
+  const _iActingId = _iMctx.player ? _iMctx.player.userId : ctx.player.userId;
 
   // ── .setab 2 HTTP path ──
   const autoMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (autoMode >= 2 && battleId) {
     pvpFetch(`/api/pvp/${battleId}/action`, {
-      player_id: ctx.player.userId,
+      player_id: _iActingId,
       action: '.i end',
       target: '',
       args: '',
-    }).then(result => {
+      restim_mode: ext.storageGet(`bta_restim_${_iActingId}`) || '0',
+      allow_failed_reaction: seal.ext.getIntConfig(ext, '失败攻击允许反应'),
+    }).then(async result => {
       if (result.error) {
         seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
         return;
       }
-      const out = renderBattleResponse(gid, result, ctx, msg) || '回合已结束。';
-      seal.replyToSender(ctx, msg, out);
+      if (!result.output || !result.output.trim()) {
+        result.output = '回合已结束。';
+      }
+      await renderBattleResponse(gid, result, ctx, msg);
     });
     return seal.ext.newCmdExecuteResult(true);
   }
@@ -6579,7 +7968,7 @@ cmdI.solve = (ctx, msg, cmdArgs) => {
     // Show initiative table for the new round
     const hpStoreRoundStart = getCombatHP(gid);
     output += `先攻表:\n`;
-    output += initList.map((e, i) => `  ${i+1}. ${e.name} D100=${e.initRoll}/DEX=${e.dex} HP:${hpStoreRoundStart[e.userId] || 0}`).join('\n') + '\n';
+    output += formatInitiativeTable(initList, hpStoreRoundStart);
 
     // --- Tick down combat effects (回合后结算) ---
     const effKey = `combat_effects_${gid}`;
@@ -6780,7 +8169,16 @@ cmdI.solve = (ctx, msg, cmdArgs) => {
   }
   output += `\n下一位: ${next ? next.name : '?'}（${state.round ? '第'+state.round+'回合' : ''}）`;
 
-  seal.replyToSender(ctx, msg, output);
+  // Split into action result and turn info chunks
+  const chunks2 = [];
+  const roundStartIdx2 = output.indexOf('\n===== 第');
+  if (roundStartIdx2 > 0) {
+    chunks2.push(output.substring(0, roundStartIdx2).trim());
+    chunks2.push(output.substring(roundStartIdx2).trim());
+  } else {
+    chunks2.push(output);
+  }
+  await sendTurnMessages(ctx, msg, chunks2);
   return seal.ext.newCmdExecuteResult(true);
 };
 ext.cmdMap['i'] = cmdI;
@@ -6826,7 +8224,7 @@ cmdG.help =
   '需在战斗中且制造物已就绪（制造回合数归零后）使用。';
 cmdG.allowDelegate = true;
 cmdG.solve = (ctx, msg, cmdArgs) => {
-  const gid = ctx.group ? ctx.group.groupId : 'private';
+  const gid = getGid(ctx);
   const state = getCombatState(gid);
   if (!state || state.phase !== 'active') {
     seal.replyToSender(ctx, msg, '当前不在战斗中！请先使用 .bta start 开始战斗。');
@@ -7013,6 +8411,6 @@ ext.onCommandReceived = (ctx, msg, cmdArgs) => {
   }
 };
 
-console.log('[autocombat] 半自动战斗扩展 v1.1.0 已加载');
-console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end');
-console.log('[autocombat] v1.1.0: 行动力/移动力/射程系统、zone属性削减、雪人+蓝增强、AUX 23-28');
+console.log('[autocombat] 半自动战斗扩展 v1.2.0 已加载');
+console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end .train .jour');
+console.log('[autocombat] v1.3.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端');

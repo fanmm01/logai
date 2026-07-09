@@ -76,9 +76,10 @@ CUSTOM_PREVIEW_BATTLES = 20         # Silent preview battles before /game/ match
 CUSTOM_BATTLE_DELAY = 0.4           # Delay for actual /game/ custom battles
 
 # ── Match count config ──
-RR_ROUNDS_1V1 = 7                    # RR rounds per pair per map (1v1)
+RR_ROUNDS_1V1 = 7                    # RR rounds per pair per map (1v1) — ceiling, may auto-reduce for 82-target
 RR_ROUNDS_2V2 = 5                    # RR rounds per pair per map (2v2)
 RR_ROUNDS_3V3 = 6                    # RR rounds per pair per map (3v3)
+TARGET_1V1_MATCHES = 82              # target 1v1 matches per character (uses max RR that fits, then bonus)
 
 RANDOM_BONUS_1V1 = 0                # Extra random 1v1 bonus matches (disabled; using allocation to reach target per-player matches)
 RANDOM_BONUS_2V2 = 56               # Extra random 2v2 bonus matches
@@ -628,9 +629,6 @@ class BattleEngine(FullBattleEngine):
         self.display_level = display_level  # DisplayLevel: 0=WINLOSS, 1=ROUND, 2=DEBUG
         self.delay = delay  # Seconds between turns (0 = skip)
         self.quiet = quiet  # Suppress terminal output (for custom battles)
-        # Enable fast store (skip json.dumps) when in sim/training mode (delay=0)
-        if delay == 0:
-            self._fast_store = True
 
     def _timeout_verdict(self):
         """25回合不分胜负 → 按非召唤物HP占最大体力比例（队内人均）判定胜负
@@ -1030,11 +1028,12 @@ class BattleEngine(FullBattleEngine):
 # ============================================================
 
 class Tournament:
-    def __init__(self, tournament_type=1, run_times=1):
+    def __init__(self, tournament_type=1, run_times=1, enabled_modes=None):
         self.char_map = {}
         self.ai_map = {}
         self.results = []
         self.running = False
+        self._state_lock = threading.Lock()  # protects results/running across threads
         self.start_time = None
         self._parallel_prelim = False  # True during parallel prelim (skip side effects)
         self.tournament_type = tournament_type
@@ -1047,6 +1046,7 @@ class Tournament:
         self._run_stats = []  # Per-run (win_counts, battle_counts) for average stats
         self._results_start_idx = 0  # Track where current run's results start
         self.char_season_status = {}  # Per-run per-character season avg status {serial: 0-100}
+        self.enabled_modes = enabled_modes or ['1v1', '2v2', '3v3']  # Filter which formats to run
 
     def init_characters(self):
         engine = CombatEngine()
@@ -1167,8 +1167,8 @@ class Tournament:
             try:
                 winner, loser, rds, _ = self.battle(team_a, team_b, map_size, f'{phase_label} G{game}', best_of=n, display_level=DISPLAY_KNOCKOUT, delay=DELAY_KNOCKOUT_TURN, max_rounds=MAX_ROUNDS_KNOCKOUT)
             except Exception as e:
-                battle_log('error', f'  !! Bo{n}异常跳过: {e}')
-                winner = '+'.join(team_b); loser = '+'.join(team_a)
+                battle_log('error', f'  !! Bo{n} G{game}异常跳过: {e}')
+                continue  # skip this game without awarding a win to either side
             if winner == a_str: wins_a += 1
             else: wins_b += 1
             w_disp = self._team_display(winner.split('+'))
@@ -1274,6 +1274,9 @@ class Tournament:
         all_sf_series = []
         sf_losers = []
         for label, sf_teams in all_sf_participants:
+            if len(sf_teams) < 4:
+                battle_log('error', f'淘汰赛{label}半决赛需要至少4队，实际{len(sf_teams)}队，跳过')
+                continue
             t0, t1, t2, t3 = sf_teams[0], sf_teams[1], sf_teams[2], sf_teams[3]
             all_sf_series.append({
                 'ta': t0, 'tb': t3, 'n': BO_N_SF,
@@ -1493,7 +1496,7 @@ class Tournament:
             return (3.0, 0.0)
         yr = result.get('y_ratio', 0); xr = result.get('x_ratio', 0)
         total = yr + xr
-        if total <= 0: return (2.0, 1.0)
+        if total <= 0: return (1.5, 1.5)  # fallback: equal split when both ratios are 0
         w_share = yr / total if result['winner'] == 'Y' else xr / total
         w_pts = 1.5 + (w_share - 0.5) * 2.0
         w_pts = max(1.5, min(2.5, w_pts))
@@ -1531,29 +1534,47 @@ class Tournament:
 
         # ---- Build all RR match pools ----
 
-        # Phase 1: 1v1 — RR × random bonus
-        teams_1v1 = [[s] for s in singles]
-        p1_pool = self._build_rr_pool('1v1', teams_1v1, ['10x10'], '1v1', rr_rounds=RR_ROUNDS_1V1)
-        allocated_bonus = self._allocate_individual_bonus_matches(singles, RR_ROUNDS_1V1, 82, '10x10', '1v1 Alloc')
-        p1_pool = allocated_bonus + p1_pool
-        rrc = '单' if RR_ROUNDS_1V1==1 else ('双' if RR_ROUNDS_1V1==2 else f'{RR_ROUNDS_1V1}')
-        battle_log('info', f'[1v1] {rrc}循环{len(p1_pool)-len(allocated_bonus)}场 + {len(allocated_bonus)}场调配 = {len(p1_pool)}场')
+        # Phase 1: 1v1 — RR （轮数自动适配，保证每人正好82场）
+        p1_pool = []
+        if '1v1' in self.enabled_modes:
+            teams_1v1 = [[s] for s in singles]
+            n_players = len(singles)
+            effective_rr_1v1 = min(RR_ROUNDS_1V1, TARGET_1V1_MATCHES // (n_players - 1)) if n_players > 1 else RR_ROUNDS_1V1
+            p1_pool = self._build_rr_pool('1v1', teams_1v1, ['10x10'], '1v1', rr_rounds=effective_rr_1v1)
+            allocated_bonus = self._allocate_individual_bonus_matches(singles, effective_rr_1v1, TARGET_1V1_MATCHES, '10x10', '1v1 Alloc')
+            p1_pool = allocated_bonus + p1_pool
+            battle_log('info',
+                f'[1v1] {n_players}人 × {effective_rr_1v1}轮循环 = {len(p1_pool)-len(allocated_bonus)}场'
+                f' + {len(allocated_bonus)}场调配 = {len(p1_pool)}场 (每人目标{TARGET_1V1_MATCHES}场)')
+        else:
+            battle_log('info', '[1v1] 已跳过（未启用）')
+            teams_1v1 = []
 
         # Phase 2: 2v2 — use shared team table definitions
-        teams_2v2 = [list(team) for team in TEAM_TABLES_2V2]
-        p2_pool = self._build_rr_pool('2v2', teams_2v2, MAP_SIZES_2V2, '2v2', rr_rounds=RR_ROUNDS_2V2)
-        allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, RR_ROUNDS_2V2, RANDOM_BONUS_2V2, '10x10', '2v2 Alloc')
-        p2_pool = allocated_bonus_2v2 + p2_pool
-        rrc = '单' if RR_ROUNDS_2V2==1 else ('双' if RR_ROUNDS_2V2==2 else str(RR_ROUNDS_2V2))
-        battle_log('info', f'[2v2] {len(teams_2v2)}队 {rrc}循环{len(p2_pool)-len(allocated_bonus_2v2)}场 + {len(allocated_bonus_2v2)}场调配 = {len(p2_pool)}场')
+        p2_pool = []
+        if '2v2' in self.enabled_modes:
+            teams_2v2 = [list(team) for team in TEAM_TABLES_2V2]
+            p2_pool = self._build_rr_pool('2v2', teams_2v2, MAP_SIZES_2V2, '2v2', rr_rounds=RR_ROUNDS_2V2)
+            allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, RR_ROUNDS_2V2, RANDOM_BONUS_2V2, '10x10', '2v2 Alloc')
+            p2_pool = allocated_bonus_2v2 + p2_pool
+            rrc = '单' if RR_ROUNDS_2V2==1 else ('双' if RR_ROUNDS_2V2==2 else str(RR_ROUNDS_2V2))
+            battle_log('info', f'[2v2] {len(teams_2v2)}队 {rrc}循环{len(p2_pool)-len(allocated_bonus_2v2)}场 + {len(allocated_bonus_2v2)}场调配 = {len(p2_pool)}场')
+        else:
+            battle_log('info', '[2v2] 已跳过（未启用）')
+            teams_2v2 = []
 
         # Phase 3: 3v3 — use shared team table definitions
-        teams_3v3 = [list(team) for team in TEAM_TABLES_3V3]
-        p3_pool = self._build_rr_pool('3v3', teams_3v3, MAP_SIZES_3V3, '3v3', rr_rounds=RR_ROUNDS_3V3)
-        allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, RR_ROUNDS_3V3, RANDOM_BONUS_3V3, '10x10', '3v3 Alloc')
-        p3_pool = allocated_bonus_3v3 + p3_pool
-        rrc = '单' if RR_ROUNDS_3V3==1 else ('双' if RR_ROUNDS_3V3==2 else str(RR_ROUNDS_3V3))
-        battle_log('info', f'[3v3] {len(teams_3v3)}队 {rrc}循环{len(p3_pool)-len(allocated_bonus_3v3)}场 + {len(allocated_bonus_3v3)}场调配 = {len(p3_pool)}场')
+        p3_pool = []
+        if '3v3' in self.enabled_modes:
+            teams_3v3 = [list(team) for team in TEAM_TABLES_3V3]
+            p3_pool = self._build_rr_pool('3v3', teams_3v3, MAP_SIZES_3V3, '3v3', rr_rounds=RR_ROUNDS_3V3)
+            allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, RR_ROUNDS_3V3, RANDOM_BONUS_3V3, '10x10', '3v3 Alloc')
+            p3_pool = allocated_bonus_3v3 + p3_pool
+            rrc = '单' if RR_ROUNDS_3V3==1 else ('双' if RR_ROUNDS_3V3==2 else str(RR_ROUNDS_3V3))
+            battle_log('info', f'[3v3] {len(teams_3v3)}队 {rrc}循环{len(p3_pool)-len(allocated_bonus_3v3)}场 + {len(allocated_bonus_3v3)}场调配 = {len(p3_pool)}场')
+        else:
+            battle_log('info', '[3v3] 已跳过（未启用）')
+            teams_3v3 = []
 
         # ---- Shuffle all RR pools together ----
         full_pool = []
@@ -1579,65 +1600,69 @@ class Tournament:
         if use_parallel:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             self._parallel_prelim = True
+            standings_lock = threading.Lock()
             battle_log('info', f'预赛并行模式: {PRELIM_WORKERS} workers')
             # Submit all battles
             future_map = {}
-            with ThreadPoolExecutor(max_workers=PRELIM_WORKERS) as executor:
-                for args in full_pool:
-                    phase_tag, label, map_size, ta, tb, i, j = args
-                    fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
-                    fut = executor.submit(self.battle, ta, tb, map_size, label, 1, DisplayLevel.WINLOSS, 0, fmt_max_rounds)
-                    future_map[fut] = args
-                # Collect results
-                completed = 0
-                for fut in as_completed(future_map):
-                    completed += 1
-                    phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
-                    try:
-                        winner, loser, rds, result = fut.result()
-                    except Exception as e:
-                        battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
-                        continue
-                    # Process standings
-                    if phase_tag == '1v1':
-                        w_pts, l_pts = self._calc_points(result)
-                        w_player = winner; l_player = loser
-                        player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
-                        player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
-                        player_wins[w_player] = player_wins.get(w_player, 0) + 1
-                        player_battles[w_player] = player_battles.get(w_player, 0) + 1
-                        player_battles[l_player] = player_battles.get(l_player, 0) + 1
-                    elif phase_tag == '2v2':
-                        w_pts, l_pts = self._calc_points(result)
-                        ws = set(winner.split('+')); ls = set(loser.split('+'))
-                        for idx in [i, j]:
-                            ts = set(teams_2v2[idx])
-                            if ts == ws:
-                                v2_standings[idx]['pts'] += w_pts
-                                v2_standings[idx]['wins'] += 1
-                                v2_standings[idx]['battles'] += 1
-                            elif ts == ls:
-                                v2_standings[idx]['pts'] += l_pts
-                                v2_standings[idx]['battles'] += 1
-                    elif phase_tag == '3v3':
-                        w_pts, l_pts = self._calc_points(result)
-                        ws = set(winner.split('+')); ls = set(loser.split('+'))
-                        for idx in [i, j]:
-                            ts = set(teams_3v3[idx])
-                            if ts == ws:
-                                v3_standings[idx]['pts'] += w_pts
-                                v3_standings[idx]['wins'] += 1
-                                v3_standings[idx]['battles'] += 1
-                            elif ts == ls:
-                                v3_standings[idx]['pts'] += l_pts
-                                v3_standings[idx]['battles'] += 1
-                    # Record result (parallel path skips append inside battle())
-                    a_name = '+'.join(ta)
-                    b_name = '+'.join(tb)
-                    self.results.append((a_name, b_name, winner, rds, map_size, label, False))
-                    if completed % 50 == 0:
-                        battle_log('info', f'  预赛进度: {completed}/{total_matches}')
-            self._parallel_prelim = False
+            try:
+                with ThreadPoolExecutor(max_workers=PRELIM_WORKERS) as executor:
+                    for args in full_pool:
+                        phase_tag, label, map_size, ta, tb, i, j = args
+                        fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
+                        fut = executor.submit(self.battle, ta, tb, map_size, label, 1, DisplayLevel.WINLOSS, 0, fmt_max_rounds)
+                        future_map[fut] = args
+                    # Collect results
+                    completed = 0
+                    for fut in as_completed(future_map):
+                        completed += 1
+                        phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
+                        try:
+                            winner, loser, rds, result = fut.result()
+                        except Exception as e:
+                            battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
+                            continue
+                        # Process standings (protected by lock for thread-safe dict updates)
+                        with standings_lock:
+                            if phase_tag == '1v1':
+                                w_pts, l_pts = self._calc_points(result)
+                                w_player = winner; l_player = loser
+                                player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
+                                player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
+                                player_wins[w_player] = player_wins.get(w_player, 0) + 1
+                                player_battles[w_player] = player_battles.get(w_player, 0) + 1
+                                player_battles[l_player] = player_battles.get(l_player, 0) + 1
+                            elif phase_tag == '2v2':
+                                w_pts, l_pts = self._calc_points(result)
+                                ws = set(winner.split('+')); ls = set(loser.split('+'))
+                                for idx in [i, j]:
+                                    ts = set(teams_2v2[idx])
+                                    if ts == ws:
+                                        v2_standings[idx]['pts'] += w_pts
+                                        v2_standings[idx]['wins'] += 1
+                                        v2_standings[idx]['battles'] += 1
+                                    elif ts == ls:
+                                        v2_standings[idx]['pts'] += l_pts
+                                        v2_standings[idx]['battles'] += 1
+                            elif phase_tag == '3v3':
+                                w_pts, l_pts = self._calc_points(result)
+                                ws = set(winner.split('+')); ls = set(loser.split('+'))
+                                for idx in [i, j]:
+                                    ts = set(teams_3v3[idx])
+                                    if ts == ws:
+                                        v3_standings[idx]['pts'] += w_pts
+                                        v3_standings[idx]['wins'] += 1
+                                        v3_standings[idx]['battles'] += 1
+                                    elif ts == ls:
+                                        v3_standings[idx]['pts'] += l_pts
+                                        v3_standings[idx]['battles'] += 1
+                        # Record result (parallel path skips append inside battle())
+                        a_name = '+'.join(ta)
+                        b_name = '+'.join(tb)
+                        self.results.append((a_name, b_name, winner, rds, map_size, label, False))
+                        if completed % 50 == 0:
+                            battle_log('info', f'  预赛进度: {completed}/{total_matches}')
+            finally:
+                self._parallel_prelim = False
         else:
             completed = 0
             for phase_tag, label, map_size, ta, tb, i, j in full_pool:
@@ -1690,44 +1715,53 @@ class Tournament:
         # ---- Display all standings and run all knockouts ----
 
         # 1v1 standings
-        battle_log('info', '')
-        battle_log('info', '=' * 60)
-        battle_log('info', '预赛结束 — 1v1 积分排名')
-        ranked_1v1 = sorted(player_pts.items(), key=lambda x: (-x[1], -player_wins.get(x[0], 0)))
-        for rank, (player, pts) in enumerate(ranked_1v1, 1):
-            w = player_wins.get(player, 0); b = player_battles.get(player, 0)
-            uid = self.char_map.get(player, '')
-            ai = self.ai_map.get(uid)
-            name = ai.char_data.get('name', player) if ai else player
-            battle_log('info', f'  {rank:2d}. {player} {name}  {pts:.1f}分  {w}胜/{b}场')
+        if '1v1' in self.enabled_modes:
+            battle_log('info', '')
+            battle_log('info', '=' * 60)
+            battle_log('info', '预赛结束 — 1v1 积分排名')
+            ranked_1v1 = sorted(player_pts.items(), key=lambda x: (-x[1], -player_wins.get(x[0], 0)))
+            for rank, (player, pts) in enumerate(ranked_1v1, 1):
+                w = player_wins.get(player, 0); b = player_battles.get(player, 0)
+                uid = self.char_map.get(player, '')
+                ai = self.ai_map.get(uid)
+                name = ai.char_data.get('name', player) if ai else player
+                battle_log('info', f'  {rank:2d}. {player} {name}  {pts:.1f}分  {w}胜/{b}场')
+        else:
+            ranked_1v1 = []
 
         # 2v2 standings
-        battle_log('info', '')
-        battle_log('info', '=' * 60)
-        battle_log('info', '预赛结束 — 2v2 积分排名')
-        ranked_2v2 = sorted(v2_standings.items(), key=lambda x: (-x[1]['pts'], -x[1]['wins']))
-        for rank, (idx, s) in enumerate(ranked_2v2, 1):
-            names = []
-            for serial in teams_2v2[idx]:
-                uid = self.char_map.get(serial, '')
-                ai = self.ai_map.get(uid)
-                names.append(f'{ai.char_data["name"]}({serial})' if ai else serial)
-            team_str = '+'.join(names)
-            battle_log('info', f'  {rank:2d}. {team_str}  {s["pts"]:.1f}分  {s["wins"]}胜/{s["battles"]}场')
+        if '2v2' in self.enabled_modes:
+            battle_log('info', '')
+            battle_log('info', '=' * 60)
+            battle_log('info', '预赛结束 — 2v2 积分排名')
+            ranked_2v2 = sorted(v2_standings.items(), key=lambda x: (-x[1]['pts'], -x[1]['wins']))
+            for rank, (idx, s) in enumerate(ranked_2v2, 1):
+                names = []
+                for serial in teams_2v2[idx]:
+                    uid = self.char_map.get(serial, '')
+                    ai = self.ai_map.get(uid)
+                    names.append(f'{ai.char_data["name"]}({serial})' if ai else serial)
+                team_str = '+'.join(names)
+                battle_log('info', f'  {rank:2d}. {team_str}  {s["pts"]:.1f}分  {s["wins"]}胜/{s["battles"]}场')
+        else:
+            ranked_2v2 = []
 
         # 3v3 standings
-        battle_log('info', '')
-        battle_log('info', '=' * 60)
-        battle_log('info', '预赛结束 — 3v3 积分排名')
-        ranked_3v3 = sorted(v3_standings.items(), key=lambda x: (-x[1]['pts'], -x[1]['wins']))
-        for rank, (idx, s) in enumerate(ranked_3v3, 1):
-            names = []
-            for serial in teams_3v3[idx]:
-                uid = self.char_map.get(serial, '')
-                ai = self.ai_map.get(uid)
-                names.append(f'{ai.char_data["name"]}({serial})' if ai else serial)
-            team_str = '+'.join(names)
-            battle_log('info', f'  {rank:2d}. {team_str}  {s["pts"]:.1f}分  {s["wins"]}胜/{s["battles"]}场')
+        if '3v3' in self.enabled_modes:
+            battle_log('info', '')
+            battle_log('info', '=' * 60)
+            battle_log('info', '预赛结束 — 3v3 积分排名')
+            ranked_3v3 = sorted(v3_standings.items(), key=lambda x: (-x[1]['pts'], -x[1]['wins']))
+            for rank, (idx, s) in enumerate(ranked_3v3, 1):
+                names = []
+                for serial in teams_3v3[idx]:
+                    uid = self.char_map.get(serial, '')
+                    ai = self.ai_map.get(uid)
+                    names.append(f'{ai.char_data["name"]}({serial})' if ai else serial)
+                team_str = '+'.join(names)
+                battle_log('info', f'  {rank:2d}. {team_str}  {s["pts"]:.1f}分  {s["wins"]}胜/{s["battles"]}场')
+        else:
+            ranked_3v3 = []
 
         battle_log('info', '')
         battle_log('info', f'(排名展示{DELAY_STANDINGS_DISPLAY}秒...)')
@@ -1827,18 +1861,18 @@ class Tournament:
             elif len(ranked_list) >= 8:
                 return [get_team_fn(r[0]) for r in ranked_list[:8]]
             return [get_team_fn(r[0]) for r in ranked_list[:4]]
-        # 1v1
-        if len(ranked_1v1) >= 4:
+        # 1v1 knockout
+        if '1v1' in self.enabled_modes and len(ranked_1v1) >= 4:
             top_1v1 = _build_top8_with_playin(ranked_1v1, lambda s: [s], '1v1')
             all_brackets.append(('1v1', top_1v1, '10x10'))
 
-        # 2v2
-        if len(ranked_2v2) >= 4:
+        # 2v2 knockout
+        if '2v2' in self.enabled_modes and len(ranked_2v2) >= 4:
             top_2v2 = _build_top8_with_playin(ranked_2v2, lambda i: teams_2v2[i], '2v2')
             all_brackets.append(('2v2', top_2v2, '10x10'))
 
-        # 3v3
-        if len(ranked_3v3) >= 4:
+        # 3v3 knockout
+        if '3v3' in self.enabled_modes and len(ranked_3v3) >= 4:
             top_3v3 = _build_top8_with_playin(ranked_3v3, lambda i: teams_3v3[i], '3v3')
             all_brackets.append(('3v3', top_3v3, '10x10'))
 
@@ -2279,15 +2313,18 @@ class BattleHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/':
-            status = 'running' if tournament.running else 'idle'
-            total = len(tournament.results)
+            with tournament._state_lock:
+                status = 'running' if tournament.running else 'idle'
+                total = len(tournament.results)
+                running_flag = tournament.running
+                char_count = len(tournament.char_map)
             q_status = '已加载' if (AIController.Q_TABLE and any(len(v)>0 for v in AIController.Q_TABLE.values())) else '未训练(规则AI)'
             body = f"""AI战斗模拟服务器 — {status}
 ================================
-角色数: {len(tournament.char_map)}
+角色数: {char_count}
 已完成战斗: {total}
 AI模式: {q_status}
-运行中: {tournament.running}
+运行中: {running_flag}
 
 端点:
   GET  /       — 状态
@@ -2297,7 +2334,7 @@ AI模式: {q_status}
   GET  /results — 比赛结果
   GET  /game/Y1_vs_Y2&num=3 — 自定义比赛
 
-{'锦标赛已在进行中！' if tournament.running else '发送 POST /start 开始战斗'}
+{'锦标赛已在进行中！' if running_flag else '发送 POST /start 开始战斗'}
 """
             self._send(200, body)
 

@@ -153,8 +153,55 @@ def cake_reward_modifier(engine, actor_uid, ak):
     return cv_factor * overheal_factor
 
 
+def targeting_reward_modifier(engine, uid, ak):
+    """Apply reward modifier based on target selection strategy.
+
+    Differentiates T0-T3 so the Q-table learns that attacking player
+    characters is usually better than attacking summons.
+
+    T0 (lowest HP player):  Bonus  — focus fire on weakened players
+    T1 (nearest):           Neutral — tactical positioning
+    T2 (highest threat):    Bonus  — correct threat identification
+    T3 (lowest HP summon):  Penalty— summon killing is often wasteful
+    """
+    base_ak, target_strat = parse_action(ak)
+
+    # Only modify attack actions (not MOVE, EAT_CAKE, GIVE_CAKE, END_TURN, ZONE)
+    if not (base_ak == 'BASIC_ATTACK' or base_ak.startswith('SKILL_')
+            or base_ak.startswith('SUMMON_SKILL_')):
+        return 1.0
+
+    init_list = engine._get_initiative()
+    my_entry = next((e for e in init_list if e['userId'] == uid), None)
+    if not my_entry:
+        return 1.0
+    my_team = my_entry.get('team', 'Y')
+
+    enemies = [e for e in init_list
+               if e['team'] != my_team
+               and (engine._get_combat_hp(e['userId']) or 0) > 0]
+
+    has_non_summon = any(not e.get('isSummon') for e in enemies)
+
+    if target_strat == 'T3':
+        # Attacking lowest-HP summon: penalize when players exist
+        if has_non_summon:
+            return 0.55
+        return 1.0  # only summons available — no penalty
+    elif target_strat == 'T0':
+        # Attacking lowest-HP player: bonus for focus fire
+        if has_non_summon:
+            return 1.15
+        return 1.0
+    elif target_strat == 'T2':
+        # Threat-based targeting: mild bonus (usually correct)
+        return 1.05
+    # T1 (nearest): neutral — no modifier
+    return 1.0
+
+
 def encode_state(engine, uid):
-    """Encode combat state for a character into a 16-dim hashable key."""
+    """Encode combat state for a character into a 17-dim hashable key."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
@@ -267,9 +314,26 @@ def encode_state(engine, uid):
     # Dim 15: is_dying
     is_dying = int(engine._is_dying(uid) is not None)
 
+    # Dim 16: has_ally_effect — skill that targets allies with non-pure-damage effects
+    ALLY_TARGET_CODES = {'2', '3', '12', '13', '25', '125', '23', '14', '15', '35', '45'}
+    has_ally_effect = 0
+    for s in spells:
+        if not has_timing(s.get('时机', '2'), '2'):
+            continue
+        for eff in s.get('effects', []):
+            obj = str(eff.get('客体', '')).strip()
+            # Check if target includes ally
+            if obj in ALLY_TARGET_CODES and obj not in ('4', '5', '14', '15', '45'):
+                # Has a non-damage element: heal, buff, summon, zone, etc.
+                if eff.get('type') in (3, 4, 5, 8) or eff.get('回复hp') or eff.get('回复mp') or eff.get('友方行为'):
+                    has_ally_effect = 1
+                    break
+        if has_ally_effect:
+            break
+
     return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
             skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
-            has_cake, phase, is_dying)
+            has_cake, phase, is_dying, has_ally_effect)
 
 
 def encode_summon_state(engine, uid):
@@ -435,6 +499,7 @@ def _mp_run_battle(args):
                 curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
                 max_hp = max(abs(prev_diff), abs(curr_diff), 1)
                 reward = (curr_diff - prev_diff) / max_hp
+                reward *= targeting_reward_modifier(engine, uid, ak)
                 next_st = encode_summon_state(engine, uid)
                 summon_name = entry.get('name', uid)
                 if next_st is not None:
@@ -493,6 +558,8 @@ def _mp_run_battle(args):
         # Cake reward modifier: target combat value + overheal penalty
         if ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE'):
             reward *= cake_reward_modifier(engine, uid, ak)
+        # Targeting strategy modifier: T0 bonus / T3 penalty
+        reward *= targeting_reward_modifier(engine, uid, ak)
         next_st = encode_state(engine, uid)
         # Use serial for char key
         ck = None
@@ -880,33 +947,27 @@ def execute_summon_action(engine, uid, action_key):
 
     sv = sk['val']; dmg_dice = sk['dice']
     sk_name = sk.get('name', '攻击')
-    hits = sk.get('hits', 1)
     on_whiff_aoe = sk.get('on_whiff_aoe_dmg', '')
     on_whiff_mp = sk.get('on_whiff_mp_cost', 0)
+    leth_val = entry.get("lethality", 0) or sk.get("lethality", 0)
 
     # Ignited summons use their ignite damage dice
     if entry.get('ignited'):
         dmg_dice = entry.get('ignite_dmg_dice', dmg_dice)
 
-    # Battle spirit penalty dice → unified roll_d100
+    # Battle spirit penalty dice
     pens = entry.get('battle_spirit_penalty_dice', 0)
-    pen_detail = ""
-    if pens > 0:
-        bp_str = 'p' if pens == 1 else f'p{pens}'
-        atk_roll, detail = roll_d100(bp_str)
-        extra_nums = detail[2:]  # strip '惩罚' prefix, keep extra tens values
-        pen_detail = f"，惩罚骰({extra_nums})→{atk_roll}"
-    else:
-        atk_roll, _ = roll_d100()
+    bp_suffix = f"p{pens}" if pens > 1 else ("p" if pens == 1 else "")
 
-    atk_rank = success_rank(atk_roll, sv)
-    lines.append(f"{sname} 的【{sk_name}】检定:")
-    lines.append(f"  D100={atk_roll}/{sv}{pen_detail} {rank_text(atk_rank)}")
+    # ── Delegate to _coc7_attack for unified combat (dice / damage / shield / lethality / reaction) ──
+    pen = 1
+    _, _, atk_lines = engine._coc7_attack(uid, tid, sk_name, sv, dmg_dice, pen, leth_val, bp_suffix=bp_suffix)
+    lines.extend(atk_lines)
 
-    if atk_roll > sv:
-        lines.append(f"  {sname} 攻击失败！未命中 {tname}")
-        # On-whiff AoE
-        if on_whiff_aoe:
+    # On-whiff AoE (post-attack: fires if target survived and no damage was dealt)
+    if on_whiff_aoe:
+        dmg_dealt = any("造成" in l for l in atk_lines)
+        if not dmg_dealt:
             owner_id = entry.get('ownerId')
             if owner_id:
                 oc = engine.get_char(owner_id); omp = oc.get_attr('魔力', 0) or 0
@@ -919,62 +980,6 @@ def execute_summon_action(engine, uid, action_key):
                         engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
                         ename = enemy.get('name', enemy['userId'])
                         lines.append(f"  溅射 {ename}: {on_whiff_aoe}//2={aoe_dmg}点 → HP:{max(0, ehp - aoe_dmg)}")
-        return lines
-
-    total_dmg = 0
-    dmg_details = []
-    for hi in range(hits):
-        if hits > 1 and random.randint(1, 100) > sv: continue
-        dmg = roll_dice(dmg_dice)
-        dmg_display = f"{dmg_dice}={dmg}"
-        eff_dmg, shield_abs, _ = engine._absorb_damage_with_shield(tid, dmg)
-        eff_dmg = engine._apply_shield_block(tid, eff_dmg)
-        total_dmg += eff_dmg
-        if hits > 1:
-            dmg_details.append(f"  第{hi+1}击: {dmg_display} → {eff_dmg}点")
-        else:
-            dmg_details.append(f"  {dmg_display}")
-        if shield_abs > 0:
-            dmg_details.append(f"  护盾吸收: {shield_abs}点")
-
-    cur_hp = engine._get_combat_hp(tid) or 10
-
-    # Lethality: d(2×cur_hp) ≤ expected_damage → instant 120% max HP death
-    leth_val = entry.get("lethality", 0) or sk.get("lethality", 0)
-    exp_dmg = avg_damage(dmg_dice)
-    if leth_val and exp_dmg > 6:
-        leth_die = max(2, cur_hp * 2)
-        lr = random.randint(1, leth_die)
-        if lr <= int(exp_dmg):
-            cur_hp = 0
-            dmg_details.append(f"  致死骰: 1d{leth_die}={lr} ≤ {int(exp_dmg)} 成功! {tname}死亡")
-        else:
-            cur_hp = max(0, cur_hp - total_dmg)
-            dmg_details.append(f"  致死骰: 1d{leth_die}={lr} > {int(exp_dmg)} 失败")
-    else:
-        cur_hp = max(0, cur_hp - total_dmg)
-
-    engine._set_combat_hp(tid, cur_hp)
-
-    lines.extend(dmg_details)
-    if dmg_details:
-        lines.append(f"  造成 {total_dmg} 点伤害")
-    lines.append(f"  {tname} HP: {cur_hp}")
-
-    # On-whiff AoE
-    if on_whiff_aoe and total_dmg == 0:
-        owner_id = entry.get('ownerId')
-        if owner_id:
-            oc = engine.get_char(owner_id); omp = oc.get_attr('魔力', 0) or 0
-            if omp >= on_whiff_mp:
-                oc.set_attr('魔力', omp - on_whiff_mp)
-                lines.append(f"  消耗{on_whiff_mp}MP触发溅射!")
-                for enemy in enemies:
-                    aoe_dmg = roll_dice(on_whiff_aoe) // 2
-                    ehp = engine._get_combat_hp(enemy['userId']) or 10
-                    engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
-                    ename = enemy.get('name', enemy['userId'])
-                    lines.append(f"  溅射 {ename}: {on_whiff_aoe}//2={aoe_dmg}点 → HP:{max(0, ehp - aoe_dmg)}")
 
     return lines
 
@@ -1365,6 +1370,7 @@ class QTrainer:
                     execute_summon_action(engine, uid, ak)
                     cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
                     reward = (cd-pd)/max(abs(pd),abs(cd),1)
+                    reward *= targeting_reward_modifier(engine, uid, ak)
                     ns = encode_summon_state(engine, uid)
                     if ns is not None:
                         updates.append(('summon', summon_name, st, ak, reward, ns))
@@ -1439,6 +1445,8 @@ class QTrainer:
             # Cake reward modifier: target combat value + overheal penalty
             if ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE'):
                 reward *= cake_reward_modifier(engine, uid, ak)
+            # Targeting strategy modifier: T0 bonus / T3 penalty
+            reward *= targeting_reward_modifier(engine, uid, ak)
             ns = encode_state(engine, uid)
             if ns is not None:
                 updates.append((table_type, ck, st, ak, reward, ns))
@@ -1613,9 +1621,9 @@ def load_q_table(path=None):
                     state = tuple(int(v) for v in state_str.split('|'))
                 except ValueError:
                     skipped += 1; continue  # skip corrupted entries (e.g. 'dead' state)
-                # Backward compat: pad old dimensions to 16
-                if len(state) < 16:
-                    padding_needed = 16 - len(state)
+                # Backward compat: pad old dimensions to 17
+                if len(state) < 17:
+                    padding_needed = 17 - len(state)
                     state = state + (0,) * padding_needed
                 Q[ck][(state, action)] = val
         if skipped:
