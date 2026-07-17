@@ -1470,7 +1470,7 @@ def parse_metadata_only_line(line, fallback_ts):
     }
 
 
-def match_speaker_line(line, fallback_ts=None, sender_name=None):
+def match_speaker_line(line, fallback_ts=None):
     """
     单行发言匹配。
     匹配顺序：新格式 a/b → 新格式 c → fwlog时间戳尖括号 → fwlog时间戳冒号
@@ -1523,13 +1523,9 @@ def match_speaker_line(line, fallback_ts=None, sender_name=None):
                 return speaker
 
     # 5) fwlog 尖括号格式 <Name> : content
-    # v5.0.1: 若发送者可信任且角色名不一致，不匹配（防止骰娘消息中 <角色名> 被误判为发言者）
     match = ANGLE_SPEAKER_RE.match(text)
     if match:
-        extracted_name = match.group("name")
-        if _is_trusted_sender(sender_name) and extracted_name != sender_name:
-            return None
-        return build_speaker_match(extracted_name, match.group("content"), fallback_value)
+        return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
 
     # 6) v4.6.1: 移除 PLAIN_SPEAKER_RE — 纯冒号格式易造成一般文件误判
     return None
@@ -5380,15 +5376,22 @@ def strip_paren_text(text: str) -> str:
         i += 1
     return '\n'.join(out_lines)
 
-def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id):
+def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id, trust_sender=False):
     """
     将文本解析为结构化 log_item 列表。
     支持 6 种 fwlog 格式 + 3 种新增方括号/星号格式。
     无结构化内容时回退为单条消息。
+
+    trust_sender=True 时完全跳过发言者匹配，整段文本作为 sender_name 的单条消息。
+    （用于实时录制：消息来自真实 QQ 用户，文本中的 <Name>:/[time] 格式不应覆盖发送者。）
     """
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not normalized.strip():
         return []
+
+    # v5.0.1: 信任发送者模式下，跳过所有发言者匹配，整段文本归为 sender_name
+    if trust_sender:
+        return [make_log_item(sender_name, sender_id, ts, normalized.strip(), raw_msg_id)]
 
     parsed_items = []
     prefix_lines = []
@@ -5420,7 +5423,7 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id)
     line_index = 0
     while line_index < len(lines):
         line = lines[line_index]
-        matched = match_speaker_line(line, ts, sender_name)
+        matched = match_speaker_line(line, ts)
         next_index = line_index + 1
         if not matched:
             multiline_matched = match_multiline_angle_speaker(
@@ -5528,6 +5531,7 @@ async def extract_items_from_text_chunk(text, sender_name, sender_id, ts, raw_ms
                         sender_id,
                         ts,
                         f"{raw_msg_id}:text:{url_index}",
+                        trust_sender=True,
                     )
                 )
             plain_parts = []
@@ -5556,6 +5560,7 @@ async def extract_items_from_text_chunk(text, sender_name, sender_id, ts, raw_ms
                 sender_id,
                 ts,
                 f"{raw_msg_id}:text:tail",
+                trust_sender=True,
             )
         )
 
