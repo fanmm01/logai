@@ -201,7 +201,7 @@ def targeting_reward_modifier(engine, uid, ak):
 
 
 def encode_state(engine, uid):
-    """Encode combat state for a character into a 17-dim hashable key."""
+    """Encode combat state for a character into a 22-dim hashable key."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
@@ -331,9 +331,17 @@ def encode_state(engine, uid):
         if has_ally_effect:
             break
 
+    # Dim 17-21: control status flags
+    has_silence = int(engine._has_status(uid, '沉默'))
+    has_disarm = int(engine._has_status(uid, '缴械'))
+    has_stun = int(engine._has_status(uid, '击晕'))
+    has_root = int(engine._has_status(uid, '禁锢'))
+    is_flying = int(engine._is_flying(uid))
+
     return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
             skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
-            has_cake, phase, is_dying, has_ally_effect)
+            has_cake, phase, is_dying, has_ally_effect,
+            has_silence, has_disarm, has_stun, has_root, is_flying)
 
 
 def encode_summon_state(engine, uid):
@@ -725,6 +733,18 @@ def get_available_actions(engine, uid):
             range_filtered.append((ak, an))
         filtered = range_filtered
 
+    # ── Status filter: remove illegal actions based on control status ──
+    status_filtered = []
+    for ak, an in filtered:
+        if ak.startswith('SKILL_') and not engine._can_cast_active_skill(uid):
+            continue
+        if ak.startswith('BASIC_ATTACK') and not engine._can_basic_attack(uid):
+            continue
+        if ak == 'MOVE_TOWARD' and not engine._can_move(uid):
+            continue
+        status_filtered.append((ak, an))
+    filtered = status_filtered
+
     # CAKE actions: available when ready cakes exist (type 6 制造物)
     if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
         # EAT_CAKE: 自己食用蛋糕 → self-heal
@@ -757,7 +777,7 @@ def parse_action(action_key):
 def _compute_threat(engine, enemy_entry):
     """计算敌方单位的单回合伤害期望（考虑命中率、行动轮数）。
 
-    公式: threat = max(普攻期望, 技能期望) × 回合行动数
+    公式: threat = max(普攻期望, 技能期望) × 额外行动数
     其中: 普攻期望 = avg_damage(伤害值) × 斗殴/100
           技能期望 = max(avg_damage(伤害骰) × 成功率/100)
     召唤物: threat = Σ(avg_damage(dice) × val/100 × hits)
@@ -810,12 +830,15 @@ def _compute_threat(engine, enemy_entry):
 
     best_threat = max(basic_threat, best_skill_threat)
 
-    # 行动轮数：优先用引擎的动态行动数，fallback 到回合行动数属性
+    # 行动轮数：优先用引擎的动态行动数，fallback 到额外行动数属性
     actions_per_round = 1
     if hasattr(engine, '_get_dynamic_action_count'):
         actions_per_round = engine._get_dynamic_action_count(uid)
     if actions_per_round <= 1:
-        actions_per_round = char.get_attr('回合行动数', 1) or 1
+        extra = char.get_attr('额外行动数', None)
+        if extra is None:
+            extra = char.get_attr('回合行动数', 0)
+        actions_per_round = extra or 0
 
     return best_threat * actions_per_round
 
@@ -1621,9 +1644,9 @@ def load_q_table(path=None):
                     state = tuple(int(v) for v in state_str.split('|'))
                 except ValueError:
                     skipped += 1; continue  # skip corrupted entries (e.g. 'dead' state)
-                # Backward compat: pad old dimensions to 17
-                if len(state) < 17:
-                    padding_needed = 17 - len(state)
+                # Backward compat: pad old dimensions to 22
+                if len(state) < 22:
+                    padding_needed = 22 - len(state)
                     state = state + (0,) * padding_needed
                 Q[ck][(state, action)] = val
         if skipped:

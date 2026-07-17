@@ -270,7 +270,7 @@ def set_daily_cache(hash_key, images_list):
     DAILY_CACHE[today][hash_key] = images_list
 
 app = Flask(__name__)
-SERVICE_VERSION = "4.6.1"
+SERVICE_VERSION = "5.0.1"
 _openai_client = None
 
 def get_openai_client():
@@ -1341,6 +1341,19 @@ def looks_like_speaker_name(name):
         return False
     # v4.6.1: must contain at least one letter/digit/Chinese char (not pure punctuation)
     if not re.search(r'[a-zA-Z0-9一-鿿]', candidate):
+        return False
+    return True
+
+
+def _is_trusted_sender(name):
+    """v5.0.1: 判断发送者名称是否来自真实 QQ 用户（非系统/桥接标记）。
+    当发送者可信时，文本中的 <Name>: 格式不应覆盖真实的发送者。"""
+    s = str(name or '').strip()
+    if not s:
+        return False
+    if s.startswith('['):
+        return False  # [BridgeFile] 等系统标记
+    if 'bridge' in s.lower():
         return False
     return True
 
@@ -5427,6 +5440,19 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id)
                 continue
 
         if matched:
+            # v5.0.1: 若发送者可信任且匹配到的发言者名不一致，不覆盖真实发送者
+            if _is_trusted_sender(sender_name) and matched.get("name", "") != sender_name:
+                if current_name is None:
+                    structured_found = True
+                    current_name = sender_name
+                    current_user_id = sender_id
+                    current_ts = safe_int(ts, int(time.time()))
+                    current_lines = []
+                current_lines.append(line)
+                pending_meta = None
+                line_index = next_index
+                continue
+
             if pending_meta:
                 matched["time"] = pending_meta["time"]
             structured_found = True
@@ -6696,6 +6722,7 @@ def api_logutil_compound():
             if target:
                 source = target.get('source', '')
                 if source in ('bridge_file', 'bridge_file_name', 'bridge_link', 'bridge_history', 'raw_url',
+                              'bridge_file_rev', 'bridge_link_rev', 'bridge_history_rev',
                               'weizaima', 'kokona', 'dice_zone', 'trpgbot'):
                     try:
                         resolved_text = fetch_log_text_by_source(

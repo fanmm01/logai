@@ -1,4 +1,4 @@
-# LogUtil + Bridge 4.5.4-logutil
+# LogUtil + Bridge 5.0.1-logutil
 
 独立 LogUtil 日志录制与 NapCat 文件桥接插件。
 
@@ -360,6 +360,11 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 ---
 
 ## 更新日志
+**v5.0.1-logutil**
+1. 修复短别名反向索引引用（`F-1`/`L-1`/`H-1`）在复合命令中被当作文本字面量输出的 bug。
+2. 修复骰娘消息中 `<角色名>:` 格式被误识别为发言者的 bug。
+3. 同步 LogAI v5.0.1。
+
 **v4.6.1-logutil**
 1. 修复 .logutil end 被误判为复合命令的问题。
 2. 修复冒号格式对纯标点文本的误判。

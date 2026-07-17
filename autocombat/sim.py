@@ -242,6 +242,15 @@ def mode_single(argv, verbose=False):
         old_levels = [h.level for h in console_handlers]
         for h in console_handlers:
             h.setLevel(logging.DEBUG)
+        # When called from /api/sim, sys.stdout has been redirected to a StringIO buffer.
+        # The existing StreamHandler was created at import time pointing to the original
+        # stdout, so h.stream != sys.stdout. Add a temporary handler to capture log output.
+        _tmp_handler = None
+        if not console_handlers:
+            _tmp_handler = logging.StreamHandler(sys.stdout)
+            _tmp_handler.setLevel(logging.DEBUG)
+            _tmp_handler.setFormatter(logging.Formatter('%(message)s'))
+            ai_logger.addHandler(_tmp_handler)
 
         # Setup fighting characters (same logic as run_battle_pair)
         a_uids = [t.char_map[s] for s in team_a]
@@ -288,6 +297,8 @@ def mode_single(argv, verbose=False):
         # Restore console log level
         for h, old_lvl in zip(console_handlers, old_levels):
             h.setLevel(old_lvl)
+        if _tmp_handler:
+            ai_logger.removeHandler(_tmp_handler)
         return
 
     # ── Normal batch mode ──

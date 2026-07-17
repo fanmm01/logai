@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         半自动战斗扩展
 // @author       fanmm
-// @version      1.3.0
+// @version      1.4.0
 // @description  CoC魔法少女半自动战斗规则扩展。支持.setab 0(最小自动化)与.setab 1(完全自动化)。
 //               前置：loganalyser/logutil v5.0+ 与 coc7扩展。
-//               v1.3.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端。
+//               v1.4.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端。
 //               v1.2.0: .setaiact AI策略手动注入、同步setab=2全部功能。
 //               v1.1.0: 行动力/移动力/射程系统、zone属性削减、雪人+蓝增强、AUX 23-28。
 // @timestamp    1751983200
@@ -17,7 +17,7 @@
 // ============================================================
 let ext = seal.ext.find('autocombat');
 if (!ext) {
-  ext = seal.ext.new('autocombat', 'fanmm', '1.3.0');
+  ext = seal.ext.new('autocombat', 'fanmm', '1.4.0');
   seal.ext.register(ext);
 }
 
@@ -41,12 +41,12 @@ seal.ext.registerBoolConfig(ext, "AI回合延迟", true, "AI 回合之间随机�
     name: 'autocombat',
     fullName: '魔法少女半自动战斗规则',
     authors: ['fanmm'],
-    version: '1.3.0',
+    version: '1.4.0',
     updatedTime: '20260708',
     templateVer: '1.0',
     setConfig: {
       diceSides: 100,
-      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v1.3.0)',
+      enableTip: '已启用魔法少女半自动战斗规则 (autocombat v1.4.0)',
       keys: ['autocombat', '魔法少女', 'mg', 'battleauto'],
       relatedExt: ['coc7'],
     },
@@ -69,7 +69,7 @@ seal.ext.registerBoolConfig(ext, "AI回合延迟", true, "AI 回合之间随机�
     defaults: {
       等级: 1,
       魔法少女序号: 0,
-      回合行动数: 1,
+      额外行动数: 0,
     },
     defaultsComputed: {},
     alias: {
@@ -84,6 +84,7 @@ seal.ext.registerBoolConfig(ext, "AI回合延迟", true, "AI 回合之间随机�
       可反击: ['counterable'],
       等级: ['level', 'LV'],
       魔法少女序号: ['mgid'],
+      额外行动数: ['acts'],
       回合行动数: ['acts'],
     },
     textMap: {},
@@ -2686,7 +2687,7 @@ cmdStsave.solve = (ctx, msg, cmdArgs) => {
   // Base attributes
   const baseAttrs = ['力量','体型','体质','敏捷','外貌','教育','智力','意志','幸运',
                      '体力','体力上限','魔力','魔力上限','理智','行动力','体格','等级',
-                     '魔法少女序号','回合行动数','cm','克苏鲁神话'];
+                     '魔法少女序号','额外行动数','cm','克苏鲁神话'];
   data.attrs = {};
   for (const a of baseAttrs) {
     const v = seal.vars.intGet(mctx, a);
@@ -4136,7 +4137,7 @@ function serializeCharacterForEngine(ctx) {
   }
   // Runtime state
   const runtime = ['体力','体力上限','魔力','魔力上限','理智','行动力','体格','等级',
-                   '回合行动数','闪避','伤害贯穿','可反击','状态'];
+                   '额外行动数','闪避','伤害贯穿','可反击','状态'];
   for (const k of runtime) {
     const v = seal.vars.intGet(ctx, k);
     if (v[1]) data.attrs[k] = v[0];
@@ -4598,6 +4599,48 @@ function setActions(groupId, data) {
   ext.storageSet(`combat_actions_${groupId}`, JSON.stringify(data));
 }
 
+// ── 控制状态常量 ──
+const CONTROL_STATUS_TYPES = ['沉默','缴械','击晕','禁锢','隔离','减速','飞行'];
+
+// ── 状态查询 helper ──
+function getActiveBuffs(gid, uid) {
+  const effects = JSON.parse(ext.storageGet(`combat_effects_${gid}`) || '[]');
+  return effects.filter(e =>
+    (e.type === 'buff' || e.type === 'debuff') &&
+    e.targetUserId === uid &&
+    (e.remainingRounds || 0) !== 0
+  );
+}
+function hasStatus(gid, uid, statusName) {
+  return getActiveBuffs(gid, uid).some(b => b.auxType === statusName);
+}
+function canMove(gid, uid) { return !hasStatus(gid, uid, '禁锢') && !hasStatus(gid, uid, '击晕'); }
+function canBasicAttack(gid, uid) { return !hasStatus(gid, uid, '缴械') && !hasStatus(gid, uid, '击晕'); }
+function canCastSkill(gid, uid) { return !hasStatus(gid, uid, '沉默') && !hasStatus(gid, uid, '击晕'); }
+function canReactJS(gid, uid) { return !hasStatus(gid, uid, '击晕'); }
+function isFlying(gid, uid) {
+  const il = getInitiative(gid);
+  const entry = il.find(e => e.userId === uid);
+  if (entry && entry.flying) return true;
+  const ch = getChData(gid, uid);
+  if (ch && (ch.attrs['飞行'] || 0)) return true;
+  return getActiveBuffs(gid, uid).some(b => b.auxType === '飞行');
+}
+function calcEffectiveMOV(gid, uid) {
+  const ch = getChData(gid, uid);
+  let base = ch ? (ch.attrs['MOV'] || ch.attrs['行动力'] || 8) : 8;
+  if (ch && ch.attrs['分离行动力移动力']) base = ch.attrs['移动力'] || base;
+  // Zone penalties + buff mods — simplified for local mode
+  if (isFlying(gid, uid)) base += 8;
+  // Slow — simplified
+  return Math.max(0, Math.floor(base));
+}
+function calcMainActions(gid, uid) {
+  const ch = getChData(gid, uid);
+  const baseActs = ch ? (ch.attrs['额外行动数'] ?? ch.attrs['回合行动数'] ?? 0) : 0;
+  return Math.max(1, Math.floor(calcEffectiveMOV(gid, uid) / 5) + baseActs);
+}
+
 /** Format a grid coordinate e.g. A1 -> {col:0, row:0} */
 function parseCoord(s) {
   const m = s.match(/^([A-Z])(\d+)$/i);
@@ -4901,7 +4944,7 @@ cmdBtaStartFull.solve = (ctx, msg, cmdArgs) => {
   let actions = getActions(gid);
   for (const e of initList) {
     if (!actions[e.userId]) {
-      actions[e.userId] = { 附加: 3, 主动: 2 };
+      actions[e.userId] = { 附加: 3, 主动: calcMainActions(gid, e.userId) };
     }
   }
   setActions(gid, actions);
@@ -4919,7 +4962,7 @@ cmdBtaStartFull.solve = (ctx, msg, cmdArgs) => {
   const pn = seal.format(mctx, '{$t玩家}');
   let out = `${pn} 的战斗已开始！\n`;
   out += `先攻表 (${initList.length}人):\n`;
-  out += initList.map((e, i) => `  ${i+1}. ${e.name} [${e.team}] ${e.coord}  附加×3 主动×2`).join('\n');
+  out += initList.map((e, i) => `  ${i+1}. ${e.name} [${e.team}] ${e.coord}  附加×3 主动×${calcMainActions(gid, e.userId)}`).join('\n');
   out += `\n\n` + renderMap(gid);
   out += `\n\n当前回合: 1 | 行动顺序: ${initList[0] ? initList[0].name : '(无)'}\n`;
   out += `使用 .sN 释放技能  .a m 坐标 移动  .a sN 附加动作技能`;
@@ -6643,7 +6686,7 @@ function makeSkillCmd(skillNum) {
         state.round++;
         // Refresh actions for new round
         const acts = getActions(gid);
-        for (const k in acts) { acts[k] = { 附加: 3, 主动: 2 }; }
+        for (const k in acts) { acts[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
         setActions(gid, acts);
         output += `\n===== 第 ${state.round} 回合 =====\n`;
         // Show initiative table for the new round
@@ -6864,6 +6907,19 @@ function makeSkillCmd(skillNum) {
       // Show member status for the next character's turn
       if (next) {
         output += `\n【${next.name} 的回合！】\n`;
+        // ── 控制状态显示 ──
+        const statusBuffs = getActiveBuffs(gid, next.userId).filter(b => CONTROL_STATUS_TYPES.includes(b.auxType));
+        if (statusBuffs.length > 0) {
+          const statusStrs = statusBuffs.map(b => {
+            let s = `${b.auxType}(${b.remainingRounds}回合)`;
+            if (b.auxType === '击晕') s += `[保护:${String(b.auxVal) === '0' ? '不可攻击' : '可攻击'}]`;
+            return s;
+          });
+          output += `状态: ${statusStrs.join(' | ')}\n`;
+          if (!canBasicAttack(gid, next.userId)) output += '⚠ 无法普通攻击（缴械/击晕中）\n';
+          if (!canCastSkill(gid, next.userId)) output += '⚠ 无法释放技能（沉默/击晕中）\n';
+          if (!canMove(gid, next.userId)) output += '⚠ 无法移动（禁锢/击晕中）\n';
+        }
         output += `成员状态:\n`;
         const hpStoreMember2 = getCombatHP(gid);
         output += initList.map(e => `  ${e.name} HP:${hpStoreMember2[e.userId] || 0}`).join('\n');
@@ -6951,7 +7007,7 @@ function makeAdditionalCmd() {
     const initList = getInitiative(gid);
     const actions = getActions(gid);
     const userId = ctx.player.userId;
-    const myActions = actions[userId] || { 附加: 3, 主动: 2 };
+    const myActions = actions[userId] || { 附加: 3, 主动: 3 };
     if (myActions.附加 <= 0) {
       seal.replyToSender(ctx, msg, '你的附加动作次数已用尽！');
       return seal.ext.newCmdExecuteResult(true);
@@ -7332,7 +7388,7 @@ cmdChreload.solve = async (ctx, msg, cmdArgs) => {
 };
 
 // ============================================================
-//  .train  — v1.3.0 AI训练指令
+//  .train  — v1.4.0 AI训练指令
 // ============================================================
 const cmdTrain = seal.ext.newCmdItemInfo();
 cmdTrain.name = 'train';
@@ -7391,7 +7447,7 @@ cmdTrain.solve = async (ctx, msg, cmdArgs) => {
 };
 
 // ============================================================
-//  .jour  — v1.3.0 AI锦标赛指令
+//  .jour  — v1.4.0 AI锦标赛指令
 //  语法: .jour [3/2/1/ALL]
 //  全部输出以图片形式发送
 // ============================================================
@@ -7571,7 +7627,7 @@ cmdJour.solve = async (ctx, msg, cmdArgs) => {
 };
 
 // ============================================================
-//  .sim  — v1.3.0 快速战斗模拟
+//  .sim  — v1.4.0 快速战斗模拟
 //  语法同 python sim.py，但 -- 参数去掉双横线
 // ============================================================
 const cmdSim = seal.ext.newCmdItemInfo();
@@ -7962,7 +8018,7 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
     state.round++;
     // Refresh actions for new round
     const acts = getActions(gid);
-    for (const k in acts) { acts[k] = { 附加: 3, 主动: 2 }; }
+    for (const k in acts) { acts[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
     setActions(gid, acts);
     output += `\n===== 第 ${state.round} 回合 =====\n`;
     // Show initiative table for the new round
@@ -8163,6 +8219,19 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
   // Show member status for the next character's turn
   if (next) {
     output += `\n【${next.name} 的回合！】\n`;
+    // ── 控制状态显示 ──
+    const statusBuffs2 = getActiveBuffs(gid, next.userId).filter(b => CONTROL_STATUS_TYPES.includes(b.auxType));
+    if (statusBuffs2.length > 0) {
+      const statusStrs2 = statusBuffs2.map(b => {
+        let s = `${b.auxType}(${b.remainingRounds}回合)`;
+        if (b.auxType === '击晕') s += `[保护:${String(b.auxVal) === '0' ? '不可攻击' : '可攻击'}]`;
+        return s;
+      });
+      output += `状态: ${statusStrs2.join(' | ')}\n`;
+      if (!canBasicAttack(gid, next.userId)) output += '⚠ 无法普通攻击（缴械/击晕中）\n';
+      if (!canCastSkill(gid, next.userId)) output += '⚠ 无法释放技能（沉默/击晕中）\n';
+      if (!canMove(gid, next.userId)) output += '⚠ 无法移动（禁锢/击晕中）\n';
+    }
     output += `成员状态:\n`;
     const hpStoreMember = getCombatHP(gid);
     output += initList.map(e => `  ${e.name} HP:${hpStoreMember[e.userId] || 0}`).join('\n');
@@ -8413,4 +8482,4 @@ ext.onCommandReceived = (ctx, msg, cmdArgs) => {
 
 console.log('[autocombat] 半自动战斗扩展 v1.2.0 已加载');
 console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end .train .jour');
-console.log('[autocombat] v1.3.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端');
+console.log('[autocombat] v1.4.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端');

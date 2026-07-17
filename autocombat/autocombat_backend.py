@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""autocombat_backend.py — 集成后端 v1.3.0
+"""autocombat_backend.py — 集成后端 v1.4.0
 All-in-one self-contained backend for autocombat JS plugin.
-Generated: 2026-07-08  Version: 1.3.0
+Generated: 2026-07-08  Version: 1.4.0
 """
 
 import sys, os, json, uuid, threading, random, math, time, importlib, re, queue
@@ -52,7 +52,7 @@ chData = {
         '魔力': 10,                 # int — 当前MP
         '魔力上限': 10,             # int — MP上限
         '行动力': 8,               # int — MOV (移动力)
-        '回合行动数': 1,           # int — 每回合可行动次数 (通常1~2)
+        '额外行动数': 0,           # int — 每回合可行动次数 (通常1~2)
         '敏捷': 50,                 # int — DEX, 决定行动顺序
         '闪避': 50,                 # int — 基础闪避率
         '体格': 0,                  # int — COC7体格 (Build)
@@ -319,7 +319,7 @@ chData = {
       'STR':50,'CON':50,'SIZ':50,'DEX':70,   # COC7八维
       'APP':30,'INT':30,'POW':30,'EDU':0,
       '闪避': 35, 'MOV': 6,                   # 战斗属性
-      '回合行动数': 1, '可反击': 1, '可反应': 1,
+      '额外行动数': 0, '可反击': 1, '可反应': 1,
       'skills': ['斗殴:65 1d6+1d4'],          # 技能列表 (str或dict)
       # -- 可选字段 --
       'flying': True,                          # bool — 飞行 (非飞行无法近战)
@@ -361,6 +361,9 @@ import json
 
 # [INLINED] from battle_engine import CN_NUMS, CAT_LETTERS
 
+# ── 调试开关：设为 1 时，所有技能射程强制变为 99（无视原始射程限制）──
+GLOBAL_RANGE_OVERRIDE = 1
+
 # ============================================================
 #  召唤物模板数据 (summon templates)
 #  以 character attributes 形式存储: 召唤物模板{N}名称, HP, DEX, 技能1-3等
@@ -370,38 +373,47 @@ SUMMON_TEMPLATES = {
     '使魔': {
         'HP': 24, 'MP': 0, 'SAN': 0,
         'STR': 50, 'CON': 50, 'SIZ': 50, 'DEX': 70, 'APP': 30, 'INT': 30, 'POW': 30, 'EDU': 0,
-        '闪避': 35, 'MOV': 6, '回合行动数': 1, '可反击': 1, '可反应': 1,
+        '闪避': 35, 'MOV': 6, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'skills': ['斗殴:65 1d6+1d4'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
     '生灵': {
         'HP': 6, 'MP': 0, 'SAN': 0,
         'STR': 30, 'CON': 30, 'SIZ': 30, 'DEX': 85, 'APP': 20, 'INT': 10, 'POW': 10, 'EDU': 0,
-        '闪避': 42, 'MOV': 6, '回合行动数': 1, '可反击': 1, '可反应': 1,
+        '闪避': 42, 'MOV': 10, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'skills': ['斗殴:40 1d4'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
     '藤蔓': {
         'HP': 24, 'MP': 0, 'SAN': 0,
         'STR': 60, 'CON': 50, 'SIZ': 60, 'DEX': 15, 'APP': 10, 'INT': 1, 'POW': 10, 'EDU': 0,
-        '闪避': 7, 'MOV': 0, '回合行动数': 1, '可反击': 1, '可反应': 1,
+        '闪避': 7, 'MOV': 8, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        'permanent_statuses': ['禁锢'],
         'skills': ['鞭:50 1d8+1d6'],
         'max_simultaneous': 2, 'max_total_spawned': 6,
     },
     '蜂鸟': {
         'HP': 12, 'MP': 0, 'SAN': 0,
         'STR': 20, 'CON': 30, 'SIZ': 10, 'DEX': 90, 'APP': 30, 'INT': 20, 'POW': 10, 'EDU': 0,
-        '闪避': 45, 'MOV': 11, '回合行动数': 1, '可反击': 1, '可反应': 1,
+        '闪避': 45, 'MOV': 11, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'skills': ['爪击:60 1d4+1d6'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
     '玄武': {
         'HP': 80, 'MP': 0, 'SAN': 0,
         'STR': 70, 'CON': 70, 'SIZ': 80, 'DEX': 30, 'APP': 20, 'INT': 20, 'POW': 20, 'EDU': 0,
-        '闪避': 15, 'MOV': 3, '回合行动数': 1, '可反击': 1, '可反应': 1, '可格挡': 1,
-        '格挡': 60,
+        '闪避': 15, 'MOV': 3, '额外行动数': 1, '可反击': 1, '可反应': 1, '可格挡': 1,
+        '格挡': 75,
         'size_2x2': True,  # 2×2占据
         'skills': ['盾击:50 1d4+3d6', '盾牌冲撞:50 3d6'],
+        # spells for .s1 command (s0 = basic attack from skills[0])
+        'spells': [
+            {
+                'name': '盾牌冲撞', 'index': 1, 'phase': 1, 'timing': '2', 'category': 1,
+                'effects': [{'type': 1, '客体': 4, '伤害骰': '3d6', '成功率': 50, '射程': 1,
+                             '可闪避性': 1, '可反击性': 1, '可贯穿性': 0, '致死值': 0}],
+            },
+        ],
         'react_dodge': 10, 'react_counter': 10, 'react_block': 80,
         'shield_block': 100, 'shield_block_rate': 0.75,
         'ignore_unreactable_block': True,
@@ -412,9 +424,17 @@ SUMMON_TEMPLATES = {
     '朱雀': {
         'HP': 90, 'MP': 0, 'SAN': 0,
         'STR': 50, 'CON': 50, 'SIZ': 40, 'DEX': 90, 'APP': 40, 'INT': 30, 'POW': 30, 'EDU': 0,
-        '闪避': 85, 'MOV': 12, '回合行动数': 1, '可反击': 1, '可反应': 1,
+        '闪避': 85, 'MOV': 11, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'flying': True,  # 非飞行不可近战
         'skills': ['爪击:75 2d6+4', '俯冲:70 2d8+1d6+4'],
+        # spells for .s1 command (s0 = basic attack from skills[0])
+        'spells': [
+            {
+                'name': '俯冲', 'index': 1, 'phase': 1, 'timing': '2', 'category': 1,
+                'effects': [{'type': 1, '客体': 4, '伤害骰': '2d8+1d6+4', '成功率': 70, '射程': 1,
+                             '可闪避性': 1, '可反击性': 1, '可贯穿性': 0, '致死值': 0}],
+            },
+        ],
         'merge_group': 'trinity',
         'merge_result': '三合一',
         'max_simultaneous': 1, 'max_total_spawned': 1,
@@ -422,14 +442,24 @@ SUMMON_TEMPLATES = {
     '龙虎': {
         'HP': 140, 'MP': 50, 'SAN': 0,
         'STR': 80, 'CON': 80, 'SIZ': 80, 'DEX': 60, 'APP': 30, 'INT': 30, 'POW': 30, 'EDU': 0,
-        '闪避': 40, 'MOV': 8, '回合行动数': 2, '可反击': 1, '可反应': 1,
+        '闪避': 40, 'MOV': 8, '额外行动数': 1, '可反击': 1, '可反应': 1,
         'skills': [
-            {'name': '斗殴', 'val': 80, 'dice': '2d6'},
-            {'name': '水火弹', 'val': 70, 'dice': '1d4+2d6', 'hits': 2,
-             'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
-            {'name': '治愈领域', 'skill_type': 'zone_heal',
-             'zone_heal_hp': '2d6', 'zone_radius': 8, 'zone_duration': 3,
-             'mp_cost': 8, 'cooldown_rounds': 3},
+            {'name': '斗殴', 'val': 80, 'dice': '2d6'}
+        ],
+        # spells for .s1 / .s2 commands (s0 = basic attack from skills[0])
+        'spells': [
+            {
+                'name': '水火弹', 'index': 1, 'phase': 1, 'timing': '2', 'category': 1,
+                'effects': [{'type': 1, '客体': 4, '伤害骰': '1d4+2d6', '成功率': 70, '射程': 4,
+                             '可闪避性': 1, '可反击性': 1, '可贯穿性': 0, '致死值': 0}],
+            },
+            {
+                'name': '治愈领域', 'index': 2, 'phase': 1, 'timing': '2', 'category': 8,
+                'effects': [{'type': 8, '客体': 12,
+                             'zone_半径': 8, 'zone_持续': 3,
+                             'zone_回复hp': '2d6',
+                             'cooldown_rounds': 3}],
+            },
         ],
         'merge_group': 'trinity',
         'merge_result': '三合一',
@@ -445,8 +475,8 @@ SUMMON_TEMPLATES = {
     '三合一': {
         'HP': 200, 'MP': 50, 'SAN': 0,
         'STR': 90, 'CON': 90, 'SIZ': 90, 'DEX': 80, 'APP': 40, 'INT': 40, 'POW': 40, 'EDU': 0,
-        '闪避': 60, 'MOV': 10, '回合行动数': 2, '可反击': 1, '可反应': 1, '可格挡': 1,
-        '格挡': 70,
+        '闪避': 60, 'MOV': 10, '额外行动数': 0, '可反击': 1, '可反应': 1, '可格挡': 1,
+        '格挡': 75,
         'flying': True,
         'shield_block': 50, 'shield_block_rate': 0.70, 'react_block': 50,
         'ignore_unreactable_block': True,
@@ -482,7 +512,7 @@ YANYAN = {
         '等级':6, '敏捷':65, '体力':15, '体力上限':15, '魔力':16, '魔力上限':16,
         '闪避':70, '理智':50, '斗殴':70, '行动力':8, '体格':1,
         '力量':55, '体质':55, '体型':60, '外貌':60, '教育':50, '智力':55, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':1, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':1, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs': {'伤害值':'2d6'},
     'inventory': [],
@@ -513,7 +543,7 @@ DANIUSI = {
         '等级':4, '敏捷':70, '体力':12, '体力上限':12, '魔力':15, '魔力上限':15,
         '闪避':50, '理智':59, '斗殴':65, '行动力':8, '体格':0,
         '力量':50, '体质':55, '体型':55, '外貌':55, '教育':50, '智力':55, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':2, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':2, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d8+1d6+1d4'},
     'inventory': [],
@@ -542,7 +572,7 @@ LINGNIU = {
         '等级':6, '敏捷':60, '体力':13, '体力上限':13, '魔力':12, '魔力上限':12,
         '闪避':65, '理智':65, '斗殴':85, '行动力':8, '体格':1,
         '力量':60, '体质':60, '体型':60, '外貌':50, '教育':45, '智力':50, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':3, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':3, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'2d6'},
     'inventory': [],
@@ -573,7 +603,7 @@ XINGSHAN = {
         '等级':5, '敏捷':70, '体力':11, '体力上限':11, '魔力':17, '魔力上限':17,
         '闪避':75, '理智':75, '斗殴':60, '行动力':8, '体格':0,
         '力量':50, '体质':55, '体型':55, '外貌':60, '教育':55, '智力':60, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':4, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':4, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4+1d3'},
     'inventory': [],
@@ -607,7 +637,7 @@ XUETIANSHI = {
         '等级':6, '敏捷':80, '体力':8, '体力上限':8, '魔力':14, '魔力上限':14,
         '闪避':75, '理智':55, '斗殴':70, '行动力':8, '体格':1,
         '力量':55, '体质':50, '体型':50, '外貌':65, '教育':50, '智力':50, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':5, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':5, '伤害贯穿':1, '可反击':1, '状态':60,
         '飞行': 1,
     },
     'str_attrs':{'伤害值':'2d3+1d4'},
@@ -626,7 +656,7 @@ XUETIANSHI = {
         {
             'name':'吸血', 'timing':'2', 'category':1,
             'effects':[{
-                'type':1, '客体':4, '伤害骰':'2d4+1d6+2', '可闪避性':0, '可反击性':0, '射程':2, '吸血比例':'1.0',
+                'type':1, '客体':4, '伤害骰':'2d4+1d6+2', '可闪避性':0, '可反击性':1, '射程':2, '吸血比例':'1.0',
             }]
         },
     ]
@@ -641,7 +671,7 @@ XUEREN = {
         '等级':6, '敏捷':65, '体力':7, '体力上限':7, '魔力':13, '魔力上限':13,
         '闪避':65, '理智':70, '斗殴':50, '行动力':8, '体格':0,  # 闪避50→65
         '力量':45, '体质':50, '体型':55, '外貌':50, '教育':55, '智力':60, '意志':60, '幸运':50,
-        '回合行动数':1, '魔法少女序号':6, '伤害贯穿':1, '可反击':1, '状态':60,  # 贯穿0→1
+        '额外行动数':0, '魔法少女序号':6, '伤害贯穿':1, '可反击':1, '状态':60,  # 贯穿0→1
     },
     'str_attrs':{'伤害值':'1d8+1d4'},  # 1d4+1d3→1d8+1d4
     'inventory': [
@@ -655,14 +685,14 @@ XUEREN = {
                  '每回合伤害骰':'1d6', '属性削减':'行动力-5',  # DOT 1d4→1d6
                  '领域中心跟随':0},
                 {'type':1, '客体':45, '伤害骰':'1d6+1d4', '成功率':70,  # 初始伤害提升
-                 '可闪避性':0, '可反击性':0, '射程':99},
+                 '可闪避性':1, '可反击性':0, '射程':99},
             ]
         },
         {
             'name':'发送雪球', 'timing':'2', 'category':1, '消耗mp':2,
             'effects':[{
                 'type':1, '客体':4, '伤害骰':'1d6+1d4+2', '成功率':75,
-                '可闪避性':0, '可反击性':0, '射程':99,
+                '可闪避性':1, '可反击性':0, '射程':99,
             }]
         },
     ]
@@ -680,7 +710,7 @@ HUANHUANUAN = {
         '等级':6, '敏捷':60, '体力':10, '体力上限':10, '魔力':15, '魔力上限':15,
         '闪避':60, '理智':55, '斗殴':45, '行动力':8, '体格':0,
         '力量':45, '体质':50, '体型':55, '外貌':55, '教育':55, '智力':55, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':7, '伤害贯穿':0, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':7, '伤害贯穿':0, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4+1d3'},
     'inventory': [
@@ -711,7 +741,7 @@ BIHAMI = {
         '等级':5, '敏捷':50, '体力':8, '体力上限':8, '魔力':15, '魔力上限':15,
         '闪避':65, '理智':70, '斗殴':40, '行动力':8, '体格':0,
         '力量':40, '体质':45, '体型':50, '外貌':55, '教育':55, '智力':60, '意志':60, '幸运':50,
-        '回合行动数':1, '魔法少女序号':8, '伤害贯穿':0, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':8, '伤害贯穿':0, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'1d4'},
     'inventory': [
@@ -747,12 +777,11 @@ BIHAMI = {
 # Phase 2 (木·枯): 召唤生灵(点燃), 生之矛(2d8纯伤), 领域·灭(全场伤害+友方敏捷+10+伤害骰优势)
 MULUO = {
     'name':'木落', 'serial':'Y9',
-    'pre_transformed': True,
     'attrs':{
-        '等级':6, '敏捷':70, '体力':120, '体力上限':120, '魔力':65, '魔力上限':65,
-        '闪避':70, '理智':5, '斗殴':80, '剑':75, '行动力':8, '体格':3,
+        '等级':6, '敏捷':70, '体力':11, '体力上限':11, '魔力':13, '魔力上限':13,
+        '闪避':50, '理智':5, '斗殴':60, '剑':55, '行动力':8, '体格':2,
         '力量':70, '体质':75, '体型':70, '外貌':50, '教育':40, '智力':50, '意志':50, '幸运':50,
-        '回合行动数':1, '魔法少女序号':9, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':9, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值a':'1d6+1d6', '伤害值b':'1d8+1d6+4'},
     'inventory': [],
@@ -821,9 +850,10 @@ CHUNSHANG = {
         '等级':7, '敏捷':75, '体力':10, '体力上限':10, '魔力':14, '魔力上限':14,
         '闪避':60, '理智':20, '斗殴':65, '行动力':8, '体格':0,
         '力量':50, '体质':55, '体型':55, '外貌':55, '教育':50, '智力':55, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':10, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':10, '伤害贯穿':1, '可反击':1, '状态':60,
+        '不可指定': 1,
     },
-    'str_attrs':{'伤害值':'1d6+1d4'},
+    'str_attrs':{'伤害值':'1d6+1d4', '不可指定召唤物': '藤蔓'},
     'inventory': [],
     'spells':[
         {
@@ -854,7 +884,7 @@ LAN = {
         '等级':8, '敏捷':70, '体力':12, '体力上限':12, '魔力':12, '魔力上限':12,
         '闪避':70, '理智':10, '斗殴':75, '行动力':8, '体格':1,
         '力量':60, '体质':60, '体型':55, '外貌':55, '教育':50, '智力':55, '意志':55, '幸运':50,
-        '回合行动数':1, '魔法少女序号':11, '伤害贯穿':1, '可反击':1, '状态':60,
+        '额外行动数':0, '魔法少女序号':11, '伤害贯穿':1, '可反击':1, '状态':60,
     },
     'str_attrs':{'伤害值':'2d4+4'},
     'inventory': [],
@@ -891,7 +921,7 @@ SIRUITIKA = {
         '等级':10, '敏捷':75, '体力':8, '体力上限':8, '魔力':18, '魔力上限':18,
         '闪避':80, '理智':60, '斗殴':45, '行动力':8, '体格':0,
         '力量':40, '体质':45, '体型':50, '外貌':60, '教育':60, '智力':65, '意志':60, '幸运':50,
-        '回合行动数':1, '魔法少女序号':12, '伤害贯穿':0, '可反击':1, '可格挡':1,
+        '额外行动数':0, '魔法少女序号':12, '伤害贯穿':0, '可反击':1, '可格挡':1,
         '格挡':85, '状态':60,
         '召唤物HP单独显示': 1, '不可指定': 1,
     },
@@ -930,7 +960,7 @@ GELIYA = {
         '等级': 5, '敏捷': 55, '体力': 12, '体力上限': 12, '魔力': 18, '魔力上限': 18,
         '闪避': 25, '理智': 50, '斗殴': 80, '行动力': 8, '体格': 1,
         '力量': 60, '体质': 65, '体型': 60, '外貌': 55, '教育': 50, '智力': 55, '意志': 60, '幸运': 50,
-        '回合行动数': 1, '魔法少女序号': 13, '伤害贯穿': 1, '可反击': 1, '状态': 60,
+        '额外行动数': 0, '魔法少女序号': 13, '伤害贯穿': 1, '可反击': 1, '状态': 60,
     },
     'str_attrs': {'伤害值': '2d6'},
     'inventory': [],
@@ -1004,7 +1034,7 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         prefix = f"召唤物模板{CN_NUMS[ti]}"
         char.set_str(f"{prefix}名称", tmpl_name)
         for k in ['HP','MP','SAN','STR','CON','SIZ','DEX','APP','INT','POW','EDU',
-                  '闪避','MOV','回合行动数','可反击','可反应','可格挡','格挡',
+                  '闪避','MOV','额外行动数','可反击','可反应','可格挡','格挡',
                   'max_simultaneous', 'max_total_spawned']:
             if k in tmpl and tmpl[k] is not None:
                 char.set_attr(f"{prefix}{k}", tmpl[k])
@@ -1125,7 +1155,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ============================================================
 #  Constants
 # ============================================================
-MAX_DYNAMIC_ACTIONS = 5  # 每实体最多预掷行动槽数 (用于动态行动数系统)
 CN_NUMS = ['零','一','二','三','四','五','六','七','八','九','十',
            '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十']
 CAT_LETTERS = ['a','b','c','d','e','f']
@@ -1147,6 +1176,9 @@ AUX_EFFECT_TYPES = {
     29:'消耗hp转为消耗mp',
 }
 AUX_NAME_TO_CODE = {v: k for k, v in AUX_EFFECT_TYPES.items()}
+
+# ── 控制状态类型（auxType 字符串，不入 AUX_EFFECT_TYPES）──
+CONTROL_STATUS_TYPES = ('沉默','缴械','击晕','禁锢','隔离','减速','飞行')
 
 def _eff_get(eff, key):
     """兼容新旧字段名：辅助效果/其他辅助效果a, 辅助效果值/辅助效果值a"""
@@ -1433,7 +1465,14 @@ def chebyshev_dist(a, b):
 
 def _get_attack_range(spell_effect=None, skill_name=None):
     """获取攻击的射程。法术效果优先读取其'射程'字段；未声明默认2(近战)。
-    普攻: MELEE_SKILLS中的技能=2, 其他=99。"""
+    普攻: MELEE_SKILLS中的技能=2, 其他=99。
+    调试: 若 characters_data_pvp.GLOBAL_RANGE_OVERRIDE == 1，所有射程返回99。"""
+    try:
+        from characters_data import GLOBAL_RANGE_OVERRIDE
+        if GLOBAL_RANGE_OVERRIDE:
+            return 99
+    except ImportError:
+        pass
     if spell_effect:
         return spell_effect.get('射程', 2)
     if skill_name:
@@ -1627,6 +1666,7 @@ class CombatEngine:
                     if mp_consume > 0:
                         char.set_attr('魔力', cur_mp - mp_consume)
                         new_hp = old_hp - (hp_loss - mp_consume)
+                        _engine_debug_log(f"AUX29 HP→MP: {char.name}({base}) hp_loss={hp_loss} mp_consume={mp_consume} old_hp={old_hp} new_hp={new_hp}")
         s[base] = new_hp
         self.set_json(self._combat_hp_key(), s)
 
@@ -1788,6 +1828,44 @@ class CombatEngine:
             base -= entry.get('_zone_penalty_行动力', 0)
         return max(1, base + self._get_buff_move_mod(uid))
 
+    def _get_effective_mov(self, uid):
+        """统一计算有效MOV。
+        结算顺序: 基础MOV + buff/领域增减 → 飞行+8 → 减速倍率 → floor, min0。
+        召唤物优先读取 MOV 属性，角色用 行动力(默认8)。"""
+        import math
+        resolved = self._resolve_uid(uid)
+        char = self.get_char(resolved)
+        # 基础 MOV：召唤物用 MOV 属性，角色用 行动力
+        base = char.get_attr('MOV', None)
+        if base is None:
+            base = char.get_attr('行动力', 8)
+            if char.get_attr('分离行动力移动力', 0):
+                base = char.get_attr('移动力', base)
+        # Zone 惩罚
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == uid), None)
+        if entry:
+            base -= entry.get('_zone_penalty_移动力', 0)
+            base -= entry.get('_zone_penalty_行动力', 0)
+        # Buff 修正 (AUX 23-28)
+        base += self._get_buff_move_mod(uid)
+        # 飞行: +8
+        if self._is_flying(uid):
+            base += 8
+        # 减速倍率
+        slow = self._get_slow_multiplier(uid)
+        result = int(math.floor(max(0, base) * slow))
+        return result
+
+    def _calc_main_actions(self, uid):
+        """计算每回合主动作数。公式: max(1, effective_MOV // 5 + 额外行动数)，无上限。"""
+        effective_mov = self._get_effective_mov(uid)
+        char = self.get_char(self._resolve_uid(uid))
+        extra = char.get_attr('额外行动数', None)
+        if extra is None:
+            extra = char.get_attr('回合行动数', 0)
+        return max(1, effective_mov // 5 + extra)
+
     def _get_buff_move_mod(self, uid):
         """从活跃buff中提取MOV/行动力/移动力修改量（每回合缓存）。"""
         il = self._get_initiative()
@@ -1807,6 +1885,8 @@ class CombatEngine:
     def _consume_move_power(self, uid, amount):
         """消耗移动力。返回实际可消耗量。
         多动角色的所有行动槽共享 _move_used。"""
+        if not self._can_move(uid):
+            return 0  # 禁锢/击晕禁止移动
         il = self._get_initiative()
         entry = next((e for e in il if e['userId'] == uid), None)
         if not entry: return 0
@@ -1839,6 +1919,11 @@ class CombatEngine:
 
     def _move_to_attack_range(self, uid, target_id, atk_range):
         """移动到可攻击目标的位置。返回 (can_attack, original_coord)。"""
+        # ── 状态检查：禁锢/击晕禁止自动接近 ──
+        if not self._can_move(uid):
+            il = self._get_initiative()
+            my_entry = next((e for e in il if e['userId'] == uid), None)
+            return (False, my_entry.get('coord', '') if my_entry else '')
         il = self._get_initiative()
         my_entry = next((e for e in il if e['userId'] == uid), None)
         t_entry = next((e for e in il if e['userId'] == target_id), None)
@@ -1921,95 +2006,34 @@ class CombatEngine:
             def_penalty = 'p'
         return (atk_bonus, def_penalty)
 
-    # ---- 动态行动数 (Dynamic Action Count) methods ----
+    # ---- 动态行动数 (now delegates to _calc_main_actions) ----
     def _get_dynamic_action_count(self, uid):
-        """计算基于行动力的动态行动槽数。
-        公式: ((行动力 - 1) // 10) + 回合行动数，最小1，最大MAX_DYNAMIC_ACTIONS。
-        对玩家角色和召唤物统一适用。
-        召唤物需预先设置 char.行动力 和 char.回合行动数。"""
-        ap = self._get_action_power(uid)
-        char = self.get_char(self._resolve_uid(uid))
-        base_actions = char.get_attr('回合行动数', 1)
-        count = ((ap - 1) // 10) + base_actions
-        return max(1, min(MAX_DYNAMIC_ACTIONS, count))
+        """计算主动作数（委托给新公式）。保留此方法以兼容旧调用方。"""
+        return self._calc_main_actions(uid)
 
     def _sync_initiative_slots(self, uid):
-        """根据当前行动力动态调整行动槽的抑制状态。适用于所有实体（玩家+召唤物）。
-        保留所有预掷条目，仅切换 _suppressed 标记。"""
-        base_uid = self._resolve_uid(uid)
-        dynamic_count = self._get_dynamic_action_count(uid)
-        il = self._get_initiative()
-        changed = False
-        for e in il:
-            if e.get('baseUserId', e['userId']) != base_uid:
-                continue
-            ai = e.get('actionIdx', 0)
-            should_suppress = ai >= dynamic_count
-            is_suppressed = e.get('_suppressed', False)
-            if should_suppress != is_suppressed:
-                if should_suppress:
-                    e['_suppressed'] = True
-                else:
-                    e.pop('_suppressed', None)
-                changed = True
-        if changed:
-            self._set_initiative(il)
+        """已废弃 — 单槽系统无需抑制。保留以兼容旧调用方。"""
+        pass
 
     def _sync_all_initiative_slots(self):
-        """对所有实体重新计算行动槽抑制状态。"""
+        """清除移动力修正缓存。每回合边界调用。"""
         il = self._get_initiative()
-        # 清除buff移动力缓存，确保重新读取最新buff值
         for e in il:
             e.pop('_cached_buff_mov_mod', None)
-        seen = set()
-        for e in il:
-            base = e.get('baseUserId', e['userId'])
-            if base not in seen:
-                seen.add(base)
-                self._sync_initiative_slots(base)
 
     def _ensure_dynamic_slots(self, uid):
-        """确保 uid 有 MAX_DYNAMIC_ACTIONS 个先攻条目（带 baseUserId/actionIdx）。
-        如果实体当前只有1个条目（如新召唤物），扩展为 MAX_DYNAMIC_ACTIONS 个。
-        如果已有多个条目，移除超出 MAX_DYNAMIC_ACTIONS 的，补齐不足的。
-        用于召唤物创建/合并后的槽位初始化。"""
+        """确保 uid 有先攻条目且设置了 baseUserId/actionIdx。
+        单槽系统：仅补全字段，不扩展。"""
         base_uid = self._resolve_uid(uid)
         il = self._get_initiative()
-        # 找到模板条目（actionIdx=0 或唯一的条目）
-        existing = [e for e in il if e.get('baseUserId', e['userId']) == base_uid]
-        template = next((e for e in existing if e.get('actionIdx', 0) == 0), None)
-        if not template and existing:
-            template = existing[0]
-            template['baseUserId'] = base_uid
-            template['actionIdx'] = 0
-        if not template:
-            return  # 没有模板条目，无法扩展
-
-        existing_ids = {e['userId'] for e in existing}
-
-        # 移除超出 MAX 的旧条目
-        for e in list(existing):
-            if e.get('actionIdx', 0) >= MAX_DYNAMIC_ACTIONS:
-                il.remove(e)
-
-        # 补齐不足的条目
-        for ai in range(MAX_DYNAMIC_ACTIONS):
-            entry_id = base_uid if ai == 0 else f"{base_uid}__act{ai}"
-            if entry_id in existing_ids:
-                continue
-            dex_val = template.get('dex', 50)
-            init_roll, _ = roll_d100("")
-            init_rank = success_rank(init_roll, dex_val)
-            label = f" (行动{ai+1})" if MAX_DYNAMIC_ACTIONS > 1 else ""
-            new_entry = {**template,
-                'userId': entry_id, 'baseUserId': base_uid, 'actionIdx': ai,
-                'dex': dex_val, 'initRoll': init_roll, 'initRank': init_rank,
-                'name': (template.get('name', '') + label)}
-            il.append(new_entry)
-
-        il.sort(key=lambda e: (-e.get("initRank", 0), -e.get("dex", 0), e.get("initRoll", 0)))
-        self._set_initiative(il)
-        self._sync_initiative_slots(base_uid)
+        for e in il:
+            if e.get('baseUserId', e['userId']) == base_uid:
+                if 'baseUserId' not in e:
+                    e['baseUserId'] = base_uid
+                if 'actionIdx' not in e:
+                    e['actionIdx'] = 0
+                self._set_initiative(il)
+                return
 
     # ---- 物品栏 (Inventory) methods ----
     def get_inventory(self, uid):
@@ -2101,35 +2125,127 @@ class CombatEngine:
 
     def _is_untargetable(self, uid):
         """Check if uid should be excluded from targeting.
-        Rule: Character with 不可指定=1 cannot be targeted if they have non-三合一 summons alive."""
+        Rule: Character with 不可指定=1 cannot be targeted if they have non-三合一 summons alive.
+        If 不可指定召唤物 is set, only summons matching that name trigger untargetability."""
         entry = next((e for e in self._get_initiative() if e['userId'] == uid), None)
         if not entry or entry.get('isSummon'):
             return False
         char = self.get_char(uid)
         if char.get_attr('不可指定', 0) != 1:
             return False
+        required_name = char.get_str('不可指定召唤物') or ''
         il = self._get_initiative()
         other = [e for e in il
                  if e.get('isSummon') and e.get('ownerId') == uid
                  and (self._get_combat_hp(e['userId']) or 0) > 0
-                 and e.get('name', '') != '三合一']
+                 and e.get('name', '') != '三合一'
+                 and (not required_name or e.get('name', '') == required_name)]
         # Also check group members not in initiative
         for grp in self._summon_groups.values():
             if grp.get('ownerId') == uid:
                 for m in grp.get('members', []):
                     if m not in {e['userId'] for e in other}:
                         mem_data = self._summon_members.get(m, {})
-                        if mem_data.get('name', '') != '三合一' and (self._get_combat_hp(m) or 0) > 0:
-                            other.append({'userId': m, 'name': mem_data.get('name', ''), 'isSummon': True, 'ownerId': uid})
+                        mem_name = mem_data.get('name', '')
+                        if mem_name != '三合一' and (self._get_combat_hp(m) or 0) > 0 \
+                                and (not required_name or mem_name == required_name):
+                            other.append({'userId': m, 'name': mem_name, 'isSummon': True, 'ownerId': uid})
         return len(other) > 0
+
+    # ── 控制状态查询层 ──
+
+    def _get_active_statuses(self, uid):
+        """返回 uid 当前所有控制状态效果的列表。入参经过 _resolve_uid。"""
+        resolved = self._resolve_uid(uid)
+        return [b for b in self._get_active_buffs(resolved)
+                if b.get('auxType') in CONTROL_STATUS_TYPES]
+
+    def _has_status(self, uid, status_name):
+        """检查 uid 是否具有指定控制状态。入参经过 _resolve_uid。"""
+        return any(b.get('auxType') == status_name
+                   for b in self._get_active_buffs(self._resolve_uid(uid)))
+
+    def _can_move(self, uid):
+        """禁锢/击晕禁止移动（含自动接近和显式移动）。"""
+        resolved = self._resolve_uid(uid)
+        if self._has_status(resolved, '禁锢') or self._has_status(resolved, '击晕'):
+            return False
+        return True
+
+    def _can_basic_attack(self, uid):
+        """缴械/击晕禁止基本攻击(.s0)。"""
+        resolved = self._resolve_uid(uid)
+        if self._has_status(resolved, '缴械') or self._has_status(resolved, '击晕'):
+            return False
+        return True
+
+    def _can_cast_active_skill(self, uid):
+        """沉默/击晕禁止主动技能(.s1+ 包括 .a sN)。.s0 和被动不受限。"""
+        resolved = self._resolve_uid(uid)
+        if self._has_status(resolved, '沉默') or self._has_status(resolved, '击晕'):
+            return False
+        return True
+
+    def _can_take_active_action(self, uid):
+        """击晕禁止主动作（但 .a eat/.a give/.i end 需单独放过）。"""
+        resolved = self._resolve_uid(uid)
+        return not self._has_status(resolved, '击晕')
+
+    def _can_react(self, uid):
+        """击晕禁止所有反应（闪避/反击/格挡）。"""
+        resolved = self._resolve_uid(uid)
+        return not self._has_status(resolved, '击晕')
+
+    def _is_stun_protected(self, uid):
+        """击晕且 auxVal=='0' → 不可被伤害性攻击/技能选中。auxVal=='1' → 可被选中。"""
+        resolved = self._resolve_uid(uid)
+        for b in self._get_active_buffs(resolved):
+            if b.get('auxType') == '击晕' and str(b.get('auxVal', '1')) == '0':
+                return True
+        return False
+
+    def _is_targetable_for_damage(self, uid):
+        """伤害性攻击目标检查：击晕保护(auxVal=0)返回False。不影响治疗/buff。"""
+        return not self._is_stun_protected(uid)
+
+    def _get_slow_multiplier(self, uid):
+        """获取所有减速效果的乘积。不同来源可叠加时相乘，同名刷新取 max。"""
+        resolved = self._resolve_uid(uid)
+        product = 1.0
+        for b in self._get_active_buffs(resolved):
+            if b.get('auxType') == '减速':
+                try:
+                    product *= float(b.get('auxVal', '1.0'))
+                except (ValueError, TypeError):
+                    pass
+        return max(0.0, product)
 
     def _get_active_buffs(self, uid):
         resolved = self._resolve_uid(uid)
         cache = getattr(self, '_buff_cache', None)
         if cache is not None and resolved in cache:
             return cache[resolved]
-        result = [e for e in self._get_effects()
-                if e.get('type') in ('buff','debuff') and self._resolve_uid(e.get('targetUserId','')) == resolved and e.get('remainingRounds',0)!=0]
+        # 直接检查隔离状态，避免通过 _has_status 调用本方法造成无限递归
+        has_isolation = False
+        for e in self._get_effects():
+            if (e.get('type') in ('buff', 'debuff')
+                    and e.get('auxType') == '隔离'
+                    and self._resolve_uid(e.get('targetUserId', '')) == resolved
+                    and e.get('remainingRounds', 0) != 0):
+                has_isolation = True
+                break
+        result = []
+        for e in self._get_effects():
+            if e.get('type') not in ('buff', 'debuff'):
+                continue
+            if self._resolve_uid(e.get('targetUserId', '')) != resolved:
+                continue
+            if e.get('remainingRounds', 0) == 0:
+                continue
+            # 隔离: pause passive-originated buffs on the isolated target
+            if has_isolation and e.get('sourcePassive'):
+                continue
+            result.append(e)
         if cache is not None:
             cache[resolved] = result
         return result
@@ -2343,7 +2459,8 @@ class CombatEngine:
                 pl = f"{prefix}类别{letter}"
                 has_data = bool(char.get_attr(f"{pl}客体") or char.get_str(f"{pl}伤害骰") or
                     char.get_str(f"{pl}护盾值") or char.get_str(f"{pl}回复hp") or
-                    char.get_str(f"{pl}技能加减值") or char.get_attr(f"{pl}召唤个数") or
+                    char.get_str(f"{pl}技能加减值") or char.get_str(f"{pl}辅助效果") or
+                    char.get_attr(f"{pl}召唤个数") or
                     char.get_attr(f"{pl}引发目标法术") or char.get_attr(f"{pl}领域中心跟随") or
                     char.get_str(f"{pl}每回合伤害骰") or
                     char.get_attr(f"{pl}制造个数") or char.get_str(f"{pl}制造个数") or
@@ -2353,7 +2470,7 @@ class CombatEngine:
                 ct = stored_type if stored_type > 0 else (spell['类别'] if ci == 0 else (1 if char.get_str(f"{pl}伤害骰") else
                     2 if char.get_str(f"{pl}护盾值") else
                     3 if char.get_str(f"{pl}回复hp") or char.get_str(f"{pl}回复san") or char.get_str(f"{pl}回复mp") else
-                    4 if char.get_str(f"{pl}技能加减值") or char.get_str(f"{pl}其他辅助效果a") else
+                    4 if char.get_str(f"{pl}技能加减值") or char.get_str(f"{pl}辅助效果") or char.get_str(f"{pl}其他辅助效果a") else
                     5 if char.get_attr(f"{pl}召唤个数") else
                     6 if char.get_attr(f"{pl}制造个数") or char.get_str(f"{pl}制造个数") or char.get_str(f"{pl}制造物模板") else
                     7 if char.get_attr(f"{pl}引发目标法术") else
@@ -2578,102 +2695,59 @@ class CombatEngine:
 
     def _end_turn(self, uid):
         """End current character's turn and advance initiative.
-        After advancing, checks if battle should end (one side wiped out).
-        If initiative is empty (all characters dead/removed), still checks end."""
+        Single-slot system: each character has one initiative entry.
+        Turn advances when 主动 exhausted or .i end called."""
         state = self._get_state(); il = self._get_initiative()
         if not state: return
 
-        # ── 回合结束：最后一个行动槽结束后，消耗剩余移动力退回锚点 ──
-        entry = next((e for e in il if e['userId'] == uid), None)
-        if entry and (self._get_combat_hp(uid) or 0) > 0:
-            base_uid = entry.get('baseUserId', uid)
-            # 仅考虑非抑制条目判断是否为最后一个行动槽
-            active_slots = [e for e in il
-                            if e.get('baseUserId', e['userId']) == base_uid
-                            and not e.get('_suppressed', False)]
-            last_active_idx = max((e.get('actionIdx', 0) for e in active_slots), default=-1)
-            if entry.get('actionIdx', 0) >= last_active_idx:
-                self._return_to_anchor(base_uid)
+        # ── 回合结束：退回锚点 ──
+        self._return_to_anchor(self._resolve_uid(uid))
 
         if not il:
-            # All characters dead — check end immediately (mutual annihilation)
             self._check_and_mark_end(state)
             return False
 
-        # ── Per-base action-slot tracker for action reset across non-adjacent slots ──
-        if not hasattr(self, '_slot_actions_given'):
-            self._slot_actions_given = {}  # {base_uid: last_action_idx_seen}
-
         old_idx = state['activeIndex']
-        old_entry_2 = il[old_idx] if old_idx < len(il) else None
-        if old_entry_2:
-            old_base_2 = old_entry_2.get('baseUserId', old_entry_2['userId'])
-            self._slot_actions_given[old_base_2] = old_entry_2.get('actionIdx', 0)
-
         state['activeIndex'] = (old_idx + 1) % len(il)
-        new_entry_2 = il[state['activeIndex']]
-        new_base_2 = new_entry_2.get('baseUserId', new_entry_2['userId'])
 
         if state['activeIndex'] == 0:
+            # ── New round ──
             state['round'] = state.get('round', 1) + 1
             self._reset_move_power()
+            # Reset all actions using formula
             acts = {}
             for e in il:
                 base = e.get('baseUserId', e['userId'])
                 if base not in acts:
-                    acts[base] = {'主动': 2, '附加': 3}
+                    acts[base] = {
+                        '主动': self._calc_main_actions(base),
+                        '附加': 3,
+                    }
             self._set_actions(acts)
-            self._slot_actions_given = {}  # reset per-base slot tracker for new round
             self._tick_down(); self._apply_zone_effects()
-            # 回合边界：重算所有实体的动态行动槽（zone效果可能改变了行动力）
-            self._sync_all_initiative_slots()
-        else:
-            new_action_idx = new_entry_2.get('actionIdx', 0)
-            last_seen = self._slot_actions_given.get(new_base_2, -1)
-            if new_action_idx != last_seen:
-                # ── New action slot for this character: reset their actions ──
-                acts = self._get_actions()
-                char_2 = self.get_char(new_base_2)
-                main_acts = char_2.get_attr('行动次数', 2) if char_2 else 2
-                extra_acts = char_2.get_attr('附加行动次数', 3) if char_2 else 3
-                acts[new_base_2] = {'主动': main_acts, '附加': extra_acts}
-                self._set_actions(acts)
-                self._slot_actions_given[new_base_2] = new_action_idx
+            self._sync_all_initiative_slots()  # clears buff_mov cache
         self._set_state(state)
-
-        # Check battle end after every turn
         self._check_and_mark_end(state)
 
-        # ── Auto-skip suppressed and dead entries after advancing ──
-        # This ensures PVP/PvE callers don't land on inactive slots.
+        # ── Auto-skip dead entries ──
         il2 = self._get_initiative()
         safety = 0
-        max_safety = len(il2) * 2  # snapshot: prevent expansion if il2 grows during loop
-        while il2 and safety < max_safety:
+        while il2 and safety < len(il2) * 2:
             safety += 1
             cur = il2[state['activeIndex']]
             cuid = cur['userId']
-            should_skip = cur.get('_suppressed', False)
-            if not should_skip:
-                chp = self._get_combat_hp(cuid)
-                if chp is not None and chp <= 0:
-                    if not cur.get('isSummon'):
+            should_skip = False
+            chp = self._get_combat_hp(cuid)
+            if chp is not None and chp <= 0:
+                if not cur.get('isSummon'):
+                    should_skip = True
+                else:
+                    alive_members = self._get_alive_summon_group_members(cuid)
+                    if not alive_members:
                         should_skip = True
-                    else:
-                        # Skip summon group reps when all members are dead
-                        grp_dead = self._get_summon_group(cuid)
-                        if grp_dead:
-                            alive_members = self._get_alive_summon_group_members(cuid)
-                            if not alive_members:
-                                should_skip = True
             if not should_skip:
                 break
-            # Track the base we're skipping from
-            _skip_base = cur.get('baseUserId', cuid)
-            self._slot_actions_given[_skip_base] = cur.get('actionIdx', 0)
             state['activeIndex'] = (state['activeIndex'] + 1) % len(il2)
-            _skip_new_entry = il2[state['activeIndex']]
-            _skip_new_base = _skip_new_entry.get('baseUserId', _skip_new_entry['userId'])
             if state['activeIndex'] == 0:
                 state['round'] = state.get('round', 1) + 1
                 self._reset_move_power()
@@ -2681,26 +2755,18 @@ class CombatEngine:
                 for e in il2:
                     base = e.get('baseUserId', e['userId'])
                     if base not in acts:
-                        acts[base] = {'主动': 2, '附加': 3}
+                        acts[base] = {
+                            '主动': self._calc_main_actions(base),
+                            '附加': 3,
+                        }
                 self._set_actions(acts)
                 self._tick_down(); self._apply_zone_effects()
                 self._sync_all_initiative_slots()
                 il2 = self._get_initiative()
-                self._slot_actions_given = {}
-            else:
-                _skip_new_ai = _skip_new_entry.get('actionIdx', 0)
-                if _skip_new_ai != self._slot_actions_given.get(_skip_new_base, -1):
-                    acts2 = self._get_actions()
-                    char_sk = self.get_char(_skip_new_base)
-                    ma_sk = char_sk.get_attr('行动次数', 2) if char_sk else 2
-                    ea_sk = char_sk.get_attr('附加行动次数', 3) if char_sk else 3
-                    acts2[_skip_new_base] = {'主动': ma_sk, '附加': ea_sk}
-                    self._set_actions(acts2)
-                    self._slot_actions_given[_skip_new_base] = _skip_new_ai
             self._set_state(state)
             self._check_and_mark_end(state)
 
-        return state['activeIndex'] == 0 if state else False  # is_new_round
+        return state['activeIndex'] == 0 if state else False
 
     def _check_and_mark_end(self, state):
         """Call _check_battle_end and, if over, store result and set phase='ended'."""
@@ -2807,8 +2873,6 @@ class CombatEngine:
         # Merge consecutive entries with same name + summonGroup (or same name + isSummon)
         merged = []
         for e in il:
-            if e.get('_suppressed', False):
-                continue
             group_key = e.get('summonGroup') or (e.get('name') if e.get('isSummon') else None)
             last = merged[-1] if merged else None
             if group_key and last and last[0] == group_key:
@@ -2848,8 +2912,6 @@ class CombatEngine:
         lines = [f"【{name} 的回合！】", "成员状态:"]
         seen = set()
         for e in il:
-            if e.get('_suppressed', False):
-                continue
             base = e.get('baseUserId', e['userId'])
             if base in seen:
                 continue
@@ -3016,6 +3078,9 @@ class CombatEngine:
             cur_san = char.get_attr('理智', 50)
             char.set_attr('理智', max(0, cur_san - san_cost)); out += f'  消耗 {san_cost} SAN\n'
 
+        # ── 被动标记：若法术时机含'1'（被动），所有产生效果标记 sourcePassive ──
+        is_passive_spell = has_timing(spell.get('时机', '2'), '1')
+
         for eff in spell.get('effects', []):
             ct = eff['type']
             if ct == 1:  # Damage
@@ -3024,9 +3089,12 @@ class CombatEngine:
             elif ct == 2:  # Shield
                 sv = roll_dice(eff.get('护盾值','1d4')); dur = eff.get('持续回合',1)
                 effects = self._get_effects()
-                effects.append({'type':'shield','value':sv,'remainingRounds':dur,'sourceUserId':caster_id,
+                shield_entry = {'type':'shield','value':sv,'remainingRounds':dur,'sourceUserId':caster_id,
                     'targetUserId':target_id or caster_id,'spellName':spell['name'],
-                    'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)})
+                    'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)}
+                if is_passive_spell:
+                    shield_entry['sourcePassive'] = True
+                effects.append(shield_entry)
                 self._set_effects(effects); out += f'  获得 {sv} 点护盾 ({eff.get("护盾值","1d4")})\n'
 
             elif ct == 3:  # Heal (HP/SAN/MP with caps)
@@ -3075,17 +3143,26 @@ class CombatEngine:
                 aux_val = _eff_get(eff, 'auxVal')
                 stackable = eff.get('可叠加', 0)
                 tid = target_id or caster_id
+                is_control_status = aux_type in CONTROL_STATUS_TYPES
                 effects = self._get_effects()
-                # Same-name buff dedup: unless 可叠加, refresh existing buff instead of stacking
+                # Dedup: control statuses match on targetUserId+auxType only (ignore spellName)
+                # Other AUX match on targetUserId+spellName+auxType
                 existing = None
                 if not stackable:
                     for e in effects:
-                        if (e.get('type') == 'buff' and e.get('targetUserId') == tid
-                            and e.get('spellName') == spell['name']
-                            and e.get('auxType') == aux_type):
-                            existing = e; break
+                        if e.get('type') != 'buff' or e.get('targetUserId') != tid:
+                            continue
+                        if is_control_status:
+                            if e.get('auxType') == aux_type:
+                                existing = e; break
+                        else:
+                            if e.get('spellName') == spell['name'] and e.get('auxType') == aux_type:
+                                existing = e; break
                 if existing:
                     existing['remainingRounds'] = max(existing.get('remainingRounds', 0), dur)
+                    # For 减速: also refresh auxVal (multiplier) when duration is refreshed
+                    if is_control_status and aux_type == '减速':
+                        existing['auxVal'] = aux_val
                     out += f'  刷新辅助效果: {aux_type} {aux_val} (延长至{existing["remainingRounds"]}回合)\n'
                 else:
                     bonus_dmg = eff.get('伤害骰', '')
@@ -3098,6 +3175,11 @@ class CombatEngine:
                         'exclude': eff.get('exclude', [])}
                     if bonus_dmg:
                         buff_entry['bonusDmgDice'] = bonus_dmg
+                    if is_passive_spell:
+                        buff_entry['sourcePassive'] = True
+                    # 击晕: auxVal is attack protection switch (0/1), duration from 持续回合
+                    # 减速: auxVal is MOV multiplier, duration from 持续回合
+                    # Other control statuses: auxVal is duration in rounds
                     effects.append(buff_entry)
                     bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
                     out += f'  施加辅助效果: {aux_type} {aux_val}{bonus_note}\n'
@@ -3209,12 +3291,15 @@ class CombatEngine:
                     for c, occ in map_data.get('occupants',{}).items():
                         if occ == caster_id: center = c; break
                 effects = self._get_effects()
-                effects.append({'type':'zone','center':center,'radius':radius,'remainingRounds':dur,
+                zone_entry = {'type':'zone','center':center,'radius':radius,'remainingRounds':dur,
                     'tickDmg':tick_dmg,'tickHealHp':tick_heal_hp,'tickHealMp':tick_heal_mp,
                     'centerFollows':cf,'filter':of,'attributeDebuff':ad,
                     'sourceUserId':caster_id,'spellName':spell['name'],'spellIndex':spell['index'],
                     'persistent':spell.get('默认延续性',0),
-                    'stackable':eff.get('可叠加',0)})
+                    'stackable':eff.get('可叠加',0)}
+                if is_passive_spell:
+                    zone_entry['sourcePassive'] = True
+                effects.append(zone_entry)
                 self._set_effects(effects)
                 dur_text = '' if dur >= 99 else f' 持续{dur}回合'
                 out += f'  创建领域【{spell["name"]}】（半径{radius}格{dur_text}，中心{center}）\n'
@@ -3780,6 +3865,13 @@ class CombatEngine:
                 if eff['remainingRounds'] > 0: new_effects.append(eff)
                 continue
 
+            # ── 隔离暂停：被动效果不倒计时 ──
+            if eff.get('sourcePassive'):
+                source_uid = eff.get('sourceUserId', '')
+                if source_uid and self._has_status(source_uid, '隔离'):
+                    new_effects.append(eff)
+                    continue
+
             # Regular countdown
             eff['remainingRounds'] = eff.get('remainingRounds',0) - 1
             if eff['remainingRounds'] <= 0:
@@ -3984,61 +4076,84 @@ class FullBattleEngine(CombatEngine):
         self.group_id = f"battle_{random.randint(1000,9999)}"
         self._set_map({"width":w, "height":h, "entryRow":math.ceil(h/2), "obstacles":{}, "occupants":{}})
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
+        # Y team (left side) — single initiative entry per character
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            for ai in range(MAX_DYNAMIC_ACTIONS):
-                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
-                row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
-                coord = format_coord(1, row)
-                dex_val = char.get_attr("敏捷",50)
-                init_roll, _ = roll_d100("")
-                init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})"
-                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
-                                  "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
-                if ai == 0:
-                    map_data["occupants"][coord] = uid
+            row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
+            coord = format_coord(1, row)
+            dex_val = char.get_attr("敏捷",50)
+            init_roll, _ = roll_d100("")
+            init_rank = success_rank(init_roll, dex_val)
+            init_list.append({"userId":uid, "baseUserId":uid, "name":char.name, "actionIdx":0,
+                              "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+            map_data["occupants"][coord] = uid
+        # X team (right side) — single initiative entry per character
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            for ai in range(MAX_DYNAMIC_ACTIONS):
-                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
-                row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
-                coord = format_coord(w-2, row)
-                dex_val = char.get_attr("敏捷",50)
-                init_roll, _ = roll_d100("")
-                init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})"
-                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
-                                  "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
-                if ai == 0:
-                    map_data["occupants"][coord] = uid
+            row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
+            coord = format_coord(w-2, row)
+            dex_val = char.get_attr("敏捷",50)
+            init_roll, _ = roll_d100("")
+            init_rank = success_rank(init_roll, dex_val)
+            init_list.append({"userId":uid, "baseUserId":uid, "name":char.name, "actionIdx":0,
+                              "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+            map_data["occupants"][coord] = uid
         self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], e["initRoll"]))
         self._set_initiative(init_list)
-        # Save original team roster for timeout HP ratio (one entry per unique non-summon char)
+        # Save original team roster for timeout HP ratio
         self._team_roster = [(uid, 'Y') for uid in team_a] + [(uid, 'X') for uid in team_b]
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
-        self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
-        # Roll 状态 for each character before battle, biased by season average status
+        # 主动作数基于有效MOV公式计算（被动尚未施放，先按基础值初始化）
+        self._set_actions({uid: {"主动": self._calc_main_actions(uid), "附加": 3} for uid in all_chars})
+        # Roll 状态 for each character before battle
         for uid in all_chars:
             char = self.get_char(uid)
             char.set_attr('状态', season_status_roll(season_status, uid))
 
-        # Auto-cast passive spells at battle start (with smart targeting)
+        # Auto-cast passive spells at battle start (with isolation guard)
         for uid in all_chars:
+            if self._has_status(uid, '隔离'):
+                continue  # 隔离中不自动施放被动
             spells = self.get_char(uid).spells or self.load_spells(uid)
             for s in spells:
                 if has_timing(s.get("时机","2"), "1"):
                     target = self._smart_target(uid, s)
                     self._execute_spell(uid, target, s)
 
-        # 初始化动态行动槽抑制状态（在被动技能生效后，确保buff已应用）
+        # Recalculate actions after passives (may have changed MOV via buffs)
+        acts = self._get_actions()
         for uid in all_chars:
-            self._sync_initiative_slots(uid)
+            acts[uid] = {"主动": self._calc_main_actions(uid), "附加": 3}
+        self._set_actions(acts)
 
         self._set_state({"phase":"active", "round":1, "activeIndex":0})
-        # 跳过初始被抑制/死亡条目，找到第一个有效行动者
+        # Skip dead entries to find first valid active
         self._skip_to_valid_active()
+
+    def _skip_to_valid_active(self):
+        """Advance activeIndex past dead entries without triggering round logic."""
+        il = self._get_initiative()
+        state = self._get_state()
+        if not il or not state:
+            return
+        safety = 0
+        while safety < len(il):
+            safety += 1
+            cur = il[state['activeIndex']]
+            cuid = cur['userId']
+            chp = self._get_combat_hp(cuid)
+            skip = (chp is not None and chp <= 0 and not cur.get('isSummon'))
+            if not skip:
+                # Check summon group all dead
+                if cur.get('isSummon') and chp is not None and chp <= 0:
+                    grp_members = self._get_alive_summon_group_members(cuid)
+                    if not grp_members:
+                        skip = True
+            if not skip:
+                break
+            state['activeIndex'] = (state['activeIndex'] + 1) % len(il)
+            self._set_state(state)
 
     def _skip_to_valid_active(self):
         """Advance activeIndex past suppressed and dead entries without triggering round logic."""
@@ -4070,6 +4185,10 @@ class FullBattleEngine(CombatEngine):
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
         if not can_atk:
             lines.append(f'{aname} 无法接近目标！（射程={atk_range}）')
+            return (def_uid, atk_uid, lines)
+        # ── 飞行近战限制：非飞行单位不能近战飞行目标 ──
+        if not self._can_melee(atk_uid, def_uid):
+            lines.append(f'{aname} 无法近战飞行目标 {dname}！')
             return (def_uid, atk_uid, lines)
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
@@ -4116,18 +4235,23 @@ class FullBattleEngine(CombatEngine):
         _block_redirect = self._get_block_redirect_target(def_uid)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
 
-        # ── 三维反应选择 (dodge / counter / block) ──
-        ai_dw = self._ai_react_dodge_w.get(def_uid, 50)
-        ai_cw = self._ai_react_counter_w.get(def_uid, 50)
-        ai_bw = self._ai_react_block_w.get(def_uid, 0) if can_block else 0
-        total_w = ai_dw + ai_cw + ai_bw
-        if total_w > 0:
-            r = random.random() * total_w
-            if r < ai_dw: react_choice = 'dodge'
-            elif r < ai_dw + ai_cw: react_choice = 'counter'
-            else: react_choice = 'block'
+        # ── 击晕：禁止所有反应 → 攻击者直接命中 ──
+        if not self._can_react(def_uid):
+            lines.append(f'  {dname} 击晕中，无法反应！')
+            react_choice = None
         else:
-            react_choice = 'dodge' if dodge_val >= bmv else 'counter'
+            # ── 三维反应选择 (dodge / counter / block) ──
+            ai_dw = self._ai_react_dodge_w.get(def_uid, 50)
+            ai_cw = self._ai_react_counter_w.get(def_uid, 50)
+            ai_bw = self._ai_react_block_w.get(def_uid, 0) if can_block else 0
+            total_w = ai_dw + ai_cw + ai_bw
+            if total_w > 0:
+                r = random.random() * total_w
+                if r < ai_dw: react_choice = 'dodge'
+                elif r < ai_dw + ai_cw: react_choice = 'counter'
+                else: react_choice = 'block'
+            else:
+                react_choice = 'dodge' if dodge_val >= bmv else 'counter'
 
         if react_choice == 'dodge':
             rr, rd = roll_d100(def_bp); react_rank = success_rank(rr, dodge_val)
@@ -4307,6 +4431,13 @@ class FullBattleEngine(CombatEngine):
                 lines.append(f"  {dname} 格挡失败！攻击突破盾牌。")
                 winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
                 loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
+
+        if react_choice is None:
+            # ── 击晕/无反应：攻击者直接命中 ──
+            winner_rank, winner_uid, loser_uid = atk_rank, atk_uid, def_uid
+            loser_name, winner_name = dname, aname
+            winner_roll = atk_result
+            is_counter = False
 
         mx = max_damage(dmg_dice); dmg_val = 0; dmg_detail = ""
         if winner_rank == 2:
@@ -4523,6 +4654,10 @@ class FullBattleEngine(CombatEngine):
         Base (FullBattleEngine): auto-resolve for AI-vs-AI using trained weights.
         PvP (PvPFullBattleEngine): override to raise ReactionNeeded.
         Returns (dodged: bool, countered: bool, lines: list)."""
+        # ── 击晕禁止所有反应 ──
+        if not self._can_react(target_id):
+            lines = (prefix_lines or []) + [f'  {self.get_char(target_id).name} 击晕中，无法反应！']
+            return (False, False, lines)
         dchar = self.get_char(target_id)
         dodge_val = dchar.get_attr("闪避", 25)
         bmn, bmv = dchar.get_best_melee()
@@ -4782,6 +4917,10 @@ class FullBattleEngine(CombatEngine):
 
     def _use_skill(self, uid, skill_num, args):
         """Handle .sN command — spell execution with timing checks."""
+        # ── 状态检查：沉默/击晕禁止主动技能 ──
+        if not self._can_cast_active_skill(uid):
+            statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
+            return f"无法释放技能（{'/'.join(statuses)}中）"
         char = self.get_char(uid); spells = char.spells or self.load_spells(uid)
         spell = next((s for s in spells if s['index'] == skill_num), None)
         if not spell: return f"未找到技能{skill_num}"
@@ -4798,9 +4937,17 @@ class FullBattleEngine(CombatEngine):
         if not parts: return "用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>"
         char = self.get_char(uid)
         if parts[0].lower() == 'm' and len(parts) >= 2:
+            # ── 状态检查：禁锢/击晕禁止移动 ──
+            if not self._can_move(uid):
+                statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
+                return f"无法移动（{'/'.join(statuses)}中）"
             coord = parts[1].upper()
             return f"{char.name} 移动至 {coord}"
         elif re.match(r'^s\d+$', parts[0], re.IGNORECASE):
+            # ── 状态检查：沉默/击晕禁止附加技能 ──
+            if not self._can_cast_active_skill(uid):
+                statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
+                return f"无法释放技能（{'/'.join(statuses)}中）"
             sn = int(parts[0][1:]); spells = char.spells or self.load_spells(uid)
             spell = next((s for s in spells if s['index'] == sn), None)
             if not spell: return f"未找到技能{sn}"
@@ -4834,6 +4981,10 @@ class FullBattleEngine(CombatEngine):
         return "用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>"
 
     def _basic_attack(self, uid):
+        # ── 状态检查：缴械/击晕禁止基本攻击 ──
+        if not self._can_basic_attack(uid):
+            statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
+            return f"无法普通攻击（{'/'.join(statuses)}中）"
         char = self.get_char(uid); il = self._get_initiative()
         me = next((e for e in il if e["userId"]==uid), None)
         if not me: return "No position"
@@ -4955,10 +5106,10 @@ class FullBattleEngine(CombatEngine):
             self._init_combat_hp(sid, hp)
             summon_char2 = self.get_char(sid)
             summon_char2.name = summon_display_name
-            summon_char2.set_attr('行动力', tmpl.get('MOV', 6))
-            summon_char2.set_attr('回合行动数', tmpl.get('回合行动数', 1))
-            summon_char2.set_attr('行动次数', 2)
-            summon_char2.set_attr('附加行动次数', 3)
+            summon_char2.set_attr('MOV', tmpl.get('MOV', 6))
+            if parsed and parsed[0].get('dice'):
+                summon_char2.set_str('伤害值', parsed[0]['dice'])
+            summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
             # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
             _tmpl_skill_keys = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
             for _k in _tmpl_skill_keys:
@@ -4969,6 +5120,8 @@ class FullBattleEngine(CombatEngine):
                 _sn = _ps.get('name', '')
                 if _sn and _ps.get('skill_type', 'attack') == 'attack':
                     summon_char2.set_attr(_sn, _ps['val'])
+            # Copy spells from template to character (for .s1/.s2 commands)
+            summon_char2.spells = list(tmpl.get('spells', []))
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -5022,10 +5175,10 @@ class FullBattleEngine(CombatEngine):
         summon_char = self.get_char(sid)
         summon_char.name = summon_display_name
         # 设置动态行动数所需的属性（召唤物也使用统一公式）
-        summon_char.set_attr('行动力', tmpl.get('MOV', 6))
-        summon_char.set_attr('回合行动数', tmpl.get('回合行动数', 1))
-        summon_char.set_attr('行动次数', 2)
-        summon_char.set_attr('附加行动次数', 3)
+        summon_char.set_attr('MOV', tmpl.get('MOV', 6))
+        if parsed and parsed[0].get('dice'):
+            summon_char.set_str('伤害值', parsed[0]['dice'])
+        summon_char.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
         # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
         _tmpl_skill_keys_s = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
         for _k in _tmpl_skill_keys_s:
@@ -5036,6 +5189,8 @@ class FullBattleEngine(CombatEngine):
             _sn = _ps.get('name', '')
             if _sn and _ps.get('skill_type', 'attack') == 'attack':
                 summon_char.set_attr(_sn, _ps['val'])
+        # Copy spells from template to character (for .s1/.s2 commands)
+        summon_char.spells = list(tmpl.get('spells', []))
         # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
         self._ensure_dynamic_slots(sid)
         # ── _ensure_dynamic_slots 内部重新排序了先攻列表，需重新定位召唤人 ──
@@ -5047,8 +5202,20 @@ class FullBattleEngine(CombatEngine):
                         state_s['activeIndex'] = i
                         self._set_state(state_s)
                     break
+        # ── 永久状态（如藤蔓的禁锢） ──
+        perm_statuses = tmpl.get('permanent_statuses', [])
+        if perm_statuses:
+            effects = self._get_effects()
+            for ps_name in perm_statuses:
+                effects.append({
+                    'type': 'buff', 'auxType': ps_name, 'auxVal': '0', 'auxCode': 0,
+                    'remainingRounds': 999, 'sourceUserId': caster_id, 'targetUserId': sid,
+                    'spellName': f'永久{ps_name}', 'spellIndex': 0,
+                    'persistent': 1, 'stackable': 0,
+                })
+            self._set_effects(effects)
         acts = self._get_actions()
-        acts[sid] = {"主动": 2, "附加": 3}
+        acts[sid] = {"主动": self._calc_main_actions(sid), "附加": 3}
         self._set_actions(acts)
         # ── Create summon group for first summon of this type ──
         self._summon_groups[sid] = {
@@ -5252,6 +5419,9 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5287,6 +5457,9 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5313,6 +5486,9 @@ class FullBattleEngine(CombatEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5474,16 +5650,17 @@ class FullBattleEngine(CombatEngine):
             merged["zone_cooldown"] = 0
             merged["summon_mp"] = result_tmpl.get("MP", 0)
             # Update action count
-            acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
-            self._set_actions(acts)
-            # 设置动态行动数所需的角色属性（合并后stats变了）
+            # Set character attrs needed for main-action formula
             merged_char = self.get_char(merged["userId"])
-            merged_char.set_attr('行动力', result_tmpl.get('MOV', 6))
-            merged_char.set_attr('回合行动数', result_tmpl.get('行动次数', 1))
-            # 给合并条目加上 baseUserId 和 actionIdx，然后扩展动态槽
+            merged_char.set_attr('MOV', result_tmpl.get('MOV', 6))
+            merged_char.set_attr('额外行动数', result_tmpl.get('额外行动数', result_tmpl.get('回合行动数', result_tmpl.get('行动次数', 0))))
+            # Update action count using formula
+            acts = self._get_actions()
             merged["baseUserId"] = merged["userId"]
             merged["actionIdx"] = 0
             self._ensure_dynamic_slots(merged["userId"])
+            acts[merged["userId"]] = {"主动": self._calc_main_actions(merged["userId"]), "附加": 1}
+            self._set_actions(acts)
             self._set_initiative(il)
 
 class FastBattleEngine(FullBattleEngine):
@@ -5504,56 +5681,47 @@ class FastBattleEngine(FullBattleEngine):
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
             char = self.get_char(uid)
-            for ai in range(MAX_DYNAMIC_ACTIONS):
-                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
-                row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
-                coord = format_coord(1, row)
-                dex_val = char.get_attr("敏捷",50)
-                init_roll, _ = roll_d100("")
-                init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})"
-                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
-                                  "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
-                if ai == 0:
-                    map_data["occupants"][coord] = uid
+            row = min(h-1, math.ceil(h/2) + i - len(team_a)//2)
+            coord = format_coord(1, row)
+            dex_val = char.get_attr("敏捷",50)
+            init_roll, _ = roll_d100("")
+            init_rank = success_rank(init_roll, dex_val)
+            init_list.append({"userId":uid, "baseUserId":uid, "name":char.name, "actionIdx":0,
+                              "team":"Y", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+            map_data["occupants"][coord] = uid
         for i, uid in enumerate(team_b):
             char = self.get_char(uid)
-            for ai in range(MAX_DYNAMIC_ACTIONS):
-                entry_id = uid if ai == 0 else f"{uid}__act{ai}"
-                row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
-                coord = format_coord(w-2, row)
-                dex_val = char.get_attr("敏捷",50)
-                init_roll, _ = roll_d100("")
-                init_rank = success_rank(init_roll, dex_val)
-                label = f" (行动{ai+1})"
-                init_list.append({"userId":entry_id, "baseUserId":uid, "name":char.name+label, "actionIdx":ai,
-                                  "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
-                if ai == 0:
-                    map_data["occupants"][coord] = uid
+            row = min(h-1, math.ceil(h/2) + i - len(team_b)//2)
+            coord = format_coord(w-2, row)
+            dex_val = char.get_attr("敏捷",50)
+            init_roll, _ = roll_d100("")
+            init_rank = success_rank(init_roll, dex_val)
+            init_list.append({"userId":uid, "baseUserId":uid, "name":char.name, "actionIdx":0,
+                              "team":"X", "dex":dex_val, "initRoll":init_roll, "initRank":init_rank, "coord":coord})
+            map_data["occupants"][coord] = uid
         self._set_map(map_data); init_list.sort(key=lambda e: (-e["initRank"], -e["dex"], e["initRoll"]))
         self._set_initiative(init_list)
-        # Save original team roster for timeout HP ratio (one entry per unique non-summon char)
         self._team_roster = [(uid, 'Y') for uid in team_a] + [(uid, 'X') for uid in team_b]
         for uid in all_chars:
             char = self.get_char(uid); self._init_combat_hp(uid, char.get_attr("体力",10))
-        self._set_actions({uid: {"主动":2, "附加":3} for uid in all_chars})
-        # Roll 状态 for each character, biased by season average status
+        self._set_actions({uid: {"主动": self._calc_main_actions(uid), "附加": 3} for uid in all_chars})
         for uid in all_chars:
             self.get_char(uid).set_attr('状态', season_status_roll(season_status, uid))
-        # Auto-cast passives (with smart targeting)
+        # Auto-cast passives (with isolation guard)
         for uid in all_chars:
+            if self._has_status(uid, '隔离'):
+                continue
             spells = self.get_char(uid).spells or self.load_spells(uid)
             for s in spells:
                 if has_timing(s.get("时机","2"), "1"):
                     target = self._smart_target(uid, s)
                     self._execute_spell(uid, target, s)
-
-        # 初始化动态行动槽抑制状态（在被动技能生效后，确保buff已应用）
+        # Recalculate actions after passives
+        acts = self._get_actions()
         for uid in all_chars:
-            self._sync_initiative_slots(uid)
-
+            acts[uid] = {"主动": self._calc_main_actions(uid), "附加": 3}
+        self._set_actions(acts)
         self._set_state({"phase":"active", "round":1, "activeIndex":0})
-        # 跳过初始被抑制/死亡条目，找到第一个有效行动者
         self._skip_to_valid_active()
 
     # ---- Summon system (same as FullBattleEngine) ----
@@ -5663,10 +5831,10 @@ class FastBattleEngine(FullBattleEngine):
             self._init_combat_hp(sid, hp)
             summon_char2 = self.get_char(sid)
             summon_char2.name = summon_display_name
-            summon_char2.set_attr('行动力', tmpl.get('MOV', 6))
-            summon_char2.set_attr('回合行动数', tmpl.get('回合行动数', 1))
-            summon_char2.set_attr('行动次数', 2)
-            summon_char2.set_attr('附加行动次数', 3)
+            summon_char2.set_attr('MOV', tmpl.get('MOV', 6))
+            if parsed and parsed[0].get('dice'):
+                summon_char2.set_str('伤害值', parsed[0]['dice'])
+            summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
             # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
             _tmpl_skill_keys = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
             for _k in _tmpl_skill_keys:
@@ -5677,6 +5845,8 @@ class FastBattleEngine(FullBattleEngine):
                 _sn = _ps.get('name', '')
                 if _sn and _ps.get('skill_type', 'attack') == 'attack':
                     summon_char2.set_attr(_sn, _ps['val'])
+            # Copy spells from template to character (for .s1/.s2 commands)
+            summon_char2.spells = list(tmpl.get('spells', []))
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -5730,11 +5900,13 @@ class FastBattleEngine(FullBattleEngine):
         summon_char_fast = self.get_char(sid)
         summon_char_fast.name = summon_display_name
         # 设置动态行动数所需的属性（召唤物也使用统一公式）
-        summon_char_fast.set_attr('行动力', tmpl.get('MOV', 6))
-        summon_char_fast.set_attr('回合行动数', tmpl.get('回合行动数', 1))
-        summon_char_fast.set_attr('行动次数', 2)
-        summon_char_fast.set_attr('附加行动次数', 3)
-        # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
+        summon_char_fast.set_attr('MOV', tmpl.get('MOV', 6))
+        if parsed and parsed[0].get('dice'):
+            summon_char_fast.set_str('伤害值', parsed[0]['dice'])
+        summon_char_fast.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
+        # Copy spells from template to character (for .s1/.s2 commands)
+        summon_char_fast.spells = list(tmpl.get('spells', []))
+        # Ensure initiative entry has correct fields
         self._ensure_dynamic_slots(sid)
         # ── _ensure_dynamic_slots 内部重新排序了先攻列表，需重新定位召唤人 ──
         if tracked_uid is not None:
@@ -5745,8 +5917,20 @@ class FastBattleEngine(FullBattleEngine):
                         state_s['activeIndex'] = i
                         self._set_state(state_s)
                     break
+        # ── 永久状态（如藤蔓的禁锢） ──
+        perm_statuses_fast = tmpl.get('permanent_statuses', [])
+        if perm_statuses_fast:
+            effects_fast = self._get_effects()
+            for ps_name in perm_statuses_fast:
+                effects_fast.append({
+                    'type': 'buff', 'auxType': ps_name, 'auxVal': '0', 'auxCode': 0,
+                    'remainingRounds': 999, 'sourceUserId': caster_id, 'targetUserId': sid,
+                    'spellName': f'永久{ps_name}', 'spellIndex': 0,
+                    'persistent': 1, 'stackable': 0,
+                })
+            self._set_effects(effects_fast)
         acts = self._get_actions()
-        acts[sid] = {"主动": 2, "附加": 3}
+        acts[sid] = {"主动": self._calc_main_actions(sid), "附加": 3}
         self._set_actions(acts)
         # 2x2占据
         if tmpl.get("size_2x2"):
@@ -5810,6 +5994,9 @@ class FastBattleEngine(FullBattleEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5845,6 +6032,9 @@ class FastBattleEngine(FullBattleEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5871,6 +6061,9 @@ class FastBattleEngine(FullBattleEngine):
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
+                    # 隔离：不受领域效果影响
+                    if self._has_status(entry['userId'], '隔离'):
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -6031,20 +6224,24 @@ class FastBattleEngine(FullBattleEngine):
             merged["zone_cooldown"] = 0
             merged["summon_mp"] = result_tmpl.get("MP", 0)
             # Update action count
-            acts = self._get_actions(); acts[merged["userId"]] = {"主动": result_tmpl.get("行动次数", 1), "附加": 1}
-            self._set_actions(acts)
-            # 设置动态行动数所需的角色属性（合并后stats变了）
+            # Set character attrs needed for main-action formula
             merged_char = self.get_char(merged["userId"])
-            merged_char.set_attr('行动力', result_tmpl.get('MOV', 6))
-            merged_char.set_attr('回合行动数', result_tmpl.get('行动次数', 1))
-            # 给合并条目加上 baseUserId 和 actionIdx，然后扩展动态槽
+            merged_char.set_attr('MOV', result_tmpl.get('MOV', 6))
+            merged_char.set_attr('额外行动数', result_tmpl.get('额外行动数', result_tmpl.get('回合行动数', result_tmpl.get('行动次数', 0))))
+            # Update action count using formula
+            acts = self._get_actions()
             merged["baseUserId"] = merged["userId"]
             merged["actionIdx"] = 0
             self._ensure_dynamic_slots(merged["userId"])
+            acts[merged["userId"]] = {"主动": self._calc_main_actions(merged["userId"]), "附加": 1}
+            self._set_actions(acts)
             self._set_initiative(il)
 
     # ---- Conditional effects ----
-    def _can_basic_attack(self, uid, char):
+    def _can_basic_attack(self, uid, char=None):
+        # Check control status (缴械/击晕) from parent, then fast-specific checks
+        if not CombatEngine._can_basic_attack(self, uid):
+            return False
         return True
 
     def _is_flying(self, uid):
@@ -6068,6 +6265,9 @@ class FastBattleEngine(FullBattleEngine):
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
         if not can_atk:
             return (def_uid, atk_uid, 0, f"射程不足 (range={atk_range})")
+        # ── 飞行近战限制 ──
+        if not self._can_melee(atk_uid, def_uid):
+            return (def_uid, atk_uid, 0, f"无法近战飞行目标")
         # AUX code 4: merge bonus damage dice
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
         if bonus_dice:
@@ -6102,6 +6302,9 @@ class FastBattleEngine(FullBattleEngine):
         _block_redirect = self._get_block_redirect_target(def_uid)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
 
+        # ── 击晕禁止所有反应 ──
+        if not self._can_react(def_uid):
+            return (def_uid, atk_uid, 0, f"击晕中，无法反应")
         # Reaction: use stored character weights (trainable, three-way)
         dw = getattr(self, '_react_dw', {}).get(def_uid, 50)
         cw = getattr(self, '_react_cw', {}).get(def_uid, 50)
@@ -6300,6 +6503,9 @@ class FastBattleEngine(FullBattleEngine):
         return ""
 
     def _fast_move(self, uid):
+        # ── 状态检查：禁锢/击晕禁止移动 ──
+        if not self._can_move(uid):
+            return ""
         il = self._get_initiative(); me = next((e for e in il if e["userId"]==uid), None)
         if not me: return ""
         mt = me.get("team","Y"); mc = me.get("coord","")
@@ -6529,7 +6735,7 @@ def targeting_reward_modifier(engine, uid, ak):
 
 
 def encode_state(engine, uid):
-    """Encode combat state for a character into a 17-dim hashable key."""
+    """Encode combat state for a character into a 22-dim hashable key."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
@@ -6659,9 +6865,17 @@ def encode_state(engine, uid):
         if has_ally_effect:
             break
 
+    # Dim 17-21: control status flags
+    has_silence = int(engine._has_status(uid, '沉默'))
+    has_disarm = int(engine._has_status(uid, '缴械'))
+    has_stun = int(engine._has_status(uid, '击晕'))
+    has_root = int(engine._has_status(uid, '禁锢'))
+    is_flying = int(engine._is_flying(uid))
+
     return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
             skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
-            has_cake, phase, is_dying, has_ally_effect)
+            has_cake, phase, is_dying, has_ally_effect,
+            has_silence, has_disarm, has_stun, has_root, is_flying)
 
 
 def encode_summon_state(engine, uid):
@@ -7053,6 +7267,18 @@ def get_available_actions(engine, uid):
             range_filtered.append((ak, an))
         filtered = range_filtered
 
+    # ── Status filter: remove illegal actions based on control status ──
+    status_filtered = []
+    for ak, an in filtered:
+        if ak.startswith('SKILL_') and not engine._can_cast_active_skill(uid):
+            continue
+        if ak.startswith('BASIC_ATTACK') and not engine._can_basic_attack(uid):
+            continue
+        if ak == 'MOVE_TOWARD' and not engine._can_move(uid):
+            continue
+        status_filtered.append((ak, an))
+    filtered = status_filtered
+
     # CAKE actions: available when ready cakes exist (type 6 制造物)
     if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
         # EAT_CAKE: 自己食用蛋糕 → self-heal
@@ -7085,7 +7311,7 @@ def parse_action(action_key):
 def _compute_threat(engine, enemy_entry):
     """计算敌方单位的单回合伤害期望（考虑命中率、行动轮数）。
 
-    公式: threat = max(普攻期望, 技能期望) × 回合行动数
+    公式: threat = max(普攻期望, 技能期望) × 额外行动数
     其中: 普攻期望 = avg_damage(伤害值) × 斗殴/100
           技能期望 = max(avg_damage(伤害骰) × 成功率/100)
     召唤物: threat = Σ(avg_damage(dice) × val/100 × hits)
@@ -7138,12 +7364,15 @@ def _compute_threat(engine, enemy_entry):
 
     best_threat = max(basic_threat, best_skill_threat)
 
-    # 行动轮数：优先用引擎的动态行动数，fallback 到回合行动数属性
+    # 行动轮数：优先用引擎的动态行动数，fallback 到额外行动数属性
     actions_per_round = 1
     if hasattr(engine, '_get_dynamic_action_count'):
         actions_per_round = engine._get_dynamic_action_count(uid)
     if actions_per_round <= 1:
-        actions_per_round = char.get_attr('回合行动数', 1) or 1
+        extra = char.get_attr('额外行动数', None)
+        if extra is None:
+            extra = char.get_attr('回合行动数', 0)
+        actions_per_round = extra or 0
 
     return best_threat * actions_per_round
 
@@ -7949,9 +8178,9 @@ def load_q_table(path=None):
                     state = tuple(int(v) for v in state_str.split('|'))
                 except ValueError:
                     skipped += 1; continue  # skip corrupted entries (e.g. 'dead' state)
-                # Backward compat: pad old dimensions to 17
-                if len(state) < 17:
-                    padding_needed = 17 - len(state)
+                # Backward compat: pad old dimensions to 22
+                if len(state) < 22:
+                    padding_needed = 22 - len(state)
                     state = state + (0,) * padding_needed
                 Q[ck][(state, action)] = val
         if skipped:
@@ -7981,8 +8210,7 @@ def main():
     print(f'Characters loaded: {list(trainer.char_map.keys())}', flush=True)
     trainer.train()
 
-if __name__ == '__main__':
-    main()
+# [STRIPPED __main__] if __name__ == '__main__':
 
 # END INLINED: ai_trainer.py
 
@@ -8989,15 +9217,17 @@ class BattleEngine(FullBattleEngine):
                     self._end_turn(uid); continue
                 team_tag = entry.get('team', '?')
                 _bl('debug', f'    [{team_tag}] {char_name} (HP:{hp}) 行动')
-                ai = ai_map.get(uid)
+                # Resolve base uid for ai_map and actions lookups (handles __actN suffixed slots)
+                _base_uid = entry.get('baseUserId', uid)
+                ai = ai_map.get(_base_uid)
                 if ai:
                     ai.team = entry['team']; acted = False
-                    is_dying = self._is_dying(uid)
+                    is_dying = self._is_dying(_base_uid)
                     for _ in range(5):
-                        cmd = ai.decide_action(self, uid)
+                        cmd = ai.decide_action(self, _base_uid)
                         # Dying characters: only allow .a eat (use healing item) or .i end
                         if is_dying and cmd not in ('.i end',) and not cmd.startswith('.a eat'):
-                            if self._has_healing_item(uid):
+                            if self._has_healing_item(_base_uid):
                                 cmd = '.a eat'
                             else:
                                 cmd = '.i end'
@@ -9011,21 +9241,21 @@ class BattleEngine(FullBattleEngine):
                             result_text = self._basic_attack(uid); spell_label = ' [普攻]'
                         elif cmd.startswith('.s') and not cmd.startswith('.s0'):
                             sn = int(cmd[2:])
-                            spells = self.load_spells(uid) or []
+                            spells = self.load_spells(_base_uid) or []
                             sp = next((s for s in spells if s['index']==sn), None)
                             spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
                             result_text = self._use_skill(uid, sn, '')
                         elif cmd.startswith('.a eat'):
                             target_id = cmd[6:].strip() or uid
-                            result_text, ok = self._eat_cake(uid, target_id)
+                            result_text, ok = self._eat_cake(_base_uid, target_id)
                             spell_label = ' [食用蛋糕]'
                         elif cmd.startswith('.a m'):
-                            result_text = self._additional_action(uid, 'm ' + cmd[5:].strip())
+                            result_text = self._additional_action(_base_uid, 'm ' + cmd[5:].strip())
                             if not hasattr(self, '_moved_this_turn'): self._moved_this_turn = set()
-                            self._moved_this_turn.add(uid)
+                            self._moved_this_turn.add(_base_uid)
                         elif cmd.startswith('.a s'):
                             sn = int(cmd[4:])
-                            spells = self.load_spells(uid) or []
+                            spells = self.load_spells(_base_uid) or []
                             sp = next((s for s in spells if s['index']==sn), None)
                             spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
                             result_text = self._additional_action(uid, cmd[3:].strip())
@@ -9036,13 +9266,13 @@ class BattleEngine(FullBattleEngine):
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
                         is_bonus = cmd.startswith('.a ')
                         if cmd in ('.s0',) or is_skill:
-                            acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                             ma['主动'] -= 1; self._set_actions(acts_d)
                         elif is_bonus:
-                            acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                             ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
                         # Check remaining actions — end turn when 主动 exhausted
-                        acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                        acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                         if ma['主动'] <= 0: self._end_turn(uid)
                         s2 = self._get_state()
                         if not s2 or s2.get('phase')!='active': break
@@ -10654,39 +10884,7 @@ def start_server(port=8888):
         server.shutdown()
 
 
-if __name__ == '__main__':
-    port, tournament_type, run_times = parse_cli_args(sys.argv[1:])
-    tournament = Tournament(tournament_type, run_times)
-    tournament.init_characters()
-
-    # Auto-start tournament in background thread
-    def auto_start():
-        time.sleep(1)
-        for run_idx in range(1, run_times + 1):
-            tournament.run_index = run_idx
-            battle_log('info', '')
-            battle_log('info', '=' * 60)
-            battle_log('info', f'第 {run_idx}/{run_times} 次锦标赛运行')
-            battle_log('info', '=' * 60)
-            # Re-initialize characters for fresh state each run
-            if run_idx > 1:
-                tournament.init_characters()
-            # Reset per-run bracket tracking
-            tournament._current_bracket_info = {}
-            tournament._pre_paired_brackets = set()
-            tournament._rankings_info = {}
-            # Only write results on the final run
-            is_last = (run_idx == run_times)
-            tournament.run_phases(write_results_flag=is_last)
-        # After all runs, append average stats to bracket_info.txt
-        if run_times > 1:
-            tournament._append_average_stats_to_bracket()
-        battle_log('info', '')
-        battle_log('info', f'全部 {run_times} 次运行完成！')
-
-    threading.Thread(target=auto_start, daemon=True).start()
-
-    start_server(port)
+# [STRIPPED __main__] if __name__ == '__main__':
 
 # END INLINED: ai_battle.py
 
@@ -10769,7 +10967,7 @@ from flask import Flask, request, jsonify
 
 # Now import from battle_engine — its lazy imports get characters_data_pvp
 # [INLINED] from battle_engine import (
-# [INLINED]     FullBattleEngine, CombatEngine, MAX_DYNAMIC_ACTIONS,
+# [INLINED]     FullBattleEngine, CombatEngine,
 # [INLINED]     roll_dice, parse_coord, format_coord,
 # [INLINED]     is_in_melee_range, has_timing, has_object,
 # [INLINED]     rank_text, avg_damage, success_rank, roll_d100, max_damage, _calc_net_bp,
@@ -11465,7 +11663,12 @@ class PvPFullBattleEngine(FullBattleEngine):
         def_controllers = getattr(self, '_player_controllers', {}).get(def_base, [])
 
         if not def_controllers:
-            # AI defender -> delegate to base FullBattleEngine auto-resolve
+            # AI defender -> sync react weights from initiative entry, then delegate to base
+            def_entry = next((e for e in self._get_initiative() if e['userId'] == target_id), None)
+            if def_entry:
+                self._ai_react_dodge_w[target_id] = def_entry.get('react_dodge_w', 50)
+                self._ai_react_counter_w[target_id] = def_entry.get('react_counter_w', 50)
+                self._ai_react_block_w[target_id] = def_entry.get('react_block_w', 0)
             return super()._trigger_spell_reaction(
                 caster_id, target_id, eff, spell, dmg_dice,
                 can_dodge, can_counter, can_block, atk_rank, atk_roll=atk_roll, prefix_lines=prefix_lines)
@@ -11536,13 +11739,16 @@ class PvPFullBattleEngine(FullBattleEngine):
         if choice == 'block' and not state.get('can_block', False):
             return (False, False, ["该法术不可格挡！"])
 
+        dodged = countered = False
+        lines = []
+
         if choice == 'dodge':
-            return self._resolve_spell_dodge(
+            dodged, countered, lines = self._resolve_spell_dodge(
                 state['atk_uid'], state['def_uid'],
                 state.get('effect', {}), state.get('spell', {}),
                 state['dmg_dice'], state['dodge_val'], state['atk_rank'])
         elif choice == 'counter':
-            return self._resolve_spell_counter(
+            dodged, countered, lines = self._resolve_spell_counter(
                 state['atk_uid'], state['def_uid'],
                 state.get('effect', {}), state.get('spell', {}),
                 state['dmg_dice'], state['counter_skill'], state['counter_val'],
@@ -11550,7 +11756,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         elif choice == 'block':
             block_hp_val = next((e for e in self._get_initiative()
                 if e['userId'] == state['def_uid']), {}).get('shield_block_hp', 0)
-            return self._resolve_spell_block(
+            dodged, countered, lines = self._resolve_spell_block(
                 state['atk_uid'], state['def_uid'],
                 state.get('effect', {}), state.get('spell', {}),
                 state['dmg_dice'], state['block_skill'], state['block_val'],
@@ -11558,6 +11764,28 @@ class PvPFullBattleEngine(FullBattleEngine):
         else:
             block_hint = ' / .e 格挡' if state.get('can_block') else ''
             return (False, False, [f'法术反应请使用 .e 闪避 / .e 反击{block_hint}'])
+
+        # ── Apply spell damage if spell connects (not dodged, not cleanly countered) ──
+        if not dodged and not countered and state.get('atk_rank', 1) > 0:
+            eff = state.get('effect', {})
+            spell = state.get('spell', {})
+            ls = float(eff.get('吸血比例', '0') or '0')
+            dmg_out = self._apply_spell_damage(
+                state['atk_uid'], state['def_uid'],
+                state['dmg_dice'],
+                state.get('pen', eff.get('可贯穿性', 0)),
+                state.get('leth', eff.get('致死值', 0)),
+                lifesteal_ratio=ls,
+                dot_dice=eff.get('每回合伤害骰', ''),
+                dur=eff.get('持续回合', 0),
+                spell_name=state.get('spell_name', spell.get('name', '')),
+                spell_index=state.get('spell_index', spell.get('index', 0)),
+                atk_rank=state.get('atk_rank', 1),
+                atk_roll=state.get('atk_roll', 0))
+            if dmg_out:
+                lines.append(dmg_out.rstrip('\n'))
+
+        return (dodged, countered, lines)
 
     def _execute_spell(self, caster_id, target_id, spell):
         """Override: catch ReactionNeeded and prepend spell header to prefix_lines."""
@@ -12375,6 +12603,15 @@ def _format_summon_attack_block(sname, entries):
     return '\n'.join(lines)
 
 
+def _build_reaction_prompt(def_name, can_dodge=True, can_counter=True, can_block=False):
+    """Build the reaction prompt string showing available reaction options."""
+    opts = []
+    if can_dodge: opts.append('.e 闪避 / .e d')
+    if can_counter: opts.append('.e 反击 / .e c')
+    if can_block: opts.append('.e 格挡 / .e b')
+    return f"\n@{def_name} 请做出反应：\n{'  '.join(opts)}"
+
+
 def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) -> list:
     """Advance battle through all AI turns until a human-controlled character is active or battle ends.
     If an AI attack triggers a reaction from a human player, stops and stores the
@@ -12844,7 +13081,10 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                                     outputs.append(f"{e.data['atk_name']} 对 {e.data['def_name']} 发起攻击！")
                                 else:
                                     outputs.append('\n'.join(e.data['prefix_lines']))
-                                outputs.append(f"\n@{e.data['def_name']} 请做出反应：\n.e 闪避 / .e c 反击")
+                                outputs.append(_build_reaction_prompt(
+                                    e.data['def_name'],
+                                    can_dodge=True, can_counter=True,
+                                    can_block=e.data.get('can_block', False)))
                                 _flush_summons()
                                 return outputs  # stop and let caller handle the pending reaction
                         else:
@@ -12970,13 +13210,11 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                                     outputs.append(f"{e.data['atk_name']} 释放【{spell_name_rn}】→ {e.data['def_name']}！")
                                 else:
                                     outputs.append('\n'.join(e.data.get('prefix_lines', [])))
-                                opts_rn = []
-                                if e.data.get('can_dodge', True):
-                                    opts_rn.append('.e 闪避 / .e d')
-                                if e.data.get('can_counter', True):
-                                    opts_rn.append('.e 反击 / .e c')
-                                react_prompt_rn = '\n' + '  '.join(opts_rn)
-                                outputs.append(f"\n@{e.data['def_name']} 请做出反应：\n{react_prompt_rn}")
+                                outputs.append(_build_reaction_prompt(
+                                    e.data['def_name'],
+                                    can_dodge=e.data.get('can_dodge', True),
+                                    can_counter=e.data.get('can_counter', True),
+                                    can_block=e.data.get('can_block', False)))
                                 _flush_summons()
                                 return outputs
                         else:
@@ -13191,6 +13429,27 @@ def _build_turn_announcement(engine, uid: str) -> str:
     lines = []
     lines.append(f"现在是{_fmt_char_name(engine, entry)}的回合了。")
     lines.append(f"HP: {hp}/{hp_max}  MP: {mp}/{mp_max}")
+
+    # ── 活跃控制状态显示 ──
+    statuses = engine._get_active_statuses(uid)
+    if statuses:
+        status_strs = []
+        for st in statuses:
+            st_name = st.get('auxType', '?')
+            st_rounds = st.get('remainingRounds', 0)
+            st_detail = f"{st_name}({st_rounds}回合)"
+            if st_name == '击晕':
+                prot = st.get('auxVal', '1')
+                st_detail += f" [保护:{'不可攻击' if str(prot)=='0' else '可攻击'}]"
+            status_strs.append(st_detail)
+        lines.append(f"状态: {' | '.join(status_strs)}")
+        # Status-driven action warnings
+        if not engine._can_basic_attack(uid):
+            lines.append("⚠ 无法普通攻击（缴械/击晕中）")
+        if not engine._can_cast_active_skill(uid):
+            lines.append("⚠ 无法释放技能（沉默/击晕中）")
+        if not engine._can_move(uid):
+            lines.append("⚠ 无法移动（禁锢/击晕中）")
 
     is_human = _is_human_controlled(engine, uid)
     if is_human:
@@ -13612,7 +13871,7 @@ def create_battle():
             il = []
             for i, uid in enumerate(team_a_uids):
                 char = engine.get_char(uid)
-                for ai in range(MAX_DYNAMIC_ACTIONS):
+                for ai in [0]:  # single entry per character (was MAX_DYNAMIC_ACTIONS)
                     entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                     row = min(h - 1, math.ceil(h / 2) + i - len(team_a_uids) // 2)
                     coord = format_coord(1, row)
@@ -13628,7 +13887,7 @@ def create_battle():
                         map_data['occupants'][coord] = uid
             for i, uid in enumerate(team_b_uids):
                 char = engine.get_char(uid)
-                for ai in range(MAX_DYNAMIC_ACTIONS):
+                for ai in [0]:  # single entry per character (was MAX_DYNAMIC_ACTIONS)
                     entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                     row = min(h - 1, math.ceil(h / 2) + i - len(team_b_uids) // 2)
                     coord = format_coord(w - 2, row)
@@ -13647,7 +13906,7 @@ def create_battle():
             engine._set_initiative(il)
             # 初始化动态行动槽抑制状态（multi_pvp模式）
             for uid in all_uids:
-                engine._sync_initiative_slots(uid)
+                pass  # single-slot: no sync needed
             # 施放被动技能（timing=1），然后重新同步（buff可能改变行动力）
             for uid in all_uids:
                 spells = engine.get_char(uid).spells or engine.load_spells(uid)
@@ -13689,7 +13948,7 @@ def create_battle():
                 w, h = map_data.get('width', 10), map_data.get('height', 10)
                 for i, uid in enumerate(team_a):
                     char = engine.get_char(uid)
-                    for ai in range(MAX_DYNAMIC_ACTIONS):
+                    for ai in [0]:  # single entry per character (was MAX_DYNAMIC_ACTIONS)
                         entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                         row = min(h - 1, math.ceil(h / 2) + i - len(team_a) // 2)
                         coord = format_coord(1, row)
@@ -13705,7 +13964,7 @@ def create_battle():
                             map_data['occupants'][coord] = uid
                 for i, uid in enumerate(team_b):
                     char = engine.get_char(uid)
-                    for ai in range(MAX_DYNAMIC_ACTIONS):
+                    for ai in [0]:  # single entry per character (was MAX_DYNAMIC_ACTIONS)
                         entry_id = uid if ai == 0 else f"{uid}__act{ai}"
                         row = min(h - 1, math.ceil(h / 2) + i - len(team_b) // 2)
                         coord = format_coord(w - 2, row)
@@ -13724,7 +13983,7 @@ def create_battle():
                 engine._set_initiative(il)
                 # 初始化动态行动槽抑制状态
                 for uid in all_uids:
-                    engine._sync_initiative_slots(uid)
+                    pass  # single-slot: no sync needed
                 init_list = il
             else:
                 engine._set_map(map_data)
@@ -13913,6 +14172,13 @@ def submit_action(battle_id):
         engine._restim_modes[effective_uid] = restim_mode
 
         my_acts = engine._get_my_actions(entry_uid)
+
+        # ── 状态限制：击晕只允许 eat/give/end ──
+        if not engine._can_take_active_action(effective_uid):
+            if action not in ('.a eat', '.a give', '.i end'):
+                statuses = [b.get('auxType','') for b in engine._get_active_statuses(effective_uid)]
+                return jsonify({'error': True,
+                    'message': f"无法执行此操作（{'/'.join(statuses)}中，仅允许 .a eat / .a give / .i end）"}), 400
 
         # ── Batch summon mode: find controlled summons via _summon_groups or ownerId ──
         batch_summons = []
@@ -14106,7 +14372,10 @@ def submit_action(battle_id):
                         output = _format_summon_attack_block(sum_name, batch_entries)
                         if pending_attacks_list:
                             first = pending_attacks_list[0]
-                            output += f"\n@{first['def_name']} 请做出反应：\n.e 闪避 / .e c 反击"
+                            output += _build_reaction_prompt(
+                                first['def_name'],
+                                can_dodge=True, can_counter=True,
+                                can_block=first.get('can_block', False))
                             if actual_s0_count > 0:
                                 output += f'\n（已执行 {actual_s0_count} 次攻击，剩余 {len(pending_attacks_list)} 次待反应）'
                     # Skip the regular .s0 handler
@@ -14257,7 +14526,10 @@ def submit_action(battle_id):
                         }
                         _pending_reactions[battle_id] = pending_attacks_list
                         needs_reaction = True
-                        react_prompt = f"\n@{first['def_name']} 请做出反应：\n.e 闪避 / .e c 反击"
+                        react_prompt = _build_reaction_prompt(
+                            first['def_name'],
+                            can_dodge=True, can_counter=True,
+                            can_block=first.get('can_block', False))
                         all_s0_lines.append(react_prompt)
                         if actual_s0_count > 0:
                             all_s0_lines.append(f'（已执行 {actual_s0_count} 次攻击，剩余 {len(pending_attacks_list)} 次待反应）')
@@ -14372,6 +14644,10 @@ def submit_action(battle_id):
                                     actual_sp += 1
                                 else:
                                     # Store pending reaction; only show available options
+                                    # Consume action now — reaction only changes outcome, not the fact the action was spent
+                                    if not is_passive:
+                                        my_acts = engine._consume_action(effective_uid, '主动')
+                                    actual_sp += 1
                                     def_char_sp = engine.get_char(def_uid_sp)
                                     defender_serial_sp = getattr(def_char_sp, 'serial', '') if def_char_sp else ''
                                     pending_attack = {
@@ -14426,15 +14702,12 @@ def submit_action(battle_id):
                     _pending_reactions[battle_id] = pending_attacks_list
                     needs_reaction = True
                     first_sp = pending_attacks_list[0]
-                    opts_prompt = []
-                    if first_sp.get('can_dodge', True):
-                        opts_prompt.append('.e 闪避 / .e d')
-                    if first_sp.get('can_counter', True):
-                        opts_prompt.append('.e 反击 / .e c')
-                    if first_sp.get('can_block', False):
-                        opts_prompt.append('.e 格挡 / .e b')
-                    react_prompt = '\n' + '  '.join(opts_prompt)
-                    all_sp_out.append(f"@{first_sp['def_name']} 请做出反应：\n{react_prompt}")
+                    react_prompt = _build_reaction_prompt(
+                        first_sp['def_name'],
+                        can_dodge=first_sp.get('can_dodge', True),
+                        can_counter=first_sp.get('can_counter', True),
+                        can_block=first_sp.get('can_block', False))
+                    all_sp_out.append(react_prompt)
                     if actual_sp > 0:
                         all_sp_out.append(f'（已执行 {actual_sp} 次技能，剩余 {len(pending_attacks_list)} 次待反应）')
                 output = '\n'.join(all_sp_out) if all_sp_out else ''
@@ -14527,6 +14800,8 @@ def submit_action(battle_id):
                                 output += f"\n（自动反应：{auto_label_as2}，剩余 {remaining_as2} 次）"
                             else:
                                 # Human defender -> store pending reaction
+                                # Consume action now — reaction only affects outcome, not the fact the action was spent
+                                engine._consume_action(effective_uid, '附加')
                                 def_char_as = engine.get_char(def_uid_as)
                                 defender_serial_as = getattr(def_char_as, 'serial', '') if def_char_as else ''
                                 pending_attack = {
@@ -14555,6 +14830,8 @@ def submit_action(battle_id):
                                     opts_prompt_as.append('.e 闪避 / .e d')
                                 if e.data.get('can_counter', True):
                                     opts_prompt_as.append('.e 反击 / .e c')
+                                if e.data.get('can_block', False):
+                                    opts_prompt_as.append('.e 格挡 / .e b')
                                 react_prompt_as = '\n' + '  '.join(opts_prompt_as)
                                 if restim_mode == 1:
                                     spell_name_as = e.data.get('skill_name', '技能')
@@ -15629,7 +15906,7 @@ def add_character(battle_id):
         if phase == 'preparation':
             actions[uid] = {'主动': 0, '附加': 999}
         else:
-            actions[uid] = {'主动': 2, '附加': 3}
+            actions[uid] = {'主动': engine._calc_main_actions(uid), '附加': 3}
         engine._set_actions(actions)
 
         # ── Active phase: init combat HP and auto-cast passives ──
@@ -15751,7 +16028,7 @@ def prepare_ready(battle_id):
         for e in il:
             base = e.get('baseUserId', e['userId'])
             if base not in base_actions:
-                base_actions[base] = {'主动': 2, '附加': 3}
+                base_actions[base] = {'主动': engine._calc_main_actions(base), '附加': 3}
         engine._set_actions(base_actions)
 
         # ── Init status ──
@@ -16167,9 +16444,11 @@ except ImportError:
 
 _FONT_PATH = None
 if _PIL_AVAILABLE:
+    _LOCAL_FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
     for _fp in ['C:/Windows/Fonts/msyh.ttc', 'C:/Windows/Fonts/simhei.ttf',
                  '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-                 '/System/Library/Fonts/PingFang.ttc']:
+                 '/System/Library/Fonts/PingFang.ttc',
+                 os.path.join(_LOCAL_FONTS_DIR, 'GB2312.ttf')]:
         if os.path.exists(_fp):
             _FONT_PATH = _fp
             break
@@ -16234,7 +16513,7 @@ def _render_text_to_images(text, width=900, padding=50):
     # Calculate height
     line_height = 34
     total_h = 80 + len(wrapped_lines) * line_height + 60
-    total_h = min(max(total_h, 200), 8000)
+    total_h = max(total_h, 200)
 
     img = Image.new('RGB', (width, total_h), (30, 30, 30))
     draw = ImageDraw.Draw(img)
@@ -16292,6 +16571,10 @@ def reload_char_data():
         importlib.invalidate_caches()
         importlib.reload(characters_data_pvp)
         sys.modules['characters_data'] = characters_data_pvp
+        # 同步 battle_engine 假模块的 SUMMON_TEMPLATES 引用
+        _bem_mod = sys.modules.get('battle_engine')
+        if _bem_mod:
+            _bem_mod._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES
         char_count = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0
         summon_tmpl_count = len(characters_data_pvp.SUMMON_TEMPLATES) if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES') else 0
         msg = f'角色卡数据已重新加载: {char_count} 个角色, {summon_tmpl_count} 个召唤物模板'
@@ -16306,7 +16589,7 @@ def reload_char_data():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  v1.3.0 NEW: Training & Tournament endpoints
+#  v1.4.0 NEW: Training & Tournament endpoints
 # ═══════════════════════════════════════════════════════════════
 
 import uuid, queue
@@ -16517,7 +16800,7 @@ def api_jour_stop(job_id):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  v1.3.0: /api/sim — 快速战斗模拟
+#  v1.4.0: /api/sim — 快速战斗模拟
 # ═══════════════════════════════════════════════════════════════
 
 @app.route('/api/sim', methods=['POST'])
@@ -16587,66 +16870,16 @@ def api_sim():
 
 
 # ── Main ──
-if __name__ == '__main__':
-    import logging
-    # Log Flask app errors to console so we can see tracebacks
-    app_logger = logging.getLogger('flask.app')
-    app_logger.setLevel(logging.ERROR)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
-    app_logger.addHandler(handler)
-    # Suppress noisy Werkzeug access logs (keep error logs)
-    logging.getLogger('werkzeug').setLevel(logging.ERROR)
-    # ── 启动时立即重加载角色卡数据（确保最新） ──
-    try:
-        importlib.invalidate_caches()
-        importlib.reload(characters_data_pvp)
-        sys.modules['characters_data'] = characters_data_pvp
-        char_count_init = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0
-        sum_tmpl_init = len(characters_data_pvp.SUMMON_TEMPLATES) if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES') else 0
-        print(f'[reload] 启动时角色卡数据已加载: {char_count_init} 个角色, {sum_tmpl_init} 个召唤物模板')
-    except Exception as e:
-        print(f'[reload] 启动时角色卡加载失败: {e}')
-
-    # ── Periodic character data reload (every 5 minutes) ──
-    def _reload_char_data_periodically():
-        while True:
-            time.sleep(300)  # 5 minutes
-            try:
-                importlib.invalidate_caches()
-                importlib.reload(characters_data_pvp)
-                sys.modules['characters_data'] = characters_data_pvp
-                char_count = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0
-                print(f'[reload] 角色卡数据已重新加载 ({char_count} 个角色)')
-            except Exception as e:
-                print(f'[reload] 角色卡重载失败: {e}')
-
-    reload_thread = threading.Thread(target=_reload_char_data_periodically, daemon=True)
-    reload_thread.start()
-
-    print('Starting autocombat PvP battle server on http://0.0.0.0:8889')
-    print(f'[render] PIL可用={_PIL_AVAILABLE} 字体路径={_FONT_PATH} ({"就绪" if _PIL_AVAILABLE and _FONT_PATH else "未就绪，图片渲染将不可用"})')
-    # Log loaded character data
-    char_count = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0
-    summon_tmpl_count = len(characters_data_pvp.SUMMON_TEMPLATES) if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES') else 0
-    char_names = [c.get('name', c.get('serial', '?')) for c in characters_data_pvp.ALL_CHARACTERS] if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else []
-    print(f'[chardata] 已加载 {char_count} 个角色: {", ".join(char_names)}')
-    print(f'[chardata] 已加载 {summon_tmpl_count} 个召唤物模板')
-    app.run(host='0.0.0.0', port=8889, debug=False, threaded=True)
+# [STRIPPED __main__] if __name__ == '__main__':
 
 # END INLINED: battle_http_server.py
 
 # Post-inline fixups
-_SUMMON_TEMPLATES = SUMMON_TEMPLATES
 import types as _types
-_cdm = _types.ModuleType('characters_data')
-_cdm.ALL_CHARACTERS = ALL_CHARACTERS
-_cdm.load_character_to_engine = load_character_to_engine
-_cdm.SUMMON_TEMPLATES = SUMMON_TEMPLATES
-_cdm.ITEM_TEMPLATES = ITEM_TEMPLATES
-sys.modules['characters_data'] = _cdm
+sys.modules['characters_data'] = characters_data_pvp
+_SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES  # backward compat
 _bem = _types.ModuleType('battle_engine')
-_bem._SUMMON_TEMPLATES = SUMMON_TEMPLATES
+_bem._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES
 _bem.CombatEngine = CombatEngine
 _bem.FullBattleEngine = FullBattleEngine
 _bem.FastBattleEngine = FastBattleEngine
@@ -16654,11 +16887,33 @@ sys.modules['battle_engine'] = _bem
 
 # Main entry
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(description='autocombat integrated backend v1.3.0')
+    import argparse, logging
+    parser = argparse.ArgumentParser(description='autocombat integrated backend v1.4.0')
     parser.add_argument('--port', type=int, default=8889, help='Server port')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
-    print(f'[autocombat_backend v1.3.0] http://{args.host}:{args.port}')
+
+    # Flask error logging
+    app_logger = logging.getLogger('flask.app')
+    app_logger.setLevel(logging.ERROR)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    app_logger.addHandler(handler)
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+    # Reload character data at startup
+    try:
+        importlib.invalidate_caches()
+        importlib.reload(characters_data_pvp)
+        sys.modules['characters_data'] = characters_data_pvp
+        if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES'):
+            _bem._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES
+        char_count = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0
+        sum_tmpl = len(characters_data_pvp.SUMMON_TEMPLATES) if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES') else 0
+        print(f'[reload] {char_count} characters, {sum_tmpl} summon templates loaded')
+    except Exception as e:
+        print(f'[reload] character data load failed: {e}')
+
+    print(f'[autocombat_backend v1.4.0] http://{args.host}:{args.port}')
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

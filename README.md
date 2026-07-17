@@ -1,5 +1,5 @@
 # logutil & logai
-**V5.0.0**  
+**V5.0.1**  
 *A fork based on Air, Gemini: 人工智障系列*
 
 ---
@@ -338,6 +338,11 @@ Web 管理界面 HTML 页面。带 group_id 时自动选中对应群组。
 
 ## 更新日志：
 
+
+**V5.0.1**  
+1. 修复短别名反向索引引用（`F-1`/`L-1`/`H-1` 及 `[file]~1` 等）在复合命令中被当作文本字面量输出的 bug：`api_logutil_compound` 的 source 分发元组补充 `bridge_file_rev`/`bridge_link_rev`/`bridge_history_rev`，使反向索引引用能正确路由到 `fetch_log_text_by_source` 读取实际内容。
+2. 修复骰娘消息中 `<角色名>:` 格式被误识别为发言者（覆盖真实发送者）的 bug：新增 `_is_trusted_sender` 判断，当发送者来自真实 QQ 用户（非系统/桥接标记）时，文本内容中的 `<Name>:` 尖括号格式不再覆盖真实发送者，而是保留原始消息归属。
+3. 更新版本号至 5.0.1。
 
 **v5.0.0**
 1. Bridge v2：可扩展分类存储系统。新增 `[permanent]-N`/`P1`、`[audio]-N`/`A1`、`[mod]-N`/`M1` 三种内置全局永久类型，不受数量上限，永不移入历史记录。

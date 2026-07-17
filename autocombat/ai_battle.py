@@ -938,15 +938,17 @@ class BattleEngine(FullBattleEngine):
                     self._end_turn(uid); continue
                 team_tag = entry.get('team', '?')
                 _bl('debug', f'    [{team_tag}] {char_name} (HP:{hp}) 行动')
-                ai = ai_map.get(uid)
+                # Resolve base uid for ai_map and actions lookups (handles __actN suffixed slots)
+                _base_uid = entry.get('baseUserId', uid)
+                ai = ai_map.get(_base_uid)
                 if ai:
                     ai.team = entry['team']; acted = False
-                    is_dying = self._is_dying(uid)
+                    is_dying = self._is_dying(_base_uid)
                     for _ in range(5):
-                        cmd = ai.decide_action(self, uid)
+                        cmd = ai.decide_action(self, _base_uid)
                         # Dying characters: only allow .a eat (use healing item) or .i end
                         if is_dying and cmd not in ('.i end',) and not cmd.startswith('.a eat'):
-                            if self._has_healing_item(uid):
+                            if self._has_healing_item(_base_uid):
                                 cmd = '.a eat'
                             else:
                                 cmd = '.i end'
@@ -960,21 +962,21 @@ class BattleEngine(FullBattleEngine):
                             result_text = self._basic_attack(uid); spell_label = ' [普攻]'
                         elif cmd.startswith('.s') and not cmd.startswith('.s0'):
                             sn = int(cmd[2:])
-                            spells = self.load_spells(uid) or []
+                            spells = self.load_spells(_base_uid) or []
                             sp = next((s for s in spells if s['index']==sn), None)
                             spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
                             result_text = self._use_skill(uid, sn, '')
                         elif cmd.startswith('.a eat'):
                             target_id = cmd[6:].strip() or uid
-                            result_text, ok = self._eat_cake(uid, target_id)
+                            result_text, ok = self._eat_cake(_base_uid, target_id)
                             spell_label = ' [食用蛋糕]'
                         elif cmd.startswith('.a m'):
-                            result_text = self._additional_action(uid, 'm ' + cmd[5:].strip())
+                            result_text = self._additional_action(_base_uid, 'm ' + cmd[5:].strip())
                             if not hasattr(self, '_moved_this_turn'): self._moved_this_turn = set()
-                            self._moved_this_turn.add(uid)
+                            self._moved_this_turn.add(_base_uid)
                         elif cmd.startswith('.a s'):
                             sn = int(cmd[4:])
-                            spells = self.load_spells(uid) or []
+                            spells = self.load_spells(_base_uid) or []
                             sp = next((s for s in spells if s['index']==sn), None)
                             spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
                             result_text = self._additional_action(uid, cmd[3:].strip())
@@ -985,13 +987,13 @@ class BattleEngine(FullBattleEngine):
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
                         is_bonus = cmd.startswith('.a ')
                         if cmd in ('.s0',) or is_skill:
-                            acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                             ma['主动'] -= 1; self._set_actions(acts_d)
                         elif is_bonus:
-                            acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                             ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
                         # Check remaining actions — end turn when 主动 exhausted
-                        acts_d = self._get_actions(); ma = acts_d.get(uid, {'主动':2,'附加':3})
+                        acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
                         if ma['主动'] <= 0: self._end_turn(uid)
                         s2 = self._get_state()
                         if not s2 or s2.get('phase')!='active': break
