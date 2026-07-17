@@ -1066,7 +1066,7 @@ def parse_metadata_only_line(line, fallback_ts):
     }
 
 
-def match_speaker_line(line, fallback_ts=None):
+def match_speaker_line(line, fallback_ts=None, sender_name=None):
     """
     单行发言匹配。
     匹配顺序：新格式 a/b → 新格式 c → fwlog时间戳尖括号 → fwlog时间戳冒号
@@ -1119,9 +1119,13 @@ def match_speaker_line(line, fallback_ts=None):
                 return speaker
 
     # 5) fwlog 尖括号格式 <Name> : content
+    # v5.0.1: 若外部发送者可信任且与提取名不一致，不匹配
     match = ANGLE_SPEAKER_RE.match(text)
     if match:
-        return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
+        extracted_name = match.group("name")
+        if _is_trusted_sender(sender_name) and extracted_name != sender_name:
+            return None
+        return build_speaker_match(extracted_name, match.group("content"), fallback_value)
 
     # 6) v4.6.1: 移除 PLAIN_SPEAKER_RE — 纯冒号格式易造成一般文件误判
     return None
@@ -3020,15 +3024,11 @@ def strip_paren_text(text: str) -> str:
         i += 1
     return '\n'.join(out_lines)
 
-def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id, trust_sender=False):
+def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id):
     """
     将文本解析为结构化 log_item 列表。
     支持 6 种 fwlog 格式 + 3 种新增方括号/星号格式。
     无结构化内容时回退为单条消息。
-
-    trust_sender=True 时：保留结构化解析（按发言者模式切分条目），但所有条目
-    的发送者强制设为 sender_name。匹配到的发言者格式作为内容的一部分保留。
-    （用于实时录制：文本切分正常进行，但发送者始终是真实 QQ 用户。）
     """
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not normalized.strip():
@@ -3064,7 +3064,7 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id,
     line_index = 0
     while line_index < len(lines):
         line = lines[line_index]
-        matched = match_speaker_line(line, ts)
+        matched = match_speaker_line(line, ts, sender_name)
         next_index = line_index + 1
         if not matched:
             multiline_matched = match_multiline_angle_speaker(
@@ -3087,12 +3087,6 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id,
                 continue
 
         if matched:
-            # v5.0.1: trust_sender 模式下强制使用外部发送者，保留原始行文本作为内容
-            if trust_sender:
-                matched["name"] = sender_name
-                matched["user_id"] = sender_id
-                matched["content"] = line  # 完整原始行（含 <Name>: 等格式标记）
-
             if pending_meta:
                 matched["time"] = pending_meta["time"]
             structured_found = True
@@ -3178,7 +3172,6 @@ async def extract_items_from_text_chunk(text, sender_name, sender_id, ts, raw_ms
                         sender_id,
                         ts,
                         f"{raw_msg_id}:text:{url_index}",
-                        trust_sender=True,
                     )
                 )
             plain_parts = []
@@ -3207,7 +3200,6 @@ async def extract_items_from_text_chunk(text, sender_name, sender_id, ts, raw_ms
                 sender_id,
                 ts,
                 f"{raw_msg_id}:text:tail",
-                trust_sender=True,
             )
         )
 
