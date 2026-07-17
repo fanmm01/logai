@@ -5382,16 +5382,13 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id,
     支持 6 种 fwlog 格式 + 3 种新增方括号/星号格式。
     无结构化内容时回退为单条消息。
 
-    trust_sender=True 时完全跳过发言者匹配，整段文本作为 sender_name 的单条消息。
-    （用于实时录制：消息来自真实 QQ 用户，文本中的 <Name>:/[time] 格式不应覆盖发送者。）
+    trust_sender=True 时：保留结构化解析（按发言者模式切分条目），但所有条目
+    的发送者强制设为 sender_name。匹配到的发言者格式作为内容的一部分保留。
+    （用于实时录制：文本切分正常进行，但发送者始终是真实 QQ 用户。）
     """
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not normalized.strip():
         return []
-
-    # v5.0.1: 信任发送者模式下，跳过所有发言者匹配，整段文本归为 sender_name
-    if trust_sender:
-        return [make_log_item(sender_name, sender_id, ts, normalized.strip(), raw_msg_id)]
 
     parsed_items = []
     prefix_lines = []
@@ -5446,6 +5443,12 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id,
                 continue
 
         if matched:
+            # v5.0.1: trust_sender 模式下强制使用外部发送者，保留原始行文本作为内容
+            if trust_sender:
+                matched["name"] = sender_name
+                matched["user_id"] = sender_id
+                matched["content"] = line  # 完整原始行（含 <Name>: 等格式标记）
+
             if pending_meta:
                 matched["time"] = pending_meta["time"]
             structured_found = True
