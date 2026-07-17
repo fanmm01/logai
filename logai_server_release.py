@@ -1154,7 +1154,6 @@ def background_process(job_id, key, password, source, is_pro=False, is_kind=Fals
             report_title = "TRPG 跑团前文回顾"
             system_prompt = """你是一个专业且细致的 TRPG 跑团记录员（书记）。请阅读以下跑团 Log，为 KP 和玩家梳理一份详细的【前文回顾】，帮助大家快速找回跑团记忆。
 请严格按照以下 4 个板块输出，并且在输出每个大板块之前，必须使用“【分页符】”这四个字单起一行作为分隔标识（不要用Markdown，不要加粗）：
-
 【分页符】
 【一、当前剧情进度总览】：
 （详细说明截至目前的故事进度，大家在哪，正在面临什么状况，遇到了什么危机或主线推进到了哪一步）
