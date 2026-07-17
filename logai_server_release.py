@@ -1470,7 +1470,7 @@ def parse_metadata_only_line(line, fallback_ts):
     }
 
 
-def match_speaker_line(line, fallback_ts=None):
+def match_speaker_line(line, fallback_ts=None, sender_name=None):
     """
     单行发言匹配。
     匹配顺序：新格式 a/b → 新格式 c → fwlog时间戳尖括号 → fwlog时间戳冒号
@@ -1523,9 +1523,13 @@ def match_speaker_line(line, fallback_ts=None):
                 return speaker
 
     # 5) fwlog 尖括号格式 <Name> : content
+    # v5.0.1: 若发送者可信任且角色名不一致，不匹配（防止骰娘消息中 <角色名> 被误判为发言者）
     match = ANGLE_SPEAKER_RE.match(text)
     if match:
-        return build_speaker_match(match.group("name"), match.group("content"), fallback_value)
+        extracted_name = match.group("name")
+        if _is_trusted_sender(sender_name) and extracted_name != sender_name:
+            return None
+        return build_speaker_match(extracted_name, match.group("content"), fallback_value)
 
     # 6) v4.6.1: 移除 PLAIN_SPEAKER_RE — 纯冒号格式易造成一般文件误判
     return None
@@ -5416,7 +5420,7 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id)
     line_index = 0
     while line_index < len(lines):
         line = lines[line_index]
-        matched = match_speaker_line(line, ts)
+        matched = match_speaker_line(line, ts, sender_name)
         next_index = line_index + 1
         if not matched:
             multiline_matched = match_multiline_angle_speaker(
@@ -5439,19 +5443,6 @@ def parse_structured_text_to_items(text, sender_name, sender_id, ts, raw_msg_id)
                 continue
 
         if matched:
-            # v5.0.1: 若发送者可信任且匹配到的发言者名不一致，不覆盖真实发送者
-            if _is_trusted_sender(sender_name) and matched.get("name", "") != sender_name:
-                if current_name is None:
-                    structured_found = True
-                    current_name = sender_name
-                    current_user_id = sender_id
-                    current_ts = safe_int(ts, int(time.time()))
-                    current_lines = []
-                current_lines.append(line)
-                pending_meta = None
-                line_index = next_index
-                continue
-
             if pending_meta:
                 matched["time"] = pending_meta["time"]
             structured_found = True
