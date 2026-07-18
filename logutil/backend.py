@@ -815,13 +815,14 @@ def fetch_log_text_by_source(key, password=None, source=None, group_id=None):
 def format_raw_text(raw_text):
     if not raw_text: return ""
     lines = raw_text.split('\n')
-    # Only convert simple <Name> text, NOT <Name|Player> text (bracket-pipe format)
-    pattern = re.compile(r'<([^|>]+)>\s*(.*)')
+    # Only convert simple <Name> text, NOT <Name|Player> text (bracket-pipe format).
+    # match() anchors at line start so angle brackets in payload text are never misread.
+    pattern = re.compile(r'^(?:\[.*?\]\s*)?<([^|>]+)>\s*(.*)')
     clean = []
     for line in lines[:MAX_LOG_ENTRIES]:
         line = line.strip()
         if not line: continue
-        m = pattern.search(line)
+        m = pattern.match(line)
         if m: clean.append(f"{m.group(1)}: {m.group(2).strip()}")
         else:
             clean.append(line)
@@ -1108,6 +1109,12 @@ def match_speaker_line(line, fallback_ts=None, sender_name=None):
     for pattern in (TIMESTAMPED_ANGLE_SPEAKER_RE, TIMESTAMPED_PLAIN_SPEAKER_RE):
         match = pattern.match(text)
         if match:
+            extracted_name = match.group("name")
+            # v5.0.1+: 若外部发送者可信任且与提取名不一致，不匹配
+            # （因为date/clock为可选，这两个正则也能匹配纯<Name>:content格式，
+            #   须与步骤5保持同等的_is_trusted_sender守卫）
+            if _is_trusted_sender(sender_name) and extracted_name != sender_name:
+                continue
             speaker = build_speaker_match(
                 match.group("name"),
                 match.group("content"),
