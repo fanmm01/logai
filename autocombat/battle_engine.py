@@ -492,6 +492,58 @@ class Character:
             if v > best_val: best_val = v; best_name = sk
         return best_name, max(best_val, 25)
 
+# ── Module-level cache for AI weight target strategies ──
+# Shared across all engine instances to avoid repeated JSON parsing and Q-table iteration.
+_weight_cache = None          # Parsed weights JSON
+_weight_best_strategy = {}    # {serial: best_strategy} pre-computed
+_weight_loaded = False
+
+def _ensure_weight_cache():
+    """One-time load and pre-compute target strategy preferences from AI weights."""
+    global _weight_cache, _weight_best_strategy, _weight_loaded
+    if _weight_loaded:
+        return
+    _weight_loaded = True
+    import os, json
+    weight_paths = [
+        os.path.join(os.path.dirname(__file__), 'ai_weights_pvp.json'),
+        os.path.join(os.path.dirname(__file__), 'ai_weights.json'),
+    ]
+    for wp in weight_paths:
+        try:
+            if os.path.exists(wp):
+                with open(wp, 'r', encoding='utf-8') as f:
+                    _weight_cache = json.load(f)
+                break
+        except Exception:
+            continue
+    if not _weight_cache:
+        return
+    # Pre-compute best target strategy per character
+    for q_mode in ['Q_solo', 'Q_team']:
+        q_table = _weight_cache.get(q_mode, {})
+        for serial, state_actions in q_table.items():
+            sums = {'T0': 0.0, 'T1': 0.0, 'T2': 0.0, 'T3': 0.0}
+            cnts = {'T0': 0, 'T1': 0, 'T2': 0, 'T3': 0}
+            for key, q_val in state_actions.items():
+                if not isinstance(q_val, (int, float)):
+                    continue
+                for s in ['T0', 'T1', 'T2', 'T3']:
+                    if key.endswith(f'__{s}'):
+                        sums[s] += q_val
+                        cnts[s] += 1
+                        break
+            best_s = None
+            best_avg = -999999
+            for s in ['T0', 'T1', 'T2', 'T3']:
+                if cnts[s] > 0:
+                    avg = sums[s] / cnts[s]
+                    if avg > best_avg:
+                        best_avg = avg
+                        best_s = s
+            if best_s:
+                _weight_best_strategy[f"{q_mode}:{serial}"] = best_s
+
 # ============================================================
 #  CombatEngine — base state management
 # ============================================================
@@ -1626,76 +1678,37 @@ class CombatEngine:
         return _random_rt.choice(candidates) if candidates else None
 
     def _get_weighted_target(self, caster_id):
-        """Select target using AI weight file preferences (T0-T3 strategies).
+        """Select target using pre-computed AI weight strategy preferences (T0-T3).
         Falls back to None if weights unavailable, allowing _smart_target to use heuristic.
         """
-        # Lazy-load and cache weights
-        if not hasattr(self, '_cached_weights'):
-            self._cached_weights = None
-            import os, json
-            weight_paths = [
-                os.path.join(os.path.dirname(__file__), 'ai_weights_pvp.json'),
-                os.path.join(os.path.dirname(__file__), 'ai_weights.json'),
-            ]
-            for wp in weight_paths:
-                try:
-                    if os.path.exists(wp):
-                        with open(wp, 'r', encoding='utf-8') as f:
-                            self._cached_weights = json.load(f)
-                        break
-                except Exception:
-                    continue
-        weights = self._cached_weights
-        if not weights: return None
+        _ensure_weight_cache()
+        if not _weight_cache:
+            return None
 
-        # Get caster serial
+        # Quick lookup: get caster serial + determine solo/team
+        caster_char = self.get_char(caster_id)
+        caster_serial = getattr(caster_char, 'serial', '')
+        if not caster_serial:
+            return None
+
         init_list = self._get_initiative()
         my_entry = next((e for e in init_list if e['userId'] == caster_id), None)
         mt = my_entry.get('team', 'Y') if my_entry else 'Y'
+        has_allies = any(e['team'] == mt and e['userId'] != caster_id
+                         and (self._get_combat_hp(e['userId']) or 0) > 0
+                         for e in init_list)
+        q_mode = 'Q_team' if has_allies else 'Q_solo'
+        best_strategy = _weight_best_strategy.get(f"{q_mode}:{caster_serial}")
+
+        if not best_strategy:
+            return None
 
         # Get enemies
         enemies = [e for e in init_list
                    if e['team'] != mt
                    and (self._get_combat_hp(e['userId']) or 0) > 0
                    and not self._is_untargetable(e['userId'])]
-        if not enemies: return None
-
-        # Determine Q-table to use (solo vs team)
-        has_allies = any(e['team'] == mt and e['userId'] != caster_id
-                         and (self._get_combat_hp(e['userId']) or 0) > 0
-                         for e in init_list)
-        q_table = weights.get('Q_team' if has_allies else 'Q_solo', {})
-
-        # Look up caster's serial in Q-table
-        caster_char = self.get_char(caster_id)
-        caster_serial = getattr(caster_char, 'serial', '')
-        if not caster_serial or caster_serial not in q_table:
-            return None
-
-        state_actions = q_table[caster_serial]
-
-        # Aggregate Q-values by target strategy (T0-T3)
-        strategy_sums = {'T0': 0.0, 'T1': 0.0, 'T2': 0.0, 'T3': 0.0}
-        strategy_counts = {'T0': 0, 'T1': 0, 'T2': 0, 'T3': 0}
-        for key, q_val in state_actions.items():
-            if not isinstance(q_val, (int, float)): continue
-            for s in ['T0', 'T1', 'T2', 'T3']:
-                if key.endswith(f'__{s}'):
-                    strategy_sums[s] += q_val
-                    strategy_counts[s] += 1
-                    break
-
-        # Find best strategy (highest average Q)
-        best_strategy = None
-        best_avg = -999999
-        for s in ['T0', 'T1', 'T2', 'T3']:
-            if strategy_counts[s] > 0:
-                avg = strategy_sums[s] / strategy_counts[s]
-                if avg > best_avg:
-                    best_avg = avg
-                    best_strategy = s
-
-        if not best_strategy:
+        if not enemies:
             return None
 
         # Apply strategy to select target
