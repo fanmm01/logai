@@ -2945,7 +2945,10 @@ class CombatEngine:
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
                           'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate',
-                          '可叠加']:
+                          '可叠加',
+                          'respawn_hp','respawn_radius','max_value',
+                          'cost_counter_amount','吟唱回合',
+                          '幻造','once_per_transform','persist_through_battle']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
@@ -2953,11 +2956,12 @@ class CombatEngine:
                           '召唤个数','制造个数','制造花费回合数','召唤物模板','制造物模板',
                           '每回合伤害骰','吸血比例','属性削减',
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
-                          '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff']:
+                          '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff',
+                          'variant','weapon_state','counter_type']:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
-                for k in ['hp_thresholds', 'exclude']:
+                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage']:
                     v = char.get_str(f"{pl}{k}")
                     if v:
                         try: eff[k] = json.loads(v)
@@ -4156,7 +4160,7 @@ class CombatEngine:
                 if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
                    and ce.get('targetUserId') == caster_id:
                     if char:
-                        writing_val = char.get_attr('写作', 0) or char.get_attr('写作', 0) or 0
+                        writing_val = int(char.get_attr('写作', 0) or 0)
                         if writing_val > 0:
                             roll, _ = roll_d100('')
                             if roll <= writing_val:
@@ -4165,8 +4169,12 @@ class CombatEngine:
                             else:
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
                     break
-            if phantom_bonus > 0:
-                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+            if phantom_bonus:
+                try:
+                    if int(phantom_bonus) > 0:
+                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                except (ValueError, TypeError):
+                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior
         friend_behavior = eff.get('友方行为', '')
@@ -4930,6 +4938,24 @@ class FullBattleEngine(CombatEngine):
         if fly_penalty:
             bp_suffix = (bp_suffix or '') + 'p'  # 飞行近战惩罚骰
 
+        # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
+        atk_effects = self._get_effects()
+        for ce in atk_effects:
+            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+               and ce.get('targetUserId') == atk_uid:
+                writing_val = int(achar.get_attr('写作', 0) or 0)
+                if writing_val > 0:
+                    roll, _ = roll_d100('')
+                    if roll <= writing_val:
+                        phantom_bonus = ce.get('auxVal', 0) or 0
+                        if phantom_bonus:
+                            if isinstance(phantom_bonus, str) or int(phantom_bonus) > 0:
+                                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                                lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}')
+                    else:
+                        lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败')
+                break
+
         # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
         def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
         if def_spells is None:
@@ -5314,8 +5340,12 @@ class FullBattleEngine(CombatEngine):
                             else:
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
                     break
-            if phantom_bonus > 0:
-                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+            if phantom_bonus:
+                try:
+                    if int(phantom_bonus) > 0:
+                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                except (ValueError, TypeError):
+                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior (same as base)
         friend_behavior = eff.get('友方行为', '')
@@ -7145,6 +7175,20 @@ class FastBattleEngine(FullBattleEngine):
             return (def_uid, atk_uid, 0, f"无法近战飞行目标")
         if fly_penalty:
             pen += 1  # 飞行近战惩罚骰
+        # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
+        atk_effects2 = self._get_effects()
+        for ce in atk_effects2:
+            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+               and ce.get('targetUserId') == atk_uid:
+                writing_val2 = int(achar.get_attr('写作', 0) or 0)
+                if writing_val2 > 0:
+                    roll2, _ = roll_d100('')
+                    if roll2 <= writing_val2:
+                        phantom_bonus2 = ce.get('auxVal', 0) or 0
+                        if phantom_bonus2:
+                            if isinstance(phantom_bonus2, str) or int(phantom_bonus2) > 0:
+                                dmg_dice = f"{dmg_dice}+{phantom_bonus2}"
+                break
         # AUX code 4: merge bonus damage dice
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
         if bonus_dice:
