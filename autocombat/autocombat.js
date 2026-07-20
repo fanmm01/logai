@@ -2883,7 +2883,7 @@ cmdAs.help =
   '  战斗中：.as Y1 → 绑定魔法少女序号（持久绑定）\n' +
   '已加入时追加操控角色，不替换已有绑定。';
 cmdAs.allowDelegate = true;
-cmdAs.solve = (ctx, msg, cmdArgs) => {
+cmdAs.solve = async (ctx, msg, cmdArgs) => {
   const allArgs = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
   const _asMctx = seal.getCtxProxyFirst(ctx, cmdArgs) || ctx;
   const uid = _asMctx.player.userId;
@@ -2905,7 +2905,7 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
       }
     }
     if (mySerials.length === 0) {
-      seal.replyToSender(ctx, msg,
+      await sendAsImage(ctx, msg,
         `${pn} 当前未绑定任何魔法少女。\n` +
         '用法：.as <序号>（如 .as Y1, .as 3, .as III）\n' +
         '战斗中 .as 3 按先攻位次绑定，.as Y1 按序号绑定。');
@@ -3146,7 +3146,7 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
         }
         finalOut += `\n你当前控制 (${mySerials2.length}): ` + details.join(', ');
       }
-      seal.replyToSender(ctx, msg, finalOut);
+      sendAsImage(ctx, msg, finalOut);
     });
   } else if (outputs.length > 0) {
     // Show all controlled at end (only for batch, single already shows per-item)
@@ -3165,7 +3165,7 @@ cmdAs.solve = (ctx, msg, cmdArgs) => {
         finalOut += `\n你当前控制 (${mySerials2.length}): ` + details.join(', ');
       }
     }
-    seal.replyToSender(ctx, msg, finalOut);
+    sendAsImage(ctx, msg, finalOut);
   }
 
   return seal.ext.newCmdExecuteResult(true);
@@ -3421,38 +3421,47 @@ cmdRem.solve = (ctx, msg, cmdArgs) => {
 const cmdAsfull = seal.ext.newCmdItemInfo();
 cmdAsfull.name = 'asfull';
 cmdAsfull.help =
-  '.asfull <魔法少女序号> // 绑定角色及其全部召唤物\n' +
+  '.asfull <魔法少女序号...> // 绑定角色及其全部召唤物（支持多个）\n' +
   '  .asfull Y1  // 控制 Y1 以及 Y1 的所有召唤物（包括未来召唤的）\n' +
+  '  .asfull Y1 Y2 Y3  // 同时绑定多个角色及其召唤物\n' +
   '  .unbind Y1  // 自动解绑 Y1 及其全部召唤物';
-cmdAsfull.solve = (ctx, msg, cmdArgs) => {
-  const val = cmdArgs.getArgN(1);
+cmdAsfull.solve = async (ctx, msg, cmdArgs) => {
+  const allArgs = cmdArgs.cleanArgs.split(/\s+/).filter(a => a.length > 0);
   const uid = ctx.player.userId;
   const gid = getGid(ctx);
   const pn = seal.format(ctx, '{$t玩家}');
   const abMode = getAutoMode(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
+  const romanMap = { 'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10 };
 
-  if (!val) {
-    seal.replyToSender(ctx, msg, '用法：.asfull <魔法少女序号>（如 .asfull Y1）');
+  if (allArgs.length === 0) {
+    seal.replyToSender(ctx, msg, '用法：.asfull <魔法少女序号...>（如 .asfull Y1, .asfull Y1 Y2 Y3）');
     return seal.ext.newCmdExecuteResult(true);
   }
 
-  let serial = val;
-  const romanMap = { 'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10 };
-  if (romanMap[val.toLowerCase()] !== undefined) serial = String(romanMap[val.toLowerCase()]);
+  // Resolve all serials
+  const serials = allArgs.map(val => {
+    const lower = val.toLowerCase();
+    if (romanMap[lower] !== undefined) return String(romanMap[lower]);
+    return val;
+  });
 
-  if (abMode >= 2 && battleId) {
-    const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
-    fetch(serverUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ player_id: uid, serial: serial, full: true }),
-    }).then(r => r.json()).then(result => {
-      if (result.error) {
-        seal.replyToSender(ctx, msg, `[.setab 2] .asfull 失败: ${result.message}`);
-      } else {
+  const outputs = [];
+  const pvpPromises = [];
+
+  for (const serial of serials) {
+    if (abMode >= 2 && battleId) {
+      const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
+      const promise = fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: uid, serial: serial, full: true }),
+      }).then(r => r.json()).then(result => {
+        if (result.error) {
+          return `⚠ .asfull ${serial} 失败: ${result.message}`;
+        }
         storeLocalBinding(uid, result.serial || serial, gid);
-        // Also mark as full-binding in local tracking
+        // Mark as full-binding in local tracking
         const fullKey = `bta_asfull_${gid}_${uid}`;
         const existing = ext.storageGet(fullKey);
         let fullList = [];
@@ -3461,26 +3470,162 @@ cmdAsfull.solve = (ctx, msg, cmdArgs) => {
         ext.storageSet(fullKey, JSON.stringify(fullList));
 
         const charName = result.char_name || serial;
-        seal.replyToSender(ctx, msg,
-          `${pn} 已完全绑定【${serial}】${charName}（含全部召唤物）。\n` +
-          `.unbind ${serial} 时自动解绑其召唤物。` +
-          (result.initiative_text ? '\n' + result.initiative_text : '') +
-          (result.controlled_characters ? '\n\n【玩家绑定】' +
+        let out = `${pn} 已完全绑定【${serial}】${charName}（含全部召唤物）。`;
+        if (result.initiative_text) out += '\n' + result.initiative_text;
+        if (result.controlled_characters) {
+          out += '\n\n【玩家绑定】' +
             Object.entries(result.controlled_characters).map(([pid, chars]) =>
               '\n  ' + pid + ': ' + chars.map(c => { const base = c.serial ? `【${c.serial}】${c.name}` : c.name; return c.count > 1 ? `${base} ×${c.count}` : base; }).join(', ')
-            ).join('') : ''));
-        // Show auto_turns if any
+            ).join('');
+        }
+        // Auto_turns
         if (result.auto_turns && result.auto_turns.length > 0) {
           const nodes = result.auto_turns.map((t, i) => `【行动 ${i+1}】\n${t}`);
           sendForwardMessage(ctx, msg, nodes, 'AI 自动战斗');
         }
-      }
-    });
-  } else {
-    // .setab 1 mode: just do normal binding + mark as full
-    storeLocalBinding(uid, serial, gid);
-    seal.replyToSender(ctx, msg, `${pn} 已完全绑定【${serial}】（含全部召唤物）。`);
+        return out;
+      }).catch(err => {
+        ext.storageSet(`pvp_battle_${gid}`, '');
+        storeLocalBinding(uid, serial, gid);
+        return `${pn} 已完全绑定【${serial}】（本地，服务端无响应）`;
+      });
+      pvpPromises.push(promise);
+    } else {
+      // setab 0/1 mode: local binding + mark as full
+      storeLocalBinding(uid, serial, gid);
+      const fullKey = `bta_asfull_${gid}_${uid}`;
+      const existing = ext.storageGet(fullKey);
+      let fullList = [];
+      if (existing) { try { fullList = JSON.parse(existing); } catch(e) {} }
+      if (!fullList.includes(serial)) fullList.push(serial);
+      ext.storageSet(fullKey, JSON.stringify(fullList));
+      outputs.push(`${pn} 已完全绑定【${serial}】（含全部召唤物）。`);
+    }
   }
+
+  // Send output
+  if (abMode >= 2 && battleId && pvpPromises.length > 0) {
+    Promise.all(pvpPromises).then(async results => {
+      const validResults = results.filter(r => r);
+      let finalOut = validResults.join('\n');
+      if (serials.length > 1) {
+        finalOut += `\n你当前控制 (${serials.length}): ` + serials.map(s => `【${s}】`).join(', ');
+      }
+      await sendAsImage(ctx, msg, finalOut);
+    });
+  } else if (outputs.length > 0) {
+    let finalOut = outputs.join('\n');
+    if (serials.length > 1) {
+      finalOut += `\n你当前控制 (${serials.length}): ` + serials.map(s => `【${s}】`).join(', ');
+    }
+    await sendAsImage(ctx, msg, finalOut);
+  }
+
+  return seal.ext.newCmdExecuteResult(true);
+};
+
+// ============================================================
+//  .asall  — 绑定全部Y系列魔法少女及其召唤物
+//  等同于 .asfull Y1 Y2 ... Y[n]（动态获取总数）
+// ============================================================
+const cmdAsall = seal.ext.newCmdItemInfo();
+cmdAsall.name = 'asall';
+cmdAsall.help =
+  '.asall // 一键绑定全部Y系列魔法少女及其召唤物\n' +
+  '  自动从后端获取魔法少女总数，等同于 .asfull Y1 Y2 ... Y[n]\n' +
+  '  自动包含未来召唤物。';
+cmdAsall.solve = async (ctx, msg, cmdArgs) => {
+  const uid = ctx.player.userId;
+  const gid = getGid(ctx);
+  const pn = seal.format(ctx, '{$t玩家}');
+  const abMode = getAutoMode(ctx);
+  const battleId = ext.storageGet(`pvp_battle_${gid}`);
+
+  // Dynamically fetch total Y-series character count from backend
+  let MAX_Y = 16;  // fallback default
+  if (typeof fetch !== 'undefined') {
+    try {
+      const baseUrl = getPvpServerUrl();
+      const resp = await fetch(`${baseUrl}/api/characters`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.count && data.count > 0) {
+          MAX_Y = data.count;
+        }
+      }
+    } catch(e) {
+      console.log('[.asall] 获取角色总数失败，使用默认值16:', e.message || e);
+    }
+  }
+
+  // Generate all Y-series serials
+  const serials = [];
+  for (let i = 1; i <= MAX_Y; i++) {
+    serials.push(`Y${i}`);
+  }
+
+  const outputs = [];
+  const pvpPromises = [];
+
+  for (const serial of serials) {
+    if (abMode >= 2 && battleId) {
+      const serverUrl = getPvpServerUrl() + '/api/pvp/' + battleId + '/bind';
+      const promise = fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: uid, serial: serial, full: true }),
+      }).then(r => r.json()).then(result => {
+        if (result.error) {
+          return `⚠ .asall ${serial} 失败: ${result.message}`;
+        }
+        storeLocalBinding(uid, result.serial || serial, gid);
+        const fullKey = `bta_asfull_${gid}_${uid}`;
+        const existing = ext.storageGet(fullKey);
+        let fullList = [];
+        if (existing) { try { fullList = JSON.parse(existing); } catch(e) {} }
+        if (!fullList.includes(serial)) fullList.push(serial);
+        ext.storageSet(fullKey, JSON.stringify(fullList));
+        const charName = result.char_name || serial;
+        return `${pn} 已完全绑定【${serial}】${charName}（含全部召唤物）。`;
+      }).catch(err => {
+        ext.storageSet(`pvp_battle_${gid}`, '');
+        storeLocalBinding(uid, serial, gid);
+        return `${pn} 已完全绑定【${serial}】（本地，服务端无响应）`;
+      });
+      pvpPromises.push(promise);
+    } else {
+      storeLocalBinding(uid, serial, gid);
+      const fullKey = `bta_asfull_${gid}_${uid}`;
+      const existing = ext.storageGet(fullKey);
+      let fullList = [];
+      if (existing) { try { fullList = JSON.parse(existing); } catch(e) {} }
+      if (!fullList.includes(serial)) fullList.push(serial);
+      ext.storageSet(fullKey, JSON.stringify(fullList));
+      outputs.push(`${pn} 已完全绑定【${serial}】（含全部召唤物）。`);
+    }
+  }
+
+  // Send output
+  if (abMode >= 2 && battleId && pvpPromises.length > 0) {
+    Promise.all(pvpPromises).then(async results => {
+      const validResults = results.filter(r => r);
+      const okCount = validResults.filter(r => !r.startsWith('⚠')).length;
+      const failCount = validResults.filter(r => r.startsWith('⚠')).length;
+      let finalOut = validResults.filter(r => r.startsWith('⚠')).join('\n');
+      if (okCount > 0) {
+        if (finalOut) finalOut = '\n' + finalOut;
+        finalOut = `${pn} 已一键完全绑定全部 ${MAX_Y} 个Y系列魔法少女（含召唤物），成功 ${okCount} 个，失败 ${failCount} 个。` + finalOut;
+      }
+      await sendAsImage(ctx, msg, finalOut);
+    });
+  } else if (outputs.length > 0) {
+    const finalOut = `${pn} 已一键完全绑定全部 ${MAX_Y} 个Y系列魔法少女（含召唤物）。\n` + outputs.join('\n');
+    await sendAsImage(ctx, msg, finalOut);
+  }
+
   return seal.ext.newCmdExecuteResult(true);
 };
 
@@ -4547,6 +4692,52 @@ function _delayMs(minMs, maxMs, rangeMs) {
     return seal.ext.sleep(delayMs);
   }
   return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Send text as image when pictmode=1, otherwise fallback to text reply.
+ * @param {object} ctx - seal context
+ * @param {object} msg - seal message
+ * @param {string} text - the text content to send (may contain PAGE_SEP for multi-image)
+ * @returns {Promise<boolean>} true if sent as image(s), false if text fallback
+ */
+async function sendAsImage(ctx, msg, text) {
+  const pictmode = seal.ext.getIntConfig(ext, "pictmode");
+  if (pictmode === 1 && typeof fetch !== 'undefined') {
+    try {
+      // Split by PAGE_SEP for multi-page images
+      const pages = text.split(PAGE_SEP).filter(s => s.trim());
+      let sentAny = false;
+      for (const page of pages) {
+        const baseUrl = getPvpServerUrl();
+        const renderUrl = `${baseUrl}/api/render`;
+        console.log('UI:1002', `[sendAsImage] 请求图片渲染 url=${renderUrl} text_len=${page.length}`);
+        const resp = await fetch(renderUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: page.trim() }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.images && data.images.length > 0) {
+            for (const b64 of data.images) {
+              seal.replyToSender(ctx, msg, `[CQ:image,file=base64://${b64}]`);
+            }
+            sentAny = true;
+            continue;
+          }
+        }
+        // Fallback for this page
+        seal.replyToSender(ctx, msg, page.trim());
+      }
+      return sentAny;
+    } catch(e) {
+      console.log('UI:1002', `[sendAsImage] 渲染异常: ${e.message || e}`);
+    }
+  }
+  // Text fallback
+  seal.replyToSender(ctx, msg, text);
+  return false;
 }
 
 /**
@@ -7969,6 +8160,7 @@ ext.cmdMap['stb']      = cmdStb;
 ext.cmdMap['stsave']   = cmdStsave;
 ext.cmdMap['as']       = cmdAs;
 ext.cmdMap['asfull']   = cmdAsfull;
+ext.cmdMap['asall']    = cmdAsall;
 ext.cmdMap['unbind']   = cmdUnbind;
 ext.cmdMap['pr']       = cmdPr;
 ext.cmdMap['app']      = cmdApp;
@@ -8301,8 +8493,8 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
   return seal.ext.newCmdExecuteResult(true);
 };
 ext.cmdMap['i'] = cmdI;
-// Register .s0 through .s9 skill commands
-for (let si = 0; si <= 9; si++) {
+// Register .s0 through .s30 skill commands
+for (let si = 0; si <= 30; si++) {
   ext.cmdMap[`s${si}`] = makeSkillCmd(si);
 }
 
@@ -8531,5 +8723,5 @@ ext.onCommandReceived = (ctx, msg, cmdArgs) => {
 };
 
 console.log('[autocombat] 半自动战斗扩展 v1.2.0 已加载');
-console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .cm .a .s0-.s9 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end .train .jour');
+console.log('[autocombat] 指令: .setab .setrestim .btastart/.btaend .bta .e .hs .unh .stb .stsave .as .asfull .asall .cm .a .s0-.s30 .btaint .btastartfull .btastartfull2 .btastartfullai .g .i end .train .jour');
 console.log('[autocombat] v1.4.0: 全setab2指令代骰、AI训练(.train)、锦标赛(.jour)、整合后端');

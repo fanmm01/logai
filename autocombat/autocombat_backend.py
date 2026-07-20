@@ -14450,6 +14450,16 @@ def _resolve_team_tokens(tokens: list) -> list:
 def ping():
     return jsonify({'status': 'ok', 'service': 'autocombat PvP engine'})
 
+@app.route('/api/characters', methods=['GET'])
+def get_all_characters():
+    """Return all available character serials and count."""
+    try:
+        from characters_data_pvp import ALL_CHARACTERS
+        serials = [c.get('serial', f'Y{i+1}') for i, c in enumerate(ALL_CHARACTERS)]
+        return jsonify({'serials': serials, 'count': len(serials)})
+    except Exception as e:
+        return jsonify({'error': True, 'message': str(e)}), 500
+
 @app.route('/api/pvp/create', methods=['POST'])
 def create_battle():
     """Initialize a new PvP or PvE battle."""
