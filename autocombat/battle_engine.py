@@ -50,8 +50,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ============================================================
 #  Constants
 # ============================================================
+# FLYING_MELEE_RULE: 近战对飞行单位的命中规则
+#   2 = 非飞行单位无法近战飞行目标（默认）
+#   1 = 非飞行单位近战飞行目标时获得1个惩罚骰
+#   0 = 无限制（近战可正常命中飞行单位）
+FLYING_MELEE_RULE = 2
+
 CN_NUMS = ['零','一','二','三','四','五','六','七','八','九','十',
-           '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十']
+           '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
+           '二十一','二十二','二十三','二十四','二十五','二十六','二十七','二十八','二十九','三十']
 CAT_LETTERS = ['a','b','c','d','e','f']
 CAT_NAMES = {1:'伤害',2:'护盾',3:'回复',4:'辅助',5:'召唤',6:'制造',7:'引发',8:'领域',0:'其他'}
 TIMING_NAMES = {1:'被动',2:'主动作',3:'附加动作',4:'反应'}
@@ -69,6 +76,7 @@ AUX_EFFECT_TYPES = {
     25:'移动力+',26:'移动力-',
     27:'MOV+',28:'MOV-',
     29:'消耗hp转为消耗mp',
+    30:'免疫一次伤害',31:'受到伤害上限',32:'受到伤害减免阈值',
 }
 AUX_NAME_TO_CODE = {v: k for k, v in AUX_EFFECT_TYPES.items()}
 
@@ -134,6 +142,80 @@ def season_status_roll(season_avg, uid=None):
     alpha, beta = _get_beta_params(season_avg)
     raw = random.betavariate(alpha, beta)  # 0.0 - 1.0
     return max(0, min(100, int(round(raw * 100))))
+
+
+# ============================================================
+#  DB (Damage Bonus) — COC7 体格→伤害加成映射
+# ============================================================
+_DB_TABLE = {-2: '-2', -1: '-1', 0: '0', 1: '1d4', 2: '1d6', 3: '2d6', 4: '3d6', 5: '4d6'}
+
+
+def _get_db_str(char):
+    """Get the resolved db dice string for a character.
+
+    Priority:
+      1. str_attrs['db'] — direct db specification (e.g. '1d4', '-1', '2d6+1')
+      2. 体格 (Build) → _DB_TABLE lookup
+      3. '0' (no bonus)
+
+    Returns a string like '1d4', '-1', '0', '2d6+1', etc.
+    """
+    if char is None:
+        return '0'
+    # Check for direct db string attribute (e.g., 'db': '1d4' in str_attrs)
+    db_direct = char.get_str('db')
+    if db_direct:
+        return db_direct
+    # Fall back to 体格 → _DB_TABLE
+    build = char.get_attr('体格', 0)
+    return _DB_TABLE.get(int(build), '0')
+
+
+def _resolve_db(dice_expr, build_or_db):
+    """Replace 'db' token in a dice expression with the damage bonus.
+
+    Args:
+        dice_expr: dice expression string (e.g. "1d8+db")
+        build_or_db: either an int (体格 value, looked up in _DB_TABLE)
+                     or a string (direct db dice expression, used as-is)
+
+    Returns the dice expression with 'db' replaced by the resolved value.
+    """
+    if not dice_expr or build_or_db is None:
+        return dice_expr
+    if 'db' not in str(dice_expr).lower():
+        return dice_expr
+
+    # Resolve db value: str → use directly, int → look up table
+    if isinstance(build_or_db, str):
+        db_val = build_or_db
+    else:
+        db_val = _DB_TABLE.get(int(build_or_db), '0')
+
+    expr = str(dice_expr)
+
+    if db_val == '0':
+        # Remove the db term entirely: "+db", "-db", or bare "db"
+        expr = re.sub(r'[+-]?\s*\bdb\b', '', expr, flags=re.IGNORECASE).strip()
+        expr = re.sub(r'^\+\s*', '', expr)  # strip leading '+'
+        if not expr:
+            expr = '0'
+    elif db_val.startswith('-'):
+        # Negative flat value like "-1" or "-2"
+        # "+db" → db_val (the '+' is consumed, db_val already starts with '-')
+        # Use negative lookbehind to avoid matching "-db" (handled by second pattern)
+        expr = re.sub(r'(?<!-)\+?\s*\bdb\b', db_val, expr, flags=re.IGNORECASE)
+        # "-db" with negative db → double negative becomes positive
+        expr = re.sub(r'-\s*\bdb\b', f'+{abs(int(db_val))}', expr, flags=re.IGNORECASE)
+    else:
+        # Positive dice like "1d4", "2d6", etc.
+        # Use negative lookbehind to avoid matching "-db" (handled by second pattern)
+        expr = re.sub(r'(?<!-)\+?\s*\bdb\b', f'+{db_val}', expr, flags=re.IGNORECASE)
+        expr = re.sub(r'-\s*\bdb\b', f'-{db_val}', expr, flags=re.IGNORECASE)
+        # Strip leading '+' for clean standalone expressions like "db"
+        expr = re.sub(r'^\+', '', expr)
+
+    return expr
 
 
 def roll_dice(expr):
@@ -615,6 +697,40 @@ class CombatEngine:
     def _enter_dying_or_die(self, uid, excess_damage=0):
         """On HP≤0: CON save → dying state or death. Returns True if still alive (dying)."""
         if self._is_dying(uid): return True  # Already dying
+
+        # Check for deathPrevention effect
+        effects = self._get_effects()
+        for e in effects:
+            if e.get('type') == 'deathPrevention' and e.get('targetUserId') == uid and e.get('remainingRounds', 0) > 0:
+                # Respawn instead of dying
+                respawn_hp = e.get('respawn_hp', 1)
+                respawn_radius = e.get('respawn_radius', 3)
+                eject_phases = e.get('eject_phases', [])
+                # Set HP to respawn_hp
+                old_hp = self._hp_safe(uid, 10)
+                self._set_combat_hp(uid, respawn_hp)
+                # Clear any dying state
+                effects = [e for e in effects if not (e.get('type') == 'dying' and e.get('targetUserId') == uid)]
+                # Move to a random valid tile within radius (simplified: stay in place)
+                # Lock ejected phases
+                if eject_phases:
+                    char = self.get_char(uid)
+                    existing_locked = char.get_attr('永久移除阶段') or 0
+                    for ph in eject_phases:
+                        existing_locked |= (1 << ph)
+                    char.set_attr('永久移除阶段', existing_locked)
+                    # Switch to first available phase
+                    current_phase = getattr(char, 'phase', 1)
+                    if current_phase in eject_phases:
+                        for new_ph in [1, 2, 3, 4]:
+                            if new_ph not in eject_phases and not (existing_locked & (1 << new_ph)):
+                                self._transition_phase(uid, new_ph)
+                                break
+                # Consume the effect
+                e['remainingRounds'] = 0
+                self._set_effects(effects)
+                cname = self.get_char(uid).name if self.get_char(uid) else '?'
+                return f'{cname} 触发残机替身！以 {respawn_hp} HP 重生。\n'
         char = self.get_char(uid)
         # CON saving throw
         if self._check_con_save(uid, 'normal'):
@@ -628,6 +744,8 @@ class CombatEngine:
                 'remainingRounds': 999, 'persistent': 1,
             })
             self._set_effects(effects)
+            # P2: Teammate first enters dying → allies' limit_gauge +2
+            self._on_ally_dying(uid)
             return True
         else:
             # Failed save → check for revive, else die
@@ -753,13 +871,14 @@ class CombatEngine:
         return result
 
     def _calc_main_actions(self, uid):
-        """计算每回合主动作数。公式: max(1, effective_MOV // 5 + 额外行动数)，无上限。"""
+        """计算每回合主动作数。公式: max(1, (effective_MOV + 4) // 5 + 额外行动数)，无上限。
+        区间映射: MOV 0-5→1动, 6-10→2动, 11-15→3动, 16-20→4动, 21-25→5动, ..."""
         effective_mov = self._get_effective_mov(uid)
         char = self.get_char(self._resolve_uid(uid))
         extra = char.get_attr('额外行动数', None)
         if extra is None:
             extra = char.get_attr('回合行动数', 0)
-        return max(1, effective_mov // 5 + extra)
+        return max(1, (effective_mov + 4) // 5 + extra)
 
     def _get_buff_move_mod(self, uid):
         """从活跃buff中提取MOV/行动力/移动力修改量（每回合缓存）。"""
@@ -1103,6 +1222,54 @@ class CombatEngine:
         """伤害性攻击目标检查：击晕保护(auxVal=0)返回False。不影响治疗/buff。"""
         return not self._is_stun_protected(uid)
 
+    # ── 计数器系统（resourceCounter type=14）──
+
+    def _get_counter(self, uid, counter_type):
+        """Get current value of a resourceCounter effect for uid."""
+        for e in self._get_effects():
+            if e.get('type') == 'resourceCounter' and e.get('targetUserId') == uid \
+               and e.get('counter_type') == counter_type:
+                return e.get('current_value', 0)
+        return 0
+
+    def _mod_counter(self, uid, counter_type, delta, max_val=None):
+        """Modify a resourceCounter by delta. Returns new value."""
+        effects = self._get_effects()
+        for e in effects:
+            if e.get('type') == 'resourceCounter' and e.get('targetUserId') == uid \
+               and e.get('counter_type') == counter_type:
+                mx = max_val if max_val is not None else e.get('max_value', 999)
+                new_val = max(0, min(mx, e.get('current_value', 0) + delta))
+                e['current_value'] = new_val
+                self._set_effects(effects)
+                return new_val
+        return 0
+
+    def _consume_counter(self, uid, counter_type, amount):
+        """Consume counter value. Returns True if enough value was available."""
+        cur = self._get_counter(uid, counter_type)
+        if cur >= amount:
+            self._mod_counter(uid, counter_type, -amount)
+            return True
+        return False
+
+    def _on_ally_dying(self, dying_uid):
+        """P2: When an ally first enters dying, all teammates' limit_gauge +2."""
+        init_list = self._get_initiative()
+        dying_entry = next((e for e in init_list if e['userId'] == dying_uid), None)
+        if not dying_entry: return
+        team = dying_entry.get('team', '')
+        effects = self._get_effects()
+        for e in init_list:
+            if e['team'] == team and e['userId'] != dying_uid and not e.get('isSummon'):
+                # Check if this ally has an active limit_gauge counter effect
+                has_lg = any(ef.get('type') == 'resourceCounter'
+                           and ef.get('targetUserId') == e['userId']
+                           and ef.get('counter_type') == 'limit_gauge'
+                           for ef in effects)
+                if has_lg:
+                    self._mod_counter(e['userId'], 'limit_gauge', 2, 5)
+
     def _get_slow_multiplier(self, uid):
         """获取所有减速效果的乘积。不同来源可叠加时相乘，同名刷新取 max。"""
         resolved = self._resolve_uid(uid)
@@ -1327,7 +1494,7 @@ class CombatEngine:
     def load_spells(self, uid):
         char = self.get_char(uid); spells = []
         current_phase = getattr(char, 'phase', 1)
-        for i in range(1, 21):
+        for i in range(1, 31):
             prefix = f"技能{CN_NUMS[i]}"
             name = char.get_str(f"{prefix}名称")
             if not name: continue
@@ -1335,6 +1502,12 @@ class CombatEngine:
             spell_phase = char.get_attr(f"{prefix}阶段") or 0
             if spell_phase != 0 and spell_phase != current_phase:
                 continue
+            # Weapon required check
+            wpn_req = char.get_str(f"{prefix}weapon_required")
+            if wpn_req:
+                current_wpn = char.get_str('_weapon_name') or 'staff'
+                if current_wpn != wpn_req:
+                    continue
             spell = {'index': i, 'name': name, 'effects': []}
             for k in ['级别','类别','消耗mp','消耗san','熟练度','里程碑','吟唱回合','默认延续性']:
                 v = char.get_attr(f"{prefix}{k}")
@@ -1350,6 +1523,20 @@ class CombatEngine:
             # Read _mp_formula
             mpf = char.get_str(f"{prefix}_mp_formula")
             if mpf: spell['_mp_formula'] = mpf
+            # Read weapon_required
+            wpn_req = char.get_str(f"{prefix}weapon_required")
+            if wpn_req: spell['weapon_required'] = wpn_req
+            # Read counter fields
+            cr_str = char.get_str(f"{prefix}counter_required")
+            if cr_str:
+                try: spell['counter_required'] = json.loads(cr_str)
+                except: pass
+            cct = char.get_str(f"{prefix}cost_counter_type")
+            if cct: spell['cost_counter_type'] = cct
+            cca = char.get_attr(f"{prefix}cost_counter_amount")
+            if cca: spell['cost_counter_amount'] = cca
+            ob = char.get_attr(f"{prefix}_once_per_battle")
+            if ob: spell['_once_per_battle'] = True
             for ci, letter in enumerate(CAT_LETTERS):
                 pl = f"{prefix}类别{letter}"
                 has_data = bool(char.get_attr(f"{pl}客体") or char.get_str(f"{pl}伤害骰") or
@@ -1896,14 +2083,15 @@ class CombatEngine:
     def _get_damage_dice(self, uid, skill_name):
         """Look up damage dice with suffix support.
         Maps skill names to damage suffixes: e.g. 剑→'a', 斗殴→'b'.
-        Falls back to 伤害値."""
+        Falls back to 伤害値. Resolves 'db' token from character's 体格."""
         char = self.get_char(uid)
+        db_str = _get_db_str(char)
         suffix_map = {'剑': 'a', '斗殴': 'b'}
         suffix = suffix_map.get(skill_name, '')
         if suffix:
             dd = char.get_str(f"伤害值{suffix}")
-            if dd: return dd
-        return char.get_str("伤害值") or "1d4"
+            if dd: return _resolve_db(dd, db_str)
+        return _resolve_db(char.get_str("伤害值") or "1d4", db_str)
 
     def _get_phase(self, uid):
         char = self.get_char(uid)
@@ -1918,6 +2106,14 @@ class CombatEngine:
         char = self.get_char(caster_id)
         tname = self.get_char(target_id).name if target_id and target_id != caster_id else '自身'
         out = f'{char.name} 释放【{spell["name"]}】→ {tname}\n'
+
+        # _once_per_battle: check if spell already used this battle
+        if spell.get('_once_per_battle'):
+            consumed = getattr(char, '_once_consumed', set())
+            if spell['name'] in consumed:
+                return f'{char.name} 本场战斗已使用过【{spell["name"]}】！\n'
+            consumed.add(spell['name'])
+            char._once_consumed = consumed
 
         # MP cost: support dice expressions and formulas
         mp_cost_raw = spell.get('消耗mp', 0)
@@ -1959,6 +2155,23 @@ class CombatEngine:
             if not can_atk:
                 return f'{char.name} 无法接近目标！（射程={atk_range}）'
 
+        # Check counter cost (rings, etc.)
+        cost_ct = spell.get('cost_counter_type', '')
+        cost_ca = spell.get('cost_counter_amount', 0)
+        if cost_ct and cost_ca:
+            if not self._consume_counter(caster_id, cost_ct, cost_ca):
+                return f'{char.name} 资源不足！需要 {cost_ca} {cost_ct}。\n'
+            out += f'  消耗 {cost_ca} {cost_ct}\n'
+
+        # Check counter requirement (e.g. 极限技·凶斩)
+        cr = spell.get('counter_required')
+        if cr:
+            cr_type, cr_amount = cr
+            if self._get_counter(caster_id, cr_type) < cr_amount:
+                return f'{char.name} {cr_type}不足！需要 {cr_amount}。\n'
+            self._consume_counter(caster_id, cr_type, cr_amount)
+            out += f'  消耗 {cr_amount} {cr_type}\n'
+
         # AUX 9/10: MP cost modifiers
         if mp_cost > 0:
             mp_cost = max(1, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
@@ -1975,6 +2188,20 @@ class CombatEngine:
 
         # ── 被动标记：若法术时机含'1'（被动），所有产生效果标记 sourcePassive ──
         is_passive_spell = has_timing(spell.get('时机', '2'), '1')
+
+        # ── same_target_multiplier: if all damage effects target the same unit, amplify ──
+        stm = spell.get('same_target_multiplier', 0)
+        if stm > 0:
+            dmg_effs_all = [e for e in spell.get('effects', []) if e.get('type') == 1]
+            if len(dmg_effs_all) > 1:
+                targets = set()
+                for de in dmg_effs_all:
+                    tgt = target_id  # all effects use the same target_id
+                    targets.add(tgt)
+                if len(targets) == 1:
+                    # Store multiplier so damage handlers can apply it
+                    spell['_same_target_mult_active'] = stm
+                    out += f'  同一目标加成: ×{stm}\n'
 
         for eff in spell.get('effects', []):
             ct = eff['type']
@@ -2253,11 +2480,83 @@ class CombatEngine:
                 self._set_effects(effects)
                 out += f'  战意值光环已激活\n'
 
+            elif ct == 13:  # deathPrevention — 残机替身
+                effects = self._get_effects()
+                effects.append({
+                    'type': 'deathPrevention', 'sourceUserId': caster_id, 'targetUserId': caster_id,
+                    'respawn_hp': eff.get('respawn_hp', 1), 'respawn_radius': eff.get('respawn_radius', 3),
+                    'eject_phases': eff.get('eject_phases', []), 'once_per_transform': eff.get('once_per_transform', True),
+                    'remainingRounds': eff.get('持续回合', 999), 'persistent': spell.get('默认延续性', 0),
+                    'spellName': spell['name'], 'spellIndex': spell['index'],
+                })
+                if is_passive_spell:
+                    effects[-1]['sourcePassive'] = True
+                self._set_effects(effects)
+                out += f'  获得残机替身（死亡时以1HP重生）\n'
+
+            elif ct == 14:  # resourceCounter — 计数器
+                effects = self._get_effects()
+                # Check if counter already exists (update it)
+                existing = None
+                for e in effects:
+                    if e.get('type') == 'resourceCounter' and e.get('targetUserId') == (target_id or caster_id) \
+                       and e.get('counter_type') == eff.get('counter_type', ''):
+                        existing = e; break
+                if existing:
+                    existing['max_value'] = max(existing.get('max_value', 0), eff.get('max_value', 999))
+                    mod_delta = eff.get('mod_delta', 0)
+                    if mod_delta:
+                        existing['current_value'] = min(existing['max_value'], existing.get('current_value', 0) + mod_delta)
+                else:
+                    effects.append({
+                        'type': 'resourceCounter', 'counter_type': eff.get('counter_type', ''),
+                        'sourceUserId': caster_id, 'targetUserId': target_id or caster_id,
+                        'max_value': eff.get('max_value', 999), 'current_value': eff.get('current_value', 0),
+                        'remainingRounds': eff.get('持续回合', 999), 'persistent': spell.get('默认延续性', 0),
+                        'spellName': spell['name'], 'spellIndex': spell['index'],
+                    })
+                    if is_passive_spell:
+                        effects[-1]['sourcePassive'] = True
+                self._set_effects(effects)
+                out += f'  初始化 {eff.get("counter_type","")} 计数器 (max={eff.get("max_value",999)})\n'
+
+            elif ct == 17:  # stateToggle — 形态/武器切换
+                target_phase = eff.get('target_phase', 0)
+                weapon_state = eff.get('weapon_state', '')
+                if target_phase:
+                    self._transition_phase(caster_id, target_phase)
+                    out += f'  切换到阶段 {target_phase}\n'
+                if weapon_state:
+                    char.set_attr('_weapon_state', {'staff': 0, 'bow': 1, 'sword': 2}.get(weapon_state, 0))
+                    char.set_str('_weapon_name', weapon_state)
+                    out += f'  切换武器为 {weapon_state}\n'
+
+            elif ct == 18:  # allyTeleport — 传送至友方身边
+                ally = self.get_char(target_id)
+                if ally:
+                    caster_char = self.get_char(caster_id)
+                    # Find ally position on map
+                    ally_coord = None
+                    map_data = self._get_map()
+                    if map_data:
+                        for c, occ in map_data.get('occupants', {}).items():
+                            if occ == target_id: ally_coord = c; break
+                    if ally_coord:
+                        # Move caster to ally's position (if unoccupied or replace)
+                        caster_coord = None
+                        for c, occ in list(map_data.get('occupants', {}).items()):
+                            if occ == caster_id: caster_coord = c; break
+                        if caster_coord and caster_coord in map_data.get('occupants', {}):
+                            del map_data['occupants'][caster_coord]
+                        map_data['occupants'][ally_coord] = caster_id
+                        self._set_map(map_data)
+                        out += f'  {caster_char.name} 传送至 {ally.name} 身边\n'
+
         return out
 
     def _apply_spell_damage(self, caster_id, target_id, dmg_dice, pen, leth,
                              lifesteal_ratio=0, dot_dice='', dur=0, spell_name='',
-                             spell_index=0, atk_rank=1, atk_roll=0):
+                             spell_index=0, atk_rank=1, atk_roll=0, spell=None):
         """Apply direct spell damage to target. Shared by base and reaction paths.
         When atk_rank > 1, applies COC7 rank-based damage (rank 2=advantage, rank 3=max/pen, rank 4=×2).
         Returns output string for the damage application step."""
@@ -2287,7 +2586,26 @@ class CombatEngine:
             dmg_val, dmg_detail = roll_dice_detailed(dmg_dice)
         # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(caster_id, target_id) * self._get_buff_dmg_dice_mult(caster_id))
+        # same_target_multiplier
+        if spell and spell.get('_same_target_mult_active', 0) > 0:
+            dmg_val = int(dmg_val * spell['_same_target_mult_active'])
         dmg_val += self._get_buff_dmg_flat(target_id); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
+        # Check for damageModifier effects (e.g. 火鼠裘)
+        for e in self._get_effects():
+            if e.get('type') == 'damageModifier' and e.get('targetUserId') == target_id \
+               and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
+                def_char = self.get_char(target_id)
+                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
+                if cur_mp >= 1:
+                    def_char.set_attr('魔力', cur_mp - 1)
+                    if dmg_val <= 3:
+                        dmg_val = 0
+                    elif dmg_val < 7:
+                        dmg_val = 3
+                    else:
+                        dmg_val = int(dmg_val * 0.6)
+                    out += f'  火鼠裘减免：最终伤害 {dmg_val}\n'
+                break
         eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
         cur_hp = self._get_combat_hp(target_id) or 10
         # Lethality: d(2×cur_hp) ≤ 致死值 → instant death
@@ -2338,12 +2656,35 @@ class CombatEngine:
         FullBattleEngine overrides to insert reaction between success and damage."""
         out = ''
         dmg_dice = eff.get('伤害骰', '1d4')
+        char = self.get_char(caster_id) if caster_id else None
+        dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
         sr = eff.get('成功率', 0)
         dur = eff.get('持续回合', 0)
         dot_dice = eff.get('每回合伤害骰', '')
         ls = float(eff.get('吸血比例', '0') or '0')
+
+        # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
+        if eff.get('幻造'):
+            # Look for 幻造兵武 passive effect on caster
+            caster_effects = self._get_effects()
+            phantom_bonus = 0
+            for ce in caster_effects:
+                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+                   and ce.get('targetUserId') == caster_id:
+                    if char:
+                        writing_val = char.get_attr('写作', 0) or char.get_attr('写作', 0) or 0
+                        if writing_val > 0:
+                            roll, _ = roll_d100('')
+                            if roll <= writing_val:
+                                phantom_bonus = ce.get('auxVal', 0) or 0
+                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                            else:
+                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
+                    break
+            if phantom_bonus > 0:
+                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior
         friend_behavior = eff.get('友方行为', '')
@@ -2453,7 +2794,7 @@ class CombatEngine:
             out += self._apply_spell_damage(caster_id, target_id, dmg_dice, pen, leth,
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
-                                            atk_rank=atk_rank, atk_roll=check_roll)
+                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell)
         return out
 
     # ---- Battle Spirit processing (环花暖 passive) ----
@@ -2610,8 +2951,13 @@ class CombatEngine:
             new_effects.append(e)
         self._set_effects(new_effects)
 
-        # Ignite existing summons
-        if new_phase == 2:
+        # Ignite existing summons (generic: check if new phase has any ignite spells)
+        new_spells = char.spells  # spells reloaded after phase change
+        has_ignite = any(
+            any(e.get('type') == 5 and e.get('ignite') for e in s.get('effects', []))
+            for s in new_spells
+        )
+        if has_ignite:
             ignite_msgs = self._ignite_summons(uid)
             msgs.extend(ignite_msgs)
 
@@ -2665,6 +3011,12 @@ class CombatEngine:
         # Re-fetch effects: _check_hp_triggers and _process_zone_specials may have
         # modified effects (e.g., removed zones on phase transition)
         effects = self._get_effects()
+
+        # Auto-increment limit_gauge counters
+        for e in effects:
+            if e.get('type') == 'resourceCounter' and e.get('counter_type') == 'limit_gauge':
+                e['current_value'] = min(e.get('max_value', 5), e.get('current_value', 0) + 1)
+        self._set_effects(effects)
 
         # ---- Dying state round-start CON saves ----
         for eff in effects:
@@ -2802,6 +3154,13 @@ class CombatEngine:
                     msgs.append(f"点燃: {entry.get('name', sid)} 受到 {ignite_dmg} 点火焰伤害 (HP:{max(0, hp - ignite_dmg)})")
                     if hp - ignite_dmg <= 0:
                         msgs.append(f"  {entry.get('name', sid)} 被火焰烧尽！")
+
+        # Clear _once_per_round consumed sets for all characters
+        for entry in init_list:
+            uid = entry.get('baseUserId', entry['userId'])
+            char = self.get_char(uid)
+            if char and hasattr(char, '_round_consumed'):
+                char._round_consumed = set()
 
         # MP regen per round — deduplicate by base uid for multi-action characters
         seen_uids = set()
@@ -3081,10 +3440,41 @@ class FullBattleEngine(CombatEngine):
         if not can_atk:
             lines.append(f'{aname} 无法接近目标！（射程={atk_range}）')
             return (def_uid, atk_uid, lines)
-        # ── 飞行近战限制：非飞行单位不能近战飞行目标 ──
-        if not self._can_melee(atk_uid, def_uid):
+        # ── 飞行近战限制 ──
+        can_melee, fly_penalty = self._can_melee(atk_uid, def_uid)
+        if not can_melee:
             lines.append(f'{aname} 无法近战飞行目标 {dname}！')
             return (def_uid, atk_uid, lines)
+        if fly_penalty:
+            bp_suffix = (bp_suffix or '') + 'p'  # 飞行近战惩罚骰
+
+        # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
+        def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
+        if def_spells is None:
+            def_spells = self.load_spells(def_uid)
+        for ds in (def_spells or []):
+            if has_timing(ds.get('时机', '2'), '4'):
+                # Check _once_per_battle
+                if ds.get('_once_per_battle'):
+                    consumed = getattr(dchar, '_once_consumed', set())
+                    if ds['name'] in consumed:
+                        continue
+                    consumed.add(ds['name'])
+                    dchar._once_consumed = consumed
+                # Check _once_per_round
+                if ds.get('_once_per_round'):
+                    consumed_round = getattr(dchar, '_round_consumed', set())
+                    if ds['name'] in consumed_round:
+                        continue
+                    consumed_round.add(ds['name'])
+                    dchar._round_consumed = consumed_round
+                # Auto-trigger the reaction spell (self-target or at attacker)
+                react_target = atk_uid if any(
+                    str(e.get('客体', 0)).upper() in ('4', '5', '45', 'R', 'RP')
+                    for e in ds.get('effects', []) if e.get('type') == 1
+                ) else def_uid
+                react_out = self._execute_spell(def_uid, react_target, ds)
+                lines.append(f'  [{dname} 反应] {react_out.strip()}')
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
         atk_buffs = self._get_active_buffs(atk_uid)
         # 行动力优势合并到攻击BP
@@ -3180,6 +3570,7 @@ class FullBattleEngine(CombatEngine):
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
                 loser_name, winner_name = aname, dname; winner_roll = rr
                 cdmg = dchar.get_str("伤害值") or "1d4"; cpen = dchar.get_attr("伤害贯穿",1)
+                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
                 cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
             elif eff_atk > eff_react and eff_atk > 0:
@@ -3216,6 +3607,7 @@ class FullBattleEngine(CombatEngine):
                     # ---- Defender counter-hits attacker ----
                     if not self._is_untargetable(atk_uid):
                         cdmg = dchar.get_str("伤害值") or "1d4"
+                        cdmg = _resolve_db(cdmg, _get_db_str(dchar))
                         cpen = dchar.get_attr("伤害贯穿",1)
                         cleth = dchar.get_attr("致死骰",1) or 0
                         dmx = max_damage(cdmg); ddmg = 0; ddetail = ""
@@ -3354,6 +3746,22 @@ class FullBattleEngine(CombatEngine):
         # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(winner_uid, loser_uid) * self._get_buff_dmg_dice_mult(winner_uid))
         dmg_val += self._get_buff_dmg_flat(loser_uid); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
+        # Check for damageModifier effects (e.g. 火鼠裘)
+        for e in self._get_effects():
+            if e.get('type') == 'damageModifier' and e.get('targetUserId') == loser_uid \
+               and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
+                def_char = self.get_char(loser_uid)
+                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
+                if cur_mp >= 1:
+                    def_char.set_attr('魔力', cur_mp - 1)
+                    if dmg_val <= 3:
+                        dmg_val = 0
+                    elif dmg_val < 7:
+                        dmg_val = 3
+                    else:
+                        dmg_val = int(dmg_val * 0.6)
+                    lines.append(f'  火鼠裘减免：最终伤害 {dmg_val}')
+                break
         sr = self._absorb_damage_with_shield(loser_uid, dmg_val); eff_dmg = sr[0]
         if sr[1] > 0: lines.append(f"  护盾吸收: {sr[1]}点")
         cur_hp = self._get_combat_hp(loser_uid) or 10
@@ -3397,12 +3805,35 @@ class FullBattleEngine(CombatEngine):
         Inserts dodge/counter reaction between success check and damage application."""
         out = ''
         dmg_dice = eff.get('伤害骰', '1d4')
+        char = self.get_char(caster_id) if caster_id else None
+        dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
         sr = eff.get('成功率', 0)
         dur = eff.get('持续回合', 0)
         dot_dice = eff.get('每回合伤害骰', '')
         ls = float(eff.get('吸血比例', '0') or '0')
+
+        # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
+        if eff.get('幻造'):
+            # Look for 幻造兵武 passive effect on caster
+            caster_effects = self._get_effects()
+            phantom_bonus = 0
+            for ce in caster_effects:
+                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+                   and ce.get('targetUserId') == caster_id:
+                    if char:
+                        writing_val = char.get_attr('写作', 0) or 0
+                        if writing_val > 0:
+                            roll, _ = roll_d100('')
+                            if roll <= writing_val:
+                                phantom_bonus = ce.get('auxVal', 0) or 0
+                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                            else:
+                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
+                    break
+            if phantom_bonus > 0:
+                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior (same as base)
         friend_behavior = eff.get('友方行为', '')
@@ -3540,7 +3971,7 @@ class FullBattleEngine(CombatEngine):
             out += self._apply_spell_damage(caster_id, target_id, dmg_dice, pen, leth,
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
-                                            atk_rank=atk_rank, atk_roll=check_roll)
+                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell)
         return out
 
     def _trigger_spell_reaction(self, caster_id, target_id, eff, spell, dmg_dice,
@@ -3714,6 +4145,7 @@ class FullBattleEngine(CombatEngine):
                 lines.append(f"  {dchar.name} 反击成功！但 {achar.name} 不可选中，无法命中。法术被击破。")
                 return (False, True, lines)
             cdmg = dchar.get_str("伤害值") or "1d4"
+            cdmg = _resolve_db(cdmg, dchar.get_attr('体格', 0))
             cpen = dchar.get_attr("伤害贯穿", 1)
             cleth = dchar.get_attr("致死骰", 1) or 0
             _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
@@ -3729,6 +4161,7 @@ class FullBattleEngine(CombatEngine):
             # Mutual hit — both take damage
             if not self._is_untargetable(caster_id):
                 cdmg = dchar.get_str("伤害值") or "1d4"
+                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
             else:
@@ -4215,6 +4648,12 @@ class FullBattleEngine(CombatEngine):
         # Ignited summons use their ignite damage dice
         if entry.get("ignited"):
             dmg_dice = entry.get('ignite_dmg_dice', '2d4')
+        # Resolve db using summon owner's 体格
+        owner_id = entry.get('ownerId')
+        if owner_id:
+            owner_char = self.get_char(owner_id)
+            if owner_char:
+                dmg_dice = _resolve_db(dmg_dice, _get_db_str(owner_char))
         sk_label = sk_name or "攻击"
         # Battle spirit penalty dice
         pens = entry.get('battle_spirit_penalty_dice', 0)
@@ -4285,8 +4724,15 @@ class FullBattleEngine(CombatEngine):
         return any(b.get("auxType")=="飞行" for b in self._get_active_buffs(uid))
 
     def _can_melee(self, atk_uid, def_uid):
-        if not self._is_flying(atk_uid) and self._is_flying(def_uid): return False
-        return True
+        """Check melee vs flying. Returns (can_attack:bool, penalty_die:bool)."""
+        atk_flying = self._is_flying(atk_uid)
+        def_flying = self._is_flying(def_uid)
+        if not atk_flying and def_flying:
+            if FLYING_MELEE_RULE >= 2:
+                return False, False
+            elif FLYING_MELEE_RULE == 1:
+                return True, True  # can attack with penalty die
+        return True, False
 
     def _apply_zone_effects(self):
         effects = self._get_effects(); il = self._get_initiative()
@@ -4316,6 +4762,9 @@ class FullBattleEngine(CombatEngine):
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
                     # 隔离：不受领域效果影响
                     if self._has_status(entry['userId'], '隔离'):
+                        continue
+                    # ally_safe: skip allies if zone is marked ally-safe
+                    if eff.get('ally_safe') and entry.get('team') == zone_team:
                         continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
                     pos_key = (ec, spell_name)
@@ -4892,6 +5341,9 @@ class FastBattleEngine(FullBattleEngine):
                     # 隔离：不受领域效果影响
                     if self._has_status(entry['userId'], '隔离'):
                         continue
+                    # ally_safe: skip allies if zone is marked ally-safe
+                    if eff.get('ally_safe') and entry.get('team') == zone_team:
+                        continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
                     pos_key = (ec, spell_name)
                     if not stackable and pos_key in processed_zone_positions:
@@ -5147,8 +5599,15 @@ class FastBattleEngine(FullBattleEngine):
         return any(b.get("auxType")=="飞行" for b in self._get_active_buffs(uid))
 
     def _can_melee(self, atk_uid, def_uid):
-        if not self._is_flying(atk_uid) and self._is_flying(def_uid): return False
-        return True
+        """Check melee vs flying. Returns (can_attack:bool, penalty_die:bool)."""
+        atk_flying = self._is_flying(atk_uid)
+        def_flying = self._is_flying(def_uid)
+        if not atk_flying and def_flying:
+            if FLYING_MELEE_RULE >= 2:
+                return False, False
+            elif FLYING_MELEE_RULE == 1:
+                return True, True  # can attack with penalty die
+        return True, False
 
     # ---- Fast attack (simplified but with lethality + shield) ----
     # ---- Fast COC7 attack with success-rank damage + reaction (training mode) ----
@@ -5161,8 +5620,11 @@ class FastBattleEngine(FullBattleEngine):
         if not can_atk:
             return (def_uid, atk_uid, 0, f"射程不足 (range={atk_range})")
         # ── 飞行近战限制 ──
-        if not self._can_melee(atk_uid, def_uid):
+        can_melee, fly_penalty = self._can_melee(atk_uid, def_uid)
+        if not can_melee:
             return (def_uid, atk_uid, 0, f"无法近战飞行目标")
+        if fly_penalty:
+            pen += 1  # 飞行近战惩罚骰
         # AUX code 4: merge bonus damage dice
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
         if bonus_dice:
@@ -5231,6 +5693,7 @@ class FastBattleEngine(FullBattleEngine):
             if eff_react > eff_atk and eff_react > 0:
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
                 cdmg = dchar.get_str("伤害值") or "1d4"
+                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
                 cpen = dchar.get_attr("伤害贯穿",1); cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
             elif eff_atk > eff_react and eff_atk > 0:
@@ -5304,6 +5767,21 @@ class FastBattleEngine(FullBattleEngine):
         # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(winner_uid, loser_uid) * self._get_buff_dmg_dice_mult(winner_uid))
         dmg_val += self._get_buff_dmg_flat(loser_uid); dmg_val = max(0, dmg_val)  # AUX code 2: before shield
+        # Check for damageModifier effects (e.g. 火鼠裘)
+        for e in self._get_effects():
+            if e.get('type') == 'damageModifier' and e.get('targetUserId') == loser_uid \
+               and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
+                def_char = self.get_char(loser_uid)
+                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
+                if cur_mp >= 1:
+                    def_char.set_attr('魔力', cur_mp - 1)
+                    if dmg_val <= 3:
+                        dmg_val = 0
+                    elif dmg_val < 7:
+                        dmg_val = 3
+                    else:
+                        dmg_val = int(dmg_val * 0.6)
+                break
         eff_dmg, _, _ = self._absorb_damage_with_shield(loser_uid, dmg_val)
         cur_hp = self._get_combat_hp(loser_uid) or 10
         exp_dmg = avg_damage(dmg_dice)
@@ -5365,6 +5843,21 @@ class FastBattleEngine(FullBattleEngine):
         # AUX 1,3,19: apply damage multipliers before shield
         dmg_val = int(dmg_val * self._get_buff_dmg_mult(uid, tid) * self._get_buff_dmg_dice_mult(uid))
         dmg_val += self._get_buff_dmg_flat(tid); dmg_val = max(0, dmg_val)  # AUX code 2: before shields
+        # Check for damageModifier effects (e.g. 火鼠裘)
+        for e in self._get_effects():
+            if e.get('type') == 'damageModifier' and e.get('targetUserId') == tid \
+               and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
+                def_char = self.get_char(tid)
+                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
+                if cur_mp >= 1:
+                    def_char.set_attr('魔力', cur_mp - 1)
+                    if dmg_val <= 3:
+                        dmg_val = 0
+                    elif dmg_val < 7:
+                        dmg_val = 3
+                    else:
+                        dmg_val = int(dmg_val * 0.6)
+                break
         eff_dmg, _, _ = self._absorb_damage_with_shield(tid, dmg_val)
         eff_dmg = self._apply_shield_block(tid, eff_dmg)
         cur_hp = self._get_combat_hp(tid) or 10

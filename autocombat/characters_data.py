@@ -338,6 +338,9 @@ import json
 
 from battle_engine import CN_NUMS, CAT_LETTERS
 
+# ── 调试开关：设为 1 时，所有技能射程强制变为 99（无视原始射程限制）──
+GLOBAL_RANGE_OVERRIDE = 1
+
 # ============================================================
 #  召唤物模板数据 (summon templates)
 #  以 character attributes 形式存储: 召唤物模板{N}名称, HP, DEX, 技能1-3等
@@ -354,7 +357,7 @@ SUMMON_TEMPLATES = {
     '生灵': {
         'HP': 6, 'MP': 0, 'SAN': 0,
         'STR': 30, 'CON': 30, 'SIZ': 30, 'DEX': 85, 'APP': 20, 'INT': 10, 'POW': 10, 'EDU': 0,
-        '闪避': 42, 'MOV': 6, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        '闪避': 42, 'MOV': 10, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'skills': ['斗殴:40 1d4'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
@@ -362,7 +365,6 @@ SUMMON_TEMPLATES = {
         'HP': 24, 'MP': 0, 'SAN': 0,
         'STR': 60, 'CON': 50, 'SIZ': 60, 'DEX': 15, 'APP': 10, 'INT': 1, 'POW': 10, 'EDU': 0,
         '闪避': 7, 'MOV': 8, '额外行动数': 0, '可反击': 1, '可反应': 1,
-        # 藤蔓恒被禁锢 — 由 _create_summon 在创建时添加永久禁锢buff
         'permanent_statuses': ['禁锢'],
         'skills': ['鞭:50 1d8+1d6'],
         'max_simultaneous': 2, 'max_total_spawned': 6,
@@ -377,10 +379,18 @@ SUMMON_TEMPLATES = {
     '玄武': {
         'HP': 80, 'MP': 0, 'SAN': 0,
         'STR': 70, 'CON': 70, 'SIZ': 80, 'DEX': 30, 'APP': 20, 'INT': 20, 'POW': 20, 'EDU': 0,
-        '闪避': 15, 'MOV': 3, '额外行动数': 0, '可反击': 1, '可反应': 1, '可格挡': 1,
-        '格挡': 60,
+        '闪避': 15, 'MOV': 3, '额外行动数': 1, '可反击': 1, '可反应': 1, '可格挡': 1,
+        '格挡': 75,
         'size_2x2': True,  # 2×2占据
         'skills': ['盾击:50 1d4+3d6', '盾牌冲撞:50 3d6'],
+        # spells for .s1 command (s0 = basic attack from skills[0])
+        'spells': [
+            {
+                'name': '盾牌冲撞', 'index': 1, 'phase': 1, 'timing': '2', 'category': 1,
+                'effects': [{'type': 1, '客体': 4, '伤害骰': '3d6', '成功率': 50, '射程': 1,
+                             '可闪避性': 1, '可反击性': 1, '可贯穿性': 0, '致死值': 0}],
+            },
+        ],
         'react_dodge': 10, 'react_counter': 10, 'react_block': 80,
         'shield_block': 100, 'shield_block_rate': 0.75,
         'ignore_unreactable_block': True,
@@ -394,6 +404,14 @@ SUMMON_TEMPLATES = {
         '闪避': 85, 'MOV': 11, '额外行动数': 0, '可反击': 1, '可反应': 1,
         'flying': True,  # 非飞行不可近战
         'skills': ['爪击:75 2d6+4', '俯冲:70 2d8+1d6+4'],
+        # spells for .s1 command (s0 = basic attack from skills[0])
+        'spells': [
+            {
+                'name': '俯冲', 'index': 1, 'phase': 1, 'timing': '2', 'category': 1,
+                'effects': [{'type': 1, '客体': 4, '伤害骰': '2d8+1d6+4', '成功率': 70, '射程': 1,
+                             '可闪避性': 1, '可反击性': 1, '可贯穿性': 0, '致死值': 0}],
+            },
+        ],
         'merge_group': 'trinity',
         'merge_result': '三合一',
         'max_simultaneous': 1, 'max_total_spawned': 1,
@@ -401,14 +419,9 @@ SUMMON_TEMPLATES = {
     '龙虎': {
         'HP': 140, 'MP': 50, 'SAN': 0,
         'STR': 80, 'CON': 80, 'SIZ': 80, 'DEX': 60, 'APP': 30, 'INT': 30, 'POW': 30, 'EDU': 0,
-        '闪避': 40, 'MOV': 8, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        '闪避': 40, 'MOV': 8, '额外行动数': 1, '可反击': 1, '可反应': 1,
         'skills': [
-            {'name': '斗殴', 'val': 80, 'dice': '2d6'},
-            {'name': '水火弹', 'val': 70, 'dice': '1d4+2d6', 'hits': 2,
-             'on_whiff_aoe_dmg': '4d10', 'on_whiff_mp_cost': 10},
-            {'name': '治愈领域', 'skill_type': 'zone_heal',
-             'zone_heal_hp': '2d6', 'zone_radius': 8, 'zone_duration': 3,
-             'mp_cost': 8, 'cooldown_rounds': 3},
+            {'name': '斗殴', 'val': 80, 'dice': '2d6'}
         ],
         # spells for .s1 / .s2 commands (s0 = basic attack from skills[0])
         'spells': [
@@ -440,7 +453,7 @@ SUMMON_TEMPLATES = {
         'HP': 200, 'MP': 50, 'SAN': 0,
         'STR': 90, 'CON': 90, 'SIZ': 90, 'DEX': 80, 'APP': 40, 'INT': 40, 'POW': 40, 'EDU': 0,
         '闪避': 60, 'MOV': 10, '额外行动数': 0, '可反击': 1, '可反应': 1, '可格挡': 1,
-        '格挡': 70,
+        '格挡': 75,
         'flying': True,
         'shield_block': 50, 'shield_block_rate': 0.70, 'react_block': 50,
         'ignore_unreactable_block': True,
@@ -620,7 +633,7 @@ XUETIANSHI = {
         {
             'name':'吸血', 'timing':'2', 'category':1,
             'effects':[{
-                'type':1, '客体':4, '伤害骰':'2d4+1d6+2', '可闪避性':0, '可反击性':0, '射程':2, '吸血比例':'1.0',
+                'type':1, '客体':4, '伤害骰':'2d4+1d6+2', '可闪避性':0, '可反击性':1, '射程':2, '吸血比例':'1.0',
             }]
         },
     ]
@@ -649,14 +662,14 @@ XUEREN = {
                  '每回合伤害骰':'1d6', '属性削减':'行动力-5',  # DOT 1d4→1d6
                  '领域中心跟随':0},
                 {'type':1, '客体':45, '伤害骰':'1d6+1d4', '成功率':70,  # 初始伤害提升
-                 '可闪避性':0, '可反击性':0, '射程':99},
+                 '可闪避性':1, '可反击性':0, '射程':99},
             ]
         },
         {
             'name':'发送雪球', 'timing':'2', 'category':1, '消耗mp':2,
             'effects':[{
                 'type':1, '客体':4, '伤害骰':'1d6+1d4+2', '成功率':75,
-                '可闪避性':0, '可反击性':0, '射程':99,
+                '可闪避性':1, '可反击性':0, '射程':99,
             }]
         },
     ]
@@ -770,7 +783,7 @@ MULUO = {
         # Skill 3a: 领域·生 — 8x8治疗+敏捷+10
         {'name':'领域·生', 'phase':1, 'timing':'2', 'category':8, 'default_persist':0, '消耗mp':5,
          'effects':[
-             {'type':8, '客体':3, '作用半径':8, '持续回合':3, '回复hp':'1d8', '领域中心跟随':1},
+             {'type':8, '客体':3, '作用半径':20, '持续回合':3, '回复hp':'1d8', '领域中心跟随':1},
              {'type':4, '客体':3, '持续回合':3, '技能加减值':'敏捷+10'},
          ]},
         # Skill 4: 阶段转换 — HP阈值(2/3,1/2,1/3,1/6)检定(30/50/80/100%), 消耗2d6 SAN
@@ -797,7 +810,7 @@ MULUO = {
         # Skill 3b: 领域·灭 — 全场2d4伤害 + 友方敏捷+10 + 友方伤害骰优势
         {'name':'领域·灭', 'phase':2, 'timing':'2', 'category':8, 'default_persist':0, '消耗mp':5,
          'effects':[
-             {'type':8, '客体':135, '作用半径':8, '持续回合':99, '每回合伤害骰':'2d4', '领域中心跟随':1},
+             {'type':8, '客体':135, '作用半径':20, '持续回合':99, '每回合伤害骰':'2d4', '领域中心跟随':1},
              {'type':4, '客体':13, '持续回合':99, '技能加减值':'敏捷+10'},
              {'type':4, '客体':3, '持续回合':99, '辅助效果':'造成伤害百分比', '辅助效果值':'+10' },
              {'type':4, '客体':3, '持续回合':99, '辅助效果':'伤害成功率奖励惩罚', '辅助效果值':'b' },   
@@ -815,8 +828,9 @@ CHUNSHANG = {
         '闪避':60, '理智':20, '斗殴':65, '行动力':8, '体格':0,
         '力量':50, '体质':55, '体型':55, '外貌':55, '教育':50, '智力':55, '意志':55, '幸运':50,
         '额外行动数':0, '魔法少女序号':10, '伤害贯穿':1, '可反击':1, '状态':60,
+        '不可指定': 1,
     },
-    'str_attrs':{'伤害值':'1d6+1d4'},
+    'str_attrs':{'伤害值':'1d6+1d4', '不可指定召唤物': '藤蔓'},
     'inventory': [],
     'spells':[
         {
@@ -913,13 +927,14 @@ SIRUITIKA = {
     ]
 }
 
+
 # ============================================================
 #  角色13: 歌莉娅 (Y13) — 飞行 + MP永不消耗 + 普攻3d6
 # ============================================================
 GELIYA = {
     'name': '歌莉娅', 'serial': 'Y13',
     'attrs': {
-        '等级': 5, '敏捷': 55, '体力': 10, '体力上限': 10, '魔力': 18, '魔力上限': 18,
+        '等级': 5, '敏捷': 55, '体力': 12, '体力上限': 12, '魔力': 18, '魔力上限': 18,
         '闪避': 25, '理智': 50, '斗殴': 80, '行动力': 8, '体格': 1,
         '力量': 60, '体质': 65, '体型': 60, '外貌': 55, '教育': 50, '智力': 55, '意志': 60, '幸运': 50,
         '额外行动数': 0, '魔法少女序号': 13, '伤害贯穿': 1, '可反击': 1, '状态': 60,
@@ -962,12 +977,263 @@ GELIYA = {
 }
 
 # ============================================================
+#  新增召唤物模板（林白用）
+# ============================================================
+SUMMON_TEMPLATES['虚假之月'] = {
+    'HP': 50, 'MP': 99, 'SAN': 0,
+    'STR': 1, 'CON': 50, 'SIZ': 10, 'DEX': 1, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
+    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
+    'flying': True,
+    'skills': ['斗殴:1 0d1'],
+    'spells': [
+        {
+            'name': '月能馈赠', 'index': 1, 'phase': 0, 'timing': '1', 'category': 8,
+            'effects': [{'type': 8, '客体': 3, '作用半径': 20, '持续回合': 99,
+                         '回复hp': '1d4', '回复mp': '1d4', '领域中心跟随': 1}],
+        },
+    ],
+    'max_simultaneous': 1, 'max_total_spawned': 1,
+}
+SUMMON_TEMPLATES['影之克隆'] = {
+    'HP': 3, 'MP': 0, 'SAN': 0,
+    'STR': 1, 'CON': 10, 'SIZ': 10, 'DEX': 50, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
+    '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
+    'skills': ['斗殴:1 0d1'],
+    'max_simultaneous': 2, 'max_total_spawned': None,
+}
+
+# ============================================================
+#  角色14: 麦知夏 (Y14) — 卡带系统（阶段=卡带）
+#  阶段1=魂斗罗, 阶段2=最终幻想, 阶段3=音速索尼克, 阶段4=空白
+# ============================================================
+MAIZHIXIA = {
+    'name': '麦知夏', 'serial': 'Y14',
+    'initial_phase': 2,
+    'attrs': {
+        '等级': 8, '敏捷': 65, '体力': 14, '体力上限': 14, '魔力': 10, '魔力上限': 10,
+        '闪避': 60, '理智': 60, '斗殴': 70, '行动力': 7, '体格': 1,
+        '力量': 55, '体质': 55, '体型': 60, '外貌': 60, '教育': 55, '智力': 60, '意志': 60, '幸运': 50,
+        '额外行动数': 0, '魔法少女序号': 14, '伤害贯穿': 1, '可反击': 1, '状态': 60,
+        '飞行': 0,
+    },
+    'str_attrs': {'伤害值': '1d4+db', 'db': '1d4'},
+    'inventory': [],
+    'spells': [
+        # === 卡带切换（通用，phase=0） ===
+        {'name': '卡带切换·魂斗罗', 'timing': '3', 'category': 4, '消耗mp': 2, 'phase': 0,
+         'effects': [{'type': 17, '客体': 1, 'target_phase': 1, '持续回合': 1}]},
+        {'name': '卡带切换·最终幻想', 'timing': '3', 'category': 4, '消耗mp': 2, 'phase': 0,
+         'effects': [{'type': 17, '客体': 1, 'target_phase': 2, '持续回合': 1}]},
+        {'name': '卡带切换·音速索尼克', 'timing': '3', 'category': 4, '消耗mp': 2, 'phase': 0,
+         'effects': [{'type': 17, '客体': 1, 'target_phase': 3, '持续回合': 1}]},
+
+        # === 卡带一：魂斗罗（阶段1） ===
+        {'name': '像素射击', 'phase': 1, 'timing': '2', 'category': 1,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d6', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 6}]},
+        {'name': 'S弹幕·散射', 'phase': 1, 'timing': '2', 'category': 1, '消耗mp': 4,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '2d6', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 8},
+             {'type': 1, '客体': 4, '伤害骰': '2d6', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 8},
+             {'type': 1, '客体': 4, '伤害骰': '2d6', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 8},
+         ]},
+        {'name': 'S弹幕·集中', 'phase': 1, 'timing': '2', 'category': 1, '消耗mp': 4,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d10', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 8}]},
+        {'name': 'L型贯穿激光', 'phase': 1, 'timing': '2', 'category': 1, '消耗mp': 7,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '3d8', '成功率': 70, '可闪避性': 0, '可反击性': 0, '可贯穿性': 1, '射程': 8}]},
+        {'name': '残机替身', 'phase': 1, 'timing': '1', 'category': 4, '消耗mp': 8, 'default_persist': 1,
+         'effects': [{'type': 13, '客体': 1, 'respawn_hp': 1, 'respawn_radius': 3,
+                      'eject_phases': [1], 'once_per_transform': True, '持续回合': 999}]},
+
+        # === 卡带二：最终幻想（阶段2） ===
+        {'name': '重剑·迅捷', 'phase': 2, 'timing': '2', 'category': 1,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d8+1+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 2}]},
+        {'name': '重剑·勇气', 'phase': 2, 'timing': '2', 'category': 1,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d8+2+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 2}]},
+        {'name': '模式切换·迅捷', 'phase': 2, 'timing': '3', 'category': 4, '消耗mp': 2,
+         'effects': [
+             {'type': 4, '客体': 1, '持续回合': 99, '技能加减值': '行动力+2'},
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
+         ]},
+        {'name': '模式切换·勇气', 'phase': 2, 'timing': '3', 'category': 4, '消耗mp': 2,
+         'effects': [
+             {'type': 4, '客体': 1, '持续回合': 99, '技能加减值': '行动力-2'},
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰优势', '辅助效果值': '1'},
+         ]},
+        {'name': '极限槽', 'phase': 2, 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [{'type': 14, '客体': 1, 'counter_type': 'limit_gauge', 'max_value': 5, '持续回合': 999}]},
+        {'name': '三连斩·散', 'phase': 2, 'timing': '2', 'category': 1, '消耗mp': 6,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '1d8+2+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 6},
+             {'type': 1, '客体': 4, '伤害骰': '1d8+2+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 6},
+             {'type': 1, '客体': 4, '伤害骰': '1d8+2+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 6},
+         ]},
+        {'name': '三连斩·聚', 'phase': 2, 'timing': '2', 'category': 1, '消耗mp': 6,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '3d8+2+db', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6}]},
+        {'name': '极限技·凶斩', 'phase': 2, 'timing': '2', 'category': 1, '消耗mp': 10,
+         'counter_required': ('limit_gauge', 5), '_once_per_battle': True,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '3d10+db', '成功率': 100, '可闪避性': 0, '可反击性': 0, '射程': 5}]},
+
+        # === 卡带三：音速索尼克（阶段3） ===
+        {'name': '金环', 'phase': 3, 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [{'type': 14, '客体': 1, 'counter_type': 'rings', 'max_value': 3, '持续回合': 999}]},
+        {'name': '回旋踢', 'phase': 3, 'timing': '2', 'category': 1,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d4+2+db', '成功率': 70, '可闪避性': 1, '可反击性': 1, '射程': 2}]},
+        {'name': '音速冲刺', 'phase': 3, 'timing': '3', 'category': 4, '消耗mp': 3,
+         'effects': [
+             {'type': 4, '客体': 1, '持续回合': 1, '技能加减值': '行动力+4'},
+             {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
+             {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '飞行', '辅助效果值': '1'},
+         ]},
+        {'name': '光速救援', 'phase': 3, 'timing': '2', 'category': 2, '消耗mp': 5,
+         'effects': [
+             {'type': 18, '客体': 3, '射程': 8},
+             {'type': 2, '客体': 35, '作用半径': 1, '护盾值': '1d10', '持续回合': 2},
+         ]},
+        {'name': '金环回收·壹', 'phase': 3, 'timing': '2', 'category': 3, '消耗mp': 4,
+         'cost_counter_type': 'rings', 'cost_counter_amount': 1,
+         'effects': [{'type': 3, '客体': 1, '回复hp': '1d8+2', '射程': 3}]},
+        {'name': '金环回收·贰', 'phase': 3, 'timing': '2', 'category': 3, '消耗mp': 4,
+         'cost_counter_type': 'rings', 'cost_counter_amount': 2,
+         'effects': [
+             {'type': 3, '客体': 1, '回复hp': '1d8+2', '射程': 3},
+             {'type': 2, '客体': 1, '护盾值': '1d8', '持续回合': 2},
+         ]},
+    ]
+}
+
+# ============================================================
+#  角色15: 于长风 (Y15) — 火焰魔法 + 爆破圈 + 火鼠裘
+# ============================================================
+YUCHANGFENG = {
+    'name': '于长风', 'serial': 'Y15',
+    'attrs': {
+        '等级': 8, '敏捷': 65, '体力': 13, '体力上限': 13, '魔力': 10, '魔力上限': 10,
+        '闪避': 62, '理智': 55, '斗殴': 50, '行动力': 8, '体格': 1,
+        '力量': 60, '体质': 55, '体型': 60, '外貌': 55, '教育': 50, '智力': 55, '意志': 60, '幸运': 50,
+        '额外行动数': 0, '魔法少女序号': 15, '伤害贯穿': 1, '可反击': 1, '状态': 60,
+        '飞行': 0,
+    },
+    'str_attrs': {'伤害值': '1d8+1d3+db', 'db': '1d4'},
+    'inventory': [],
+    'spells': [
+        # s1: 爆破圈（被动，首次受击触发，整场一次）
+        {'name': '爆破圈', 'timing': '4', 'category': 1, 'default_persist': 1, '_once_per_battle': True,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d10+1d6', '成功率': 100, '可闪避性': 0, '可反击性': 0, '射程': 6,
+                      '每回合伤害骰': '1d3', '持续回合': 3}]},
+        # s2: 瞬爆（主动，5MP，定点爆破 + 燃烧）
+        {'name': '瞬爆', 'timing': '2', 'category': 1, '消耗mp': 5,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d6+1d4', '成功率': 70, '可闪避性': 1, '可反击性': 0, '射程': 6,
+                      '每回合伤害骰': '1d3', '持续回合': 3}]},
+        # s3: 余烬（主动，6MP，3个火种，同目标×3倍）
+        {'name': '余烬', 'timing': '2', 'category': 1, '消耗mp': 6,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '2d6+2', '成功率': 70, '可闪避性': 1, '可反击性': 0, '射程': 6},
+             {'type': 1, '客体': 4, '伤害骰': '2d6+2', '成功率': 70, '可闪避性': 1, '可反击性': 0, '射程': 6},
+             {'type': 1, '客体': 4, '伤害骰': '2d6+2', '成功率': 70, '可闪避性': 1, '可反击性': 0, '射程': 6},
+         ]},
+        # s4-s5: 燃梦孤灯（非战斗，phase=99）
+        {'name': '燃梦孤灯·自身', 'timing': '2', 'category': 3, '消耗mp': 2, 'phase': 99,
+         'effects': [{'type': 3, '客体': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+        {'name': '燃梦孤灯·他人', 'timing': '2', 'category': 3, '消耗mp': 4, 'phase': 99,
+         'effects': [{'type': 3, '客体': 3, '作用半径': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+        # s6: 葬火流光（主动，10MP，火雨领域3回合 + 进阶燃烧）
+        {'name': '葬火流光', 'timing': '2', 'category': 8, '消耗mp': 10,
+         'effects': [
+             {'type': 8, '客体': 45, '作用半径': 10, '持续回合': 3, '每回合伤害骰': '4d10+db', '领域中心跟随': 1},
+             {'type': 1, '客体': 45, '每回合伤害骰': '1d5', '持续回合': 3, '成功率': 100, '可闪避性': 0, '可反击性': 0},
+         ]},
+        # s7: 火鼠裘（被动，分段减伤，1MP/次）
+        {'name': '火鼠裘', 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [{'type': 12, '客体': 1, 'variant': 'fire_rat_cloak', '消耗mp_per_hit': 1, '持续回合': 999}]},
+        # s8: 焰动力·悬浮（被动，常驻飞行）
+        {'name': '焰动力·悬浮', 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '飞行', '辅助效果值': '1'},
+             {'type': 4, '客体': 1, '持续回合': 1, '技能加减值': '行动力-3'},
+          ]},
+        # s9: 焰动力·疾飞（附加动作，2MP，MOV+3 + 最近2友方）
+        {'name': '焰动力·疾飞', 'timing': '3', 'category': 4, '消耗mp': 2,
+         'effects': [
+             {'type': 4, '客体': 1, '持续回合': 1, '技能加减值': '行动力+3'},
+             {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
+             {'type': 4, '客体': 3, '作用半径': 2, '持续回合': 1, '技能加减值': '行动力+3'},
+         ]},
+    ]
+}
+
+# ============================================================
+#  角色16: 林白 (Y16) — 虚假之月/月能/幻造兵武/武器切换/吟唱
+# ============================================================
+LINBAI = {
+    'name': '林白', 'serial': 'Y16',
+    'attrs': {
+        '等级': 8, '敏捷': 70, '体力': 12, '体力上限': 12, '魔力': 16, '魔力上限': 16,
+        '闪避': 60, '理智': 70, '斗殴': 55, '剑': 55, '行动力': 8, '体格': 0,
+        '力量': 50, '体质': 55, '体型': 55, '外貌': 60, '教育': 60, '智力': 65, '意志': 65, '幸运': 50,
+        '额外行动数': 0, '魔法少女序号': 16, '伤害贯穿': 1, '可反击': 1, '状态': 60,
+        '写作': 70,
+    },
+    'str_attrs': {'伤害值': '1d6+1+db', 'db': '0'},
+    'inventory': [],
+    'spells': [
+        # s1: 灵感大爆发（群体MP回复buff，可叠2层）
+        {'name': '灵感大爆发', 'timing': '2', 'category': 4, '消耗mp': '3d3',
+         'effects': [{'type': 4, '客体': 3, '持续回合': '2d3', '可叠加': 2,
+                      '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}]},
+        # s2: 虚假之月（召唤月亮 + 事象的馈赠buff）
+        {'name': '虚假之月', 'timing': '2', 'category': 5, '消耗mp': '3d4',
+         'effects': [
+             {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '虚假之月', '持续回合': 99},
+             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '技能奖励骰', '辅助效果值': '斗殴'},
+         ]},
+        # s3: 月中的倒影（召唤2个克隆，持续5回合）
+        {'name': '月中的倒影', 'timing': '2', 'category': 5, '消耗mp': '2d3',
+         'effects': [{'type': 5, '客体': 1, '召唤个数': 2, '召唤物模板': '影之克隆', '持续回合': 5}]},
+        # s4: 辉月女神的祝福（被动，虚假之月下奖励骰 + 濒死时月能护盾）
+        {'name': '辉月女神的祝福', 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [
+             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1'},
+         ]},
+        # s5: 幻造兵武（被动，写作检定增强幻造前缀法术）
+        {'name': '幻造兵武', 'timing': '1', 'category': 4, 'default_persist': 1,
+         'effects': [{'type': 4, '客体': 1, '持续回合': 99,
+                      '辅助效果': '伤害骰加值', '辅助效果值': '1d6'}]},
+        # s6: 幻造兵武·即兴短句（1MP，1d2 + 写作增益）
+        {'name': '幻造兵武·即兴短句', 'timing': '2', 'category': 1, '消耗mp': 1,
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True}]},
+        # s7a-c: 武器切换（自由动作，timing='123'）
+        {'name': '切换·法杖', 'timing': '123', 'category': 4, '消耗mp': 1,
+         'effects': [{'type': 17, '客体': 1, 'weapon_state': 'staff', '持续回合': 99}]},
+        {'name': '切换·弓', 'timing': '123', 'category': 4, '消耗mp': 1,
+         'effects': [{'type': 17, '客体': 1, 'weapon_state': 'bow', '持续回合': 99}]},
+        {'name': '切换·剑', 'timing': '123', 'category': 4, '消耗mp': 1,
+         'effects': [{'type': 17, '客体': 1, 'weapon_state': 'sword', '持续回合': 99}]},
+        # s8a: 万众瞩目的乌托邦（弓终极技，3回合吟唱）
+        {'name': '万众瞩目的乌托邦', 'timing': '2', 'category': 1, '消耗mp': 10, '吟唱回合': 3,
+         'weapon_required': 'bow',
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d12', '成功率': 100, '可闪避性': 0, '可反击性': 0,
+                      '可贯穿性': 1, '射程': 99}]},
+        # s8b: 已然遥远的理想城（法杖终极技，全体2d4护盾）
+        {'name': '已然遥远的理想城', 'timing': '2', 'category': 2, '消耗mp': 12,
+         'weapon_required': 'staff',
+         'effects': [{'type': 2, '客体': 3, '作用半径': 20, '护盾值': '2d4', '持续回合': 3}]},
+        # s8c: 月光王座全额率输出（剑终极技，消耗全部月能）
+        {'name': '月光王座全额率输出', 'timing': '2', 'category': 1, '消耗mp': 10,
+         'weapon_required': 'sword',
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d1', '成功率': 100, '可闪避性': 0, '可反击性': 0,
+                      '可贯穿性': 1, '射程': 18}]},
+    ]
+}
+
+# ============================================================
 #  所有角色列表
 # ============================================================
 ALL_CHARACTERS = [
     YANYAN, DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI,
     XUEREN, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG,
-    LAN, SIRUITIKA, GELIYA
+    LAN, SIRUITIKA, GELIYA,
+    MAIZHIXIA, YUCHANGFENG, LINBAI
 ]
 
 # ============================================================
@@ -983,6 +1249,10 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         char.set_attr(k, v)
     for k, v in char_data.get('str_attrs', {}).items():
         char.set_str(k, v)
+    # Initial phase (for cartridge-based characters like 麦知夏)
+    init_phase = char_data.get('initial_phase', 0)
+    if init_phase:
+        char.phase = init_phase
 
     # Load summon templates referenced by this character's spells
     summon_names = set()
@@ -1027,6 +1297,17 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         # MP formula
         mpf = spell.get('_mp_formula', '')
         if mpf: char.set_str(f"{prefix}_mp_formula", mpf)
+        # Extended fields for new mechanics
+        wr = spell.get('weapon_required', '')
+        if wr: char.set_str(f"{prefix}weapon_required", wr)
+        cr = spell.get('counter_required')
+        if cr: char.set_str(f"{prefix}counter_required", json.dumps(cr))
+        cct = spell.get('cost_counter_type', '')
+        if cct: char.set_str(f"{prefix}cost_counter_type", cct)
+        cca = spell.get('cost_counter_amount', 0)
+        if cca: char.set_attr(f"{prefix}cost_counter_amount", cca)
+        ob = spell.get('_once_per_battle', False)
+        if ob: char.set_attr(f"{prefix}_once_per_battle", 1)
         for ei, eff in enumerate(spell.get('effects', [])):
             letter = CAT_LETTERS[ei]
             prefix_l = f"{prefix}类别{letter}"

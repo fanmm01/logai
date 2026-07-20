@@ -491,8 +491,40 @@ function rollDmgDisadv(ctx, diceExpr) {
 
 /** Get DB string from build value */
 function dbFromBuild(build) {
-  const table = { '-2': '-2', '-1': '-1d4', '0': '0', '1': '1d4', '2': '1d6', '3': '2d6', '4': '3d6', '5': '4d6' };
+  const table = { '-2': '-2', '-1': '-1', '0': '0', '1': '1d4', '2': '1d6', '3': '2d6', '4': '3d6', '5': '4d6' };
   return table[String(build)] || '0';
+}
+
+/** Resolve 'db' token in a dice expression against a db dice string.
+ *  dbVal should be a dice expression like '1d4', '-1', '0', '2d6', etc.
+ *  Handles positive/negative/zero db, uppercase DB, subtraction, and dangling operators.
+ */
+function resolveDb(diceExpr, dbVal) {
+  if (!diceExpr || dbVal === null || dbVal === undefined) return diceExpr;
+  const lower = diceExpr.toLowerCase();
+  if (!lower.includes('db')) return diceExpr;
+
+  if (dbVal === '0') {
+    // Remove the db term entirely: "+db", "-db", or bare "db"
+    let expr = diceExpr.replace(/[+-]?\s*\bdb\b/gi, '').replace(/^\+\s*/, '').trim();
+    return expr || '0';
+  } else if (dbVal.startsWith('-')) {
+    // Negative flat value: "+db" -> "-1", "-db" -> "+1" (double negative)
+    let expr = diceExpr.replace(/\+\s*\bdb\b/gi, dbVal);
+    expr = expr.replace(/-\s*\bdb\b/gi, '+' + Math.abs(parseInt(dbVal)));
+    // Handle bare "db" at start of expression
+    expr = expr.replace(/^db\b/gi, dbVal);
+    return expr;
+  } else {
+    // Positive dice like "1d4", "2d6"
+    let expr = diceExpr.replace(/-\s*\bdb\b/gi, '-' + dbVal);
+    expr = expr.replace(/\+\s*\bdb\b/gi, '+' + dbVal);
+    // Handle bare "db" at start of expression
+    expr = expr.replace(/^db\b/gi, dbVal);
+    // Strip leading '+' for clean standalone
+    expr = expr.replace(/^\+/, '');
+    return expr;
+  }
 }
 
 /** Check if a concatenated timing string contains a specific code.
@@ -1453,6 +1485,15 @@ function makeBtaCmd(baseName) {
     }
     damageDice = normalizeDice(damageDice);
 
+    // Resolve damage bonus (db): check str attr 'db' first, then fall back to 体格
+    let dbStr = getStrAttr(ctx, 'db');
+    if (!dbStr) {
+      const atkBuildV = seal.vars.intGet(ctx, '体格');
+      const atkBuild = (atkBuildV && atkBuildV[1]) ? atkBuildV[0] : 0;
+      dbStr = dbFromBuild(atkBuild);
+    }
+    damageDice = resolveDb(damageDice, dbStr);
+
     const penAttr = effSuffix ? `伤害贯穿${effSuffix}` : '伤害贯穿';
     if (penetration === -1) {
       const pv = seal.vars.intGet(ctx, penAttr);
@@ -2145,6 +2186,15 @@ function makeECmd(baseName) {
       }
       if (!reactDmgDice) reactDmgDice = pending.damageDice;
       reactDmgDice = normalizeDice(reactDmgDice);
+
+      // Resolve damage bonus (db): check str attr 'db' first, then fall back to 体格
+      let dbStr = getStrAttr(defCtx, 'db');
+      if (!dbStr) {
+        const defBuildV = seal.vars.intGet(defCtx, '体格');
+        const defBuild = (defBuildV && defBuildV[1]) ? defBuildV[0] : 0;
+        dbStr = dbFromBuild(defBuild);
+      }
+      reactDmgDice = resolveDb(reactDmgDice, dbStr);
 
       // Penetration
       if (argIdx < args.length) {

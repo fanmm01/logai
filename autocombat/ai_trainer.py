@@ -15,7 +15,7 @@ import multiprocessing
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, roll_d100,
     is_in_melee_range, has_timing, parse_coord, format_coord, avg_damage,
-    success_rank, rank_text, _get_attack_range, chebyshev_dist)
+    success_rank, rank_text, _get_attack_range, chebyshev_dist, _resolve_db, _get_db_str)
 from characters_data import ALL_CHARACTERS, load_character_to_engine, SUMMON_TEMPLATES
 import battle_engine
 battle_engine._SUMMON_TEMPLATES = SUMMON_TEMPLATES
@@ -83,6 +83,7 @@ def get_character_combat_value(engine, uid):
                 if eff.get('type') == 1:
                     dmg_dice = eff.get('伤害骰', '')
                     if dmg_dice:
+                        dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
                         best_skill_avg = max(best_skill_avg, avg_damage(dmg_dice))
 
     return max(basic_avg, best_skill_avg, 1.0)
@@ -274,6 +275,7 @@ def encode_state(engine, uid):
                 if eff.get('type') == 1:
                     dmg_dice = eff.get('伤害骰', '')
                     if dmg_dice:
+                        dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
                         dmg_avg = avg_damage(dmg_dice)
                         best_skill_dmg = max(best_skill_dmg, dmg_avg)
                     if eff.get('可闪避性', eff.get('可反应性', 1)) == 0:
@@ -821,6 +823,7 @@ def _compute_threat(engine, enemy_entry):
             dmg_dice = eff.get('伤害骰', '')
             if not dmg_dice:
                 continue
+            dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
             dmg_avg = avg_damage(dmg_dice)
             sr = eff.get('成功率', 0)
             hit_rate = sr / 100.0 if sr > 0 else 1.0  # sr=0 = 必中
@@ -1425,7 +1428,19 @@ class QTrainer:
 
             # Weighted random sampling based on Q-values (softmax / Boltzmann)
             TEMPERATURE = 1.0
-            q_vals = [qt.get((st, aak), 0.0) for aak, aan in av]
+            q_vals = []
+            for aak, aan in av:
+                q = qt.get((st, aak), 0.0)
+                # P1: Optimism bias for strategic actions — encourage AI to explore them
+                if q == 0.0:
+                    an_str = str(aan)
+                    if '卡带切换' in an_str:
+                        q = 4.0  # High bias: cartridge switching unlocks new abilities
+                    elif '模式切换' in an_str:
+                        q = 2.0  # Medium bias: mode toggling improves effectiveness
+                    elif '切换·' in an_str:
+                        q = 2.0  # Medium bias: weapon switching for 林白
+                q_vals.append(q)
 
             # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
             zt = engine.get_char(uid).get_attr('状态', 60)
