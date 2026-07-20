@@ -997,9 +997,10 @@ SUMMON_TEMPLATES['虚假之月'] = {
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 10, 'SIZ': 10, 'DEX': 50, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
-    '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
+    '闪避': 20, 'MOV': 8, '额外行动数': 0, '可反击': 0, '可反应': 0,
     'skills': ['斗殴:1 0d1'],
     'max_simultaneous': 2, 'max_total_spawned': None,
+    'clone_of_owner': True,
 }
 
 # ============================================================
@@ -1327,6 +1328,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                     char.set_str(f"{prefix_l}{k}", json.dumps(v, ensure_ascii=False))
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
+    # Initialize default weapon (must be before load_spells for weapon_required filtering)
+    if char_data.get('serial') == 'Y16':
+        char.set_str('_weapon_name', 'staff')
     engine.load_spells(user_id)
     # Load inventory items (物品栏)
     for inv_entry in char_data.get('inventory', []):

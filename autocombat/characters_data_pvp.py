@@ -625,7 +625,7 @@ XUETIANSHI = {
         {
             'name':'飞行', 'timing':'1', 'category':4, 'default_persist':1, '消耗mp':2,
             'effects':[
-                {'type':4, '客体':1, '持续回合':99, '技能加减值':'行动力+5'},  # MOV+5
+                #{'type':4, '客体':1, '持续回合':99, '技能加减值':'行动力+5'},  # MOV+5
                 {'type':4, '客体':1, '持续回合':99,
                 '辅助效果':'伤害成功率奖励惩罚', '辅助效果值':'b'},  # 奖励骰
             ]
@@ -1000,6 +1000,7 @@ SUMMON_TEMPLATES['影之克隆'] = {
     '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
     'skills': ['斗殴:1 0d1'],
     'max_simultaneous': 2, 'max_total_spawned': None,
+    'clone_of_owner': True,
 }
 
 # ============================================================
@@ -1133,13 +1134,13 @@ YUCHANGFENG = {
          ]},
         # s4-s5: 燃梦孤灯（非战斗，phase=99）
         {'name': '燃梦孤灯·自身', 'timing': '2', 'category': 3, '消耗mp': 2, 'phase': 99,
-         'effects': [{'type': 3, '客体': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+         'effects': [{'type': 3, '客体': 1, '回复hp': '2d3', '回复san': '1d3'}]},
         {'name': '燃梦孤灯·他人', 'timing': '2', 'category': 3, '消耗mp': 4, 'phase': 99,
-         'effects': [{'type': 3, '客体': 3, '作用半径': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+         'effects': [{'type': 3, '客体': 3, '作用半径': 1, '回复hp': '2d3', '回复san': '1d3'}]},
         # s6: 葬火流光（主动，10MP，火雨领域3回合 + 进阶燃烧）
         {'name': '葬火流光', 'timing': '2', 'category': 8, '消耗mp': 10,
          'effects': [
-             {'type': 8, '客体': 45, '作用半径': 10, '持续回合': 3, '每回合伤害骰': '4d10+db', '领域中心跟随': 1},
+             {'type': 8, '客体': 45, '作用半径': 10, '持续回合': 3, '每回合伤害骰': '2d10+db', '领域中心跟随': 1},
              {'type': 1, '客体': 45, '每回合伤害骰': '1d5', '持续回合': 3, '成功率': 100, '可闪避性': 0, '可反击性': 0},
          ]},
         # s7: 火鼠裘（被动，分段减伤，1MP/次）
@@ -1327,6 +1328,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                     char.set_str(f"{prefix_l}{k}", json.dumps(v, ensure_ascii=False))
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
+    # Initialize default weapon (must be before load_spells for weapon_required filtering)
+    if char_data.get('serial') == 'Y16':
+        char.set_str('_weapon_name', 'staff')
     engine.load_spells(user_id)
     # Load inventory items (物品栏)
     for inv_entry in char_data.get('inventory', []):

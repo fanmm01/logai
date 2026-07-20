@@ -1565,7 +1565,10 @@ class CombatEngine:
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
                           'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate',
-                          '可叠加']:
+                          '可叠加',
+                          'respawn_hp','respawn_radius','max_value',
+                          'cost_counter_amount','吟唱回合',
+                          '幻造','once_per_transform','persist_through_battle']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
@@ -1573,11 +1576,12 @@ class CombatEngine:
                           '召唤个数','制造个数','制造花费回合数','召唤物模板','制造物模板',
                           '每回合伤害骰','吸血比例','属性削减',
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
-                          '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff']:
+                          '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff',
+                          'variant','weapon_state','counter_type']:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
-                for k in ['hp_thresholds', 'exclude']:
+                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage']:
                     v = char.get_str(f"{pl}{k}")
                     if v:
                         try: eff[k] = json.loads(v)
@@ -1621,6 +1625,103 @@ class CombatEngine:
             candidates.append(e['userId'])
         return _random_rt.choice(candidates) if candidates else None
 
+    def _get_weighted_target(self, caster_id):
+        """Select target using AI weight file preferences (T0-T3 strategies).
+        Falls back to None if weights unavailable, allowing _smart_target to use heuristic.
+        """
+        # Lazy-load and cache weights
+        if not hasattr(self, '_cached_weights'):
+            self._cached_weights = None
+            import os, json
+            weight_paths = [
+                os.path.join(os.path.dirname(__file__), 'ai_weights_pvp.json'),
+                os.path.join(os.path.dirname(__file__), 'ai_weights.json'),
+            ]
+            for wp in weight_paths:
+                try:
+                    if os.path.exists(wp):
+                        with open(wp, 'r', encoding='utf-8') as f:
+                            self._cached_weights = json.load(f)
+                        break
+                except Exception:
+                    continue
+        weights = self._cached_weights
+        if not weights: return None
+
+        # Get caster serial
+        init_list = self._get_initiative()
+        my_entry = next((e for e in init_list if e['userId'] == caster_id), None)
+        mt = my_entry.get('team', 'Y') if my_entry else 'Y'
+
+        # Get enemies
+        enemies = [e for e in init_list
+                   if e['team'] != mt
+                   and (self._get_combat_hp(e['userId']) or 0) > 0
+                   and not self._is_untargetable(e['userId'])]
+        if not enemies: return None
+
+        # Determine Q-table to use (solo vs team)
+        has_allies = any(e['team'] == mt and e['userId'] != caster_id
+                         and (self._get_combat_hp(e['userId']) or 0) > 0
+                         for e in init_list)
+        q_table = weights.get('Q_team' if has_allies else 'Q_solo', {})
+
+        # Look up caster's serial in Q-table
+        caster_char = self.get_char(caster_id)
+        caster_serial = getattr(caster_char, 'serial', '')
+        if not caster_serial or caster_serial not in q_table:
+            return None
+
+        state_actions = q_table[caster_serial]
+
+        # Aggregate Q-values by target strategy (T0-T3)
+        strategy_sums = {'T0': 0.0, 'T1': 0.0, 'T2': 0.0, 'T3': 0.0}
+        strategy_counts = {'T0': 0, 'T1': 0, 'T2': 0, 'T3': 0}
+        for key, q_val in state_actions.items():
+            if not isinstance(q_val, (int, float)): continue
+            for s in ['T0', 'T1', 'T2', 'T3']:
+                if key.endswith(f'__{s}'):
+                    strategy_sums[s] += q_val
+                    strategy_counts[s] += 1
+                    break
+
+        # Find best strategy (highest average Q)
+        best_strategy = None
+        best_avg = -999999
+        for s in ['T0', 'T1', 'T2', 'T3']:
+            if strategy_counts[s] > 0:
+                avg = strategy_sums[s] / strategy_counts[s]
+                if avg > best_avg:
+                    best_avg = avg
+                    best_strategy = s
+
+        if not best_strategy:
+            return None
+
+        # Apply strategy to select target
+        # (re-implementing select_target_by_strategy inline to avoid import cycle)
+        if best_strategy == 'T0':  # Lowest HP non-summon
+            non_summons = [e for e in enemies if not e.get('isSummon')]
+            pool = non_summons if non_summons else enemies
+            return min(pool, key=lambda e: self._get_combat_hp(e['userId']) or 9999)['userId']
+        elif best_strategy == 'T1':  # Nearest (first in initiative)
+            return enemies[0]['userId']
+        elif best_strategy == 'T2':  # Highest threat
+            # Compute threat: estimate damage per round based on best melee skill
+            def _threat(e):
+                uid = e['userId']
+                char = self.get_char(uid)
+                bn, bv = char.get_best_melee() if char else ('', 0)
+                return bv
+            return max(enemies, key=_threat)['userId']
+        elif best_strategy == 'T3':  # Lowest HP summon
+            summons = [e for e in enemies if e.get('isSummon')]
+            if summons:
+                return min(summons, key=lambda e: self._get_combat_hp(e['userId']) or 9999)['userId']
+            return enemies[0]['userId'] if enemies else None
+
+        return None
+
     def _smart_target(self, caster_id, spell):
         if not spell: return caster_id
         has_dmg = any(e['type']==1 for e in spell.get('effects',[]))
@@ -1650,6 +1751,11 @@ class CombatEngine:
             return tgt if tgt else caster_id
 
         if has_dmg or has_zone_dmg or has_enemy_debuff:
+            # Try weight-based target selection first
+            weighted_tgt = self._get_weighted_target(caster_id)
+            if weighted_tgt:
+                return weighted_tgt
+            # Fallback: first enemy by initiative
             init_list = self._get_initiative()
             my_entry = next((e for e in init_list if e['userId']==caster_id), None)
             mt = my_entry.get('team','Y') if my_entry else 'Y'
@@ -2674,7 +2780,7 @@ class CombatEngine:
                 if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
                    and ce.get('targetUserId') == caster_id:
                     if char:
-                        writing_val = char.get_attr('写作', 0) or char.get_attr('写作', 0) or 0
+                        writing_val = int(char.get_attr('写作', 0) or 0)
                         if writing_val > 0:
                             roll, _ = roll_d100('')
                             if roll <= writing_val:
@@ -2683,8 +2789,12 @@ class CombatEngine:
                             else:
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
                     break
-            if phantom_bonus > 0:
-                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+            if phantom_bonus:
+                try:
+                    if int(phantom_bonus) > 0:
+                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                except (ValueError, TypeError):
+                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior
         friend_behavior = eff.get('友方行为', '')
@@ -3448,6 +3558,24 @@ class FullBattleEngine(CombatEngine):
         if fly_penalty:
             bp_suffix = (bp_suffix or '') + 'p'  # 飞行近战惩罚骰
 
+        # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
+        atk_effects = self._get_effects()
+        for ce in atk_effects:
+            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+               and ce.get('targetUserId') == atk_uid:
+                writing_val = int(achar.get_attr('写作', 0) or 0)
+                if writing_val > 0:
+                    roll, _ = roll_d100('')
+                    if roll <= writing_val:
+                        phantom_bonus = ce.get('auxVal', 0) or 0
+                        if phantom_bonus:
+                            if isinstance(phantom_bonus, str) or int(phantom_bonus) > 0:
+                                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                                lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}')
+                    else:
+                        lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败')
+                break
+
         # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
         def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
         if def_spells is None:
@@ -3832,8 +3960,12 @@ class FullBattleEngine(CombatEngine):
                             else:
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
                     break
-            if phantom_bonus > 0:
-                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+            if phantom_bonus:
+                try:
+                    if int(phantom_bonus) > 0:
+                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                except (ValueError, TypeError):
+                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
         # Friend/foe behavior (same as base)
         friend_behavior = eff.get('友方行为', '')
@@ -4254,7 +4386,9 @@ class FullBattleEngine(CombatEngine):
         if not spell: return f"未找到技能{skill_num}"
         timing = spell.get('时机', '2')
         is_passive = has_timing(timing, '1')
-        if not has_timing(timing, '2') and not is_passive:
+        can_main = has_timing(timing, '2')
+        can_extra = has_timing(timing, '3')
+        if not can_main and not can_extra and not is_passive:
             return f"【{spell['name']}】不能在主动作阶段使用"
         target = self._smart_target(uid, spell)
         return self._execute_spell(uid, target, spell)
@@ -4450,6 +4584,18 @@ class FullBattleEngine(CombatEngine):
                     summon_char2.set_attr(_sn, _ps['val'])
             # Copy spells from template to character (for .s1/.s2 commands)
             summon_char2.spells = list(tmpl.get('spells', []))
+            # Clone of owner: inherit caster's spells and skills
+            if tmpl.get('clone_of_owner'):
+                caster = self.get_char(caster_id)
+                if caster and caster.spells:
+                    summon_char2.spells = list(caster.spells)
+                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                    _v = caster.get_attr(_k) if caster else None
+                    if _v is not None:
+                        summon_char2.set_attr(_k, _v)
+                if caster:
+                    summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                    summon_char2.set_str('db', caster.get_str('db') or '0')
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -4519,6 +4665,18 @@ class FullBattleEngine(CombatEngine):
                 summon_char.set_attr(_sn, _ps['val'])
         # Copy spells from template to character (for .s1/.s2 commands)
         summon_char.spells = list(tmpl.get('spells', []))
+        # Clone of owner: inherit caster's spells and skills
+        if tmpl.get('clone_of_owner'):
+            caster = self.get_char(caster_id)
+            if caster and caster.spells:
+                summon_char.spells = list(caster.spells)
+            for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                _v = caster.get_attr(_k) if caster else None
+                if _v is not None:
+                    summon_char.set_attr(_k, _v)
+            if caster:
+                summon_char.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                summon_char.set_str('db', caster.get_str('db') or '0')
         # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
         self._ensure_dynamic_slots(sid)
         # ── _ensure_dynamic_slots 内部重新排序了先攻列表，需重新定位召唤人 ──
@@ -5191,6 +5349,18 @@ class FastBattleEngine(FullBattleEngine):
                     summon_char2.set_attr(_sn, _ps['val'])
             # Copy spells from template to character (for .s1/.s2 commands)
             summon_char2.spells = list(tmpl.get('spells', []))
+            # Clone of owner: inherit caster's spells and skills
+            if tmpl.get('clone_of_owner'):
+                caster = self.get_char(caster_id)
+                if caster and caster.spells:
+                    summon_char2.spells = list(caster.spells)
+                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                    _v = caster.get_attr(_k) if caster else None
+                    if _v is not None:
+                        summon_char2.set_attr(_k, _v)
+                if caster:
+                    summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                    summon_char2.set_str('db', caster.get_str('db') or '0')
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -5625,6 +5795,20 @@ class FastBattleEngine(FullBattleEngine):
             return (def_uid, atk_uid, 0, f"无法近战飞行目标")
         if fly_penalty:
             pen += 1  # 飞行近战惩罚骰
+        # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
+        atk_effects2 = self._get_effects()
+        for ce in atk_effects2:
+            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
+               and ce.get('targetUserId') == atk_uid:
+                writing_val2 = int(achar.get_attr('写作', 0) or 0)
+                if writing_val2 > 0:
+                    roll2, _ = roll_d100('')
+                    if roll2 <= writing_val2:
+                        phantom_bonus2 = ce.get('auxVal', 0) or 0
+                        if phantom_bonus2:
+                            if isinstance(phantom_bonus2, str) or int(phantom_bonus2) > 0:
+                                dmg_dice = f"{dmg_dice}+{phantom_bonus2}"
+                break
         # AUX code 4: merge bonus damage dice
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
         if bonus_dice:

@@ -2578,7 +2578,8 @@ def _build_turn_announcement(engine, uid: str) -> str:
         spells = char.spells or engine.load_spells(uid)
         for s in spells:
             timing = s.get('时机', '2')
-            if has_timing(timing, '2'):
+            # Only show spells that are exclusively main-action (timing='2' without '3')
+            if has_timing(timing, '2') and not has_timing(timing, '3'):
                 mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
                 mp_str = f"  MP:{mp_cost}" if mp_cost > 0 else ""
                 lines.append(f"  .s{s['index']} {s['name']}{mp_str}")
@@ -2589,7 +2590,8 @@ def _build_turn_announcement(engine, uid: str) -> str:
         lines.append(f"  .a m <坐标> — 移动")
         for s in spells:
             timing = s.get('时机', '2')
-            if has_timing(timing, '3') and not has_timing(timing, '2'):
+            # Show all spells with additional-action timing (including dual-timing spells)
+            if has_timing(timing, '3'):
                 lines.append(f"  .a s{s['index']} {s['name']}")
         if engine._has_healing_item(uid) if hasattr(engine, '_has_healing_item') else False:
             lines.append(f"  .a eat [目标]")
@@ -3655,9 +3657,6 @@ def submit_action(battle_id):
             elif action.startswith('.s') and len(action) > 2:
                 # ── Use skill ──
                 sn = int(action[2:])
-                if my_acts.get('主动', 0) <= 0:
-                    return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
-
                 char = engine.get_char(effective_uid)
                 spells = char.spells or engine.load_spells(effective_uid)
                 spell = next((s for s in spells if s['index'] == sn), None)
@@ -3672,8 +3671,25 @@ def submit_action(battle_id):
 
                 timing = spell.get('时机', '2')
                 is_passive = has_timing(timing, '1')
-                if not has_timing(timing, '2') and not is_passive:
+                can_main = has_timing(timing, '2')
+                can_extra = has_timing(timing, '3')
+
+                # Determine which action slot to use (附加优先)
+                use_extra = False
+                if can_extra and my_acts.get('附加', 0) > 0:
+                    use_extra = True
+                elif can_main and my_acts.get('主动', 0) > 0:
+                    use_extra = False
+                elif can_extra and not can_main:
+                    return jsonify({'error': True, 'message': '附加动作次数已用尽！'}), 400
+                elif can_main:
+                    return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
+                elif is_passive:
+                    use_extra = False  # passives don't consume actions
+                else:
                     return jsonify({'error': True, 'message': f'【{spell["name"]}】不能在主动作阶段使用'}), 400
+
+                action_type = '附加' if use_extra else '主动'
 
                 # Resolve target: serial from args > numeric index from args > smart target
                 tgt = None
@@ -3699,14 +3715,14 @@ def submit_action(battle_id):
                 all_sp_out = []
                 actual_sp = 0
                 for _sc in range(count):
-                    if my_acts.get('主动', 0) <= 0: break
+                    if my_acts.get(action_type, 0) <= 0: break
                     tgt_hp_sp = engine._get_combat_hp(tgt) if tgt else None
                     if tgt_hp_sp is not None and tgt_hp_sp <= 0 and actual_sp > 0: break
                     try:
                         out = engine._execute_spell(effective_uid, tgt, spell)
                         all_sp_out.append(out if isinstance(out, str) else str(out))
                         if not is_passive:
-                            my_acts = engine._consume_action(effective_uid, '主动')
+                            my_acts = engine._consume_action(effective_uid, action_type)
                         actual_sp += 1
                     except ReactionNeeded as e:
                         e.data['battle_id'] = battle_id
@@ -3721,7 +3737,7 @@ def submit_action(battle_id):
                             dodged_sp, countered_sp, lines_sp = engine.resolve_spell_reaction(e.data, choice_sp)
                             all_sp_out.extend(lines_sp)
                             if not is_passive:
-                                my_acts = engine._consume_action(effective_uid, '主动')
+                                my_acts = engine._consume_action(effective_uid, action_type)
                             actual_sp += 1
                         else:
                             # Human defender: check auto-reaction first
@@ -3736,18 +3752,29 @@ def submit_action(battle_id):
                                                 (choice_sp2 == 'counter' and can_counter_sp2) or
                                                 (choice_sp2 == 'block' and can_block_sp2))
                                 if not is_valid_sp2:
-                                    choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'dodge'
-                                auto_react_sp2['remaining'] -= 1
-                                if auto_react_sp2['remaining'] <= 0:
-                                    engine._auto_react.pop(def_base_sp2, None)
-                                dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
-                                all_sp_out.extend(lines_sp2)
-                                if not is_passive:
-                                    my_acts = engine._consume_action(effective_uid, '主动')
-                                actual_sp += 1
-                                auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
-                                remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
-                                all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
+                                    # Auto-reaction type doesn't apply to this attack
+                                    auto_retry = getattr(engine, '_auto_react_retry', 0)
+                                    if auto_retry:
+                                        # Auto-switch to first available reaction type, don't decrement
+                                        choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'block' if can_block_sp2 else 'dodge'
+                                        all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用，已自动切换为{choice_sp2}，剩余 {auto_react_sp2['remaining']} 次）")
+                                    else:
+                                        # Preserve count, fall back to manual reaction
+                                        all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用于本次攻击，剩余 {auto_react_sp2['remaining']} 次未消耗，请手动选择反应）")
+                                        # Fall through to pending/manual reaction path
+                                else:
+                                    # Valid auto-reaction: decrement and execute
+                                    auto_react_sp2['remaining'] -= 1
+                                    if auto_react_sp2['remaining'] <= 0:
+                                        engine._auto_react.pop(def_base_sp2, None)
+                                    dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
+                                    all_sp_out.extend(lines_sp2)
+                                    if not is_passive:
+                                        my_acts = engine._consume_action(effective_uid, action_type)
+                                    actual_sp += 1
+                                    auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
+                                    remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
+                                    all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
                             else:
                                 # Human defender: check if any reaction options exist
                                 can_dodge_sp = e.data.get('can_dodge', True)
@@ -3757,13 +3784,13 @@ def submit_action(battle_id):
                                     # No reaction possible → spell connects without reaction
                                     all_sp_out.extend(e.data.get('prefix_lines', []))
                                     if not is_passive:
-                                        my_acts = engine._consume_action(effective_uid, '主动')
+                                        my_acts = engine._consume_action(effective_uid, action_type)
                                     actual_sp += 1
                                 else:
                                     # Store pending reaction; only show available options
                                     # Consume action now — reaction only changes outcome, not the fact the action was spent
                                     if not is_passive:
-                                        my_acts = engine._consume_action(effective_uid, '主动')
+                                        my_acts = engine._consume_action(effective_uid, action_type)
                                     actual_sp += 1
                                     def_char_sp = engine.get_char(def_uid_sp)
                                     defender_serial_sp = getattr(def_char_sp, 'serial', '') if def_char_sp else ''
@@ -4163,6 +4190,9 @@ def submit_reaction(battle_id):
             if not hasattr(engine, '_auto_react'):
                 engine._auto_react = {}
             engine._auto_react[found_base] = {'type': react_type, 'remaining': react_count}
+            # Store auto-react retry config on engine
+            auto_react_retry = data.get('auto_react_retry', 0)
+            engine._auto_react_retry = auto_react_retry
             lab_map = {'dodge': '闪避', 'counter': '反击', 'block': '格挡'}
             return jsonify({
                 'status': 'ok',
@@ -4218,6 +4248,7 @@ def submit_reaction(battle_id):
                 if not hasattr(engine, '_auto_react'):
                     engine._auto_react = {}
                 engine._auto_react[def_base_batch] = {'type': react_type, 'remaining': react_count}
+                engine._auto_react_retry = data.get('auto_react_retry', 0)
 
             # ── Post-reaction processing (mirrors single-reaction path) ──
             # Action was already consumed at attack time (in .s0 / _run_ai_turns).
@@ -4382,6 +4413,7 @@ def submit_reaction(battle_id):
             if not hasattr(engine, '_auto_react'):
                 engine._auto_react = {}
             engine._auto_react[def_base] = {'type': react_type, 'remaining': react_count}
+            engine._auto_react_retry = data.get('auto_react_retry', 0)
         controllers = getattr(engine, '_player_controllers', {}).get(def_base, [])
         if def_uid != player_id and player_id not in controllers:
             return jsonify({'error': True, 'message': '这个反应不是你的'}), 403

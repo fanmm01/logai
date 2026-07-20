@@ -26,6 +26,7 @@ seal.ext.registerStringConfig(ext, "PvP战斗后端地址", "http://127.0.0.1:88
 seal.ext.registerIntConfig(ext, "AI暂停时长下限", 1, "AI 回合之间的随机暂停时长下限（秒）。设为 0 或负数则关闭 AI 回合延迟。");
 seal.ext.registerIntConfig(ext, "AI暂停时长上限", 5, "AI 回合之间的随机暂停时长上限（秒）。必须大于下限，否则使用固定下限时长。");
 seal.ext.registerIntConfig(ext, "失败攻击允许反应", 1, "控制失败/大失败的攻击是否允许防御方反应（闪避/反击/格挡）。1=开启 0=关闭。开启时，防御方大失败闪避可能使攻方意外命中，成功反击也可在攻方攻击失败时造成伤害。");
+seal.ext.registerIntConfig(ext, "自动反应不适用时重试", 1, "当自动反应类型不适用于当前攻击时（如对不可闪避的攻击设定了自动闪避）的处理方式。0=保留剩余次数并回退到手动反应；1=自动尝试其他可用反应类型。");
 seal.ext.registerIntConfig(ext, "pictmode", 1, "战斗消息图片模式: 0=纯文本, 1=渲染为图片。需要 battle_http_server.py 运行中。");
 seal.ext.registerIntConfig(ext, "自动战斗模式", 1, "0=最小自动化(.setab 0), 1=完全自动化(.setab 1), 2=Python后端(.setab 2)。可通过 .setab <N> 指令切换。");
 seal.ext.registerIntConfig(ext, "检定公布时机", 0, "0=攻击时立即公布(.setrestim 0), 1=反应后一并公布(.setrestim 1)。可通过 .setrestim <N> 指令切换。");
@@ -1663,13 +1664,40 @@ function makeBtaCmd(baseName) {
             try {
               const rct = JSON.parse(rctRaw);
               if (rct.remaining > 0) {
-                npcReact = rct.type === 'dodge' ? 'd' : rct.type === 'block' ? 'b' : 'c';
-                // Decrement remaining count
-                rct.remaining--;
-                if (rct.remaining <= 0) {
-                  ext.storageSet(rctKey, '');
+                const autoType = rct.type === 'dodge' ? 'd' : rct.type === 'block' ? 'b' : 'c';
+                // Check if auto-reaction type is applicable to this attack
+                const canReact = getAttr(tctx, '可反应', 1);
+                const canDodge = getAttr(tctx, '闪避', 0) > 0;
+                const canCounter = getAttr(tctx, '可反击', 0) === 1;
+                const canBlock = getAttr(tctx, '可格挡', 0) === 1;
+                let isApplicable = true;
+                if (canReact === 0) isApplicable = false;
+                else if (autoType === 'c' && !canCounter) isApplicable = false;
+                else if (autoType === 'b' && !canBlock) isApplicable = false;
+                else if (autoType === 'd' && !canDodge) isApplicable = false;
+
+                if (!isApplicable) {
+                  // Preserve count, fall back to manual (or auto-retry if configured)
+                  const autoRetry = seal.ext.getIntConfig(ext, '自动反应不适用时重试');
+                  if (autoRetry) {
+                    // Auto-switch to first available type
+                    if (canDodge && rct.type !== 'dodge') npcReact = 'd';
+                    else if (canCounter && rct.type !== 'counter') npcReact = 'c';
+                    else if (canBlock && rct.type !== 'block') npcReact = 'b';
+                    else npcReact = 'd';
+                  } else {
+                    // Don't auto-resolve — let user manually react
+                    npcReact = null;
+                  }
                 } else {
-                  ext.storageSet(rctKey, JSON.stringify(rct));
+                  npcReact = autoType;
+                  // Decrement remaining count
+                  rct.remaining--;
+                  if (rct.remaining <= 0) {
+                    ext.storageSet(rctKey, '');
+                  } else {
+                    ext.storageSet(rctKey, JSON.stringify(rct));
+                  }
                 }
               }
             } catch(e) {}
@@ -1868,9 +1896,15 @@ function makeECmd(baseName) {
           seal.replyToSender(ctx, msg, '[.setab 2] 未找到你绑定的角色。请先使用 .as <序号> 绑定角色再设置自动反应。');
           return seal.ext.newCmdExecuteResult(true);
         }
-        // Store auto-react preference locally
+        // Store auto-react preference locally (reset count if type changed)
         const rctKeyLocal = `bta_react_count_${gid}_${mySerial}`;
         const rctTypeLocal = choice3;
+        const oldRctLocal = ext.storageGet(rctKeyLocal);
+        let oldTypeLocal = '';
+        if (oldRctLocal) {
+          try { const old = JSON.parse(oldRctLocal); oldTypeLocal = old.type || ''; } catch(_e) {}
+        }
+        // If type changed, reset counter for new type; otherwise keep remaining
         ext.storageSet(rctKeyLocal, JSON.stringify({ type: rctTypeLocal, remaining: reactCount3 }));
         // Send to Python backend
         const autoReactPayload = {
@@ -1880,6 +1914,7 @@ function makeECmd(baseName) {
           react_type: choice3,
           set_auto_only: true,
           serial: mySerial,
+          auto_react_retry: seal.ext.getIntConfig(ext, '自动反应不适用时重试'),
         };
         try {
           const _arResult = await pvpFetch(`/api/pvp/${_battleId}/react`, autoReactPayload);
@@ -1947,13 +1982,25 @@ function makeECmd(baseName) {
         if (ser3) {
           const rctKey3 = `bta_react_count_${gid}_${ser3}`;
           const rctType3 = isDodge3 ? 'dodge' : isBlock3 ? 'block' : 'counter';
-          ext.storageSet(rctKey3, JSON.stringify({ type: rctType3, remaining: reactCount3 - 1 }));
+          // Check if switching reaction type — reset count if different
+          const oldRctRaw3 = ext.storageGet(rctKey3);
+          let oldType3 = '';
+          if (oldRctRaw3) {
+            try { const old3 = JSON.parse(oldRctRaw3); oldType3 = old3.type || ''; } catch(_e) {}
+          }
+          if (oldType3 && oldType3 !== rctType3) {
+            // Type changed: reset counter for new type
+            ext.storageSet(rctKey3, JSON.stringify({ type: rctType3, remaining: reactCount3 }));
+          } else {
+            ext.storageSet(rctKey3, JSON.stringify({ type: rctType3, remaining: reactCount3 - 1 }));
+          }
         }
       }
       // Build auto-reaction payload for Python backend persistence
       const _reactPayload = {
         player_id: _eActingId,
         choice: choice3,
+        auto_react_retry: seal.ext.getIntConfig(ext, '自动反应不适用时重试'),
       };
       if (reactCount3 > 1) {
         _reactPayload.react_count = reactCount3 - 1;
@@ -6887,12 +6934,26 @@ function makeSkillCmd(skillNum) {
         seal.replyToSender(ctx, msg, `未找到技能${skillNum}！请先使用 .st 录入法术数据。`);
         return seal.ext.newCmdExecuteResult(true);
       }
-      // Check spell timing
+      // Check spell timing — prefer additional action when available
       const timing = spell['时机'] || 2;
       isPassive = hasTiming(timing, 1);            // 1 = 被动
-      const isMain = hasTiming(timing, 2);       // 2 = 主动作
-      if (!isMain && !isPassive) {
+      const isMain = hasTiming(timing, 2);         // 2 = 主动作
+      const isAdditional = hasTiming(timing, 3);   // 3 = 附加动作
+      if (!isMain && !isAdditional && !isPassive) {
         seal.replyToSender(ctx, msg, `【${spell.name}】不能在主动作阶段使用（时机: ${TIMING_NAMES[timing]||timing}）`);
+        return seal.ext.newCmdExecuteResult(true);
+      }
+      // Determine which slot to consume (附加优先)
+      let useSlot = '主动';
+      if (isAdditional && myActions.附加 > 0) {
+        useSlot = '附加';
+      } else if (isMain && myActions.主动 > 0) {
+        useSlot = '主动';
+      } else if (isAdditional) {
+        seal.replyToSender(ctx, msg, '附加动作次数已用尽！');
+        return seal.ext.newCmdExecuteResult(true);
+      } else if (isMain) {
+        seal.replyToSender(ctx, msg, '主动作次数已用尽！');
         return seal.ext.newCmdExecuteResult(true);
       }
       // Execute spell skillCount times
@@ -6912,9 +6973,11 @@ function makeSkillCmd(skillNum) {
       }
     }
 
-    // Decrement action (passives don't consume actions)
-    if (skillNum === 0 || !isPassive) {
+    // Decrement action (passives don't consume actions; .s0 always uses 主动)
+    if (skillNum === 0) {
       myActions.主动 -= actualExecCount;
+    } else if (!isPassive) {
+      myActions[useSlot] -= actualExecCount;
     } else {
       output += '\n（被动法术，不消耗主动作）';
     }

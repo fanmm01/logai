@@ -653,7 +653,7 @@ XUETIANSHI = {
         {
             'name':'飞行', 'timing':'1', 'category':4, 'default_persist':1, '消耗mp':2,
             'effects':[
-                {'type':4, '客体':1, '持续回合':99, '技能加减值':'行动力+5'},  # MOV+5
+                #{'type':4, '客体':1, '持续回合':99, '技能加减值':'行动力+5'},  # MOV+5
                 {'type':4, '客体':1, '持续回合':99,
                 '辅助效果':'伤害成功率奖励惩罚', '辅助效果值':'b'},  # 奖励骰
             ]
@@ -1028,6 +1028,7 @@ SUMMON_TEMPLATES['影之克隆'] = {
     '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
     'skills': ['斗殴:1 0d1'],
     'max_simultaneous': 2, 'max_total_spawned': None,
+    'clone_of_owner': True,
 }
 
 # ============================================================
@@ -1161,13 +1162,13 @@ YUCHANGFENG = {
          ]},
         # s4-s5: 燃梦孤灯（非战斗，phase=99）
         {'name': '燃梦孤灯·自身', 'timing': '2', 'category': 3, '消耗mp': 2, 'phase': 99,
-         'effects': [{'type': 3, '客体': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+         'effects': [{'type': 3, '客体': 1, '回复hp': '2d3', '回复san': '1d3'}]},
         {'name': '燃梦孤灯·他人', 'timing': '2', 'category': 3, '消耗mp': 4, 'phase': 99,
-         'effects': [{'type': 3, '客体': 3, '作用半径': 1, '回复hp': '1d3', '回复san': '1d3'}]},
+         'effects': [{'type': 3, '客体': 3, '作用半径': 1, '回复hp': '2d3', '回复san': '1d3'}]},
         # s6: 葬火流光（主动，10MP，火雨领域3回合 + 进阶燃烧）
         {'name': '葬火流光', 'timing': '2', 'category': 8, '消耗mp': 10,
          'effects': [
-             {'type': 8, '客体': 45, '作用半径': 10, '持续回合': 3, '每回合伤害骰': '4d10+db', '领域中心跟随': 1},
+             {'type': 8, '客体': 45, '作用半径': 10, '持续回合': 3, '每回合伤害骰': '2d10+db', '领域中心跟随': 1},
              {'type': 1, '客体': 45, '每回合伤害骰': '1d5', '持续回合': 3, '成功率': 100, '可闪避性': 0, '可反击性': 0},
          ]},
         # s7: 火鼠裘（被动，分段减伤，1MP/次）
@@ -1355,6 +1356,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                     char.set_str(f"{prefix_l}{k}", json.dumps(v, ensure_ascii=False))
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
+    # Initialize default weapon (must be before load_spells for weapon_required filtering)
+    if char_data.get('serial') == 'Y16':
+        char.set_str('_weapon_name', 'staff')
     engine.load_spells(user_id)
     # Load inventory items (物品栏)
     for inv_entry in char_data.get('inventory', []):
@@ -2997,6 +3001,103 @@ class CombatEngine:
             candidates.append(e['userId'])
         return _random_rt.choice(candidates) if candidates else None
 
+    def _get_weighted_target(self, caster_id):
+        """Select target using AI weight file preferences (T0-T3 strategies).
+        Falls back to None if weights unavailable, allowing _smart_target to use heuristic.
+        """
+        # Lazy-load and cache weights
+        if not hasattr(self, '_cached_weights'):
+            self._cached_weights = None
+            import os, json
+            weight_paths = [
+                os.path.join(os.path.dirname(__file__), 'ai_weights_pvp.json'),
+                os.path.join(os.path.dirname(__file__), 'ai_weights.json'),
+            ]
+            for wp in weight_paths:
+                try:
+                    if os.path.exists(wp):
+                        with open(wp, 'r', encoding='utf-8') as f:
+                            self._cached_weights = json.load(f)
+                        break
+                except Exception:
+                    continue
+        weights = self._cached_weights
+        if not weights: return None
+
+        # Get caster serial
+        init_list = self._get_initiative()
+        my_entry = next((e for e in init_list if e['userId'] == caster_id), None)
+        mt = my_entry.get('team', 'Y') if my_entry else 'Y'
+
+        # Get enemies
+        enemies = [e for e in init_list
+                   if e['team'] != mt
+                   and (self._get_combat_hp(e['userId']) or 0) > 0
+                   and not self._is_untargetable(e['userId'])]
+        if not enemies: return None
+
+        # Determine Q-table to use (solo vs team)
+        has_allies = any(e['team'] == mt and e['userId'] != caster_id
+                         and (self._get_combat_hp(e['userId']) or 0) > 0
+                         for e in init_list)
+        q_table = weights.get('Q_team' if has_allies else 'Q_solo', {})
+
+        # Look up caster's serial in Q-table
+        caster_char = self.get_char(caster_id)
+        caster_serial = getattr(caster_char, 'serial', '')
+        if not caster_serial or caster_serial not in q_table:
+            return None
+
+        state_actions = q_table[caster_serial]
+
+        # Aggregate Q-values by target strategy (T0-T3)
+        strategy_sums = {'T0': 0.0, 'T1': 0.0, 'T2': 0.0, 'T3': 0.0}
+        strategy_counts = {'T0': 0, 'T1': 0, 'T2': 0, 'T3': 0}
+        for key, q_val in state_actions.items():
+            if not isinstance(q_val, (int, float)): continue
+            for s in ['T0', 'T1', 'T2', 'T3']:
+                if key.endswith(f'__{s}'):
+                    strategy_sums[s] += q_val
+                    strategy_counts[s] += 1
+                    break
+
+        # Find best strategy (highest average Q)
+        best_strategy = None
+        best_avg = -999999
+        for s in ['T0', 'T1', 'T2', 'T3']:
+            if strategy_counts[s] > 0:
+                avg = strategy_sums[s] / strategy_counts[s]
+                if avg > best_avg:
+                    best_avg = avg
+                    best_strategy = s
+
+        if not best_strategy:
+            return None
+
+        # Apply strategy to select target
+        # (re-implementing select_target_by_strategy inline to avoid import cycle)
+        if best_strategy == 'T0':  # Lowest HP non-summon
+            non_summons = [e for e in enemies if not e.get('isSummon')]
+            pool = non_summons if non_summons else enemies
+            return min(pool, key=lambda e: self._get_combat_hp(e['userId']) or 9999)['userId']
+        elif best_strategy == 'T1':  # Nearest (first in initiative)
+            return enemies[0]['userId']
+        elif best_strategy == 'T2':  # Highest threat
+            # Compute threat: estimate damage per round based on best melee skill
+            def _threat(e):
+                uid = e['userId']
+                char = self.get_char(uid)
+                bn, bv = char.get_best_melee() if char else ('', 0)
+                return bv
+            return max(enemies, key=_threat)['userId']
+        elif best_strategy == 'T3':  # Lowest HP summon
+            summons = [e for e in enemies if e.get('isSummon')]
+            if summons:
+                return min(summons, key=lambda e: self._get_combat_hp(e['userId']) or 9999)['userId']
+            return enemies[0]['userId'] if enemies else None
+
+        return None
+
     def _smart_target(self, caster_id, spell):
         if not spell: return caster_id
         has_dmg = any(e['type']==1 for e in spell.get('effects',[]))
@@ -3026,6 +3127,11 @@ class CombatEngine:
             return tgt if tgt else caster_id
 
         if has_dmg or has_zone_dmg or has_enemy_debuff:
+            # Try weight-based target selection first
+            weighted_tgt = self._get_weighted_target(caster_id)
+            if weighted_tgt:
+                return weighted_tgt
+            # Fallback: first enemy by initiative
             init_list = self._get_initiative()
             my_entry = next((e for e in init_list if e['userId']==caster_id), None)
             mt = my_entry.get('team','Y') if my_entry else 'Y'
@@ -5630,7 +5736,9 @@ class FullBattleEngine(CombatEngine):
         if not spell: return f"未找到技能{skill_num}"
         timing = spell.get('时机', '2')
         is_passive = has_timing(timing, '1')
-        if not has_timing(timing, '2') and not is_passive:
+        can_main = has_timing(timing, '2')
+        can_extra = has_timing(timing, '3')
+        if not can_main and not can_extra and not is_passive:
             return f"【{spell['name']}】不能在主动作阶段使用"
         target = self._smart_target(uid, spell)
         return self._execute_spell(uid, target, spell)
@@ -5826,6 +5934,18 @@ class FullBattleEngine(CombatEngine):
                     summon_char2.set_attr(_sn, _ps['val'])
             # Copy spells from template to character (for .s1/.s2 commands)
             summon_char2.spells = list(tmpl.get('spells', []))
+            # Clone of owner: inherit caster's spells and skills
+            if tmpl.get('clone_of_owner'):
+                caster = self.get_char(caster_id)
+                if caster and caster.spells:
+                    summon_char2.spells = list(caster.spells)
+                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                    _v = caster.get_attr(_k) if caster else None
+                    if _v is not None:
+                        summon_char2.set_attr(_k, _v)
+                if caster:
+                    summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                    summon_char2.set_str('db', caster.get_str('db') or '0')
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -5895,6 +6015,18 @@ class FullBattleEngine(CombatEngine):
                 summon_char.set_attr(_sn, _ps['val'])
         # Copy spells from template to character (for .s1/.s2 commands)
         summon_char.spells = list(tmpl.get('spells', []))
+        # Clone of owner: inherit caster's spells and skills
+        if tmpl.get('clone_of_owner'):
+            caster = self.get_char(caster_id)
+            if caster and caster.spells:
+                summon_char.spells = list(caster.spells)
+            for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                _v = caster.get_attr(_k) if caster else None
+                if _v is not None:
+                    summon_char.set_attr(_k, _v)
+            if caster:
+                summon_char.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                summon_char.set_str('db', caster.get_str('db') or '0')
         # 将单条目扩展为 MAX_DYNAMIC_ACTIONS 个预掷条目
         self._ensure_dynamic_slots(sid)
         # ── _ensure_dynamic_slots 内部重新排序了先攻列表，需重新定位召唤人 ──
@@ -6567,6 +6699,18 @@ class FastBattleEngine(FullBattleEngine):
                     summon_char2.set_attr(_sn, _ps['val'])
             # Copy spells from template to character (for .s1/.s2 commands)
             summon_char2.spells = list(tmpl.get('spells', []))
+            # Clone of owner: inherit caster's spells and skills
+            if tmpl.get('clone_of_owner'):
+                caster = self.get_char(caster_id)
+                if caster and caster.spells:
+                    summon_char2.spells = list(caster.spells)
+                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                    _v = caster.get_attr(_k) if caster else None
+                    if _v is not None:
+                        summon_char2.set_attr(_k, _v)
+                if caster:
+                    summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
+                    summon_char2.set_str('db', caster.get_str('db') or '0')
             # Group members share the representative's map position.
             # Do NOT place them on separate cells (would fill the map).
             rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
@@ -14250,7 +14394,8 @@ def _build_turn_announcement(engine, uid: str) -> str:
         spells = char.spells or engine.load_spells(uid)
         for s in spells:
             timing = s.get('时机', '2')
-            if has_timing(timing, '2'):
+            # Only show spells that are exclusively main-action (timing='2' without '3')
+            if has_timing(timing, '2') and not has_timing(timing, '3'):
                 mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
                 mp_str = f"  MP:{mp_cost}" if mp_cost > 0 else ""
                 lines.append(f"  .s{s['index']} {s['name']}{mp_str}")
@@ -14261,7 +14406,8 @@ def _build_turn_announcement(engine, uid: str) -> str:
         lines.append(f"  .a m <坐标> — 移动")
         for s in spells:
             timing = s.get('时机', '2')
-            if has_timing(timing, '3') and not has_timing(timing, '2'):
+            # Show all spells with additional-action timing (including dual-timing spells)
+            if has_timing(timing, '3'):
                 lines.append(f"  .a s{s['index']} {s['name']}")
         if engine._has_healing_item(uid) if hasattr(engine, '_has_healing_item') else False:
             lines.append(f"  .a eat [目标]")
@@ -15327,9 +15473,6 @@ def submit_action(battle_id):
             elif action.startswith('.s') and len(action) > 2:
                 # ── Use skill ──
                 sn = int(action[2:])
-                if my_acts.get('主动', 0) <= 0:
-                    return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
-
                 char = engine.get_char(effective_uid)
                 spells = char.spells or engine.load_spells(effective_uid)
                 spell = next((s for s in spells if s['index'] == sn), None)
@@ -15344,8 +15487,25 @@ def submit_action(battle_id):
 
                 timing = spell.get('时机', '2')
                 is_passive = has_timing(timing, '1')
-                if not has_timing(timing, '2') and not is_passive:
+                can_main = has_timing(timing, '2')
+                can_extra = has_timing(timing, '3')
+
+                # Determine which action slot to use (附加优先)
+                use_extra = False
+                if can_extra and my_acts.get('附加', 0) > 0:
+                    use_extra = True
+                elif can_main and my_acts.get('主动', 0) > 0:
+                    use_extra = False
+                elif can_extra and not can_main:
+                    return jsonify({'error': True, 'message': '附加动作次数已用尽！'}), 400
+                elif can_main:
+                    return jsonify({'error': True, 'message': '主动作次数已用尽！'}), 400
+                elif is_passive:
+                    use_extra = False  # passives don't consume actions
+                else:
                     return jsonify({'error': True, 'message': f'【{spell["name"]}】不能在主动作阶段使用'}), 400
+
+                action_type = '附加' if use_extra else '主动'
 
                 # Resolve target: serial from args > numeric index from args > smart target
                 tgt = None
@@ -15371,14 +15531,14 @@ def submit_action(battle_id):
                 all_sp_out = []
                 actual_sp = 0
                 for _sc in range(count):
-                    if my_acts.get('主动', 0) <= 0: break
+                    if my_acts.get(action_type, 0) <= 0: break
                     tgt_hp_sp = engine._get_combat_hp(tgt) if tgt else None
                     if tgt_hp_sp is not None and tgt_hp_sp <= 0 and actual_sp > 0: break
                     try:
                         out = engine._execute_spell(effective_uid, tgt, spell)
                         all_sp_out.append(out if isinstance(out, str) else str(out))
                         if not is_passive:
-                            my_acts = engine._consume_action(effective_uid, '主动')
+                            my_acts = engine._consume_action(effective_uid, action_type)
                         actual_sp += 1
                     except ReactionNeeded as e:
                         e.data['battle_id'] = battle_id
@@ -15393,7 +15553,7 @@ def submit_action(battle_id):
                             dodged_sp, countered_sp, lines_sp = engine.resolve_spell_reaction(e.data, choice_sp)
                             all_sp_out.extend(lines_sp)
                             if not is_passive:
-                                my_acts = engine._consume_action(effective_uid, '主动')
+                                my_acts = engine._consume_action(effective_uid, action_type)
                             actual_sp += 1
                         else:
                             # Human defender: check auto-reaction first
@@ -15408,18 +15568,29 @@ def submit_action(battle_id):
                                                 (choice_sp2 == 'counter' and can_counter_sp2) or
                                                 (choice_sp2 == 'block' and can_block_sp2))
                                 if not is_valid_sp2:
-                                    choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'dodge'
-                                auto_react_sp2['remaining'] -= 1
-                                if auto_react_sp2['remaining'] <= 0:
-                                    engine._auto_react.pop(def_base_sp2, None)
-                                dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
-                                all_sp_out.extend(lines_sp2)
-                                if not is_passive:
-                                    my_acts = engine._consume_action(effective_uid, '主动')
-                                actual_sp += 1
-                                auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
-                                remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
-                                all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
+                                    # Auto-reaction type doesn't apply to this attack
+                                    auto_retry = getattr(engine, '_auto_react_retry', 0)
+                                    if auto_retry:
+                                        # Auto-switch to first available reaction type, don't decrement
+                                        choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'block' if can_block_sp2 else 'dodge'
+                                        all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用，已自动切换为{choice_sp2}，剩余 {auto_react_sp2['remaining']} 次）")
+                                    else:
+                                        # Preserve count, fall back to manual reaction
+                                        all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用于本次攻击，剩余 {auto_react_sp2['remaining']} 次未消耗，请手动选择反应）")
+                                        # Fall through to pending/manual reaction path
+                                else:
+                                    # Valid auto-reaction: decrement and execute
+                                    auto_react_sp2['remaining'] -= 1
+                                    if auto_react_sp2['remaining'] <= 0:
+                                        engine._auto_react.pop(def_base_sp2, None)
+                                    dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
+                                    all_sp_out.extend(lines_sp2)
+                                    if not is_passive:
+                                        my_acts = engine._consume_action(effective_uid, action_type)
+                                    actual_sp += 1
+                                    auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
+                                    remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
+                                    all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
                             else:
                                 # Human defender: check if any reaction options exist
                                 can_dodge_sp = e.data.get('can_dodge', True)
@@ -15429,13 +15600,13 @@ def submit_action(battle_id):
                                     # No reaction possible → spell connects without reaction
                                     all_sp_out.extend(e.data.get('prefix_lines', []))
                                     if not is_passive:
-                                        my_acts = engine._consume_action(effective_uid, '主动')
+                                        my_acts = engine._consume_action(effective_uid, action_type)
                                     actual_sp += 1
                                 else:
                                     # Store pending reaction; only show available options
                                     # Consume action now — reaction only changes outcome, not the fact the action was spent
                                     if not is_passive:
-                                        my_acts = engine._consume_action(effective_uid, '主动')
+                                        my_acts = engine._consume_action(effective_uid, action_type)
                                     actual_sp += 1
                                     def_char_sp = engine.get_char(def_uid_sp)
                                     defender_serial_sp = getattr(def_char_sp, 'serial', '') if def_char_sp else ''
@@ -15835,6 +16006,9 @@ def submit_reaction(battle_id):
             if not hasattr(engine, '_auto_react'):
                 engine._auto_react = {}
             engine._auto_react[found_base] = {'type': react_type, 'remaining': react_count}
+            # Store auto-react retry config on engine
+            auto_react_retry = data.get('auto_react_retry', 0)
+            engine._auto_react_retry = auto_react_retry
             lab_map = {'dodge': '闪避', 'counter': '反击', 'block': '格挡'}
             return jsonify({
                 'status': 'ok',
@@ -15890,6 +16064,7 @@ def submit_reaction(battle_id):
                 if not hasattr(engine, '_auto_react'):
                     engine._auto_react = {}
                 engine._auto_react[def_base_batch] = {'type': react_type, 'remaining': react_count}
+                engine._auto_react_retry = data.get('auto_react_retry', 0)
 
             # ── Post-reaction processing (mirrors single-reaction path) ──
             # Action was already consumed at attack time (in .s0 / _run_ai_turns).
@@ -16054,6 +16229,7 @@ def submit_reaction(battle_id):
             if not hasattr(engine, '_auto_react'):
                 engine._auto_react = {}
             engine._auto_react[def_base] = {'type': react_type, 'remaining': react_count}
+            engine._auto_react_retry = data.get('auto_react_retry', 0)
         controllers = getattr(engine, '_player_controllers', {}).get(def_base, [])
         if def_uid != player_id and player_id not in controllers:
             return jsonify({'error': True, 'message': '这个反应不是你的'}), 403
