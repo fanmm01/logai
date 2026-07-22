@@ -1182,10 +1182,11 @@ LINBAI = {
          'effects': [{'type': 4, '客体': 3, '持续回合': '2d3', '可叠加': 2,
                       '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}]},
         # s2: 虚假之月（召唤月亮 + 事象的馈赠buff）
-        {'name': '虚假之月', 'timing': '2', 'category': 5, '消耗mp': '3d4',
+        {'name': '虚假之月', 'timing': '2', 'category': 5, '消耗mp': '3d4', '_mp_formula_transformed': '2d3',
          'effects': [
              {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '虚假之月', '持续回合': 99},
-             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '技能奖励骰', '辅助效果值': '斗殴'},
+             {'type': 4, '客体': 3, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b',
+              'linked_summon': '虚假之月'},
          ]},
         # s3: 月中的倒影（召唤2个克隆，持续5回合）
         {'name': '月中的倒影', 'timing': '2', 'category': 5, '消耗mp': '2d3',
@@ -1193,7 +1194,6 @@ LINBAI = {
         # s4: 辉月女神的祝福（被动，虚假之月下奖励骰 + 濒死时月能护盾）
         {'name': '辉月女神的祝福', 'timing': '1', 'category': 4, 'default_persist': 1,
          'effects': [
-             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
              {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1'},
          ]},
         # s5: 幻造兵武（被动，写作检定增强幻造前缀法术）
@@ -1298,6 +1298,8 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         # MP formula
         mpf = spell.get('_mp_formula', '')
         if mpf: char.set_str(f"{prefix}_mp_formula", mpf)
+        mpft = spell.get('_mp_formula_transformed', '')
+        if mpft: char.set_str(f"{prefix}_mp_formula_transformed", mpft)
         # Extended fields for new mechanics
         wr = spell.get('weapon_required', '')
         if wr: char.set_str(f"{prefix}weapon_required", wr)
