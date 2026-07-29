@@ -1008,9 +1008,9 @@ GELIYA = {
 #  新增召唤物模板（林白用）
 # ============================================================
 SUMMON_TEMPLATES['虚假之月'] = {
-    'HP': 50, 'MP': 99, 'SAN': 0,
+    'HP': 9999, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 50, 'SIZ': 10, 'DEX': 1, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
-    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
+    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0, '不可指定': 1,
     'flying': True,
     'skills': ['斗殴:1 0d1'],
     'spells': [
@@ -1021,6 +1021,9 @@ SUMMON_TEMPLATES['虚假之月'] = {
         },
     ],
     'max_simultaneous': 1, 'max_total_spawned': 1,
+    'unlimited_mp': True,
+    'replenish_allies': True,
+    'maintenance_mp': 5,
 }
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
@@ -1029,6 +1032,7 @@ SUMMON_TEMPLATES['影之克隆'] = {
     'skills': ['斗殴:1 0d1'],
     'max_simultaneous': 2, 'max_total_spawned': None,
     'clone_of_owner': True,
+    'protect_allies_on_hit': True,
 }
 
 # ============================================================
@@ -1206,7 +1210,7 @@ LINBAI = {
     'inventory': [],
     'spells': [
         # s1: 灵感大爆发（群体MP回复buff，可叠2层）
-        {'name': '灵感大爆发', 'timing': '2', 'category': 4, '消耗mp': '3d3',
+        {'name': '灵感大爆发', 'timing': '2', 'category': 4, '消耗mp': '3d3', 'charge_moon': '2d3',
          'effects': [{'type': 4, '客体': 3, '持续回合': '2d3', '可叠加': 2,
                       '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}]},
         # s2: 虚假之月（召唤月亮 + 事象的馈赠buff）
@@ -1222,8 +1226,8 @@ LINBAI = {
         # s4: 辉月女神的祝福（被动，虚假之月下奖励骰 + 濒死时月能护盾）
         {'name': '辉月女神的祝福', 'timing': '1', 'category': 4, 'default_persist': 1,
          'effects': [
-             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
-             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1'},
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1',
+              'hp_threshold_grant': {'ratio': 0.5, 'aux_code': 30, 'cost_moon': 5}},
          ]},
         # s5: 幻造兵武（被动，写作检定增强幻造前缀法术）
         {'name': '幻造兵武', 'timing': '1', 'category': 4, 'default_persist': 1,
@@ -1231,7 +1235,7 @@ LINBAI = {
                       '辅助效果': '伤害骰加值', '辅助效果值': '1d6'}]},
         # s6: 幻造兵武·即兴短句（1MP，1d2 + 写作增益）
         {'name': '幻造兵武·即兴短句', 'timing': '2', 'category': 1, '消耗mp': 1,
-         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True}]},
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True, 'charge_moon': 2}]},
         # s7a-c: 武器切换（自由动作，timing='123'）
         {'name': '切换·法杖', 'timing': '123', 'category': 4, '消耗mp': 1,
          'effects': [{'type': 17, '客体': 1, 'weapon_state': 'staff', '持续回合': 99}]},
@@ -1329,6 +1333,10 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if mpf: char.set_str(f"{prefix}_mp_formula", mpf)
         mpft = spell.get('_mp_formula_transformed', '')
         if mpft: char.set_str(f"{prefix}_mp_formula_transformed", mpft)
+        cm = spell.get('charge_moon', None)
+        if cm is not None:
+            if isinstance(cm, str): char.set_str(f"{prefix}charge_moon", cm)
+            else: char.set_attr(f"{prefix}charge_moon", int(cm))
         # Extended fields for new mechanics
         wr = spell.get('weapon_required', '')
         if wr: char.set_str(f"{prefix}weapon_required", wr)
@@ -2026,30 +2034,34 @@ class CombatEngine:
                 return rep_uid
         return None
 
-    def _find_moon_for_team(self, team):
-        """Find the 虚假之月 summon on the given team. Returns (moon_uid, moon_char) or (None, None)."""
+    def _find_summons_by_field(self, team, field_name):
+        """Find summons on the given team that have a truthy template field.
+        Returns list of (uid, char) tuples."""
+        results = []
         for entry in self._get_initiative():
-            if entry.get('isSummon') and entry.get('name') == '虚假之月' \
-               and entry.get('team') == team \
-               and (self._get_combat_hp(entry['userId']) or 0) > 0:
-                uid = entry['userId']
-                return uid, self.get_char(uid)
-        return None, None
+            if not entry.get('isSummon'): continue
+            if entry.get('team') != team: continue
+            if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
+            tmpl_data = self._summon_members.get(entry['userId'], {})
+            if tmpl_data.get(field_name):
+                results.append((entry['userId'], self.get_char(entry['userId'])))
+        return results
 
     def _charge_moon_energy(self, team, amount):
-        """Add amount to the moon's MP on the given team. Returns actual amount charged."""
+        """Add amount to the first replenish_allies summon's MP on the given team."""
         if amount <= 0: return 0
-        moon_uid, moon_char = self._find_moon_for_team(team)
-        if not moon_char: return 0
+        moons = self._find_summons_by_field(team, 'replenish_allies')
+        if not moons: return 0
+        moon_char = moons[0][1]
         cur_mp = moon_char.get_attr('魔力', 0) or 0
         moon_char.set_attr('魔力', cur_mp + amount)
         return amount
 
-    def _has_moon_buff(self, uid):
-        """Check if a character has the 事象的馈赠 buff (linked to 虚假之月)."""
+    def _has_linked_buff(self, uid, template_name):
+        """Check if a character has a buff linked to the given summon template."""
         for e in self._get_effects():
             if e.get('type') == 'buff' and e.get('targetUserId') == uid \
-               and e.get('linked_summon') == '虚假之月' \
+               and e.get('linked_summon') == template_name \
                and e.get('remainingRounds', 0) > 0:
                 return True
         return False
@@ -2627,11 +2639,14 @@ class CombatEngine:
         Rule: Character with 不可指定=1 cannot be targeted if they have non-三合一 summons alive.
         If 不可指定召唤物 is set, only summons matching that name trigger untargetability."""
         entry = next((e for e in self._get_initiative() if e['userId'] == uid), None)
-        if not entry or entry.get('isSummon'):
+        if not entry:
             return False
         char = self.get_char(uid)
         if char.get_attr('不可指定', 0) != 1:
             return False
+        # For summons with 不可指定, check directly (no summon bodyguard logic)
+        if entry.get('isSummon'):
+            return True
         required_name = char.get_str('不可指定召唤物') or ''
         il = self._get_initiative()
         other = [e for e in il
@@ -3010,6 +3025,11 @@ class CombatEngine:
             if mpf: spell['_mp_formula'] = mpf
             mpft = char.get_str(f"{prefix}_mp_formula_transformed")
             if mpft: spell['_mp_formula_transformed'] = mpft
+            # Read charge_moon (spell-level)
+            cm = char.get_attr(f"{prefix}charge_moon")
+            if cm is not None: spell['charge_moon'] = cm
+            cms = char.get_str(f"{prefix}charge_moon")
+            if cms: spell['charge_moon'] = cms
             # Read weapon_required
             wpn_req = char.get_str(f"{prefix}weapon_required")
             if wpn_req: spell['weapon_required'] = wpn_req
@@ -3055,7 +3075,8 @@ class CombatEngine:
                           '可叠加',
                           'respawn_hp','respawn_radius','max_value',
                           'cost_counter_amount','吟唱回合',
-                          '幻造','once_per_transform','persist_through_battle']:
+                          '幻造','once_per_transform','persist_through_battle',
+                          'charge_moon']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
@@ -3068,7 +3089,7 @@ class CombatEngine:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
-                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage']:
+                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage', 'hp_threshold_grant']:
                     v = char.get_str(f"{pl}{k}")
                     if v:
                         try: eff[k] = json.loads(v)
@@ -3882,12 +3903,14 @@ class CombatEngine:
                     bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
                     out += f'  施加辅助效果: {aux_type} {aux_val}{bonus_note}\n'
                 self._set_effects(effects)
-                # s1 灵感大爆发：月能充能 (2d3 灵感值)
-                if spell['name'] == '灵感大爆发':
+                # charge_moon: spell-level moon energy charging
+                charge_moon = spell.get('charge_moon', '')
+                if charge_moon:
                     caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
                     if caster_entry:
-                        charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), roll_dice('2d3'))
-                        if charged > 0: out += f'  月能充能 (灵感大爆发): +{charged}\n'
+                        amt = roll_dice(str(charge_moon)) if isinstance(charge_moon, str) else int(charge_moon)
+                        charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), amt)
+                        if charged > 0: out += f'  月能充能 ({spell["name"]}): +{charged}\n'
 
             elif ct == 5:  # Summon — handled by subclass
                 # Use pre-rolled count from MP calculation if available
@@ -3914,6 +3937,15 @@ class CombatEngine:
                     sid = self._create_summon(caster_id, tmpl,
                         summon_group=tmpl if count > 1 else None,
                         shared_roll=shared_s_roll, shared_rank=None)
+                    if sid:
+                        # Set initial MP from spell cost for unlimited_mp summons
+                        tmpls_c = _SUMMON_TEMPLATES
+                        if tmpls_c is None:
+                            from characters_data import SUMMON_TEMPLATES as tmpls_c
+                        tmpl_data_c = tmpls_c.get(tmpl, {}) if tmpls_c else {}
+                        if tmpl_data_c.get('unlimited_mp'):
+                            s_char = self.get_char(sid)
+                            s_char.set_attr('魔力', mp_cost)
                     if ignite and sid:
                         # Mark newly created summon as ignited (check initiative + summon_members)
                         il = self._get_initiative()
@@ -4262,7 +4294,9 @@ class CombatEngine:
                     if char:
                         writing_val = int(char.get_attr('写作', 0) or 0)
                         if writing_val > 0:
-                            roll, _ = roll_d100('')
+                            caster_buffs = self._get_active_buffs(caster_id)
+                            bp_str = _calc_net_bp(caster_buffs, '', None)
+                            roll, _ = roll_d100(bp_str)
                             if roll <= writing_val:
                                 phantom_bonus = ce.get('auxVal', 0) or 0
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
@@ -4276,16 +4310,17 @@ class CombatEngine:
                 except (ValueError, TypeError):
                     dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
-            # s6 即兴短句：月能充能 (2 + 写作加值)
-            caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-            spell_name_ph = spell.get('name', '') if spell else ''
-            if caster_entry and '即兴短句' in str(spell_name_ph):
-                charge_amt = 2
-                if phantom_bonus:
-                    try: charge_amt += int(phantom_bonus)
-                    except: pass
-                charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
-                if charged > 0: out += f'  月能充能 (即兴短句): +{charged}\n'
+            # charge_moon: effect-level moon energy charging
+            charge_moon_eff = eff.get('charge_moon', 0)
+            if charge_moon_eff:
+                caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+                if caster_entry:
+                    charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
+                    if phantom_bonus:
+                        try: charge_amt += int(phantom_bonus)
+                        except: pass
+                    charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
+                    if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
 
         # Friend/foe behavior
         friend_behavior = eff.get('友方行为', '')
@@ -4761,62 +4796,82 @@ class CombatEngine:
 
         self._set_effects(new_effects)
 
-        # ── 月能补满：虚假之月每回合为事象的馈赠持有者补满HP/MP ──
+        # ── replenish_allies: summon spends MP to top up allies with linked buff ──
         for entry in init_list:
-            if entry.get('isSummon') and entry.get('name') == '虚假之月' \
-               and (self._get_combat_hp(entry['userId']) or 0) > 0:
-                moon_uid = entry['userId']
-                moon_char = self.get_char(moon_uid)
+            if not entry.get('isSummon'): continue
+            if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
+            tmpl_data = self._summon_members.get(entry['userId'], {})
+            if not tmpl_data.get('replenish_allies'): continue
+            moon_uid = entry['userId']
+            moon_char = self.get_char(moon_uid)
+            moon_mp = moon_char.get_attr('魔力', 0) or 0
+            if moon_mp <= 0: continue
+            team = entry.get('team', 'Y')
+            template_name = entry.get('name', '')
+            for ally in init_list:
+                if ally.get('team') != team: continue
+                aid = ally['userId']
+                if not template_name or not self._has_linked_buff(aid, template_name): continue
+                ach = self.get_char(aid)
+                cur_hp = self._get_combat_hp(aid)
+                if cur_hp is None or cur_hp <= 0: continue
+                max_hp = ach.get_attr('体力上限', cur_hp) or cur_hp
+                missing_hp = max(0, max_hp - cur_hp)
+                cur_mp = ach.get_attr('魔力', 0) or 0
+                max_mp = ach.get_attr('魔力上限', cur_mp) or cur_mp
+                missing_mp = max(0, max_mp - cur_mp)
+                total_missing = missing_hp + missing_mp
+                if total_missing <= 0 or moon_mp <= 0: continue
+                spend = min(total_missing, moon_mp)
+                hp_part = min(missing_hp, spend)
+                mp_part = spend - hp_part
+                if hp_part > 0:
+                    self._set_combat_hp(aid, cur_hp + hp_part)
+                if mp_part > 0:
+                    ach.set_attr('魔力', cur_mp + mp_part)
+                moon_mp -= spend
+                moon_char.set_attr('魔力', moon_mp)
+                msgs.append(f'{template_name}·补满 → {ach.name}: HP+{hp_part} MP+{mp_part} (剩余:{moon_mp})')
+                if moon_mp <= 0: break
+            # Maintenance MP drain
+            maint = tmpl_data.get('maintenance_mp', 0) or 0
+            if maint > 0:
                 moon_mp = moon_char.get_attr('魔力', 0) or 0
-                if moon_mp <= 0: continue
-                team = entry.get('team', 'Y')
-                for ally in init_list:
-                    if ally.get('team') != team: continue
-                    aid = ally['userId']
-                    if not self._has_moon_buff(aid): continue
-                    ach = self.get_char(aid)
-                    cur_hp = self._get_combat_hp(aid)
-                    if cur_hp is None or cur_hp <= 0: continue
-                    max_hp = ach.get_attr('体力上限', cur_hp) or cur_hp
-                    missing_hp = max(0, max_hp - cur_hp)
-                    cur_mp = ach.get_attr('魔力', 0) or 0
-                    max_mp = ach.get_attr('魔力上限', cur_mp) or cur_mp
-                    missing_mp = max(0, max_mp - cur_mp)
-                    total_missing = missing_hp + missing_mp
-                    if total_missing <= 0 or moon_mp <= 0: continue
-                    spend = min(total_missing, moon_mp)
-                    hp_part = min(missing_hp, spend)
-                    mp_part = spend - hp_part
-                    if hp_part > 0:
-                        self._set_combat_hp(aid, cur_hp + hp_part)
-                    if mp_part > 0:
-                        ach.set_attr('魔力', cur_mp + mp_part)
-                    moon_mp -= spend
+                moon_mp -= maint
+                if moon_mp <= 0:
+                    self._set_combat_hp(moon_uid, 0)
+                    moon_char.set_attr('魔力', 0)
+                    msgs.append(f'{template_name} 月能耗尽，消逝...')
+                else:
                     moon_char.set_attr('魔力', moon_mp)
-                    msgs.append(f'虚假之月·月能补满 → {ach.name}: HP+{hp_part} MP+{mp_part} (剩余月能:{moon_mp})')
-                    if moon_mp <= 0: break
+                    msgs.append(f'{template_name} 维持消耗 {maint} MP (剩余:{moon_mp})')
 
-        # ── 月相的庇佑：重伤/濒死时消耗5月能获得免疫一次伤害 ──
-        for entry in init_list:
-            aid = entry['userId']
-            if not self._has_moon_buff(aid): continue
-            hp = self._get_combat_hp(aid)
+        # ── hp_threshold_grant: spend summon MP to grant AUX when ally HP is low ──
+        for eff in effects:
+            hpt = eff.get('hp_threshold_grant')
+            if not hpt or not isinstance(hpt, dict): continue
+            tid = eff.get('targetUserId', '')
+            if not tid: continue
+            hp = self._get_combat_hp(tid)
             if hp is None or hp <= 0: continue
-            ach = self.get_char(aid)
+            ach = self.get_char(tid)
             max_hp = ach.get_attr('体力上限', hp) or hp
             hp_pct = float(hp) / float(max_hp) if max_hp > 0 else 1.0
-            # Check if already has immunity (don't re-apply)
-            has_immunity = any(e.get('auxCode') == 30 and e.get('targetUserId') == aid
-                               and e.get('remainingRounds', 0) > 0 for e in effects)
-            if hp_pct < 0.5 and not has_immunity:
-                team = entry.get('team', 'Y')
-                moon_uid, moon_char = self._find_moon_for_team(team)
-                if moon_char:
-                    moon_mp = moon_char.get_attr('魔力', 0) or 0
-                    if moon_mp >= 5:
-                        moon_char.set_attr('魔力', moon_mp - 5)
-                        self._apply_immunity_buff(aid, moon_uid)
-                        msgs.append(f'月相的庇佑：消耗5月能，{ach.name} 获得免疫一次伤害！(剩余月能:{moon_mp - 5})')
+            if hp_pct >= hpt.get('ratio', 0.5): continue
+            # Check for existing buff of this AUX type
+            target_aux = hpt.get('aux_code', 0)
+            if any(e.get('auxCode') == target_aux and e.get('targetUserId') == tid
+                   and e.get('remainingRounds', 0) > 0 for e2 in [e for e in effects]): continue
+            team = next((ee.get('team', 'Y') for ee in init_list if ee['userId'] == tid), 'Y')
+            cost = hpt.get('cost_moon', 0)
+            moons = self._find_summons_by_field(team, 'replenish_allies')
+            if not moons: continue
+            moon_char = moons[0][1]
+            moon_mp = moon_char.get_attr('魔力', 0) or 0
+            if moon_mp >= cost:
+                moon_char.set_attr('魔力', moon_mp - cost)
+                self._apply_immunity_buff(tid, moons[0][0])
+                msgs.append(f'hp_threshold_grant: 消耗{cost}MP，{ach.name} 获得 AUX{target_aux}！(剩余:{moon_mp - cost})')
 
         # Ignite damage: Phase 2 summons take 3 damage/turn
         for entry in init_list:
@@ -5109,18 +5164,21 @@ class FullBattleEngine(CombatEngine):
         """Full COC7 attack: roll → reaction → rank compare → damage by success level → shield → lethality."""
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
         aname = achar.name; dname = dchar.name; lines = []
-        # ── 影之克隆被攻击 → 其他克隆和主体获得月相庇佑 ──
+        # ── protect_allies_on_hit: summon's allies gain immunity when it is attacked ──
         def_entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
-        if def_entry and def_entry.get('isSummon') and def_entry.get('name') == '影之克隆':
-            owner_id = def_entry.get('ownerId')
-            il_clone = self._get_initiative()
-            for e_clone in il_clone:
-                if e_clone['userId'] != def_uid:
-                    is_other_clone = e_clone.get('isSummon') and e_clone.get('name') == '影之克隆' and e_clone.get('ownerId') == owner_id
-                    is_owner = e_clone.get('baseUserId', e_clone['userId']) == owner_id or e_clone['userId'] == owner_id
-                    if is_other_clone or is_owner:
-                        self._apply_immunity_buff(e_clone['userId'], def_uid)
-                        lines.append(f'  月相的庇佑：{e_clone.get("displayName", e_clone.get("name", "?"))} 获得免疫一次伤害！')
+        if def_entry and def_entry.get('isSummon'):
+            def_tmpl = self._summon_members.get(def_uid, {})
+            if def_tmpl.get('protect_allies_on_hit'):
+                owner_id = def_entry.get('ownerId')
+                def_name = def_tmpl.get('name', def_entry.get('name', ''))
+                il_clone = self._get_initiative()
+                for e_clone in il_clone:
+                    if e_clone['userId'] != def_uid:
+                        is_same_type = e_clone.get('isSummon') and (self._summon_members.get(e_clone['userId'], {}).get('protect_allies_on_hit'))
+                        is_owner_of = e_clone.get('baseUserId', e_clone['userId']) == owner_id or e_clone['userId'] == owner_id
+                        if is_same_type or is_owner_of:
+                            self._apply_immunity_buff(e_clone['userId'], def_uid)
+                            lines.append(f'  {def_name}被攻击 → {e_clone.get("displayName", e_clone.get("name", "?"))} 获得免疫一次伤害！')
         # ── 射程移动 ──
         atk_range = _get_attack_range(skill_name=skill_name)
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
@@ -5142,7 +5200,9 @@ class FullBattleEngine(CombatEngine):
                and ce.get('targetUserId') == atk_uid:
                 writing_val = int(achar.get_attr('写作', 0) or 0)
                 if writing_val > 0:
-                    roll, _ = roll_d100('')
+                    atk_buffs_hz = self._get_active_buffs(atk_uid)
+                    bp_str_hz = _calc_net_bp(atk_buffs_hz, '', None)
+                    roll, _ = roll_d100(bp_str_hz)
                     if roll <= writing_val:
                         phantom_bonus = ce.get('auxVal', 0) or 0
                         if phantom_bonus:
@@ -5530,7 +5590,9 @@ class FullBattleEngine(CombatEngine):
                     if char:
                         writing_val = char.get_attr('写作', 0) or 0
                         if writing_val > 0:
-                            roll, _ = roll_d100('')
+                            caster_buffs_hz = self._get_active_buffs(caster_id)
+                            bp_str_hz = _calc_net_bp(caster_buffs_hz, '', None)
+                            roll, _ = roll_d100(bp_str_hz)
                             if roll <= writing_val:
                                 phantom_bonus = ce.get('auxVal', 0) or 0
                                 out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
@@ -5544,16 +5606,17 @@ class FullBattleEngine(CombatEngine):
                 except (ValueError, TypeError):
                     dmg_dice = f"{dmg_dice}+{phantom_bonus}"
 
-            # s6 即兴短句：月能充能 (2 + 写作加值)
-            caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-            spell_name_ph = spell.get('name', '') if spell else ''
-            if caster_entry and '即兴短句' in str(spell_name_ph):
-                charge_amt = 2
-                if phantom_bonus:
-                    try: charge_amt += int(phantom_bonus)
-                    except: pass
-                charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
-                if charged > 0: out += f'  月能充能 (即兴短句): +{charged}\n'
+            # charge_moon: effect-level moon energy charging
+            charge_moon_eff = eff.get('charge_moon', 0)
+            if charge_moon_eff:
+                caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+                if caster_entry:
+                    charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
+                    if phantom_bonus:
+                        try: charge_amt += int(phantom_bonus)
+                        except: pass
+                    charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
+                    if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
 
         # Friend/foe behavior (same as base)
         friend_behavior = eff.get('友方行为', '')
@@ -6238,8 +6301,7 @@ class FullBattleEngine(CombatEngine):
         summon_char.name = summon_display_name
         # 设置动态行动数所需的属性（召唤物也使用统一公式）
         summon_char.set_attr('MOV', tmpl.get('MOV', 6))
-        # 虚假之月：月能无上限
-        if template_name == '虚假之月':
+        if tmpl.get('unlimited_mp'):
             summon_char.set_attr('魔力上限', 99999)
         if parsed and parsed[0].get('dice'):
             summon_char.set_str('伤害值', parsed[0]['dice'])
@@ -7393,7 +7455,9 @@ class FastBattleEngine(FullBattleEngine):
                and ce.get('targetUserId') == atk_uid:
                 writing_val2 = int(achar.get_attr('写作', 0) or 0)
                 if writing_val2 > 0:
-                    roll2, _ = roll_d100('')
+                    atk_buffs_hz2 = self._get_active_buffs(atk_uid)
+                    bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', None)
+                    roll2, _ = roll_d100(bp_str_hz2)
                     if roll2 <= writing_val2:
                         phantom_bonus2 = ce.get('auxVal', 0) or 0
                         if phantom_bonus2:

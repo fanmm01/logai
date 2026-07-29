@@ -980,9 +980,9 @@ GELIYA = {
 #  新增召唤物模板（林白用）
 # ============================================================
 SUMMON_TEMPLATES['虚假之月'] = {
-    'HP': 50, 'MP': 99, 'SAN': 0,
+    'HP': 9999, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 50, 'SIZ': 10, 'DEX': 1, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
-    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
+    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0, '不可指定': 1,
     'flying': True,
     'skills': ['斗殴:1 0d1'],
     'spells': [
@@ -993,6 +993,9 @@ SUMMON_TEMPLATES['虚假之月'] = {
         },
     ],
     'max_simultaneous': 1, 'max_total_spawned': 1,
+    'unlimited_mp': True,
+    'replenish_allies': True,
+    'maintenance_mp': 5,
 }
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
@@ -1001,6 +1004,7 @@ SUMMON_TEMPLATES['影之克隆'] = {
     'skills': ['斗殴:1 0d1'],
     'max_simultaneous': 2, 'max_total_spawned': None,
     'clone_of_owner': True,
+    'protect_allies_on_hit': True,
 }
 
 # ============================================================
@@ -1178,7 +1182,7 @@ LINBAI = {
     'inventory': [],
     'spells': [
         # s1: 灵感大爆发（群体MP回复buff，可叠2层）
-        {'name': '灵感大爆发', 'timing': '2', 'category': 4, '消耗mp': '3d3',
+        {'name': '灵感大爆发', 'timing': '2', 'category': 4, '消耗mp': '3d3', 'charge_moon': '2d3',
          'effects': [{'type': 4, '客体': 3, '持续回合': '2d3', '可叠加': 2,
                       '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}]},
         # s2: 虚假之月（召唤月亮 + 事象的馈赠buff）
@@ -1194,7 +1198,8 @@ LINBAI = {
         # s4: 辉月女神的祝福（被动，虚假之月下奖励骰 + 濒死时月能护盾）
         {'name': '辉月女神的祝福', 'timing': '1', 'category': 4, 'default_persist': 1,
          'effects': [
-             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1'},
+             {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '免疫一次伤害', '辅助效果值': '1',
+              'hp_threshold_grant': {'ratio': 0.5, 'aux_code': 30, 'cost_moon': 5}},
          ]},
         # s5: 幻造兵武（被动，写作检定增强幻造前缀法术）
         {'name': '幻造兵武', 'timing': '1', 'category': 4, 'default_persist': 1,
@@ -1202,7 +1207,7 @@ LINBAI = {
                       '辅助效果': '伤害骰加值', '辅助效果值': '1d6'}]},
         # s6: 幻造兵武·即兴短句（1MP，1d2 + 写作增益）
         {'name': '幻造兵武·即兴短句', 'timing': '2', 'category': 1, '消耗mp': 1,
-         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True}]},
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True, 'charge_moon': 2}]},
         # s7a-c: 武器切换（自由动作，timing='123'）
         {'name': '切换·法杖', 'timing': '123', 'category': 4, '消耗mp': 1,
          'effects': [{'type': 17, '客体': 1, 'weapon_state': 'staff', '持续回合': 99}]},
@@ -1300,6 +1305,10 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if mpf: char.set_str(f"{prefix}_mp_formula", mpf)
         mpft = spell.get('_mp_formula_transformed', '')
         if mpft: char.set_str(f"{prefix}_mp_formula_transformed", mpft)
+        cm = spell.get('charge_moon', None)
+        if cm is not None:
+            if isinstance(cm, str): char.set_str(f"{prefix}charge_moon", cm)
+            else: char.set_attr(f"{prefix}charge_moon", int(cm))
         # Extended fields for new mechanics
         wr = spell.get('weapon_required', '')
         if wr: char.set_str(f"{prefix}weapon_required", wr)
