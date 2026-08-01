@@ -1007,6 +1007,14 @@ SUMMON_TEMPLATES['影之克隆'] = {
     'protect_allies_on_hit': True,
 }
 
+SUMMON_TEMPLATES['血液长枪'] = {
+    'HP': 8, 'MP': 0, 'SAN': 0,
+    'STR': 30, 'CON': 30, 'SIZ': 15, 'DEX': 1, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
+    '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0, '可格挡': 0,
+    'skills': ['斗殴:70 1d8+6'],
+    'max_simultaneous': 10, 'max_total_spawned': None,
+}
+
 # ============================================================
 #  角色14: 麦知夏 (Y14) — 卡带系统（阶段=卡带）
 #  阶段1=魂斗罗, 阶段2=最终幻想, 阶段3=音速索尼克, 阶段4=空白
@@ -1233,13 +1241,87 @@ LINBAI = {
 }
 
 # ============================================================
+#  角色17: 夜诏明 (Y17) — 血液魔法使
+# ============================================================
+YEZHAOMING = {
+    'name': '夜诏明', 'serial': 'Y17',
+    '初始血液': 2000,
+    'blood_ml_per_hp': 250,
+    'hp_to_blood_ml': 200,
+    'attrs': {
+        '等级': 3, '敏捷': 80, '体力': 7, '体力上限': 7, '魔力': 26, '魔力上限': 26,
+        '闪避': 85, '理智': 65, '斗殴': 28, '弓术': 61, '行动力': 8, '体格': -2,
+        '力量': 30, '体质': 35, '体型': 45, '外貌': 55, '教育': 55, '智力': 60, '意志': 60, '幸运': 50,
+        '额外行动数': 0, '魔法少女序号': 17, '伤害贯穿': 1, '可反击': 1, '状态': 60,
+    },
+    'str_attrs': {'伤害值': '1d6+db', '伤害值b': '1d6+db/2', 'db': '-2'},
+    'inventory': [],
+    'spells': [
+        {'name': '猩红眼眸', 'timing': '2', 'category': 4, '消耗mp': 0, 'phase': 99,
+         'cost_blood_ml': 100,
+         'effects': [{'type': 4, '客体': 1, '持续回合': 3}]},
+        {'name': '阿瑞卡纳律动', 'timing': '2', 'category': 1, '吟唱回合': 3,
+         'mp_cost_formula': 'max_25pct_cur_50pct',
+         'cost_blood_ml': 100,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '1d1', '成功率': 80, '可闪避性': 1, '可反击性': 0,
+              '可贯穿性': 1, '射程': 10, '作用半径': 10, 'damage_mp_multiplier': 4},
+         ]},
+        {'name': '凝血式-守', 'timing': '3', 'category': 2, '消耗mp': 0,
+         'cost_blood_ml': 300,
+         'effects': [{'type': 2, '客体': 1, '护盾值': '1', '持续回合': 99}]},
+        {'name': '祭炼式-破', 'timing': '2', 'category': 1, '消耗mp': 0,
+         '吟唱回合': 2, 'chant_interruptible': True,
+         'chant_interrupt_hp_pct': 90, 'chant_interrupt_mp_pct': 50,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '1d1', '成功率': 100, '可闪避性': 0, '可反击性': 0,
+              '可贯穿性': 1, '射程': 6, 'damage_pct_caster_max_hp': 90},
+         ]},
+        {'name': '凝血式-幻', 'timing': '3', 'category': 5, '消耗mp': 0,
+         'cost_blood_ml': 100,
+         'effects': [
+             {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '血液构造物', '持续回合': 999},
+         ]},
+        {'name': '污血战争', 'timing': '2', 'category': 1,
+         'cost_mp_pct_max': 20, 'cost_hp_dice': '1d8', '消耗san': '1d8',
+         'on_kill_heal_hp': 1, 'on_kill_heal_san': 1, 'on_kill_blood_ml': 300,
+         'chain_on_blood_ml': 3000, 'radius_per_extra_mp': 10,
+         'effects': [
+             {'type': 1, '客体': 5, '伤害骰': '2d12', '成功率': 100, '可闪避性': 1, '可反击性': 0,
+              '作用半径': 10, '射程': 0},
+         ]},
+        {'name': '凝血式-存', 'timing': '2', 'category': 3, '消耗mp': 2, '消耗san': 1,
+         'heal_limit_not_dying': 1,
+         'effects': [{'type': 3, '客体': 3, '回复hp': '1', '射程': 5}]},
+        {'name': '凝血式-浮', 'timing': '2', 'category': 4, '消耗mp': 0, 'phase': 99,
+         'effects': [{'type': 4, '客体': 1, '持续回合': 60, '辅助效果': '飞行', '辅助效果值': '1'}]},
+        {'name': '等价交换', 'timing': '2', 'category': 4, '消耗mp': '1d8', 'phase': 99,
+         'effects': [{'type': 4, '客体': 1, '持续回合': 1}]},
+        {'name': '血染披风', 'timing': '2', 'category': 3, '消耗mp': 0,
+         'cost_blood_ml': 1000,
+         'effects': [{'type': 3, '客体': 1, '回复mp': '1d6+2'}]},
+        {'name': '血月斩击', 'timing': '2', 'category': 1, '消耗mp': '1d8',
+         'cost_blood_ml': 500, 'extra_attack_per_blood': 1000,
+         'effects': [
+             {'type': 1, '客体': 4, '伤害骰': '1d6+4', '成功率': 80, '射程': 3,
+              '可贯穿性': 1, 'damage_table': 'moon_phase'},
+         ]},
+        {'name': '血色突刺', 'timing': '2', 'category': 5,
+         '消耗mp': 0, 'cost_blood_ml': 1000,
+         'effects': [
+             {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '血液长枪', '持续回合': 999},
+         ]},
+    ]
+}
+
+# ============================================================
 #  所有角色列表
 # ============================================================
 ALL_CHARACTERS = [
     YANYAN, DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI,
     XUEREN, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG,
     LAN, SIRUITIKA, GELIYA,
-    MAIZHIXIA, YUCHANGFENG, LINBAI
+    MAIZHIXIA, YUCHANGFENG, LINBAI, YEZHAOMING
 ]
 
 # ============================================================
@@ -1320,6 +1402,27 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if cca: char.set_attr(f"{prefix}cost_counter_amount", cca)
         ob = spell.get('_once_per_battle', False)
         if ob: char.set_attr(f"{prefix}_once_per_battle", 1)
+        # Blood and HP cost fields
+        cbl = spell.get('cost_blood_ml', 0)
+        if cbl: char.set_attr(f"{prefix}cost_blood_ml", cbl)
+        hpct = spell.get('cost_hp_pct_current', 0)
+        if hpct: char.set_attr(f"{prefix}cost_hp_pct_current", hpct)
+        hpd = spell.get('cost_hp_dice', '')
+        if hpd: char.set_str(f"{prefix}cost_hp_dice", hpd)
+        mpctm = spell.get('cost_mp_pct_max', 0)
+        if mpctm: char.set_attr(f"{prefix}cost_mp_pct_max", mpctm)
+        mpctc = spell.get('cost_mp_pct_current', 0)
+        if mpctc: char.set_attr(f"{prefix}cost_mp_pct_current", mpctc)
+        mpcf = spell.get('mp_cost_formula', '')
+        if mpcf: char.set_str(f"{prefix}mp_cost_formula", mpcf)
+        ci = spell.get('chant_interruptible', False)
+        if ci: char.set_attr(f"{prefix}chant_interruptible", 1)
+        # Spell-level blood/on-kill fields
+        for sk in ['on_kill_heal_hp','on_kill_heal_san','on_kill_blood_ml',
+                   'blood_per_hit_ml','chain_on_blood_ml','radius_per_extra_mp',
+                   'extra_attack_per_blood','blood_ml_per_hp','heal_limit_not_dying']:
+            sv = spell.get(sk, 0) or 0
+            if sv: char.set_attr(f"{prefix}{sk}", sv)
         for ei, eff in enumerate(spell.get('effects', [])):
             letter = CAT_LETTERS[ei]
             prefix_l = f"{prefix}类别{letter}"
@@ -1342,6 +1445,12 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
     # Initialize default weapon (must be before load_spells for weapon_required filtering)
     if char_data.get('serial') == 'Y16':
         char.set_str('_weapon_name', 'staff')
+    # Initialize blood resource (血液资源)
+    char._blood_ml = char_data.get('初始血液', 0) or 0
+    # chData-level conversion rates (blood ↔ HP/MP)
+    char._blood_ml_per_hp = char_data.get('blood_ml_per_hp', 250)
+    char._blood_ml_per_mp = char_data.get('blood_ml_per_mp', 0)
+    char._hp_to_blood_ml = char_data.get('hp_to_blood_ml', 200)
     engine.load_spells(user_id)
     # Load inventory items (物品栏)
     for inv_entry in char_data.get('inventory', []):

@@ -666,6 +666,60 @@ class CombatEngine:
         moon_char.set_attr('魔力', cur_mp + amount)
         return amount
 
+    # ── 血液资源系统 ──
+    def _get_blood(self, uid):
+        """Get current blood (ml) stored on a character."""
+        char = self.get_char(uid)
+        return getattr(char, '_blood_ml', 0) or 0
+
+    def _add_blood(self, uid, amount):
+        """Add blood (ml) to a character. Returns amount added."""
+        if amount <= 0: return 0
+        char = self.get_char(uid)
+        cur = self._get_blood(uid)
+        char._blood_ml = cur + amount
+        return amount
+
+    def _consume_blood(self, uid, amount):
+        """Consume blood (ml) from a character. Returns True if sufficient."""
+        cur = self._get_blood(uid)
+        if cur < amount: return False
+        char = self.get_char(uid)
+        char._blood_ml = cur - amount
+        return True
+
+    def _check_chant_interrupt(self, uid):
+        """Check if uid has interruptible chanting effects. If hit, interrupt them.
+        Returns list of interrupt messages."""
+        msgs = []
+        effects = self._get_effects()
+        interrupted = False
+        for e in effects:
+            if e.get('type') == 'chanting' and e.get('targetUserId') == uid \
+               and e.get('interruptible') and e.get('remainingRounds', 0) > 0:
+                char = self.get_char(uid)
+                spell_name = e.get('spellName', '')
+                # Apply interrupt penalty
+                hp_pct = e.get('interrupt_hp_pct', 0) or 0
+                mp_pct = e.get('interrupt_mp_pct', 0) or 0
+                if hp_pct > 0:
+                    cur_hp = self._get_combat_hp(uid) or 0
+                    hp_loss = max(1, cur_hp * hp_pct // 100)
+                    self._set_combat_hp(uid, max(0, cur_hp - hp_loss))
+                    msgs.append(f'{char.name} 吟唱【{spell_name}】被打断！损失 {hp_loss} HP！')
+                if mp_pct > 0:
+                    cur_mp = char.get_attr('魔力', 0) or 0
+                    mp_loss = max(1, cur_mp * mp_pct // 100)
+                    char.set_attr('魔力', max(0, cur_mp - mp_loss))
+                    msgs.append(f'{char.name} 损失 {mp_loss} MP！')
+                if not hp_pct and not mp_pct:
+                    msgs.append(f'{char.name} 吟唱【{spell_name}】被打断！')
+                e['remainingRounds'] = 0  # Force expire
+                interrupted = True
+        if interrupted:
+            self._set_effects(effects)
+        return msgs
+
     def _has_linked_buff(self, uid, template_name):
         """Check if a character has a buff linked to the given summon template."""
         for e in self._get_effects():
@@ -1653,6 +1707,31 @@ class CombatEngine:
             if cca: spell['cost_counter_amount'] = cca
             ob = char.get_attr(f"{prefix}_once_per_battle")
             if ob: spell['_once_per_battle'] = True
+            # Read blood & HP cost fields
+            cbl = char.get_attr(f"{prefix}cost_blood_ml")
+            if cbl: spell['cost_blood_ml'] = cbl
+            hpct = char.get_attr(f"{prefix}cost_hp_pct_current")
+            if hpct: spell['cost_hp_pct_current'] = hpct
+            hpd = char.get_str(f"{prefix}cost_hp_dice")
+            if hpd: spell['cost_hp_dice'] = hpd
+            mpctm = char.get_attr(f"{prefix}cost_mp_pct_max")
+            if mpctm: spell['cost_mp_pct_max'] = mpctm
+            mpctc = char.get_attr(f"{prefix}cost_mp_pct_current")
+            if mpctc: spell['cost_mp_pct_current'] = mpctc
+            mpcf = char.get_str(f"{prefix}mp_cost_formula")
+            if mpcf: spell['mp_cost_formula'] = mpcf
+            ci = char.get_attr(f"{prefix}chant_interruptible")
+            if ci: spell['chant_interruptible'] = True
+            cihp = char.get_attr(f"{prefix}chant_interrupt_hp_pct")
+            if cihp is not None: spell['chant_interrupt_hp_pct'] = cihp
+            cimp = char.get_attr(f"{prefix}chant_interrupt_mp_pct")
+            if cimp is not None: spell['chant_interrupt_mp_pct'] = cimp
+            # Spell-level blood/on-kill fields
+            for sk in ['on_kill_heal_hp','on_kill_heal_san','on_kill_blood_ml',
+                       'blood_per_hit_ml','chain_on_blood_ml','radius_per_extra_mp',
+                       'extra_attack_per_blood','blood_ml_per_hp','heal_limit_not_dying']:
+                sv = char.get_attr(f"{prefix}{sk}")
+                if sv is not None: spell[sk] = sv
             for ci, letter in enumerate(CAT_LETTERS):
                 pl = f"{prefix}类别{letter}"
                 has_data = bool(char.get_attr(f"{pl}客体") or char.get_str(f"{pl}伤害骰") or
@@ -1685,7 +1764,10 @@ class CombatEngine:
                           'respawn_hp','respawn_radius','max_value',
                           'cost_counter_amount','吟唱回合',
                           '幻造','once_per_transform','persist_through_battle',
-                          'charge_moon']:
+                          'charge_moon',
+                          'damage_pct_caster_max_hp','damage_pct_target_max_hp',
+                          'damage_pct_caster_cur_hp','damage_mp_multiplier','damage_fixed',
+                          'heal_limit_not_dying']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
                 for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
@@ -1694,7 +1776,8 @@ class CombatEngine:
                           '每回合伤害骰','吸血比例','属性削减',
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
                           '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff',
-                          'variant','weapon_state','counter_type','linked_summon']:
+                          'variant','weapon_state','counter_type','linked_summon',
+                          'damage_table','mp_cost_formula']:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
@@ -2328,6 +2411,14 @@ class CombatEngine:
                 mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
         elif spell.get('_mp_formula_transformed') and getattr(char, 'hs_transformed', False):
             mp_cost = roll_dice(str(spell['_mp_formula_transformed']))
+        elif spell.get('mp_cost_formula') == 'max_25pct_cur_50pct':
+            # 夜诏明 s2: max(25% maxMP, 50% curMP)
+            max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
+            cur_mp_raw = char.get_attr('魔力', 0) or 0
+            pct_max = max(1, max_mp * 25 // 100)
+            pct_cur = max(1, cur_mp_raw * 50 // 100)
+            mp_cost = max(pct_max, pct_cur)
+            spell['_actual_mp_cost'] = mp_cost  # Store for damage calculation
         else:
             mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
 
@@ -2364,6 +2455,44 @@ class CombatEngine:
             self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
 
+        # Blood cost (cost_blood_ml): consumed before MP, fails if insufficient
+        blood_cost = spell.get('cost_blood_ml', 0) or 0
+        if blood_cost > 0:
+            if not self._consume_blood(caster_id, blood_cost):
+                return f'{char.name} 血液不足！需要 {blood_cost}ml 血液。\n'
+            out += f'  消耗 {blood_cost}ml 血液\n'
+
+        # HP percentage cost (cost_hp_pct_current): consumed before MP
+        hp_pct = spell.get('cost_hp_pct_current', 0) or 0
+        if hp_pct > 0:
+            cur_hp = self._get_combat_hp(caster_id) or 0
+            hp_cost = max(1, cur_hp * hp_pct // 100)
+            self._set_combat_hp(caster_id, cur_hp - hp_cost)
+            out += f'  消耗 {hp_cost} HP (献祭)\n'
+
+        # HP dice cost (cost_hp_dice): rolled HP consumption
+        hp_dice = spell.get('cost_hp_dice', '')
+        if hp_dice:
+            hp_cost_d = roll_dice(str(hp_dice))
+            cur_hp_d = self._get_combat_hp(caster_id) or 0
+            self._set_combat_hp(caster_id, max(0, cur_hp_d - hp_cost_d))
+            out += f'  消耗 {hp_cost_d} HP ({hp_dice})\n'
+
+        # MP percentage cost (cost_mp_pct_max): min MP based on max MP
+        mp_pct_max = spell.get('cost_mp_pct_max', 0) or 0
+        if mp_pct_max > 0:
+            max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
+            mp_cost_pct = max(1, max_mp * mp_pct_max // 100)
+            # Use the larger of dice cost and percentage cost
+            mp_cost = max(mp_cost, mp_cost_pct)
+
+        # MP percentage of current (cost_mp_pct_current)
+        mp_pct_cur = spell.get('cost_mp_pct_current', 0) or 0
+        if mp_pct_cur > 0:
+            cur_mp_for_pct = char.get_attr('魔力', 0) or 0
+            mp_cost_cur = max(1, cur_mp_for_pct * mp_pct_cur // 100)
+            mp_cost = max(mp_cost, mp_cost_cur)
+
         # AUX 9/10: MP cost modifiers
         if mp_cost > 0:
             mp_cost = max(1, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
@@ -2377,6 +2506,33 @@ class CombatEngine:
         if san_cost > 0:
             cur_san = char.get_attr('理智', 50)
             char.set_attr('理智', max(0, cur_san - san_cost)); out += f'  消耗 {san_cost} SAN\n'
+
+        # ── 吟唱系统：若法术有吟唱回合 > 0，创建 chanting 效果，不立即执行效果 ──
+        chant_rounds = spell.get('吟唱回合', 0) or 0
+        if chant_rounds > 0:
+            effects = self._get_effects()
+            chant_entry = {
+                'type': 'chanting',
+                'sourceUserId': caster_id,
+                'targetUserId': caster_id,  # Chant is ON the caster (they're the one chanting)
+                'remainingRounds': chant_rounds,
+                'spellName': spell['name'],
+                'spellIndex': spell['index'],
+                'interruptible': spell.get('chant_interruptible', False),
+                'stored_effects': spell.get('effects', []),
+                'stored_target': target_id,
+                'stored_spell_name': spell['name'],
+                'stored_spell_index': spell['index'],
+                'persistent': 0,
+            }
+            # Store interrupt penalty if applicable
+            if spell.get('chant_interruptible'):
+                chant_entry['interrupt_hp_pct'] = spell.get('chant_interrupt_hp_pct', 0)
+                chant_entry['interrupt_mp_pct'] = spell.get('chant_interrupt_mp_pct', 0)
+            effects.append(chant_entry)
+            self._set_effects(effects)
+            out += f'  开始吟唱【{spell["name"]}】（{chant_rounds}回合後发动）\n'
+            return out
 
         # ── 被动标记：若法术时机含'1'（被动），所有产生效果标记 sourcePassive ──
         is_passive_spell = has_timing(spell.get('时机', '2'), '1')
@@ -2788,6 +2944,9 @@ class CombatEngine:
         if self._consume_immunity(target_id):
             out += f'  月相的庇佑：免疫本次伤害！\n'
             return out
+        # Chant interrupt: if target has an interruptible chant, break it
+        ci_msgs = self._check_chant_interrupt(target_id)
+        for m in ci_msgs: out += f'  {m}\n'
         # AUX code 4: merge bonus damage dice into dmg_dice expression
         bonus_dice = self._get_buff_dmg_dice_bonus(caster_id)
         if bonus_dice:
@@ -2865,6 +3024,33 @@ class CombatEngine:
             self._set_combat_hp(caster_id, min(chp + heal, mhp))
             out += f'  吸血回复 {heal} HP\n'
 
+        # On-kill effects: trigger if target died
+        target_dead = cur_hp <= 0
+        caster_char = self.get_char(caster_id) if caster_id else None
+        if target_dead and eff_dmg > 0:
+            if spell:
+                ok_hp = spell.get('on_kill_heal_hp', 0) or 0
+                ok_san = spell.get('on_kill_heal_san', 0) or 0
+                ok_blood = spell.get('on_kill_blood_ml', 0) or 0
+                if ok_hp > 0 and caster_char:
+                    chp_k = self._get_combat_hp(caster_id) or 10
+                    mhp_k = caster_char.get_attr('体力上限', chp_k)
+                    self._set_combat_hp(caster_id, min(chp_k + ok_hp, mhp_k))
+                    out += f'  击杀回复 {ok_hp} HP\n'
+                if ok_san > 0 and caster_char:
+                    cur_s = caster_char.get_attr('理智', 50)
+                    caster_char.set_attr('理智', min(cur_s + ok_san, 99))
+                    out += f'  击杀回复 {ok_san} SAN\n'
+                if ok_blood > 0:
+                    self._add_blood(caster_id, ok_blood)
+                    out += f'  收集血液 +{ok_blood}ml\n'
+            # blood_per_hit_ml: collect blood for each hit (always, not just on kill)
+            if spell:
+                bph = spell.get('blood_per_hit_ml', 0) or 0
+                if bph > 0:
+                    self._add_blood(caster_id, bph)
+                    out += f'  汲取血液 +{bph}ml\n'
+
         # DOT: store recurring damage effect
         if dur > 0 or dot_dice:
             effects = self._get_effects()
@@ -2884,6 +3070,29 @@ class CombatEngine:
         out = ''
         dmg_dice = eff.get('伤害骰', '1d4')
         char = self.get_char(caster_id) if caster_id else None
+        # ── New damage formulas (computed before _resolve_db) ──
+        if eff.get('damage_fixed'):
+            dmg_dice = str(eff['damage_fixed'])
+        elif eff.get('damage_mp_multiplier'):
+            mp_spent = spell.get('_actual_mp_cost', 0) if spell else 0
+            dmg_val = mp_spent * eff['damage_mp_multiplier']
+            dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_caster_max_hp'):
+            if char:
+                max_hp = char.get_attr('体力上限', char.get_attr('体力', 10)) or 10
+                dmg_val = max(1, max_hp * eff['damage_pct_caster_max_hp'] // 100)
+                dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_target_max_hp'):
+            tchar = self.get_char(target_id)
+            if tchar:
+                t_max_hp = tchar.get_attr('体力上限', tchar.get_attr('体力', 10)) or 10
+                dmg_val = max(1, t_max_hp * eff['damage_pct_target_max_hp'] // 100)
+                dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_caster_cur_hp'):
+            if char:
+                cur_hp_raw = self._get_combat_hp(caster_id) or 1
+                dmg_val = max(1, cur_hp_raw * eff['damage_pct_caster_cur_hp'] // 100)
+                dmg_dice = str(dmg_val)
         dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
@@ -3336,8 +3545,64 @@ class CombatEngine:
 
             # Zone per-round effects (applied later by _apply_zone_effects)
 
-            # Chant countdown (吟唱回合)
-            # Simplified: stored on character, decremented elsewhere
+            # Chanting: countdown and execute on completion
+            if eff.get('type') == 'chanting':
+                eff['remainingRounds'] = eff.get('remainingRounds', 0) - 1
+                if eff['remainingRounds'] <= 0:
+                    # Execute stored spell effects
+                    caster_id = eff.get('sourceUserId', '')
+                    target_id = eff.get('stored_target', caster_id)
+                    stored_effects = eff.get('stored_effects', [])
+                    spell_name = eff.get('spellName', '')
+                    spell_index = eff.get('spellIndex', 0)
+                    caster_char = self.get_char(caster_id) if caster_id else None
+                    chant_out = f'{caster_char.name if caster_char else "?"} 吟唱完成【{spell_name}】→ 发动！\n'
+                    fake_spell = {'name': spell_name, 'index': spell_index, 'effects': stored_effects}
+                    for seff in stored_effects:
+                        ct = seff.get('type', 1)
+                        if ct == 1:
+                            chant_out += self._handle_spell_damage_effect(caster_id, target_id, seff, fake_spell)
+                        elif ct == 2:
+                            sv = roll_dice(seff.get('护盾值', '1d4'))
+                            dur_s = seff.get('持续回合', 1)
+                            effs_s = self._get_effects()
+                            effs_s.append({'type': 'shield', 'value': sv, 'remainingRounds': dur_s,
+                                'sourceUserId': caster_id, 'targetUserId': target_id or caster_id,
+                                'spellName': spell_name, 'spellIndex': spell_index, 'persistent': 0})
+                            self._set_effects(effs_s)
+                            chant_out += f'  获得 {sv} 点护盾\n'
+                        elif ct == 3:
+                            tid_h = target_id or caster_id
+                            hp_heal = roll_dice(seff.get('回复hp', '0'))
+                            mp_heal = roll_dice(seff.get('回复mp', '0'))
+                            tchar = self.get_char(tid_h)
+                            if hp_heal > 0:
+                                chp = self._get_combat_hp(tid_h) or 10
+                                mhp = tchar.get_attr('体力上限', chp) if tchar else chp
+                                actual_hp = min(chp + hp_heal, mhp)
+                                self._set_combat_hp(tid_h, actual_hp)
+                                chant_out += f'  回复 HP +{hp_heal}\n'
+                            if mp_heal > 0:
+                                cm = tchar.get_attr('魔力', 0) if tchar else 0
+                                mx = tchar.get_attr('魔力上限', cm) if tchar else cm
+                                tchar.set_attr('魔力', min(cm + mp_heal, mx))
+                                chant_out += f'  回复 MP +{mp_heal}\n'
+                        elif ct == 5:
+                            # Summon on chant completion
+                            count_raw = seff.get('召唤个数', 1)
+                            if isinstance(count_raw, str) and 'd' in str(count_raw):
+                                count = roll_dice(str(count_raw))
+                            else:
+                                count = int(count_raw) if count_raw else 1
+                            tmpl = seff.get('召唤物模板', '')
+                            for _ in range(count):
+                                self._create_summon(caster_id, tmpl)
+                            chant_out += f'  召唤 {count} 个【{tmpl or "使魔"}】\n'
+                    msgs.append(chant_out)
+                    continue  # Don't keep expired chanting effect
+                else:
+                    new_effects.append(eff)
+                continue
 
             # hpTrigger: persistent, don't countdown
             if eff.get('type') == 'hpTrigger':
@@ -4161,7 +4426,11 @@ class FullBattleEngine(CombatEngine):
                 cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow tracked in _set_combat_hp)
                 lines.append(f"  致死骰: 1d{leth_die}={lr} > {int(exp_dmg)} 失败")
         else: cur_hp = cur_hp - eff_dmg  # raw (may be negative → overflow)
-        lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点"); self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg)
+        lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点")
+        # Chant interrupt for basic attacks
+        ci_msgs_ba = self._check_chant_interrupt(loser_uid)
+        for m in ci_msgs_ba: lines.append(f"  {m}")
+        self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg)
         lines.append(f"  {loser_name} HP: {max(0, cur_hp)}")
         # Cleanup: if a non-summon character died, remove their summons immediately
         if cur_hp <= 0:
@@ -4180,6 +4449,29 @@ class FullBattleEngine(CombatEngine):
         out = ''
         dmg_dice = eff.get('伤害骰', '1d4')
         char = self.get_char(caster_id) if caster_id else None
+        # ── New damage formulas (computed before _resolve_db) ──
+        if eff.get('damage_fixed'):
+            dmg_dice = str(eff['damage_fixed'])
+        elif eff.get('damage_mp_multiplier'):
+            mp_spent = spell.get('_actual_mp_cost', 0) if spell else 0
+            dmg_val = mp_spent * eff['damage_mp_multiplier']
+            dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_caster_max_hp'):
+            if char:
+                max_hp = char.get_attr('体力上限', char.get_attr('体力', 10)) or 10
+                dmg_val = max(1, max_hp * eff['damage_pct_caster_max_hp'] // 100)
+                dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_target_max_hp'):
+            tchar = self.get_char(target_id)
+            if tchar:
+                t_max_hp = tchar.get_attr('体力上限', tchar.get_attr('体力', 10)) or 10
+                dmg_val = max(1, t_max_hp * eff['damage_pct_target_max_hp'] // 100)
+                dmg_dice = str(dmg_val)
+        elif eff.get('damage_pct_caster_cur_hp'):
+            if char:
+                cur_hp_raw = self._get_combat_hp(caster_id) or 1
+                dmg_val = max(1, cur_hp_raw * eff['damage_pct_caster_cur_hp'] // 100)
+                dmg_dice = str(dmg_val)
         dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
