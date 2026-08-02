@@ -3391,6 +3391,7 @@ cmdApp.help = '.app <魔法少女序号> <Y|X> // 添加角色到指定阵营\n'
   '  .app Y6 X  // 添加 Y6 到 X队\n' +
   '  战斗开始后也可以使用 .app';
 cmdApp.solve = (ctx, msg, cmdArgs) => {
+  const uid = ctx.player.userId;
   const gid = getGid(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (!battleId) {
@@ -3433,6 +3434,7 @@ cmdRem.name = 'rem';
 cmdRem.help = '.rem <魔法少女序号> // 移除角色（如 .rem Y5）\n' +
   '  战斗开始后也可以使用，移除后视同死亡。';
 cmdRem.solve = (ctx, msg, cmdArgs) => {
+  const uid = ctx.player.userId;
   const gid = getGid(ctx);
   const battleId = ext.storageGet(`pvp_battle_${gid}`);
   if (!battleId) {

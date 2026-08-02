@@ -18646,6 +18646,23 @@ _bem.CAT_LETTERS = CAT_LETTERS
 _bem.CombatEngine = CombatEngine
 _bem.FullBattleEngine = FullBattleEngine
 _bem.FastBattleEngine = FastBattleEngine
+if "roll_dice" in dir():_bem.roll_dice = roll_dice
+if "roll_d100" in dir():_bem.roll_d100 = roll_d100
+if "is_in_melee_range" in dir():_bem.is_in_melee_range = is_in_melee_range
+if "has_timing" in dir():_bem.has_timing = has_timing
+if "has_object" in dir():_bem.has_object = has_object
+if "parse_coord" in dir():_bem.parse_coord = parse_coord
+if "format_coord" in dir():_bem.format_coord = format_coord
+if "avg_damage" in dir():_bem.avg_damage = avg_damage
+if "success_rank" in dir():_bem.success_rank = success_rank
+if "rank_text" in dir():_bem.rank_text = rank_text
+if "max_damage" in dir():_bem.max_damage = max_damage
+if "_get_attack_range" in dir():_bem._get_attack_range = _get_attack_range
+if "chebyshev_dist" in dir():_bem.chebyshev_dist = chebyshev_dist
+if "_resolve_db" in dir():_bem._resolve_db = _resolve_db
+if "_get_db_str" in dir():_bem._get_db_str = _get_db_str
+if "_calc_net_bp" in dir():_bem._calc_net_bp = _calc_net_bp
+if "season_status_roll" in dir():_bem.season_status_roll = season_status_roll
 sys.modules['battle_engine'] = _bem
 
 # Main entry

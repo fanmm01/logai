@@ -101,6 +101,12 @@ def main():
     output_lines.append('_bem.CombatEngine = CombatEngine\n')
     output_lines.append('_bem.FullBattleEngine = FullBattleEngine\n')
     output_lines.append('_bem.FastBattleEngine = FastBattleEngine\n')
+    # Utility functions needed by ai_trainer.py, ai_battle.py, battle_http_server.py
+    for _sym in ['roll_dice','roll_d100','is_in_melee_range','has_timing','has_object',
+                 'parse_coord','format_coord','avg_damage','success_rank','rank_text',
+                 'max_damage','_get_attack_range','chebyshev_dist','_resolve_db',
+                 '_get_db_str','_calc_net_bp','season_status_roll']:
+        output_lines.append(f'if \"{_sym}\" in dir():_bem.{_sym} = {_sym}\n')
     output_lines.append('sys.modules[\'battle_engine\'] = _bem\n')
 
     output_lines.append('\n# Main entry\n')
