@@ -5831,12 +5831,12 @@ cmdAlist.solve = (ctx, msg, cmdArgs) => {
             }
           }
           out += `\n附加动作(剩余${ch.actions['附加'] || 0}):`;
-          out += `\n  .a m <坐标>  — 移动`;
+          out += `\n  .m <坐标>  — 移动`;
           for (const sk of ch.skills) {
             if (sk.timing.includes('附')) {
               const status = sk.available ? '' : ' [暂不可用]';
               const mpStr = sk.mp_cost > 0 ? ` MP:${sk.mp_cost}` : '';
-              out += `\n  .a s${sk.index}  ${sk.name}${mpStr}${status}`;
+              out += `\n  .s${sk.index}  ${sk.name}${mpStr}${status}`;
             }
           }
           out += `\n其他:`;
@@ -7407,6 +7407,42 @@ function makeAdditionalCmd() {
 }
 
 // ============================================================
+//  .m  — 移动（附加动作快捷方式，等价于 .a m）
+// ============================================================
+function makeMoveCmd() {
+  const cmd = seal.ext.newCmdItemInfo();
+  cmd.name = 'm';
+  cmd.help = '.m <坐标> // 移动（消耗一次附加动作，等价于 .a m）';
+  cmd.solve = (ctx, msg, cmdArgs) => {
+    const gid = getGid(ctx);
+    const battleId = ext.storageGet(`pvp_battle_${gid}`);
+    const uid = ctx.player.userId;
+    const coord = (cmdArgs.getArgN(1) || '').toUpperCase();
+    if (!coord || !/^[A-Z]\d+$/i.test(coord)) {
+      seal.replyToSender(ctx, msg, '用法：.m <坐标>（如 .m A5）');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    if (!battleId) {
+      seal.replyToSender(ctx, msg, '当前没有进行中的战斗。');
+      return seal.ext.newCmdExecuteResult(true);
+    }
+    pvpFetch(`/api/pvp/${battleId}/batch_action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: uid, action_type: 'move', coord: coord, batch_index: 0 }),
+    }).then(async result => {
+      if (result.error) {
+        seal.replyToSender(ctx, msg, `[.setab 2] ${result.message}`);
+      } else {
+        await renderBattleResponse(gid, result, ctx, msg);
+      }
+    });
+    return seal.ext.newCmdExecuteResult(true);
+  };
+  return cmd;
+}
+
+// ============================================================
 //  .stc <属性> <值>  — 多卡模式 st（支持罗马数字前缀）
 //  根据当前绑定的魔法少女序号自动添加前缀。
 //  如 .as III 后，.stc 力量 50 → .st III_力量 50
@@ -8234,6 +8270,7 @@ ext.cmdMap['cm']       = cmdCm;
 ext.cmdMap['stc']      = cmdStc;
 ext.cmdMap['btaint']   = cmdBtaInt;
 ext.cmdMap['a']        = makeAdditionalCmd();
+ext.cmdMap['m']        = makeMoveCmd();
 ext.cmdMap['btastartfull'] = cmdBtaStartFull;
 ext.cmdMap['btastartfull2'] = cmdBtaStartFull2;
 ext.cmdMap['btastt2'] = cmdBtaStartFull2;

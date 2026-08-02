@@ -996,12 +996,14 @@ SUMMON_TEMPLATES['虚假之月'] = {
     'unlimited_mp': True,
     'replenish_allies': True,
     'maintenance_mp': 5,
+    '无主动行动': True,
 }
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 10, 'SIZ': 10, 'DEX': 50, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
     '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
-    'skills': ['斗殴:1 0d1'],
+    '斗殴': 75,
+    'skills': ['斗殴:75 1d8+2+db'],
     'max_simultaneous': 2, 'max_total_spawned': None,
     'clone_of_owner': True,
     'protect_allies_on_hit': True,
@@ -1248,7 +1250,7 @@ YEZHAOMING = {
     'name': '夜诏明', 'serial': 'Y17',
     '初始血液': 2000,  # Start with 2L blood
     'blood_ml_per_hp': 250,  # 250ml blood = 1 HP (ceil)
-    'hp_to_blood_ml': 200,  # 1 HP = 200ml blood
+    'hp_to_blood_ml': 250,  # 1 HP = 250ml blood
     'attrs': {
         '等级': 3, '敏捷': 80, '体力': 7, '体力上限': 7, '魔力': 26, '魔力上限': 26,
         '闪避': 85, '理智': 65, '斗殴': 28, '弓术': 61, '行动力': 8, '体格': -2,

@@ -996,12 +996,14 @@ SUMMON_TEMPLATES['虚假之月'] = {
     'unlimited_mp': True,
     'replenish_allies': True,
     'maintenance_mp': 5,
+    '无主动行动': True,
 }
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 10, 'SIZ': 10, 'DEX': 50, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
     '闪避': 20, 'MOV': 8, '额外行动数': 0, '可反击': 0, '可反应': 0,
-    'skills': ['斗殴:1 0d1'],
+    '斗殴': 75,
+    'skills': ['斗殴:75 1d8+2+db'],
     'max_simultaneous': 2, 'max_total_spawned': None,
     'clone_of_owner': True,
     'protect_allies_on_hit': True,

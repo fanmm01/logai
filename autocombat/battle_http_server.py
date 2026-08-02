@@ -3451,10 +3451,23 @@ def submit_action(battle_id):
                                     auto_react = getattr(engine, '_auto_react', {}).get(def_base_s)
                                     if auto_react and auto_react.get('remaining', 0) > 0:
                                         choice_auto = auto_react['type']
+                                        # Validate applicability
+                                        can_dodge_s = e_s.data.get('can_dodge', True)
+                                        can_counter_s = e_s.data.get('can_counter', True)
+                                        can_block_s = e_s.data.get('can_block', False)
+                                        is_valid_s = ((choice_auto == 'dodge' and can_dodge_s) or
+                                                      (choice_auto == 'counter' and can_counter_s) or
+                                                      (choice_auto == 'block' and can_block_s))
+                                        if not is_valid_s:
+                                            choice_auto = 'dodge' if can_dodge_s else 'counter' if can_counter_s else 'block' if can_block_s else 'dodge'
+                                            lines_s = [f"（自动反应不适用，已自动切换为{choice_auto}）"]
+                                        else:
+                                            lines_s = []
                                         auto_react['remaining'] -= 1
                                         if auto_react['remaining'] <= 0:
                                             engine._auto_react.pop(def_base_s, None)
-                                        _, _, lines_s = engine.resolve_reaction(e_s.data, choice_auto)
+                                        _, _, react_lines_s = engine.resolve_reaction(e_s.data, choice_auto)
+                                        lines_s.extend(react_lines_s)
                                         lines_s.append(f"（自动反应：{choice_auto}，剩余 {auto_react.get('remaining', 0)} 次）")
                                     else:
                                         e_s.data['restim_mode'] = restim_mode
@@ -3755,9 +3768,21 @@ def submit_action(battle_id):
                                     # Auto-reaction type doesn't apply to this attack
                                     auto_retry = getattr(engine, '_auto_react_retry', 0)
                                     if auto_retry:
-                                        # Auto-switch to first available reaction type, don't decrement
+                                        # Auto-switch to first available reaction type
                                         choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'block' if can_block_sp2 else 'dodge'
                                         all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用，已自动切换为{choice_sp2}，剩余 {auto_react_sp2['remaining']} 次）")
+                                        # Execute the switched reaction (same as valid path below)
+                                        auto_react_sp2['remaining'] -= 1
+                                        if auto_react_sp2['remaining'] <= 0:
+                                            engine._auto_react.pop(def_base_sp2, None)
+                                        dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
+                                        all_sp_out.extend(lines_sp2)
+                                        if not is_passive:
+                                            my_acts = engine._consume_action(effective_uid, action_type)
+                                        actual_sp += 1
+                                        auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
+                                        remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
+                                        all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
                                     else:
                                         # Preserve count, fall back to manual reaction
                                         all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用于本次攻击，剩余 {auto_react_sp2['remaining']} 次未消耗，请手动选择反应）")
@@ -4696,9 +4721,21 @@ def get_alist(battle_id):
                 is_main = has_timing(timing, '2')
                 is_extra = has_timing(timing, '3')
                 available = (is_main and my_acts.get('主动', 0) > 0) or (is_extra and my_acts.get('附加', 0) > 0)
+                # Resolve db in damage dice for display
+                from battle_engine import _resolve_db, _get_db_str
+                dmg_display = ''
+                for eff in s.get('effects', []):
+                    if eff.get('type') == 1 and eff.get('伤害骰'):
+                        resolved = _resolve_db(eff['伤害骰'], _get_db_str(char))
+                        if resolved != eff['伤害骰']:
+                            dmg_display = resolved
+                            break
+                        dmg_display = eff['伤害骰']
+                        break
                 skills.append({
                     'index': s['index'], 'name': s['name'],
                     'timing': timing_str, 'mp_cost': mp_cost, 'available': available,
+                    'dmg_dice': dmg_display,
                 })
 
             # Check items

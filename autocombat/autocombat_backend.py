@@ -1024,12 +1024,14 @@ SUMMON_TEMPLATES['虚假之月'] = {
     'unlimited_mp': True,
     'replenish_allies': True,
     'maintenance_mp': 5,
+    '无主动行动': True,
 }
 SUMMON_TEMPLATES['影之克隆'] = {
     'HP': 3, 'MP': 0, 'SAN': 0,
     'STR': 1, 'CON': 10, 'SIZ': 10, 'DEX': 50, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
     '闪避': 20, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0,
-    'skills': ['斗殴:1 0d1'],
+    '斗殴': 75,
+    'skills': ['斗殴:75 1d8+2+db'],
     'max_simultaneous': 2, 'max_total_spawned': None,
     'clone_of_owner': True,
     'protect_allies_on_hit': True,
@@ -1276,7 +1278,7 @@ YEZHAOMING = {
     'name': '夜诏明', 'serial': 'Y17',
     '初始血液': 2000,  # Start with 2L blood
     'blood_ml_per_hp': 250,  # 250ml blood = 1 HP (ceil)
-    'hp_to_blood_ml': 200,  # 1 HP = 200ml blood
+    'hp_to_blood_ml': 250,  # 1 HP = 250ml blood
     'attrs': {
         '等级': 3, '敏捷': 80, '体力': 7, '体力上限': 7, '魔力': 26, '魔力上限': 26,
         '闪避': 85, '理智': 65, '斗殴': 28, '弓术': 61, '行动力': 8, '体格': -2,
@@ -2608,13 +2610,43 @@ class CombatEngine:
 
     def _calc_main_actions(self, uid):
         """计算每回合主动作数。公式: max(1, (effective_MOV + 4) // 5 + 额外行动数)，无上限。
-        区间映射: MOV 0-5→1动, 6-10→2动, 11-15→3动, 16-20→4动, 21-25→5动, ..."""
-        effective_mov = self._get_effective_mov(uid)
+        区间映射: MOV 0-5→1动, 6-10→2动, 11-15→3动, 16-20→4动, 21-25→5动, ...
+        若角色/召唤物设置了 无主动行动=1，返回 0。"""
         char = self.get_char(self._resolve_uid(uid))
+        if char.get_attr('无主动行动', 0) == 1:
+            return 0
+        effective_mov = self._get_effective_mov(uid)
         extra = char.get_attr('额外行动数', None)
         if extra is None:
             extra = char.get_attr('回合行动数', 0)
         return max(1, (effective_mov + 4) // 5 + extra)
+
+    def _sync_actions_from_mov(self, uid):
+        """当 MOV 变化时，同步调整当前剩余主行动数。
+        新最大行动数 - 旧最大行动数 = delta，增加到当前剩余上（不减到负数）。"""
+        # Clear cached MOV modifier so _calc_main_actions sees fresh buff state
+        il = self._get_initiative()
+        base = self._resolve_uid(uid)
+        for e in il:
+            if e.get('baseUserId', e['userId']) == base:
+                e.pop('_cached_buff_mov_mod', None)
+        self._set_initiative(il)
+        actions = self._get_actions()
+        # Resolve to base uid for action dict lookup (same logic as _get_my_actions)
+        grp = self._get_summon_group(base)
+        lookup = base
+        if grp:
+            rep = grp.get('members', [base])[0] if grp.get('members') else base
+            lookup = rep
+        if lookup not in actions:
+            return
+        old_max = actions[lookup].get('_max_主动', self._calc_main_actions(uid))
+        new_max = self._calc_main_actions(uid)
+        delta = new_max - old_max
+        if delta != 0:
+            actions[lookup]['主动'] = max(0, actions[lookup].get('主动', 0) + delta)
+            actions[lookup]['_max_主动'] = new_max
+            self._set_actions(actions)
 
     def _get_buff_move_mod(self, uid):
         """从活跃buff中提取MOV/行动力/移动力修改量（每回合缓存）。"""
@@ -3964,6 +3996,17 @@ class CombatEngine:
             consumed.add(spell['name'])
             char._once_consumed = consumed
 
+        # ── 未指定目标→随机敌对目标 ──
+        if not target_id or target_id == caster_id:
+            has_hostile = any(e.get('type') == 1 and str(e.get('客体', 4)) in ('4','5','45','R','RP')
+                             for e in spell.get('effects', []))
+            if has_hostile:
+                rt = self._pick_random_target(caster_id)
+                if rt:
+                    target_id = rt
+                    tname = self.get_char(target_id).name if target_id else '自身'
+                    out = f'{char.name} 释放【{spell["name"]}】→ {tname}（随机）\n'
+
         # MP cost: support dice expressions and formulas
         mp_cost_raw = spell.get('消耗mp', 0)
         mp_formula = spell.get('_mp_formula', '')
@@ -4031,12 +4074,23 @@ class CombatEngine:
             self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
 
-        # Blood cost (cost_blood_ml): consumed before MP, fails if insufficient
+        # Blood cost (cost_blood_ml): consumed before MP; HP fallback if insufficient
         blood_cost = spell.get('cost_blood_ml', 0) or 0
         if blood_cost > 0:
             if not self._consume_blood(caster_id, blood_cost):
-                return f'{char.name} 血液不足！需要 {blood_cost}ml 血液。\n'
-            out += f'  消耗 {blood_cost}ml 血液\n'
+                # 血液不足：HP补足差额
+                cur_blood = self._get_blood(caster_id)
+                shortfall = blood_cost - cur_blood
+                self._consume_blood(caster_id, cur_blood)  # 清空剩余血液
+                hp_to_ml = getattr(char, '_hp_to_blood_ml', 200) or 200
+                hp_needed = max(1, (shortfall + hp_to_ml - 1) // hp_to_ml)  # ceil
+                cur_hp_b = self._get_combat_hp(caster_id) or 0
+                if cur_hp_b <= hp_needed:
+                    return f'{char.name} 血液不足且HP不足以献祭！需要 {blood_cost}ml 血液。\n'
+                self._set_combat_hp(caster_id, cur_hp_b - hp_needed)
+                out += f'  血液不足，献祭 {hp_needed} HP 补足 {shortfall}ml 血液\n'
+            else:
+                out += f'  消耗 {blood_cost}ml 血液\n'
 
         # HP percentage cost (cost_hp_pct_current): consumed before MP
         hp_pct = spell.get('cost_hp_pct_current', 0) or 0
@@ -4507,6 +4561,11 @@ class CombatEngine:
                         self._set_map(map_data)
                         out += f'  {caster_char.name} 传送至 {ally.name} 身边\n'
 
+        # ── MOV变化同步行动数 ──
+        self._sync_actions_from_mov(caster_id)
+        if target_id and target_id != caster_id:
+            self._sync_actions_from_mov(target_id)
+
         return out
 
     def _apply_spell_damage(self, caster_id, target_id, dmg_dice, pen, leth,
@@ -4679,24 +4738,37 @@ class CombatEngine:
 
         # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
         if eff.get('幻造'):
-            # Look for 幻造兵武 passive effect on caster
+            # Look for 幻造兵武 passive effect on caster (or owner if summon)
             caster_effects = self._get_effects()
             phantom_bonus = 0
+            phantom_ce_hz = None
+            phantom_owner_hz = None
             for ce in caster_effects:
-                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
-                   and ce.get('targetUserId') == caster_id:
-                    if char:
-                        writing_val = int(char.get_attr('写作', 0) or 0)
-                        if writing_val > 0:
-                            caster_buffs = self._get_active_buffs(caster_id)
-                            bp_str = _calc_net_bp(caster_buffs, '', None)
-                            roll, _ = roll_d100(bp_str)
-                            if roll <= writing_val:
-                                phantom_bonus = ce.get('auxVal', 0) or 0
-                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
-                            else:
-                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
-                    break
+                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武':
+                    if ce.get('targetUserId') == caster_id:
+                        phantom_ce_hz = ce
+                        break
+                    # If caster is a summon, check owner
+                    c_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+                    if c_entry and c_entry.get('isSummon'):
+                        oid = c_entry.get('ownerId', '')
+                        if ce.get('targetUserId') == oid:
+                            phantom_ce_hz = ce
+                            phantom_owner_hz = oid
+            if phantom_ce_hz:
+                writing_char_hz = self.get_char(phantom_owner_hz) if phantom_owner_hz else char
+                if writing_char_hz:
+                    writing_val = int(writing_char_hz.get_attr('写作', 0) or 0)
+                    if writing_val > 0:
+                        w_uid_hz = phantom_owner_hz or caster_id
+                        caster_buffs = self._get_active_buffs(w_uid_hz)
+                        bp_str = _calc_net_bp(caster_buffs, '', None)
+                        roll, _ = roll_d100(bp_str)
+                        if roll <= writing_val:
+                            phantom_bonus = phantom_ce_hz.get('auxVal', 0) or 0
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                        else:
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
             if phantom_bonus:
                 try:
                     if int(phantom_bonus) > 0:
@@ -5644,24 +5716,38 @@ class FullBattleEngine(CombatEngine):
             bp_suffix = (bp_suffix or '') + 'p'  # 飞行近战惩罚骰
 
         # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
+        # Check attacker's own buff first; if attacker is a summon, also check owner's buff
         atk_effects = self._get_effects()
+        phantom_ce = None
+        phantom_owner_uid = None
         for ce in atk_effects:
-            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
-               and ce.get('targetUserId') == atk_uid:
-                writing_val = int(achar.get_attr('写作', 0) or 0)
-                if writing_val > 0:
-                    atk_buffs_hz = self._get_active_buffs(atk_uid)
-                    bp_str_hz = _calc_net_bp(atk_buffs_hz, '', None)
-                    roll, _ = roll_d100(bp_str_hz)
-                    if roll <= writing_val:
-                        phantom_bonus = ce.get('auxVal', 0) or 0
-                        if phantom_bonus:
-                            if isinstance(phantom_bonus, str) or int(phantom_bonus) > 0:
-                                dmg_dice = f"{dmg_dice}+{phantom_bonus}"
-                                lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}')
-                    else:
-                        lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败')
-                break
+            if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武':
+                if ce.get('targetUserId') == atk_uid:
+                    phantom_ce = ce
+                    break
+                # If attacker is a summon, check if owner has the buff
+                atk_entry = next((e for e in self._get_initiative() if e['userId'] == atk_uid), None)
+                if atk_entry and atk_entry.get('isSummon'):
+                    owner_id = atk_entry.get('ownerId', '')
+                    if ce.get('targetUserId') == owner_id:
+                        phantom_ce = ce
+                        phantom_owner_uid = owner_id
+        if phantom_ce:
+            writing_char = self.get_char(phantom_owner_uid) if phantom_owner_uid else achar
+            writing_val = int(writing_char.get_attr('写作', 0) or 0) if writing_char else 0
+            if writing_val > 0:
+                w_uid = phantom_owner_uid or atk_uid
+                atk_buffs_hz = self._get_active_buffs(w_uid)
+                bp_str_hz = _calc_net_bp(atk_buffs_hz, '', None)
+                roll, _ = roll_d100(bp_str_hz)
+                if roll <= writing_val:
+                    phantom_bonus = phantom_ce.get('auxVal', 0) or 0
+                    if phantom_bonus:
+                        if isinstance(phantom_bonus, str) or int(phantom_bonus) > 0:
+                            dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                            lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}')
+                else:
+                    lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败')
 
         # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
         def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
@@ -6058,24 +6144,36 @@ class FullBattleEngine(CombatEngine):
 
         # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
         if eff.get('幻造'):
-            # Look for 幻造兵武 passive effect on caster
+            # Look for 幻造兵武 passive effect on caster (or owner if summon)
             caster_effects = self._get_effects()
             phantom_bonus = 0
+            phantom_ce_hz2 = None
+            phantom_owner_hz2 = None
             for ce in caster_effects:
-                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武' \
-                   and ce.get('targetUserId') == caster_id:
-                    if char:
-                        writing_val = char.get_attr('写作', 0) or 0
-                        if writing_val > 0:
-                            caster_buffs_hz = self._get_active_buffs(caster_id)
-                            bp_str_hz = _calc_net_bp(caster_buffs_hz, '', None)
-                            roll, _ = roll_d100(bp_str_hz)
-                            if roll <= writing_val:
-                                phantom_bonus = ce.get('auxVal', 0) or 0
-                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
-                            else:
-                                out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
-                    break
+                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武':
+                    if ce.get('targetUserId') == caster_id:
+                        phantom_ce_hz2 = ce
+                        break
+                    c_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+                    if c_entry and c_entry.get('isSummon'):
+                        oid = c_entry.get('ownerId', '')
+                        if ce.get('targetUserId') == oid:
+                            phantom_ce_hz2 = ce
+                            phantom_owner_hz2 = oid
+            if phantom_ce_hz2:
+                writing_char_hz2 = self.get_char(phantom_owner_hz2) if phantom_owner_hz2 else char
+                if writing_char_hz2:
+                    writing_val = writing_char_hz2.get_attr('写作', 0) or 0
+                    if writing_val > 0:
+                        w_uid_hz2 = phantom_owner_hz2 or caster_id
+                        caster_buffs_hz = self._get_active_buffs(w_uid_hz2)
+                        bp_str_hz = _calc_net_bp(caster_buffs_hz, '', None)
+                        roll, _ = roll_d100(bp_str_hz)
+                        if roll <= writing_val:
+                            phantom_bonus = phantom_ce_hz2.get('auxVal', 0) or 0
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                        else:
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
             if phantom_bonus:
                 try:
                     if int(phantom_bonus) > 0:
@@ -6700,6 +6798,8 @@ class FullBattleEngine(CombatEngine):
             if parsed and parsed[0].get('dice'):
                 summon_char2.set_str('伤害值', parsed[0]['dice'])
             summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
+            if tmpl.get('无主动行动'):
+                summon_char2.set_attr('无主动行动', 1)
             # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
             _tmpl_skill_keys = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
             for _k in _tmpl_skill_keys:
@@ -6717,7 +6817,8 @@ class FullBattleEngine(CombatEngine):
                 caster = self.get_char(caster_id)
                 if caster and caster.spells:
                     summon_char2.spells = list(caster.spells)
-                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                for _k in ['剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运',
+                       '魔力', '魔力上限', 'MOV', '行动力']:
                     _v = caster.get_attr(_k) if caster else None
                     if _v is not None:
                         summon_char2.set_attr(_k, _v)
@@ -6778,6 +6879,8 @@ class FullBattleEngine(CombatEngine):
         summon_char.name = summon_display_name
         # 设置动态行动数所需的属性（召唤物也使用统一公式）
         summon_char.set_attr('MOV', tmpl.get('MOV', 6))
+        if tmpl.get('无主动行动'):
+            summon_char.set_attr('无主动行动', 1)
         if tmpl.get('unlimited_mp'):
             summon_char.set_attr('魔力上限', 99999)
         if parsed and parsed[0].get('dice'):
@@ -6800,7 +6903,8 @@ class FullBattleEngine(CombatEngine):
             caster = self.get_char(caster_id)
             if caster and caster.spells:
                 summon_char.spells = list(caster.spells)
-            for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+            for _k in ['剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运',
+                       '魔力', '魔力上限', 'MOV', '行动力']:
                 _v = caster.get_attr(_k) if caster else None
                 if _v is not None:
                     summon_char.set_attr(_k, _v)
@@ -7467,6 +7571,8 @@ class FastBattleEngine(FullBattleEngine):
             if parsed and parsed[0].get('dice'):
                 summon_char2.set_str('伤害值', parsed[0]['dice'])
             summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
+            if tmpl.get('无主动行动'):
+                summon_char2.set_attr('无主动行动', 1)
             # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
             _tmpl_skill_keys = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
             for _k in _tmpl_skill_keys:
@@ -7484,7 +7590,8 @@ class FastBattleEngine(FullBattleEngine):
                 caster = self.get_char(caster_id)
                 if caster and caster.spells:
                     summon_char2.spells = list(caster.spells)
-                for _k in ['斗殴', '剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运']:
+                for _k in ['剑', '闪避', '力量', '敏捷', '体质', '体型', '意志', '幸运',
+                       '魔力', '魔力上限', 'MOV', '行动力']:
                     _v = caster.get_attr(_k) if caster else None
                     if _v is not None:
                         summon_char2.set_attr(_k, _v)
@@ -16063,10 +16170,23 @@ def submit_action(battle_id):
                                     auto_react = getattr(engine, '_auto_react', {}).get(def_base_s)
                                     if auto_react and auto_react.get('remaining', 0) > 0:
                                         choice_auto = auto_react['type']
+                                        # Validate applicability
+                                        can_dodge_s = e_s.data.get('can_dodge', True)
+                                        can_counter_s = e_s.data.get('can_counter', True)
+                                        can_block_s = e_s.data.get('can_block', False)
+                                        is_valid_s = ((choice_auto == 'dodge' and can_dodge_s) or
+                                                      (choice_auto == 'counter' and can_counter_s) or
+                                                      (choice_auto == 'block' and can_block_s))
+                                        if not is_valid_s:
+                                            choice_auto = 'dodge' if can_dodge_s else 'counter' if can_counter_s else 'block' if can_block_s else 'dodge'
+                                            lines_s = [f"（自动反应不适用，已自动切换为{choice_auto}）"]
+                                        else:
+                                            lines_s = []
                                         auto_react['remaining'] -= 1
                                         if auto_react['remaining'] <= 0:
                                             engine._auto_react.pop(def_base_s, None)
-                                        _, _, lines_s = engine.resolve_reaction(e_s.data, choice_auto)
+                                        _, _, react_lines_s = engine.resolve_reaction(e_s.data, choice_auto)
+                                        lines_s.extend(react_lines_s)
                                         lines_s.append(f"（自动反应：{choice_auto}，剩余 {auto_react.get('remaining', 0)} 次）")
                                     else:
                                         e_s.data['restim_mode'] = restim_mode
@@ -16367,9 +16487,21 @@ def submit_action(battle_id):
                                     # Auto-reaction type doesn't apply to this attack
                                     auto_retry = getattr(engine, '_auto_react_retry', 0)
                                     if auto_retry:
-                                        # Auto-switch to first available reaction type, don't decrement
+                                        # Auto-switch to first available reaction type
                                         choice_sp2 = 'dodge' if can_dodge_sp2 else 'counter' if can_counter_sp2 else 'block' if can_block_sp2 else 'dodge'
                                         all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用，已自动切换为{choice_sp2}，剩余 {auto_react_sp2['remaining']} 次）")
+                                        # Execute the switched reaction (same as valid path below)
+                                        auto_react_sp2['remaining'] -= 1
+                                        if auto_react_sp2['remaining'] <= 0:
+                                            engine._auto_react.pop(def_base_sp2, None)
+                                        dodged_sp2, countered_sp2, lines_sp2 = engine.resolve_spell_reaction(e.data, choice_sp2)
+                                        all_sp_out.extend(lines_sp2)
+                                        if not is_passive:
+                                            my_acts = engine._consume_action(effective_uid, action_type)
+                                        actual_sp += 1
+                                        auto_label_sp2 = '闪避' if choice_sp2 == 'dodge' else '格挡' if choice_sp2 == 'block' else '反击'
+                                        remaining_sp2 = engine._auto_react.get(def_base_sp2, {}).get('remaining', 0)
+                                        all_sp_out.append(f"（自动反应：{auto_label_sp2}，剩余 {remaining_sp2} 次）")
                                     else:
                                         # Preserve count, fall back to manual reaction
                                         all_sp_out.append(f"（自动反应「{auto_react_sp2['type']}」不适用于本次攻击，剩余 {auto_react_sp2['remaining']} 次未消耗，请手动选择反应）")
@@ -17308,9 +17440,21 @@ def get_alist(battle_id):
                 is_main = has_timing(timing, '2')
                 is_extra = has_timing(timing, '3')
                 available = (is_main and my_acts.get('主动', 0) > 0) or (is_extra and my_acts.get('附加', 0) > 0)
+                # Resolve db in damage dice for display
+                from battle_engine import _resolve_db, _get_db_str
+                dmg_display = ''
+                for eff in s.get('effects', []):
+                    if eff.get('type') == 1 and eff.get('伤害骰'):
+                        resolved = _resolve_db(eff['伤害骰'], _get_db_str(char))
+                        if resolved != eff['伤害骰']:
+                            dmg_display = resolved
+                            break
+                        dmg_display = eff['伤害骰']
+                        break
                 skills.append({
                     'index': s['index'], 'name': s['name'],
                     'timing': timing_str, 'mp_cost': mp_cost, 'available': available,
+                    'dmg_dice': dmg_display,
                 })
 
             # Check items
