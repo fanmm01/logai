@@ -1197,7 +1197,7 @@ LINBAI = {
          'effects': [{'type': 4, '客体': 3, '持续回合': '2d3', '可叠加': 2,
                       '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}]},
         # s2: 虚假之月（召唤月亮 + 事象的馈赠buff）
-        {'name': '虚假之月', 'timing': '2', 'category': 5, '消耗mp': '3d4', '_mp_formula_transformed': '2d3',
+        {'name': '虚假之月', 'timing': '23', 'category': 5, '消耗mp': '3d4', '_mp_formula_transformed': '2d3',
          'effects': [
              {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '虚假之月', '持续回合': 99},
              {'type': 4, '客体': 3, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b',
@@ -1339,9 +1339,9 @@ YEZHAOMING = {
               '可贯穿性': 1, 'damage_table': 'moon_phase'},  # Auto-rolled by engine
          ]},
 
-        # s12: 血色突刺（血液→召唤长枪，1L=1把）
-        {'name': '血色突刺', 'timing': '2', 'category': 5,
-         '消耗mp': 0, 'cost_blood_ml': 1000,
+        # s12: 血色突刺（血液→召唤长枪，1L=1把，准备阶段免消耗无限次）
+        {'name': '血色突刺', 'timing': '23', 'category': 5,
+         '消耗mp': 0, 'cost_blood_ml': 1000, 'prep_free': True,
          'effects': [
              {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '血液长枪', '持续回合': 999},
          ]},
@@ -1496,6 +1496,8 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if cihp: char.set_attr(f"{prefix}chant_interrupt_hp_pct", cihp)
         cimp = spell.get('chant_interrupt_mp_pct', 0)
         if cimp: char.set_attr(f"{prefix}chant_interrupt_mp_pct", cimp)
+        pf = spell.get('prep_free', False)
+        if pf: char.set_attr(f"{prefix}prep_free", 1)
         # Spell-level blood/on-kill fields
         for sk in ['on_kill_heal_hp','on_kill_heal_san','on_kill_blood_ml',
                    'blood_per_hit_ml','chain_on_blood_ml','radius_per_extra_mp',

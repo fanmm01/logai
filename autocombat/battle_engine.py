@@ -1756,6 +1756,8 @@ class CombatEngine:
             if cihp is not None: spell['chant_interrupt_hp_pct'] = cihp
             cimp = char.get_attr(f"{prefix}chant_interrupt_mp_pct")
             if cimp is not None: spell['chant_interrupt_mp_pct'] = cimp
+            pf = char.get_attr(f"{prefix}prep_free")
+            if pf: spell['prep_free'] = True
             # Spell-level blood/on-kill fields
             for sk in ['on_kill_heal_hp','on_kill_heal_san','on_kill_blood_ml',
                        'blood_per_hit_ml','chain_on_blood_ml','radius_per_extra_mp',
@@ -2495,6 +2497,25 @@ class CombatEngine:
                 return f'{char.name} {cr_type}不足！需要 {cr_amount}。\n'
             self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
+
+        # prep_free spells: skip all costs during preparation phase
+        is_prep = False
+        state = self._get_state()
+        if state and state.get('phase') == 'preparation':
+            is_prep = True
+        prep_free = spell.get('prep_free', False)
+        if is_prep and prep_free:
+            out += f'  （准备阶段免消耗）\n'
+            blood_cost = 0
+            mp_cost = 0
+            san_cost = 0
+            # skip HP%, HP dice, MP% costs too
+            spell = dict(spell)  # shallow copy so we don't mutate original
+            spell['cost_blood_ml'] = 0
+            spell['cost_hp_pct_current'] = 0
+            spell['cost_hp_dice'] = ''
+            spell['cost_mp_pct_max'] = 0
+            spell['cost_mp_pct_current'] = 0
 
         # Blood cost (cost_blood_ml): consumed before MP; HP fallback if insufficient
         blood_cost = spell.get('cost_blood_ml', 0) or 0

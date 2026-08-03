@@ -1309,8 +1309,8 @@ YEZHAOMING = {
              {'type': 1, '客体': 4, '伤害骰': '1d6+4', '成功率': 80, '射程': 3,
               '可贯穿性': 1, 'damage_table': 'moon_phase'},
          ]},
-        {'name': '血色突刺', 'timing': '2', 'category': 5,
-         '消耗mp': 0, 'cost_blood_ml': 1000,
+        {'name': '血色突刺', 'timing': '23', 'category': 5,
+         '消耗mp': 0, 'cost_blood_ml': 1000, 'prep_free': True,
          'effects': [
              {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '血液长枪', '持续回合': 999},
          ]},
@@ -1458,6 +1458,12 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if mpcf: char.set_str(f"{prefix}mp_cost_formula", mpcf)
         ci = spell.get('chant_interruptible', False)
         if ci: char.set_attr(f"{prefix}chant_interruptible", 1)
+        cihp = spell.get('chant_interrupt_hp_pct', 0)
+        if cihp: char.set_attr(f"{prefix}chant_interrupt_hp_pct", cihp)
+        cimp = spell.get('chant_interrupt_mp_pct', 0)
+        if cimp: char.set_attr(f"{prefix}chant_interrupt_mp_pct", cimp)
+        pf = spell.get('prep_free', False)
+        if pf: char.set_attr(f"{prefix}prep_free", 1)
         # Spell-level blood/on-kill fields
         for sk in ['on_kill_heal_hp','on_kill_heal_san','on_kill_blood_ml',
                    'blood_per_hit_ml','chain_on_blood_ml','radius_per_extra_mp',
