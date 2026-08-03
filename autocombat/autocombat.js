@@ -3507,7 +3507,16 @@ cmdAsfull.solve = async (ctx, msg, cmdArgs) => {
         body: JSON.stringify({ player_id: uid, serial: serial, full: true }),
       }).then(r => r.json()).then(result => {
         if (result.error) {
-          return `⚠ .asfull ${serial} 失败: ${result.message}`;
+          // Battle may be stale — fall back to local binding
+          ext.storageSet(`pvp_battle_${gid}`, '');
+          storeLocalBinding(uid, serial, gid);
+          const fullKey2 = `bta_asfull_${gid}_${uid}`;
+          const existing2 = ext.storageGet(fullKey2);
+          let fullList2 = [];
+          if (existing2) { try { fullList2 = JSON.parse(existing2); } catch(e) {} }
+          if (!fullList2.includes(serial)) fullList2.push(serial);
+          ext.storageSet(fullKey2, JSON.stringify(fullList2));
+          return `${pn} 已完全绑定【${serial}】（本地，战斗不存在）`;
         }
         storeLocalBinding(uid, result.serial || serial, gid);
         // Mark as full-binding in local tracking
@@ -3628,7 +3637,9 @@ cmdAsall.solve = async (ctx, msg, cmdArgs) => {
         body: JSON.stringify({ player_id: uid, serial: serial, full: true }),
       }).then(r => r.json()).then(result => {
         if (result.error) {
-          return `⚠ .asall ${serial} 失败: ${result.message}`;
+          ext.storageSet(`pvp_battle_${gid}`, '');
+          storeLocalBinding(uid, serial, gid);
+          return `${pn} 已完全绑定【${serial}】（本地，战斗不存在）`;
         }
         storeLocalBinding(uid, result.serial || serial, gid);
         const fullKey = `bta_asfull_${gid}_${uid}`;
