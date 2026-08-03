@@ -4741,7 +4741,7 @@ class CombatEngine:
         if eff.get('幻造'):
             # Look for 幻造兵武 passive effect on caster (or owner if summon)
             caster_effects = self._get_effects()
-            phantom_bonus = 0
+            phantom_val = 0
             phantom_ce_hz = None
             phantom_owner_hz = None
             for ce in caster_effects:
@@ -4764,27 +4764,29 @@ class CombatEngine:
                         w_uid_hz = phantom_owner_hz or caster_id
                         caster_buffs = self._get_active_buffs(w_uid_hz)
                         bp_str = _calc_net_bp(caster_buffs, '', None)
-                        roll, _ = roll_d100(bp_str)
-                        if roll <= writing_val:
-                            phantom_bonus = phantom_ce_hz.get('auxVal', 0) or 0
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                        roll, bp_detail = roll_d100(bp_str)
+                        w_rank = success_rank(roll, writing_val)
+                        if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
+                        elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
+                        elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
+                        elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
+                        elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
+                        else:                phantom_val = 0;                  w_label = '失败'
+                        bp_note = f', {bp_detail}' if bp_detail else ''
+                        if phantom_val != 0:
+                            sign = '+' if phantom_val > 0 else ''
+                            dmg_dice = f"{dmg_dice}{sign}{phantom_val}"
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}！伤害{sign}{phantom_val}\n'
                         else:
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
-            if phantom_bonus:
-                try:
-                    if int(phantom_bonus) > 0:
-                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
-                except (ValueError, TypeError):
-                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
-
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}\n'
             # charge_moon: effect-level moon energy charging
             charge_moon_eff = eff.get('charge_moon', 0)
             if charge_moon_eff:
                 caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
                 if caster_entry:
                     charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
-                    if phantom_bonus:
-                        try: charge_amt += int(phantom_bonus)
+                    if phantom_val:
+                        try: charge_amt += int(phantom_val)
                         except: pass
                     charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
                     if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
@@ -5740,15 +5742,21 @@ class FullBattleEngine(CombatEngine):
                 w_uid = phantom_owner_uid or atk_uid
                 atk_buffs_hz = self._get_active_buffs(w_uid)
                 bp_str_hz = _calc_net_bp(atk_buffs_hz, '', None)
-                roll, _ = roll_d100(bp_str_hz)
-                if roll <= writing_val:
-                    phantom_bonus = phantom_ce.get('auxVal', 0) or 0
-                    if phantom_bonus:
-                        if isinstance(phantom_bonus, str) or int(phantom_bonus) > 0:
-                            dmg_dice = f"{dmg_dice}+{phantom_bonus}"
-                            lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}')
+                roll, bp_detail = roll_d100(bp_str_hz)
+                w_rank = success_rank(roll, writing_val)
+                if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
+                elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
+                elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
+                elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
+                elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
+                else:                phantom_val = 0;                  w_label = '失败'
+                bp_note = f', {bp_detail}' if bp_detail else ''
+                if phantom_val != 0:
+                    sign = '+' if phantom_val > 0 else ''
+                    dmg_dice = f"{dmg_dice}{sign}{phantom_val}"
+                    lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}！伤害{sign}{phantom_val}')
                 else:
-                    lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败')
+                    lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}')
 
         # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
         def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
@@ -6147,7 +6155,7 @@ class FullBattleEngine(CombatEngine):
         if eff.get('幻造'):
             # Look for 幻造兵武 passive effect on caster (or owner if summon)
             caster_effects = self._get_effects()
-            phantom_bonus = 0
+            phantom_val = 0
             phantom_ce_hz2 = None
             phantom_owner_hz2 = None
             for ce in caster_effects:
@@ -6169,18 +6177,21 @@ class FullBattleEngine(CombatEngine):
                         w_uid_hz2 = phantom_owner_hz2 or caster_id
                         caster_buffs_hz = self._get_active_buffs(w_uid_hz2)
                         bp_str_hz = _calc_net_bp(caster_buffs_hz, '', None)
-                        roll, _ = roll_d100(bp_str_hz)
-                        if roll <= writing_val:
-                            phantom_bonus = phantom_ce_hz2.get('auxVal', 0) or 0
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 成功！伤害+{phantom_bonus}\n'
+                        roll, bp_detail = roll_d100(bp_str_hz)
+                        w_rank = success_rank(roll, writing_val)
+                        if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
+                        elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
+                        elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
+                        elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
+                        elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
+                        else:                phantom_val = 0;                  w_label = '失败'
+                        bp_note = f', {bp_detail}' if bp_detail else ''
+                        if phantom_val != 0:
+                            sign = '+' if phantom_val > 0 else ''
+                            dmg_dice = f"{dmg_dice}{sign}{phantom_val}"
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}！伤害{sign}{phantom_val}\n'
                         else:
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val} 失败\n'
-            if phantom_bonus:
-                try:
-                    if int(phantom_bonus) > 0:
-                        dmg_dice = f"{dmg_dice}+{phantom_bonus}"
-                except (ValueError, TypeError):
-                    dmg_dice = f"{dmg_dice}+{phantom_bonus}"
+                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}\n'
 
             # charge_moon: effect-level moon energy charging
             charge_moon_eff = eff.get('charge_moon', 0)
@@ -6188,8 +6199,8 @@ class FullBattleEngine(CombatEngine):
                 caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
                 if caster_entry:
                     charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
-                    if phantom_bonus:
-                        try: charge_amt += int(phantom_bonus)
+                    if phantom_val:
+                        try: charge_amt += int(phantom_val)
                         except: pass
                     charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
                     if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
@@ -8043,11 +8054,16 @@ class FastBattleEngine(FullBattleEngine):
                     atk_buffs_hz2 = self._get_active_buffs(atk_uid)
                     bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', None)
                     roll2, _ = roll_d100(bp_str_hz2)
-                    if roll2 <= writing_val2:
-                        phantom_bonus2 = ce.get('auxVal', 0) or 0
-                        if phantom_bonus2:
-                            if isinstance(phantom_bonus2, str) or int(phantom_bonus2) > 0:
-                                dmg_dice = f"{dmg_dice}+{phantom_bonus2}"
+                    w_rank2 = success_rank(roll2, writing_val2)
+                    if w_rank2 >= 4:      phantom_val2 = roll_dice('2d6')
+                    elif w_rank2 == 3:    phantom_val2 = 6 + roll_dice('1d6')
+                    elif w_rank2 == 2:    phantom_val2 = roll_dice('1d6')
+                    elif w_rank2 == 1:    phantom_val2 = roll_dice('1d3')
+                    elif w_rank2 == -2:   phantom_val2 = -roll_dice('1d2')
+                    else:                 phantom_val2 = 0
+                    if phantom_val2 != 0:
+                        sign2 = '+' if phantom_val2 > 0 else ''
+                        dmg_dice = f"{dmg_dice}{sign2}{phantom_val2}"
                 break
         # AUX code 4: merge bonus damage dice
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
