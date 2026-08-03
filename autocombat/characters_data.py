@@ -1013,6 +1013,7 @@ SUMMON_TEMPLATES['血液长枪'] = {
     'HP': 8, 'MP': 0, 'SAN': 0,
     'STR': 30, 'CON': 30, 'SIZ': 15, 'DEX': 1, 'APP': 1, 'INT': 1, 'POW': 1, 'EDU': 0,
     '闪避': 0, 'MOV': 0, '额外行动数': 0, '可反击': 0, '可反应': 0, '可格挡': 0,
+    '不可指定': 1,
     'skills': ['斗殴:70 1d8+6'],
     'max_simultaneous': 10, 'max_total_spawned': None,
 }

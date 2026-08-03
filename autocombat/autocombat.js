@@ -5255,7 +5255,7 @@ cmdBtaStartFull.solve = (ctx, msg, cmdArgs) => {
   out += initList.map((e, i) => `  ${i+1}. ${e.name} [${e.team}] ${e.coord}  附加×3 主动×${calcMainActions(gid, e.userId)}`).join('\n');
   out += `\n\n` + renderMap(gid);
   out += `\n\n当前回合: 1 | 行动顺序: ${initList[0] ? initList[0].name : '(无)'}\n`;
-  out += `使用 .sN 释放技能  .a m 坐标 移动  .a sN 附加动作技能`;
+  out += `使用 .sN 释放技能  .m 坐标 移动  .sN 附加动作技能`;
   seal.replyToSender(ctx, msg, out);
   return seal.ext.newCmdExecuteResult(true);
 };

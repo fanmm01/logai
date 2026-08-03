@@ -15306,12 +15306,12 @@ def _build_turn_announcement(engine, uid: str) -> str:
         # Additional actions
         extra_remaining = my_acts.get('附加', 0)
         lines.append(f"附加动作（剩余 {extra_remaining}）:")
-        lines.append(f"  .a m <坐标> — 移动")
+        lines.append(f"  .m <坐标> — 移动")
         for s in spells:
             timing = s.get('时机', '2')
             # Show all spells with additional-action timing (including dual-timing spells)
             if has_timing(timing, '3'):
-                lines.append(f"  .a s{s['index']} {s['name']}")
+                lines.append(f"  .s{s['index']} {s['name']}")
         if engine._has_healing_item(uid) if hasattr(engine, '_has_healing_item') else False:
             lines.append(f"  .a eat [目标]")
 
