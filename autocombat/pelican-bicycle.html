@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>顺风骑行 · 鹈鹕的海边日常</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Playfair+Display:ital,wght@1,500&display=swap');
+    :root { color-scheme: light; --ink:#253d3c; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100svh; display:grid; place-items:center; background:#f4f1e8; color:var(--ink); font-family:'Noto Sans SC',sans-serif; }
+    main { width:min(1120px,100%); padding:42px 40px 24px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:30px; }
+    .brand { display:flex; align-items:center; gap:11px; font-size:12px; font-weight:700; letter-spacing:3px; }
+    .brand i { width:27px; height:27px; border:1px solid var(--ink); border-radius:50%; display:grid; place-items:center; font-style:normal; font-size:18px; }
+    .issue { font-size:10px; letter-spacing:2px; opacity:.6; }
+    .scene { position:relative; overflow:hidden; border-radius:12px; background:#d9ebe5; box-shadow:0 18px 65px #3d594311; }
+    .heading { position:absolute; left:5%; top:7%; z-index:1; pointer-events:none; }
+    .eyebrow { font-size:10px; letter-spacing:3px; color:#557a70; }
+    h1 { font-size:clamp(25px,4.4vw,51px); line-height:1.2; letter-spacing:3px; font-weight:500; margin:12px 0; }
+    .heading p { font-size:12px; color:#648077; letter-spacing:1px; }
+    .script { position:absolute; right:5%; top:8%; color:#748e7d; font:italic clamp(16px,2.5vw,29px) 'Playfair Display',Georgia,serif; transform:rotate(-7deg); }
+    svg { width:100%; height:auto; display:block; }
+    footer { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-top:22px; }
+    .caption { font-size:11px; letter-spacing:1px; color:#78847c; }
+    button { font:inherit; font-size:11px; color:var(--ink); border:1px solid #c9d0c4; background:transparent; padding:9px 16px; border-radius:24px; cursor:pointer; display:flex; gap:8px; align-items:center; }
+    button:hover { background:#e6eadd; }
+    button:focus-visible { outline:2px solid #478b79; outline-offset:4px; }
+    .wheel { animation:spin 1.35s linear infinite; transform-box:fill-box; transform-origin:center; }
+    .rider { animation:bob 1.35s ease-in-out infinite; }
+    .scarf-tail { animation:flutter .67s ease-in-out infinite alternate; transform-origin:527px 281px; }
+    .bird { animation:soar 4s ease-in-out infinite alternate; }
+    .bird.second { animation-delay:-2s; }
+    .cloud { animation:drift 24s linear infinite; }
+    .cloud.far { animation-duration:36s; animation-delay:-12s; }
+    .road-marks { animation:road 1.35s linear infinite; }
+    .shore { animation:shore 10s linear infinite; }
+    .paused * { animation-play-state:paused !important; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes bob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(3px); } }
+    @keyframes flutter { to { transform:rotate(-9deg); } }
+    @keyframes soar { to { transform:translate(-18px,-9px); } }
+    @keyframes drift { from { transform:translateX(70px); } to { transform:translateX(-100px); } }
+    @keyframes road { to { transform:translateX(-180px); } }
+    @keyframes shore { to { transform:translateX(-140px); } }
+    @media(max-width:600px) { main { padding:24px 16px; } header { margin-bottom:20px; } .issue { letter-spacing:1px; } .scene { border-radius:8px; } .heading p { font-size:9px; } .eyebrow { font-size:8px; } h1 { margin:8px 0; } .caption { font-size:9px; } footer { margin-top:16px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div class="brand"><i>≈</i> 慢 游 俱 乐 部</div><span class="issue">VOL. 01 / COASTAL RIDE</span></header>
+    <section class="scene" aria-label="一只戴着绿色围巾的鹈鹕，骑着珊瑚红自行车沿海岸前行">
+      <div class="heading"><div class="eyebrow">A LITTLE WIND, A LITTLE JOY</div><h1>今天，顺风。</h1><p>不赶时间，只追海风。</p></div>
+      <span class="script">Life in the slow lane.</span>
+      <svg viewBox="0 0 1040 660" role="img" aria-labelledby="scene-title scene-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="scene-title">鹈鹕的海边骑行</title><desc id="scene-desc">晴朗的海边，一只白色鹈鹕戴着随风飘动的围巾，踩动脚踏板。自行车轮转动，路面向后移动。</desc>
+        <defs>
+          <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#dfede5"/><stop offset="1" stop-color="#c7e5df"/></linearGradient>
+          <linearGradient id="sea" x2="0" y2="1"><stop stop-color="#94c9bf"/><stop offset="1" stop-color="#b7d9c8"/></linearGradient>
+          <pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".55" fill="#254c3f" opacity=".065"/></pattern>
+          <g id="spokes" stroke="#68837b" stroke-width="1.4" opacity=".65"><path d="M-76 0H76M0-76V76M-54-54L54 54M-54 54L54-54M-70-29L70 29M-29-70L29 70M-70 29L70-29M-29 70L29-70"/></g>
+          <g id="wheel"><circle r="80" fill="#edf0dd" fill-opacity=".32" stroke="#304947" stroke-width="9"/><circle r="73" fill="none" stroke="#f6ead0" stroke-width="3"/><g class="wheel"><use href="#spokes"/><circle r="8" fill="#b2b7a6" stroke="#304947" stroke-width="3"/></g></g>
+        </defs>
+        <path fill="url(#sky)" d="M0 0H1040V660H0Z"/>
+        <circle cx="811" cy="213" r="50" fill="#f8e9ad"/>
+        <circle cx="811" cy="213" r="64" fill="none" stroke="#f7e9b4" opacity=".3"/>
+        <g fill="#f4f5e9" opacity=".8"><path class="cloud" d="M81 239c6-15 21-19 32-10 2-24 39-28 47-4 17-9 34 0 36 14Z"/><path class="cloud far" d="M623 159c9-15 23-13 29-6 6-21 34-22 43-2 16-7 31 0 33 8Z"/></g>
+        <g fill="none" stroke="#577d73" stroke-width="2.5" stroke-linecap="round"><path class="bird" d="M722 270q12-11 24 0 12-11 24 0"/><path class="bird second" d="M877 305q8-7 16 0 8-7 16 0"/></g>
+        <path d="M0 335Q130 313 237 331T471 329T722 335T1040 321V475H0Z" fill="url(#sea)"/>
+        <path d="M0 338Q81 308 163 334L219 343Z" fill="#86afa1"/><path d="M0 340q70-13 133 3" fill="none" stroke="#709d91" stroke-width="2"/>
+        <g fill="none" stroke="#ecf2d9" stroke-width="2" opacity=".6"><path d="M283 360h65m373 7h82m-336 20h63m340 6h59M86 377h99m-148 35h78m550 6h105m-503-17h39m195-50h43"/><path class="shore" d="M0 443q70-10 140 0t140 0t140 0t140 0t140 0t140 0t140 0t140 0"/></g>
+        <path d="M0 454Q280 426 512 453T1040 440V660H0Z" fill="#dce0b8"/>
+        <path d="M0 482Q380 466 1040 480V607Q500 592 0 614Z" fill="#eae6cf"/>
+        <path d="M0 484Q480 471 1040 482" fill="none" stroke="#f5efdb" stroke-width="5"/>
+        <g class="road-marks" fill="none" stroke="#c8c9ad" stroke-width="3" stroke-linecap="round"><path d="M-50 572h28m152 0h28m152 0h28m152 0h28m152 0h28m152 0h28m152 0h28m152 0h28"/></g>
+        <g stroke="#93a479" stroke-width="2.5" stroke-linecap="round" fill="none"><path d="M50 477l-4-14m4 14 8-10m898-5 3-17m-3 17-8-9M164 629l3-16m-3 16-8-8m718 13 5-22m-5 22-8-12"/></g>
+        <g fill="#b5be90"><ellipse cx="84" cy="617" rx="9" ry="2"/><ellipse cx="925" cy="490" rx="12" ry="2"/><ellipse cx="791" cy="625" rx="5" ry="2"/></g>
+        <ellipse cx="533" cy="549" rx="217" ry="12" fill="#627b65" opacity=".13"/>
+        <!-- Bicycle: two real rotating spoke assemblies and a diamond frame. -->
+        <use href="#wheel" x="371" y="463"/><use href="#wheel" x="699" y="463"/>
+        <g stroke-linejoin="round" stroke-linecap="round" fill="none">
+          <path d="M371 463 451 336 505 463H371L633 353 505 463M633 353l66 110" stroke="#ad5f4d" stroke-width="11"/>
+          <path d="M371 463 451 336 505 463H371L633 353 505 463M633 353l66 110" stroke="#dd896a" stroke-width="6"/>
+          <path d="M448 336l-8-25m193 42-16-54q-3-9 9-12l29-6" stroke="#354f4b" stroke-width="7"/>
+          <path d="M653 280l14-2" stroke="#a87754" stroke-width="10"/>
+          <path d="M419 313q23-9 48-2" stroke="#354f4b" stroke-width="12"/>
+          <path d="M348 374q-45 12-64 57m393-47q47-11 74 34" stroke="#e5b384" stroke-width="5"/>
+          <path d="M328 373h-29m20 1 33 82" stroke="#648477" stroke-width="4"/>
+          <path d="M505 463h-134" stroke="#87958a" stroke-width="3"/>
+        </g>
+        <circle cx="505" cy="463" r="23" fill="#526b61" stroke="#e8d9b7" stroke-width="4"/>
+        <circle cx="505" cy="463" r="15" fill="none" stroke="#aeb69a" stroke-width="2" stroke-dasharray="3 4"/>
+        <!-- Far leg sits behind the body; both feet track their pedals. -->
+        <path id="far-leg" d="M471 346 476 403 475 463" fill="none" stroke="#b98b4d" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <g id="far-pedal"><path d="M505 463H475" stroke="#64766a" stroke-width="5"/><path d="M464 463h24" stroke="#314b46" stroke-width="6" stroke-linecap="round"/></g>
+        <g class="rider">
+          <!-- Tail, rounded body, long neck, pouch, and unmistakable long bill. -->
+          <path d="M406 329q-35 3-49-20 30-1 51 10l-27-26q32 4 45 28" fill="#f5f2df" stroke="#435e53" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M409 295q13-28 48-29l49 6q25-20 21-66-3-40 23-49 31-12 45 16 7 18-4 48l-20 57q-5 23-25 47-26 38-78 34-54-4-59-36-2-15 0-28Z" fill="#faf7e8" stroke="#435e53" stroke-width="3"/>
+          <path d="M537 201q1 48-21 73 25 9 37-5 8-10 16-42" fill="#dfe4d3"/>
+          <path d="M432 290q38-24 77 13-15 43-64 26-20-8-13-39Z" fill="#e6e9d8" stroke="#819481" stroke-width="2"/>
+          <path d="M442 305q24 14 45 7m-43 3q17 13 32 9" stroke="#b2bfaa" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M579 192 699 204q-25 43-79 42-36-2-41-54Z" fill="#e9ba6d" stroke="#866d44" stroke-width="2.5"/>
+          <path d="m583 185 132 17q5 1 0 5l-136 2" fill="#f2c77d" stroke="#866d44" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="m590 216 89-5" fill="none" stroke="#d09e5c" stroke-width="2"/>
+          <circle cx="575" cy="183" r="6" fill="#263f3b"/><circle cx="577" cy="181" r="1.8" fill="white"/>
+          <path d="M557 164q10-10 19-6" fill="none" stroke="#435e53" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M542 158q-5-12 3-18m4 17q1-14 9-16" stroke="#435e53" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path class="scarf-tail" d="M541 272q-37-1-57-20-20-19-51-13l15 15-14 9q39-7 63 17 22 15 44 5" fill="#488b73" stroke="#356952" stroke-width="2"/>
+          <path d="M528 263q12 10 32 8l-6 17q-18 3-31-9Z" fill="#559a7f" stroke="#356952" stroke-width="2"/>
+          <path d="M511 297q27 8 49 6l60-17" fill="none" stroke="#435e53" stroke-width="13" stroke-linecap="round"/>
+          <path d="M511 295q27 8 49 6l60-17" fill="none" stroke="#f8f4e4" stroke-width="9" stroke-linecap="round"/>
+          <path d="M618 285q10-6 15 1" fill="none" stroke="#e7b568" stroke-width="8" stroke-linecap="round"/>
+        </g>
+        <path id="near-leg" d="M481 345 533 390 535 463" fill="none" stroke="#e1ad61" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+        <g id="near-pedal"><path id="crank" d="M505 463H535" stroke="#c7c7ad" stroke-width="6" stroke-linecap="round"/><path id="foot" d="M524 460h23l6 4h-29" fill="#edbd72" stroke="#9b7947" stroke-width="2" stroke-linejoin="round"/><path id="pedal" d="M523 468h25" stroke="#314b46" stroke-width="5" stroke-linecap="round"/></g>
+        <g stroke="#72978a" stroke-width="2" stroke-linecap="round" opacity=".5"><path d="M285 277h-35m27 13h-57m82 11h-30"/></g>
+        <path fill="url(#grain)" d="M0 0H1040V660H0Z" pointer-events="none"/>
+        <g transform="translate(48 625)" fill="#63785e" font-family="sans-serif" font-size="9" letter-spacing="2"><text>海 风 轻 轻 · 一 路 悠 悠</text></g>
+        <text x="990" y="625" text-anchor="end" fill="#829076" font-family="Georgia,serif" font-size="12">↗  good things take time</text>
+      </svg>
+    </section>
+    <footer><span class="caption">一只鹈鹕，一辆单车，一整天的好心情。</span><button id="toggle" type="button" aria-pressed="false"><span id="icon" aria-hidden="true">Ⅱ</span><span id="label">暂停片刻</span></button></footer>
+  </main>
+  <script>
+    const scene = document.querySelector('.scene');
+    const button = document.querySelector('#toggle');
+    const farLeg = document.querySelector('#far-leg');
+    const nearLeg = document.querySelector('#near-leg');
+    const farPedal = document.querySelector('#far-pedal');
+    const crank = document.querySelector('#crank');
+    const foot = document.querySelector('#foot');
+    const pedal = document.querySelector('#pedal');
+    let paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let elapsed = 0, previous = null;
+    function setPaused(value) {
+      paused = value;
+      scene.classList.toggle('paused', paused);
+      button.setAttribute('aria-pressed', String(paused));
+      document.querySelector('#icon').textContent = paused ? '▷' : 'Ⅱ';
+      document.querySelector('#label').textContent = paused ? '继续兜风' : '暂停片刻';
+    }
+    button.addEventListener('click', () => setPaused(!paused));
+    setPaused(paused);
+    function animate(now) {
+      if (previous !== null && !paused) elapsed += Math.min(now - previous, 80);
+      previous = now;
+      const angle = elapsed / 1350 * Math.PI * 2;
+      const x = 505 + Math.cos(angle) * 32;
+      const y = 463 + Math.sin(angle) * 32;
+      const backX = 1010 - x, backY = 926 - y;
+      const bob = 1.5 - 1.5 * Math.cos(angle);
+      nearLeg.setAttribute('d', `M481 ${345 + bob} Q${x + 27} ${y - 57} ${x} ${y - 3}`);
+      farLeg.setAttribute('d', `M471 ${343 + bob} Q${backX - 26} ${backY - 52} ${backX} ${backY - 3}`);
+      farPedal.setAttribute('transform', `rotate(${angle * 180 / Math.PI} 505 463)`);
+      // Far pedal assembly starts on the opposite side of the crank.
+      crank.setAttribute('d', `M505 463L${x} ${y}`);
+      foot.setAttribute('d', `M${x - 11} ${y - 4}h23l6 4h-29Z`);
+      pedal.setAttribute('d', `M${x - 13} ${y + 4}h27`);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

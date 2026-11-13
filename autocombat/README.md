@@ -2,6 +2,10 @@
 
 SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支持。
 
+现已提供 **星序浏览器战术室**：明亮卡牌界面、本地对战、局域网房间、AI 观战、事件回顾与批量模拟。
+运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；局域网使用 `python start_ui.py --lan`。
+首次构建需 Node.js 与 npm，详情见 [界面使用说明](frontend/README.md)。
+
 ## 环境要求
 
 - **SealDice** 1.4.0+

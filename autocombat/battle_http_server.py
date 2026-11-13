@@ -56,12 +56,21 @@ def _debug_log(msg: str):
             _debug_file_logger.debug(line)
         except Exception:
             pass  # silently ignore log write errors
-    # Also print to stdout for immediate console visibility
+    # A background Windows service can outlive its launching console/pipe.
+    # Console logging is best-effort and must never fail a combat request.
+    stream = sys.stdout
+    if stream is None:
+        return
     try:
-        print(line, file=sys.stdout, flush=True)
-    except UnicodeEncodeError:
-        # Windows GBK console can't handle some Unicode chars → fall back to ascii-safe
-        print(line.encode('ascii', errors='replace').decode('ascii'), file=sys.stdout, flush=True)
+        try:
+            print(line, file=stream, flush=True)
+        except UnicodeEncodeError:
+            # Windows GBK console: retain the existing ASCII fallback.
+            print(line.encode('ascii', errors='replace').decode('ascii'), file=stream, flush=True)
+    except (OSError, ValueError):
+        # Broken pipe / invalid handle / closed stream. File logging above
+        # remains available independently of the launcher lifetime.
+        pass
 
 # ── Module redirection: battle_engine's lazy "from characters_data import ..." ──
 # must happen BEFORE importing from battle_engine
@@ -118,7 +127,7 @@ def internal_error(e):
 
 _battles: dict = {}           # group_id → FullBattleEngine instance
 _pending_reactions: dict = {} # group_id → saved reaction state dict
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 # Team storage for .bteam command
 _teams: dict = {}            # team_id (e.g. "T1") → {name, members: [serial,...], creator}
@@ -306,7 +315,9 @@ def merge_character(engine, uid: str, js_data: dict) -> object:
 def _char_summary(engine, uid: str) -> dict:
     """Return a summary of a character's HP/MP/SAN for display."""
     char = engine.get_char(uid)
-    hp = engine._get_combat_hp(uid) or char.get_attr('体力', 10)
+    hp = engine._get_combat_hp(uid)
+    if hp is None:
+        hp = char.get_attr('体力', 10)
     hp_max = char.get_attr('体力上限', hp)
     mp = char.get_attr('魔力', 0) or 0
     mp_max = char.get_attr('魔力上限', mp)
@@ -1781,7 +1792,8 @@ def _build_reaction_prompt(def_name, can_dodge=True, can_counter=True, can_block
     return f"\n@{def_name} 请做出反应：\n{'  '.join(opts)}"
 
 
-def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) -> list:
+def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
+                  max_steps: int = 50, ui_step: bool = False) -> list:
     """Advance battle through all AI turns until a human-controlled character is active or battle ends.
     If an AI attack triggers a reaction from a human player, stops and stores the
     pending reaction (caller must check _pending_reactions afterward).
@@ -1792,6 +1804,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                  Default 0 ensures the first round display is always emitted.
     Returns list of output strings, one per AI action.
     """
+    if getattr(engine, '_ui_deferred_ai', False) and not ui_step:
+        return []
     outputs = []
     # summon_buf: [{name, display_name, hp, hp_max, alive, round_header, enemy_text, attack_header, attack_details}]
     summon_buf = []
@@ -1811,7 +1825,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                 outputs.append(block)
         summon_buf = []
 
-    max_steps = 50  # safety limit
+    max_steps = max(1, min(max_steps, 50))
     last_round = start_round
 
     from ai_trainer_pvp import parse_action, select_target_by_strategy, select_teammate_by_strategy
@@ -3917,11 +3931,11 @@ def submit_action(battle_id):
                 action_type = '附加' if use_extra else '主动'
 
                 # Resolve target: graveyard (revive) > serial > numeric index > smart target
-                tgt = None
+                tgt = data.get('_ui_target') if getattr(engine, '_ui_deferred_ai', False) else None
                 args_stripped = (args or '').strip()
                 revive_arg_uid = None
                 if _revive_target_arg(engine, effective_uid, spell):
-                    revive_arg_uid = _resolve_graveyard_target(engine, effective_uid, args)
+                    revive_arg_uid = tgt or _resolve_graveyard_target(engine, effective_uid, args)
                 if revive_arg_uid:
                     # Dead allies are not living-enemy targets: bind the revive
                     # to the exact graveyard UID resolved for this cast.
@@ -3930,7 +3944,7 @@ def submit_action(battle_id):
                 else:
                     if _revive_target_arg(engine, effective_uid, spell):
                         engine._revive_selected_uid = None
-                    tgt = _resolve_target_by_serial(engine, effective_uid, args)
+                    tgt = tgt or _resolve_target_by_serial(engine, effective_uid, args)
                 if not tgt:
                     tgt_idx = _parse_target_index(args)
                     if tgt_idx is not None:
@@ -4139,9 +4153,9 @@ def submit_action(battle_id):
                     if not has_timing(timing, '3'):
                         return jsonify({'error': True, 'message': f'【{spell["name"]}】不能在附加动作阶段使用'}), 400
                     # Resolve target: serial from args > numeric index from args > smart target
-                    tgt = None
+                    tgt = data.get('_ui_target') if getattr(engine, '_ui_deferred_ai', False) else None
                     args_stripped_extra = (args or '').strip()
-                    tgt = _resolve_target_by_serial(engine, effective_uid, args)
+                    tgt = tgt or _resolve_target_by_serial(engine, effective_uid, args)
                     if not tgt:
                         tgt_idx = _parse_target_index(args)
                         if tgt_idx is not None:
@@ -4256,7 +4270,9 @@ def submit_action(battle_id):
                     if not target_name:
                         return jsonify({'error': True, 'message': '用法: .a give <目标名>'}), 400
                     il = engine._get_initiative()
-                    target_entry = next((e for e in il if e.get('name', '') == target_name), None)
+                    ui_target = data.get('_ui_target') if getattr(engine, '_ui_deferred_ai', False) else None
+                    target_entry = (engine._unit_il_entry(ui_target, il) if ui_target else
+                                    next((e for e in il if e.get('name', '') == target_name), None))
                     if not target_entry:
                         return jsonify({'error': True, 'message': f'未找到目标: {target_name}'}), 404
                     out, success = engine._eat_cake(effective_uid, target_entry['userId'])
@@ -6333,6 +6349,17 @@ def api_sim():
     finally:
         sys.stdout = old_stdout
 
+
+# Browser UI is registered against this module's live engine namespace. The
+# same registration also works when this file is inlined by merge_backend.py.
+try:
+    from ui_server import register_ui
+except ModuleNotFoundError as ui_import_error:
+    # Keep legacy deployments usable when only backend sources are copied.
+    if ui_import_error.name != 'ui_server':
+        raise
+else:
+    register_ui(app, globals())
 
 # ── Main ──
 if __name__ == '__main__':
