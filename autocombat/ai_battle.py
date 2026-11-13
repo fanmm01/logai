@@ -13,6 +13,13 @@ GET /log    → 查看实时日志
   Phase 3: 3v3 (10x10, 20x20) — 包含固定战队
   Phase 4: Y9+Y12 联合对抗 (2人/3人/4人组)
   Phase 5: 双循环 → 8强淘汰赛 ×10轮
+
+用法:
+  python ai_battle.py                        # 全部赛制 (1v1 + 2v2 + 3v3)
+  python ai_battle.py --modes=1v1            # 仅 1v1
+  python ai_battle.py --modes=1v1,2v2        # 1v1 + 2v2
+  python ai_battle.py --modes 3v3 --time 3   # 仅 3v3，跑 3 次
+  python ai_battle.py --modes=2v2 --type=0   # 仅 2v2 预赛，跳过淘汰赛
 """
 
 import sys, os, random, math, json, re, time, threading, logging, itertools
@@ -33,7 +40,8 @@ from battle_engine import (CombatEngine, FullBattleEngine, roll_dice, parse_coor
     is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage,
     season_status_roll)
 from characters_data import ALL_CHARACTERS, load_character_to_engine
-from ai_trainer import load_q_table, encode_state, get_available_actions, execute_action
+from ai_trainer import (load_q_table, encode_state, get_available_actions, execute_action,
+                            action_slot_for, affordable_actions)
 from ai_trainer import encode_summon_state, get_summon_actions, execute_summon_action
 from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
 
@@ -58,7 +66,7 @@ DELAY_KNOCKOUT_TURN = 0.4           # Delay between turns in knockout / BoN seri
 DELAY_CUSTOM_TURN = 0.4             # Delay between turns in custom /game/ battles
 DELAY_PRELIM_BETWEEN_BATTLES = 0    # Delay between prelim battles (0 = no pause)
 DELAY_KNOCKOUT_BETWEEN_GAMES = 1  # Delay between games within a BoN series
-DELAY_DRAW_DISPLAY = 30             # Seconds to show draw results before continuing
+DELAY_DRAW_DISPLAY = 24             # Seconds to show draw results before continuing
 DELAY_STANDINGS_DISPLAY = 40        # Seconds to show standings before knockouts
 
 # ── Per-phase display level ──
@@ -102,7 +110,7 @@ PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
 SEASON_AVG_STATUS = None
 
 # ── Round limits ──
-MAX_ROUNDS_PRELIM = 35              # Max rounds before timeout in prelim (raised from 25 to match knockout — dead summons no longer bloat initiative)
+MAX_ROUNDS_PRELIM = 24              # Max rounds before timeout in prelim (raised from 25 to match knockout — dead summons no longer bloat initiative)
 MAX_ROUNDS_KNOCKOUT = 35            # Max rounds before timeout in knockout
 # Per-format overrides for prelim: larger formats need proportionally more rounds.
 # Without this, 3v3 battles (6+ chars, many summons) nearly always time out even at 35.
@@ -205,14 +213,42 @@ def battle_log(level, msg):
     getattr(logger, level)(msg)
 
 
+ALL_MODES = ('1v1', '2v2', '3v3')
+
+
+def _parse_modes(raw):
+    """Parse a comma/plus/space separated mode list like '1v1,2v2' or '3v3'."""
+    parts = [p.strip().lower() for p in re.split(r'[,+;/\s]+', raw) if p.strip()]
+    if not parts:
+        print(f'--modes 需要至少一个赛制: {", ".join(ALL_MODES)}', file=sys.stderr)
+        sys.exit(1)
+    if len(parts) == 1 and parts[0] in ('all', '*'):
+        return list(ALL_MODES)
+    unknown = [p for p in parts if p not in ALL_MODES]
+    if unknown:
+        print(f'不支持的赛制: {", ".join(unknown)}。可用: {", ".join(ALL_MODES)} (或 all)', file=sys.stderr)
+        sys.exit(1)
+    # Preserve canonical order and drop duplicates
+    return [m for m in ALL_MODES if m in parts]
+
+
 def parse_cli_args(argv):
     port = 8888
     tournament_type = 1
     run_times = 1
+    enabled_modes = list(ALL_MODES)
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg.startswith('--type='):
+        if arg.startswith('--modes='):
+            enabled_modes = _parse_modes(arg.split('=', 1)[1])
+        elif arg == '--modes':
+            i += 1
+            if i >= len(argv):
+                print('--modes requires a value, e.g. --modes=1v1,2v2', file=sys.stderr)
+                sys.exit(1)
+            enabled_modes = _parse_modes(argv[i])
+        elif arg.startswith('--type='):
             val = arg.split('=', 1)[1]
             if val not in ('0', '1'):
                 print(f'Unsupported --type value: {val}. Use 0 or 1.', file=sys.stderr)
@@ -277,7 +313,7 @@ def parse_cli_args(argv):
             else:
                 battle_log('info', f'忽略多余位置参数: {arg}')
         i += 1
-    return port, tournament_type, run_times
+    return port, tournament_type, run_times, enabled_modes
 
 
 # ============================================================
@@ -356,11 +392,13 @@ class AIController:
                 return '.a eat'
             return '.i end'
         actions = engine._get_actions()
-        my_acts = actions.get(user_id, {'主动': 2, '附加': 3})
-        if my_acts['主动'] <= 0: return '.i end'
+        my_acts = engine._get_my_actions(user_id) if hasattr(engine, '_get_my_actions') else             actions.get(user_id, {'主动': 2, '附加': 3})
+        if my_acts['主动'] <= 0 and my_acts.get('附加', 0) <= 0: return '.i end'
 
         st = encode_state(engine, user_id)
         available = get_available_actions(engine, user_id)
+        if hasattr(available, '__iter__') and available:
+            available = affordable_actions(engine, user_id, available)
         if not available: return '.i end'
 
         # Determine solo vs team: count living non-summon allies (exclude self)
@@ -368,7 +406,7 @@ class AIController:
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return self._rule_decide(engine, user_id)
         my_team = my_entry.get('team', 'Y')
-        living_allies = [e for e in init_list if e['team'] == my_team
+        living_allies = [e for e in init_list if e.get('team') == my_team
                          and e['userId'] != user_id
                          and not e.get('isSummon')
                          and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -387,6 +425,9 @@ class AIController:
         # Filter MOVE_TOWARD if already moved this turn (max 1 move)
         moved = getattr(engine, '_moved_this_turn', set())
         actions_pool = [(ak, an) for ak, an in available if not (ak == 'MOVE_TOWARD' and user_id in moved)]
+        # Repair-focused states (low HP / low MP, or an ally in dying) prioritise
+        # support actions whose slot is still affordable over raw damage.
+        actions_pool = self._prioritize_support(engine, user_id, actions_pool)
         if not actions_pool: actions_pool = available
 
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
@@ -418,6 +459,9 @@ class AIController:
         if base_ak == 'EAT_CAKE':
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a eat {target}' if target else '.i end'
+        if base_ak == 'GIVE_CAKE':
+            target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
+            return f'.a give {target}' if target else '.i end'
         if base_ak == 'END_TURN': return '.i end'
         if base_ak.startswith('SKILL_'):
             skill_num = int(base_ak.split('_')[1])
@@ -425,10 +469,41 @@ class AIController:
             spell = next((s for s in spells if s['index'] == skill_num), None)
             if spell:
                 timing = spell.get('时机', '2')
+                # Dual-timing skills use the additional slot while available,
+                # preserving main actions; timing-3-only must use it.
+                if has_timing(timing, '3') and (not has_timing(timing, '2')
+                                                or my_acts.get('附加', 0) > 0):
+                    return f'.a s{skill_num}'
                 if has_timing(timing, '1') or has_timing(timing, '2'):
                     return f'.s{skill_num}'
             return self._rule_decide(engine, user_id)
         return self._rule_decide(engine, user_id)
+
+    def _prioritize_support(self, engine, user_id, actions):
+        """Keep only support actions when the team clearly needs recovery.
+
+        Generic priority from CharacterData-driven state (HP ratios and ready
+        cakes), never by role name or skill index.
+        """
+        char = engine.get_char(user_id)
+        if not char:
+            return actions
+        my_hp = engine._get_combat_hp(user_id) or 0
+        max_hp = char.get_attr('体力上限', my_hp) or my_hp or 1
+        my_mp = char.get_attr('魔力', 0) or 0
+        max_mp = char.get_attr('魔力上限', my_mp) or my_mp or 1
+        team = engine._battle_team_of(user_id)
+        ally_dying = any(e.get('team') == team and not e.get('isSummon')
+                         and e['userId'] != user_id and engine._is_dying(e['userId'])
+                         for e in engine._get_initiative())
+        urgent = my_hp < max_hp * 0.4 or my_mp < max_mp * 0.25 or ally_dying
+        if not urgent:
+            return actions
+        support = [(ak, an) for ak, an in actions
+                   if ak.split('__')[0] in ('EAT_CAKE', 'GIVE_CAKE')]
+        if not support:
+            return actions
+        return support
 
     def _move_cmd(self, engine, user_id):
         init_list = engine._get_initiative()
@@ -436,7 +511,7 @@ class AIController:
         if not my_entry: return None
         my_coord = my_entry.get('coord', '')
         my_team = my_entry.get('team', 'Y')
-        enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        enemies = [e for e in init_list if e.get('team') != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
         if not enemies or not my_coord: return None
         nearest = self._nearest(engine, user_id, enemies)
         if nearest:
@@ -450,7 +525,6 @@ class AIController:
         if not state or state.get('phase') != 'active':
             return '.i end'
 
-        # Dying characters can only use healing items (or end turn)
         if engine._is_dying(user_id):
             if engine._has_healing_item(user_id):
                 return '.a eat'
@@ -464,7 +538,7 @@ class AIController:
         if not my_entry: return '.i end'
 
         my_team_rd = my_entry.get('team', 'Y')
-        enemies = [e for e in init_list if e['team'] != my_team_rd]
+        enemies = [e for e in init_list if e.get('team') != my_team_rd]
         my_coord = my_entry.get('coord', 'A1')
 
         # Build blocked-spell sets (same logic as get_available_actions dynamic filters)
@@ -480,14 +554,18 @@ class AIController:
                 my_summons.add(e.get('name', ''))
 
         def _spell_blocked(sp):
-            """True if spell has active same-name effect or its summoned creature is still alive."""
+            """True if spell has active same-name effect or a summon template is at its cap.
+
+            同模板仍有名额时允许补召（如第二根藤蔓），只有满额/累计耗尽才禁选。"""
             if sp['name'] in active_spell_names:
                 return True
             for eff in sp.get('effects', []):
                 if eff.get('type') == 5:
                     tmpl = eff.get('召唤物模板', '')
-                    if tmpl and any(sn == tmpl or sn.endswith(f"的{tmpl}") for sn in my_summons):
-                        return True
+                    if tmpl:
+                        remain, _reason = engine._get_summon_quota(user_id, tmpl)
+                        if remain == 0:
+                            return True
             return False
 
         if my_acts['主动'] > 0:
@@ -536,7 +614,7 @@ class AIController:
                 return f'.s{summon_spells[0]["index"]}'
 
             # Eat cake (if available and HP < 60% or MP < 30%)
-            if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+            if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake(user_id):
                 my_mp = char.get_attr('魔力', 0) or 0
                 max_mp = char.get_attr('魔力上限', my_mp) or my_mp
                 if my_hp < max_hp * 0.6 or my_mp < max_mp * 0.3:
@@ -579,7 +657,7 @@ class AIController:
         il = engine._get_initiative()
         my_entry = next((e for e in il if e['userId'] == user_id), None)
         if not my_entry: return user_id
-        allies = [e for e in il if e['team'] == my_entry.get('team') and (engine._get_combat_hp(e['userId']) or 0) > 0 and not e.get('isSummon')]
+        allies = [e for e in il if e.get('team') == my_entry.get('team') and (engine._get_combat_hp(e['userId']) or 0) > 0 and not e.get('isSummon')]
         if not allies: return user_id
         if strategy == 'T0':  # 最低HP ally
             return min(allies, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
@@ -661,7 +739,7 @@ class BattleEngine(FullBattleEngine):
                 mhp = char.get_attr('体力上限', chp) if char else chp
                 if mhp > 0:
                     ratio = chp / mhp
-                    if e['team'] == 'Y':
+                    if e.get('team') == 'Y':
                         y_sum += ratio; y_cnt += 1
                     else:
                         x_sum += ratio; x_cnt += 1
@@ -709,6 +787,7 @@ class BattleEngine(FullBattleEngine):
             rc = 0; last_round = 0; header_shown = False; step_count = 0
             while rc < self.max_rounds and step_count < 2000:
                 if self.delay > 0: time.sleep(self.delay)
+                self._reconcile_summon_groups()
                 state = self._get_state()
                 if not state or state.get('phase') != 'active': break
                 il = self._get_initiative()
@@ -731,7 +810,7 @@ class BattleEngine(FullBattleEngine):
                         for _he in il:
                             if _he.get('isSummon') or _he.get('_suppressed'): continue
                             _hbase = _he.get('baseUserId', _he['userId'])
-                            if _he['team'] == 'Y':
+                            if _he.get('team') == 'Y':
                                 if _hbase in y_header_seen: continue
                                 y_header_seen.add(_hbase)
                                 _hn = _ACT_SUFFIX_RE.sub('', _he.get('name','?'))
@@ -748,10 +827,10 @@ class BattleEngine(FullBattleEngine):
                         # Collect summon HP by owner (living summons only)
                         summon_total = {}       # ownerId → total summon HP
                         summon_detail = {}       # ownerId → {summon_name: hp} for 斯瑞提卡
-                        for e in il:
+                        for e in self._battle_unit_entries():
                             if not e.get('isSummon'): continue
                             if e.get('_suppressed', False): continue  # 跳过被抑制的召唤物槽
-                            owner = e.get('ownerId')
+                            owner = self._resolve_uid(e.get('ownerId', ''))
                             if not owner: continue
                             shp = self._get_combat_hp(e['userId']) or 0
                             if shp <= 0: continue
@@ -769,7 +848,7 @@ class BattleEngine(FullBattleEngine):
                             if e.get('_suppressed', False): continue  # 不显示被抑制条目
                             base = e.get('baseUserId', e['userId'])
                             uid = e['userId']
-                            if e['team'] == 'Y':
+                            if e.get('team') == 'Y':
                                 if base in seen_y_uids:
                                     continue
                                 seen_y_uids.add(base)
@@ -782,7 +861,7 @@ class BattleEngine(FullBattleEngine):
                             # Strip " (行动N)" suffix from multi-action slot names
                             name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
                             # Append summon HP suffix
-                            shp = summon_total.get(uid, 0)
+                            shp = summon_total.get(self._resolve_uid(uid), 0)
                             if shp > 0:
                                 char = self.get_char(uid)
                                 if char and char.get_attr('召唤物HP单独显示', 0) == 1:
@@ -793,51 +872,31 @@ class BattleEngine(FullBattleEngine):
                                     hp_str = f'{name}(HP:{hp}|召{shp})'
                             else:
                                 hp_str = f'{name}(HP:{hp})'
-                            if e['team'] == 'Y':
+                            if e.get('team') == 'Y':
                                 y_hp_parts.append(hp_str)
                             else:
                                 x_hp_parts.append(hp_str)
                         _bl('info', f'    第{rc}回合 Y: {", ".join(y_hp_parts)} | X: {", ".join(x_hp_parts)}')
-                dead_owners = {e['userId'] for e in il if not e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
+                dead_owners = {e['userId'] for e in il
+                               if not e.get('isSummon') and self._is_final_dead(e['userId'])}
                 # Also track resolved base UIDs so we can clean up summons whose ownerId
                 # might be the base uid (even when dead_owners contains __act suffixed entries)
                 dead_base_uids = {self._resolve_uid(uid) for uid in dead_owners}
                 if dead_owners:
-                    # Remove dead summons (owned by dead characters) — match by resolved base UID
-                    il = [e for e in il if not (e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) in dead_base_uids)]
-                    # Also remove dead characters themselves from initiative & map
-                    md = self._get_map()
-                    for uid in dead_owners:
-                        if md:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == uid: del md['occupants'][c]; break
-                    if md: self._set_map(md)
-                    il = [e for e in il if e['userId'] not in dead_owners]
-                    self._set_initiative(il)
-                    if state['activeIndex'] >= len(il):
-                        state['activeIndex'] = state['activeIndex'] % max(1, len(il))
-                        self._set_state(state)
-                # Remove ALL dead summons (including those whose owner is still alive)
-                # to prevent initiative list bloat that causes premature step_count timeouts.
-                dead_summons = {e['userId'] for e in il if e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
-                if dead_summons:
-                    il = [e for e in il if e['userId'] not in dead_summons]
-                    # Clean map for dead summons
-                    md = self._get_map()
-                    if md:
-                        for sid in dead_summons:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == sid: del md['occupants'][c]
-                        self._set_map(md)
-                    self._set_initiative(il)
-                    if state['activeIndex'] >= len(il):
-                        state['activeIndex'] = state['activeIndex'] % max(1, len(il))
-                        self._set_state(state)
+                    for owner in dead_base_uids:
+                        self._remove_summons_of_owner(owner)
+                    state = self._get_state()
+                    il = self._get_initiative()
+                # Reconciliation owns grouped summon death/removal; do not discard
+                # a representative before its surviving members have been promoted.
+                self._reconcile_summon_groups()
+                state = self._get_state()
+                il = self._get_initiative()
                 # Check battle end: count non-summon alive characters per team
                 end_result = self._check_battle_end()
                 if end_result:
-                    y_chars_d = [e.get('name','?') for e in il if e['team']=='Y' and not e.get('isSummon')]
-                    x_chars_d = [e.get('name','?') for e in il if e['team']=='X' and not e.get('isSummon')]
+                    y_chars_d = [e.get('name','?') for e in il if e.get('team')=='Y' and not e.get('isSummon')]
+                    x_chars_d = [e.get('name','?') for e in il if e.get('team')=='X' and not e.get('isSummon')]
                     y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
                     x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
                     if end_result.get('mutual_death'):
@@ -867,28 +926,12 @@ class BattleEngine(FullBattleEngine):
                 is_summon = entry.get('isSummon', False)
                 if hp <= 0:
                     if is_summon:
-                        # Remove dead summon from map
-                        md = self._get_map()
-                        if md:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == uid: del md['occupants'][c]; break
-                            self._set_map(md)
-                        # Also remove from initiative list to prevent bloat
-                        # (dead summons with alive owners were never cleaned up)
-                        idx = state['activeIndex']
-                        il = [e for e in il if e['userId'] != uid]
-                        self._set_initiative(il)
-                        if not il:
-                            # All entries removed — check end
-                            self._check_and_mark_end(state)
-                            break
-                        # Adjust activeIndex: the removed entry was at idx;
-                        # the next entry slides into that position, so keep idx
-                        # unless it's now out of bounds.
-                        if idx >= len(il):
-                            idx = idx % len(il)
-                        state['activeIndex'] = idx
-                        self._set_state(state)
+                        self._reconcile_summon_groups()
+                        if any(e['userId'] == uid for e in self._get_initiative()) and not self._get_summon_group(uid):
+                            # Legacy standalone summon, with no group registration.
+                            self._end_turn(uid)
+                            self._replace_initiative_preserving_actor(
+                                [e for e in self._get_initiative() if e['userId'] != uid])
                         continue
                     self._end_turn(uid); continue
 
@@ -897,44 +940,48 @@ class BattleEngine(FullBattleEngine):
                     self._sync_initiative_slots(uid)
 
                 if is_summon:
-                    # Use summon Q-table if available
-                    if AIController.Q_SUMMON is not None:
-                        summon_name = entry.get('name', uid)
-                        if summon_name in AIController.Q_SUMMON:
-                            st = encode_summon_state(self, uid)
-                            av = get_summon_actions(self, uid)
-                            sdict = AIController.Q_SUMMON[summon_name]
-                            q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
-                            # deformation for summons
-                            zt = random.randint(40, 80)
-                            deform_prob = (100 - zt) / 100.0 * 0.4
-                            if random.random() < deform_prob:
-                                scale = max(max(abs(q) for q in q_vals), 1.0)
-                                q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
-                            if q_vals:
-                                max_q = max(q_vals)
-                                exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
-                                total = sum(exp_vals)
-                                probs = [e / total for e in exp_vals] if total > 0 else None
-                                idx = random.choices(range(len(av)), weights=probs, k=1)[0]
-                                ak, an = av[idx]
-                                result = execute_summon_action(self, uid, ak)
-                            else:
-                                result = self._summon_attack(uid)
-                        else:
-                            result = self._summon_attack(uid)
-                    else:
-                        result = self._summon_attack(uid)
+                    # ── 共享动作、全员出手 ──
+                    # 一组召唤物只有一个先攻入口和一份动作池；每次组动作让当前存活成员
+                    # 各出手一次。成员死亡立即减少本批及后续批次的出手数。
+                    group_key = self._summon_group_key(uid)
                     team_tag = entry.get('team', '?')
                     summon_name = entry.get('name', uid)
-                    _bl('debug', f'    [{team_tag}] {summon_name}(召) (HP:{hp}) 行动')
-                    if result:
-                        if isinstance(result, list):
-                            for rline in result:
-                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        else:
-                            for rline in result.split('\n'):
-                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
+
+                    def _one_member(m_uid):
+                        if AIController.Q_SUMMON is not None:
+                            m_entry = self._unit_il_entry(m_uid, self._get_initiative())
+                            m_name = (m_entry or {}).get('name', summon_name)
+                            if m_name in AIController.Q_SUMMON:
+                                st = encode_summon_state(self, m_uid)
+                                av = get_summon_actions(self, m_uid)
+                                sdict = AIController.Q_SUMMON[m_name]
+                                q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
+                                zt = random.randint(40, 80)
+                                deform_prob = (100 - zt) / 100.0 * 0.4
+                                if q_vals and random.random() < deform_prob:
+                                    scale = max(max(abs(q) for q in q_vals), 1.0)
+                                    q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale
+                                              for q in q_vals]
+                                if q_vals:
+                                    max_q = max(q_vals)
+                                    exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                                    total = sum(exp_vals)
+                                    probs = [e / total for e in exp_vals] if total > 0 else None
+                                    idx = random.choices(range(len(av)), weights=probs, k=1)[0]
+                                    ak, an = av[idx]
+                                    return (execute_summon_action(self, m_uid, ak), False, None)
+                        return (self._summon_attack(m_uid), False, None)
+
+                    r = self._execute_summon_group_action(group_key, _one_member)
+                    if r.get('lines'):
+                        _bl('debug', f'    [{team_tag}] {summon_name}(召) 行动 '
+                                     f'(组动作, 剩余{r.get("remaining", 0)})')
+                        for rline in r['lines']:
+                            if isinstance(rline, str) and rline.strip():
+                                _bl('debug', f'        {rline.strip()}')
+                    # 共享动作未耗尽则保持该组为当前行动者，继续下一批成员
+                    if r.get('action_spent') and r.get('remaining', 0) > 0:
+                        continue
                     self._end_turn(uid); continue
                 team_tag = entry.get('team', '?')
                 _bl('debug', f'    [{team_tag}] {char_name} (HP:{hp}) 行动')
@@ -946,12 +993,9 @@ class BattleEngine(FullBattleEngine):
                     is_dying = self._is_dying(_base_uid)
                     for _ in range(5):
                         cmd = ai.decide_action(self, _base_uid)
-                        # Dying characters: only allow .a eat (use healing item) or .i end
-                        if is_dying and cmd not in ('.i end',) and not cmd.startswith('.a eat'):
-                            if self._has_healing_item(_base_uid):
-                                cmd = '.a eat'
-                            else:
-                                cmd = '.i end'
+                        # Dying characters can only end the turn; personal HP cakes already auto-rescue.
+                        if is_dying and cmd != '.i end':
+                            cmd = '.i end'
                         if cmd == '.i end':
                             if not acted:
                                 _bl('debug', f'      -> 结束回合')
@@ -983,18 +1027,17 @@ class BattleEngine(FullBattleEngine):
                         else: break
                         for rline in (result_text.split('\n') if result_text else []):
                             if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        # Action consumption: .s0/.sN consume 主动; .a eat/.a m/.a s consume 附加
+                        # Action consumption: .s0/.sN consume main; .a commands consume extra.
+                        # Budgets are keyed by the stable summon-group key.
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
                         is_bonus = cmd.startswith('.a ')
-                        if cmd in ('.s0',) or is_skill:
-                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                            ma['主动'] -= 1; self._set_actions(acts_d)
-                        elif is_bonus:
-                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                            ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
+                        if is_bonus:
+                            self._consume_action(_base_uid, '附加')
+                        elif cmd == '.s0' or is_skill:
+                            self._consume_action(_base_uid, '主动')
                         # Check remaining actions — end turn when 主动 exhausted
-                        acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                        if ma['主动'] <= 0: self._end_turn(uid)
+                        ma = self._get_my_actions(_base_uid)
+                        if ma.get('主动', 0) <= 0: self._end_turn(uid)
                         s2 = self._get_state()
                         if not s2 or s2.get('phase')!='active': break
                         i2 = self._get_initiative()
@@ -1005,8 +1048,8 @@ class BattleEngine(FullBattleEngine):
             br = getattr(self, '_battle_result', None)
             if br:
                 il_final = self._get_initiative()
-                y_chars_d = [e.get('name','?') for e in il_final if e['team']=='Y' and not e.get('isSummon')]
-                x_chars_d = [e.get('name','?') for e in il_final if e['team']=='X' and not e.get('isSummon')]
+                y_chars_d = [e.get('name','?') for e in il_final if e.get('team')=='Y' and not e.get('isSummon')]
+                x_chars_d = [e.get('name','?') for e in il_final if e.get('team')=='X' and not e.get('isSummon')]
                 y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
                 x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
                 if br.get('mutual_death'):
@@ -1769,6 +1812,19 @@ class Tournament:
         battle_log('info', f'(排名展示{DELAY_STANDINGS_DISPLAY}秒...)')
         time.sleep(DELAY_STANDINGS_DISPLAY)
 
+        # Collect ranking info (also needed by prelim-only mode / sim.py multi-run stats)
+        self._rankings_info = {
+            '1v1': [(rank, serial, pts, player_wins.get(serial, 0), player_battles.get(serial, 0),
+                     self._team_display([serial]))
+                    for rank, (serial, pts) in enumerate(ranked_1v1, 1)],
+            '2v2': [(rank, idx, s['pts'], s['wins'], s['battles'],
+                     self._team_display(teams_2v2[idx]))
+                    for rank, (idx, s) in enumerate(ranked_2v2, 1)],
+            '3v3': [(rank, idx, s['pts'], s['wins'], s['battles'],
+                     self._team_display(teams_3v3[idx]))
+                    for rank, (idx, s) in enumerate(ranked_3v3, 1)],
+        }
+
         if self.tournament_type == 0:
             battle_log('info', '')
             battle_log('info', '=' * 60)
@@ -1781,18 +1837,6 @@ class Tournament:
 
         # ---- Run knockouts for each format (5-12 play-in → 8-team bracket) ----
         all_brackets = []
-        # Collect ranking info for saving
-        self._rankings_info = {
-            '1v1': [(rank, serial, pts, player_wins.get(serial, 0), player_battles.get(serial, 0),
-                     self._team_display([serial]))
-                    for rank, (serial, pts) in enumerate(ranked_1v1, 1)],
-            '2v2': [(rank, idx, s['pts'], s['wins'], s['battles'],
-                     self._team_display(teams_2v2[idx]))
-                    for rank, (idx, s) in enumerate(ranked_2v2, 1)],
-            '3v3': [(rank, idx, s['pts'], s['wins'], s['battles'],
-                     self._team_display(teams_3v3[idx]))
-                    for rank, (idx, s) in enumerate(ranked_3v3, 1)],
-        }
         # Helper: run 5-12 play-in → 5v12, 6v11, 7v10, 8v9, winners + ranks 1-4 = top8
         # Combined draw: play-in pairing and QF seed assignment merged into one draw
         def _build_top8_with_playin(ranked_list, get_team_fn, label, map_size='10x10'):
@@ -2606,9 +2650,10 @@ def start_server(port=8888):
 
 
 if __name__ == '__main__':
-    port, tournament_type, run_times = parse_cli_args(sys.argv[1:])
-    tournament = Tournament(tournament_type, run_times)
+    port, tournament_type, run_times, enabled_modes = parse_cli_args(sys.argv[1:])
+    tournament = Tournament(tournament_type, run_times, enabled_modes=enabled_modes)
     tournament.init_characters()
+    battle_log('info', f'启用赛制: {" + ".join(enabled_modes)}')
 
     # Auto-start tournament in background thread
     def auto_start():

@@ -122,14 +122,19 @@ chData = {
                 {
                     # ====== 效果基础字段 ======
                     'type': 1,               # int — 效果类型 (见下方【type速查】), 1~8标准, 9+特殊
-                    '客体': 4,               # int — 目标: 1=自身 3=友方 4=敌方 5=敌方全体
-                                              #        35/135=无视敌我 45=敌方+自身 混合如'35'/'135'/'45'
-                                              #        (多个效果可组合, 如领域type=8 客体=3仅友方)
+                    '客体': 4,               # int — 目标码（见【客体速查】）: 1自身 2友方单体
+                                              #        3其他友方群体(不含自身) 4敌方单体 5敌方群体
+                                              #        12任意己方 13自身+友方 14/15自身+敌方
+                                              #        35领域全体 45敌方群体 124任意单体 135全场
+                                              #        每个 effect 按自己的客体独立选目标
 
                     # ====== 伤害类 (type=1) ======
                     '伤害骰': '2d6',         # str — 伤害骰表达式
                     '成功率': 75,            # int — 命中率 (默认使用斗殴值) (可选)
                     '成功率奖惩骰': 1,       # int — 正数=奖励骰个数, 负数=惩罚骰个数 (可选)
+                    '忽略全局奖惩骰': 0,     # int — 1=本 effect 不读取施法者buff的奖惩骰 (可选)
+                    '辅助效果': '反应惩罚骰', # str — AUX33: 仅本次攻击中防御方反应的惩罚骰 (可选)
+                    '辅助效果值': 'p',       # str — 'p'/'p2'/'2p'
                     '可闪避性':1, '可反击性':1,           # int — 0=不可闪避/反击 1=可 (可选,默认1)
                     '可贯穿性': 0,           # int — 0=不可贯穿 1=可贯穿 (可选,默认1)
                     '每回合伤害骰': '1d4',   # str — DOT每回合伤害 (可选)
@@ -174,6 +179,12 @@ chData = {
                     #   客体=45 → 敌方领域 (伤害/减益)
                     #   客体=35 → 无视敌我领域
                     #   配合 每回合伤害骰/回复hp/回复mp/属性削减/技能加减值 等
+                    # 领域内实时加成 (可选，进入/离开立即生效，轮首不叠层):
+                    #   '技能加减值': 'MOV+5;闪避+10'
+                    #   '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'
+                    # 非叠加领域按 (技能名, effect类别, 辅助类型) 去重；可叠加时逐实例生效。
+                    # 领域伤害遵守客体；ally_safe=1 可让伤害不误伤友方。
+                    # 控制状态/免疫一次伤害/反应惩罚骰等不支持写在领域上。
 
                     # -- 黑雾/领域enter触发效果 (可选) --
                     'on_enter_mp_drain_pct': 0.4,     # float — 进入时MP吸取比例 (可选)
@@ -251,13 +262,23 @@ chData = {
   【客体 — 目标类型速查】
 ================================================================================
   1   = 自身 (self)
-  3   = 友方 (allies)
-  4   = 敌方 (enemy — 单体/指定目标)
-  5   = 敌方全体 (all enemies)
-  35  = 无视敌我 (both sides)
-  45  = 敌方+自身 (enemies + self)
-  135 = 全场无视敌我 (both sides, 不受目标限制)
-  数字可组合使用 (如客体=45 表示敌方领域+自身)
+  2   = 其他己方单体
+  3   = 其他友方群体（不含自身；要含自身请用 13）
+  4   = 敌方单体 (enemy — 指定目标)
+  5   = 敌方群体 (all enemies)
+  12  = 任意己方单体（含自身）
+  13  = 自身 + 其他友方群体
+  14  = 自身 + 敌方单体
+  15  = 自身 + 敌方群体
+  25  = 友方单体 + 敌方群体
+  35  = 领域内全体（无视敌我）
+  45  = 敌方单体 + 敌方群体（不含自身）
+  24  = 友方单体 或 敌方单体（尊重显式目标；未指定时优先敌方）
+  124 = 任意单体
+  125 = 自身/友方单体 + 敌方群体
+  135 = 全场所有人
+  数字可组合使用；每个 effect 独立按自己的客体选择目标，互不继承。
+  群体效果声明了 作用半径 时才按半径筛选（以施法者为中心）。
 
 ================================================================================
   【辅助效果 / 辅助效果值 — AUX系统速查】
@@ -296,7 +317,19 @@ chData = {
   #11 '致死骰优势'    + (任意)= 致死骰取优势
   #12 '致死骰劣势'    + (任意)= 致死骰取劣势
   #17 '技能奖励骰'    + '斗殴' = 指定技能获得1奖励骰
+      '技能奖励骰'    + 'b'/'b2'/'2b' = 所有技能获得对应数量奖励骰
   #18 '技能惩罚骰'    + '斗殴' = 指定技能获得1惩罚骰
+      '技能惩罚骰'    + 'p'/'p2'/'2p' = 所有技能获得对应数量惩罚骰
+  #33 '反应惩罚骰'    + 'p'/'p2' = 仅本次攻击中，防御方闪避/反击/格挡的惩罚骰
+      (不生成持久 buff，只作用于这一击)
+  #34 '全D100检定奖励骰' + 'b'/'b2' = 该单位所有D100检定 +n 奖励骰
+      (攻击/法术/闪避/反击/格挡/体质豁免/技能检定等；伤害、治疗、
+       制造数量、MP/SAN费用、致死骰等非D100数值骰不受影响)
+
+  —— 奖惩骰结算 ——
+  b 与 p 互相抵消（p+b=无奖惩，p2+b=p），全部来源合并后上限 ±3。
+  来源：命令后缀、effect 自带 成功率奖惩骰、施法者活跃 buff(AUX16/17/18)。
+  effect 的 '忽略全局奖惩骰': 1 时只保留自身奖惩骰，不读取施法者 buff 的奖惩骰。
 
   —— 倍率与暴击 ——
   #19 '伤害骰倍增/倍减'    + '1.5' = 伤害骰结果×1.5 (乘数叠加)
@@ -379,6 +412,7 @@ SUMMON_TEMPLATES = {
         'HP': 24, 'MP': 0, 'SAN': 0,
         'STR': 50, 'CON': 50, 'SIZ': 50, 'DEX': 70, 'APP': 30, 'INT': 30, 'POW': 30, 'EDU': 0,
         '闪避': 35, 'MOV': 6, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        'flying': True,
         'skills': ['斗殴:65 1d6+1d4'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
@@ -386,6 +420,7 @@ SUMMON_TEMPLATES = {
         'HP': 6, 'MP': 0, 'SAN': 0,
         'STR': 30, 'CON': 30, 'SIZ': 30, 'DEX': 85, 'APP': 20, 'INT': 10, 'POW': 10, 'EDU': 0,
         '闪避': 42, 'MOV': 10, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        'flying': True,
         'skills': ['斗殴:40 1d4'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
@@ -400,8 +435,9 @@ SUMMON_TEMPLATES = {
     '蜂鸟': {
         'HP': 12, 'MP': 0, 'SAN': 0,
         'STR': 20, 'CON': 30, 'SIZ': 10, 'DEX': 90, 'APP': 30, 'INT': 20, 'POW': 10, 'EDU': 0,
-        '闪避': 45, 'MOV': 11, '额外行动数': 0, '可反击': 1, '可反应': 1,
-        'skills': ['爪击:60 1d4+1d6'],
+        '闪避': 65, 'MOV': 11, '额外行动数': 0, '可反击': 1, '可反应': 1,
+        'flying': True,
+        'skills': ['爪击:70 1d4+1d6'],
         'max_simultaneous': 12, 'max_total_spawned': None,
     },
     '玄武': {
@@ -506,6 +542,9 @@ ITEM_TEMPLATES = {
     '蛋糕HP': {'回复hp': '2d8+4', '技能加减值': '闪避+10', 'buff持续回合': 1},
     '蛋糕MP': {'回复mp': '2d8+4', '技能加减值': '斗殴+10', 'buff持续回合': 1},
     '蛋糕SAN': {'回复san': '1d3'},
+    # Support-only buff cakes.  They intentionally have no HP/MP healing.
+    '蛋糕轻盈': {'技能加减值': 'MOV+5', 'buff持续回合': 5},
+    '蛋糕幸运': {'辅助效果': '全D100检定奖励骰', '辅助效果值': 'b', 'buff持续回合': 5},
 }
 
 # ============================================================
@@ -684,14 +723,22 @@ XUEREN = {
     ],
     'spells':[
         {
-            'name':'制造雪带', 'timing':'24', 'category':8, '消耗mp':4,  # '4'→'24'
+            'name':'制造雪带', 'timing':'2', 'category':8, '消耗mp':4,
             'effects':[
                 {'type':8, '客体':45, '作用半径':5, '持续回合':3,
-                 '每回合伤害骰':'1d6', '属性削减':'行动力-5',  # DOT 1d4→1d6
-                 '领域中心跟随':0},
-                {'type':1, '客体':45, '伤害骰':'1d6+1d4', '成功率':70,  # 初始伤害提升
+                 '每回合伤害骰':'1d6', '属性削减':'行动力-5;斗殴-10',
+                 '领域中心跟随':0, '领域同时上限':1},
+                {'type':1, '客体':45, '伤害骰':'1d6+1d4', '成功率':70,
                  '可闪避性':1, '可反击性':0, '射程':99},
             ]
+        },
+        {
+            'name':'雪幕', 'timing':'1', 'category':8, 'default_persist':1, '消耗mp':2,
+            'effects':[{
+                'type':8, '客体':13, '作用半径':5, '持续回合':999,
+                '辅助效果':'受到伤害百分比', '辅助效果值':'-10',
+                '领域中心跟随':1, '来源存活绑定':1,
+            }]
         },
         {
             'name':'发送雪球', 'timing':'2', 'category':1, '消耗mp':2,
@@ -725,13 +772,27 @@ HUANHUANUAN = {
     'spells':[
         {
             'name':'战意值削弱', 'timing':'1', 'category':4, 'default_persist':1,
-            'effects':[{'type':11, '客体':1, '持续回合':99}]
+            'effects':[{'type':11, '客体':1, '持续回合':99,
+                        '战意初始层数':5, '战意削弱概率':50, '战意削弱概率奖励层':50,
+                        '战意奖励骰阈值':3, '战意惩罚1阈值':4, '战意惩罚2阈值':2,
+                        '战意惩罚骰上限':2}]
         },
         {
             'name':'治愈领域', 'timing':'2', 'category':8, '消耗mp':5, 'default_persist':0,
             'effects':[{
-                'type':8, '客体':3, '作用半径':10, '持续回合':3,
+                'type':8, '客体':13, '作用半径':10, '持续回合':3,
                 '回复hp':'2d8', '回复mp':'1d6', '领域中心跟随':1,
+                # Immediate cast pulse + two round-start pulses == exactly 3.
+                '领域立即结算':1, '领域轮首结算次数':2, '领域急救':1,
+                '领域同时上限':1,
+            }]
+        },
+        {
+            'name':'返生之花', 'timing':'2', 'category':3, '消耗mp':12,
+            '_once_per_battle': True, 'cooldown_rounds': 99,
+            'effects':[{
+                'type':19, '客体':2, '死亡轮窗口':3, '复活回复比例':0.4,
+                '复活主体':1, '复活召唤物主人政策':'caster',
             }]
         },
     ]
@@ -750,7 +811,9 @@ BIHAMI = {
     },
     'str_attrs':{'伤害值':'1d4'},
     'inventory': [
-        {'item': '蛋糕HP', 'count': 4},
+        {'item': '蛋糕HP', 'count': 4,
+         'sourceTeam': 'auto', 'sourceUserId': 'auto',
+         '消费追加回复hp': '2d8+4', 'tasteBonusOwnerSerial': 'Y8'},
     ],
     'spells':[
         {
@@ -766,10 +829,41 @@ BIHAMI = {
             'effects':[{'type':3, '客体':1, '回复hp':'2d8+4'}]
         },
         {
-            'name':'最后的款待', 'timing':'23', 'category':6, '消耗mp':5,
+            'name':'最后的款待-恢复', 'timing':'23', 'category':6, '消耗mp':5,
             'effects':[
-                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕HP'},
-                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕MP'},
+                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕HP', '消费追加回复hp':'2d8+4', 'tasteBonusOwnerSerial':'Y8',
+                 '制造分发':'personal_split', '分发自留':1, '分发队友每人':2,
+                 '分发给总数公式':{'每人':2, '加':-1}, '分发给总数上限':6,
+                 '分发削减顺序':['self', 'random_allies'],
+                 '分发人数覆盖':{1:{'分发自留':3}, 2:{'分发自留':1, '分发队友每人':2}}},
+                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕MP',
+                 '制造分发':'personal_split', '分发自留':1, '分发队友每人':2,
+                 '分发给总数公式':{'每人':2, '加':-1}, '分发给总数上限':6,
+                 '分发削减顺序':['self', 'random_allies'],
+                 '分发人数覆盖':{1:{'分发自留':3}, 2:{'分发自留':1, '分发队友每人':2}}}
+            ]
+        },
+        {
+            'name':'轻盈蛋糕', 'timing':'23', 'category':6, '消耗mp':4,
+            'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':0, '制造物模板':'蛋糕轻盈'}]
+        },
+        {
+            'name':'幸运蛋糕', 'timing':'23', 'category':6, '消耗mp':5,
+            'effects':[{'type':6, '客体':1, '制造个数':1, '制造花费回合数':0, '制造物模板':'蛋糕幸运'}]
+        },
+        {
+            'name':'最后的款待-进攻', 'timing':'23', 'category':6, '消耗mp':8,
+            'effects':[
+                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕轻盈',
+                 '制造分发':'personal_split', '分发自留':1, '分发队友每人':2,
+                 '分发给总数公式':{'每人':2, '加':-1}, '分发给总数上限':6,
+                 '分发削减顺序':['self', 'random_allies'],
+                 '分发人数覆盖':{1:{'分发自留':3}, 2:{'分发自留':1, '分发队友每人':2}}},
+                {'type':6, '客体':1, '制造个数':3, '制造花费回合数':0, '制造物模板':'蛋糕幸运',
+                 '制造分发':'personal_split', '分发自留':1, '分发队友每人':2,
+                 '分发给总数公式':{'每人':2, '加':-1}, '分发给总数上限':6,
+                 '分发削减顺序':['self', 'random_allies'],
+                 '分发人数覆盖':{1:{'分发自留':3}, 2:{'分发自留':1, '分发队友每人':2}}}
             ]
         },
     ]
@@ -798,7 +892,7 @@ MULUO = {
          '_mp_formula': 'summon_count_ceil_half'},
         # Skill 2: 生之矛 —友方:2d6伤+延迟回复, 敌方:4d6伤+延时恢复, MP=ceil(2d6/2)
         {'name':'生之矛', 'phase':1, 'timing':'2', 'category':1,
-         'effects':[{'type':1, '客体':4, '伤害骰':'4d6+3', '成功率':70, '可闪避性':0, '可反击性':0, '射程':4,
+         'effects':[{'type':1, '客体':24, '伤害骰':'4d6+3', '成功率':70, '可闪避性':0, '可反击性':0, '射程':4,
                       '友方行为': 'damage_and_heal',
                       '友方伤害骰': '2d6',
                       '友方延迟回复骰': '4d6+3',
@@ -811,8 +905,8 @@ MULUO = {
         # Skill 3a: 领域·生 — 8x8治疗+敏捷+10
         {'name':'领域·生', 'phase':1, 'timing':'2', 'category':8, 'default_persist':0, '消耗mp':5,
          'effects':[
-             {'type':8, '客体':3, '作用半径':20, '持续回合':3, '回复hp':'1d8', '领域中心跟随':1},
-             {'type':4, '客体':3, '持续回合':3, '技能加减值':'敏捷+10'},
+             {'type':8, '客体':13, '作用半径':20, '持续回合':3, '回复hp':'1d8', '领域中心跟随':1},
+             {'type':4, '客体':13, '持续回合':3, '技能加减值':'敏捷+10'},
          ]},
         # Skill 4: 阶段转换 — HP阈值(2/3,1/2,1/3,1/6)检定(30/50/80/100%), 消耗2d6 SAN
         {'name':'阶段转换', 'phase':1, 'timing':'1', 'category':9, '消耗san':'2d6',
@@ -840,8 +934,8 @@ MULUO = {
          'effects':[
              {'type':8, '客体':135, '作用半径':20, '持续回合':99, '每回合伤害骰':'2d4', '领域中心跟随':1},
              {'type':4, '客体':13, '持续回合':99, '技能加减值':'敏捷+10'},
-             {'type':4, '客体':3, '持续回合':99, '辅助效果':'造成伤害百分比', '辅助效果值':'+10' },
-             {'type':4, '客体':3, '持续回合':99, '辅助效果':'伤害成功率奖励惩罚', '辅助效果值':'b' },   
+             {'type':4, '客体':13, '持续回合':99, '辅助效果':'造成伤害百分比', '辅助效果值':'+10' },
+             {'type':4, '客体':13, '持续回合':99, '辅助效果':'伤害成功率奖励惩罚', '辅助效果值':'b' },
          ]},
     ]
 }
@@ -863,11 +957,11 @@ CHUNSHANG = {
     'spells':[
         {
             'name':'屏障术', 'timing':'2', 'category':2, '消耗mp':9,
-            'effects':[{'type':2, '客体':3, '作用半径':4, '护盾值':'2d6', '持续回合':5}]
+            'effects':[{'type':2, '客体':13, '作用半径':4, '护盾值':'2d6', '持续回合':5}]
         },
         {
             'name':'治疗术', 'timing':'2', 'category':3, '消耗mp':3,
-            'effects':[{'type':3, '客体':3, '作用半径':8, '回复hp':'1d4+2'}]
+            'effects':[{'type':3, '客体':13, '作用半径':8, '回复hp':'1d4+2'}]
         },
         {
             'name':'藤蔓术', 'timing':'23', 'category':5, '消耗mp':4,
@@ -899,7 +993,7 @@ LAN = {
             'effects':[{
                 'type':1, '客体':4, '伤害骰':'1d10+2d6+3', '成功率':80,
                 '可闪避性':1, '可反击性':1, '射程':2,
-                '辅助效果':'技能惩罚骰', '辅助效果值':'p',  # 反应方惩罚骰
+                '辅助效果':'反应惩罚骰', '辅助效果值':'p',  # 仅本次攻击的反应惩罚骰
                 '吸血比例':'0.35',
             }]
         },
@@ -1217,7 +1311,8 @@ LINBAI = {
         '额外行动数': 0, '魔法少女序号': 16, '伤害贯穿': 1, '可反击': 1, '状态': 60,
         '写作': 70,
     },
-    'str_attrs': {'伤害值': '1d6+1+db', 'db': '0'},
+    'str_attrs': {'伤害值': '1d6+db', '伤害值a': '1d8+db', '伤害值b': '1d6+db/2', 'db': '0',
+                  'damage_suffix_map': {'剑': 'a', '弓术': 'b'}},
     'inventory': [],
     'spells': [
         # s1: 灵感大爆发（群体MP回复buff，可叠2层）
@@ -1228,7 +1323,7 @@ LINBAI = {
         {'name': '虚假之月', 'timing': '23', 'category': 5, '消耗mp': '3d4', '_mp_formula_transformed': '2d3',
          'effects': [
              {'type': 5, '客体': 1, '召唤个数': 1, '召唤物模板': '虚假之月', '持续回合': 99},
-             {'type': 4, '客体': 3, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b',
+             {'type': 4, '客体': 3, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b',
               'linked_summon': '虚假之月'},
          ]},
         # s3: 月中的倒影（召唤2个克隆，持续5回合）
@@ -1247,12 +1342,12 @@ LINBAI = {
         # s6: 幻造兵武·即兴短句（1MP，1d2 + 写作增益）
         {'name': '幻造兵武·即兴短句', 'timing': '2', 'category': 1, '消耗mp': 1,
          'effects': [{'type': 1, '客体': 4, '伤害骰': '1d2', '成功率': 70, '可闪避性': 0, '可反击性': 0, '射程': 6, '幻造': True, 'charge_moon': 2}]},
-        # s7a-c: 武器切换（自由动作，timing='123'）
-        {'name': '切换·法杖', 'timing': '123', 'category': 4, '消耗mp': 1,
+        # s7a-c: 武器切换（timing='23'：主动/附加动作，不作为被动自动施放）
+        {'name': '切换·法杖', 'timing': '23', 'category': 4, '消耗mp': 1,
          'effects': [{'type': 17, '客体': 1, 'weapon_state': 'staff', '持续回合': 99}]},
-        {'name': '切换·弓', 'timing': '123', 'category': 4, '消耗mp': 1,
+        {'name': '切换·弓', 'timing': '23', 'category': 4, '消耗mp': 1,
          'effects': [{'type': 17, '客体': 1, 'weapon_state': 'bow', '持续回合': 99}]},
-        {'name': '切换·剑', 'timing': '123', 'category': 4, '消耗mp': 1,
+        {'name': '切换·剑', 'timing': '23', 'category': 4, '消耗mp': 1,
          'effects': [{'type': 17, '客体': 1, 'weapon_state': 'sword', '持续回合': 99}]},
         # s8a: 万众瞩目的乌托邦（弓终极技，3回合吟唱）
         {'name': '万众瞩目的乌托邦', 'timing': '2', 'category': 1, '消耗mp': 10, '吟唱回合': 3,
@@ -1264,10 +1359,12 @@ LINBAI = {
          'weapon_required': 'staff',
          'effects': [{'type': 2, '客体': 3, '作用半径': 20, '护盾值': '2d4', '持续回合': 3}]},
         # s8c: 月光王座全额率输出（剑终极技，消耗全部月能）
+        # damage_moon_mult=5：伤害 = 月能×5；consume_moon：施放时消耗全部月能并销毁虚假之月。
+        # 无虚假之月（或月能为0）时禁止施放（不扣 MP）。伤害骰 1d1 仅作无月兜底（不会触发）。
         {'name': '月光王座全额率输出', 'timing': '2', 'category': 1, '消耗mp': 10,
          'weapon_required': 'sword',
-         'effects': [{'type': 1, '客体': 4, '伤害骰': '2d12', '成功率': 100, '可闪避性': 0, '可反击性': 0,
-                      '可贯穿性': 1, '射程': 18}]},
+         'effects': [{'type': 1, '客体': 4, '伤害骰': '1d1', '成功率': 100, '可闪避性': 0, '可反击性': 0,
+                      '可贯穿性': 1, '射程': 18, 'damage_moon_mult': 5, 'consume_moon': True}]},
     ]
 }
 
@@ -1286,7 +1383,8 @@ YEZHAOMING = {
         '力量': 30, '体质': 35, '体型': 45, '外貌': 55, '教育': 55, '智力': 60, '意志': 60, '幸运': 50,
         '额外行动数': 0, '魔法少女序号': 17, '伤害贯穿': 1, '可反击': 1, '状态': 60,
     },
-    'str_attrs': {'伤害值': '1d6+db', '伤害值b': '1d6+db/2', 'db': '-2'},
+    'str_attrs': {'伤害值': '1d6+db', '伤害值b': '1d6+db/2', 'db': '-2',
+                  'damage_suffix_map': {'剑': 'a', '弓术': 'b'}},
     'inventory': [],
     'spells': [
         # s1: 猩红眼眸（非战斗，探测血液）
@@ -1393,9 +1491,9 @@ X1 = {
     'spells':[
         # ── Y10 全部技能 ──
         {'name':'屏障术', 'timing':'2', 'category':2, '消耗mp':9,
-         'effects':[{'type':2, '客体':3, '作用半径':4, '护盾值':'2d6', '持续回合':5}]},
+         'effects':[{'type':2, '客体':133, '作用半径':4, '护盾值':'2d6', '持续回合':5}]},
         {'name':'治疗术', 'timing':'2', 'category':3, '消耗mp':3,
-         'effects':[{'type':3, '客体':3, '作用半径':8, '回复hp':'1d4+2'}]},
+         'effects':[{'type':3, '客体':13, '作用半径':8, '回复hp':'1d4+2'}]},
         {'name':'藤蔓术', 'timing':'23', 'category':5, '消耗mp':4,
          'effects':[{'type':5, '客体':1, '召唤个数':1, '召唤物模板':'藤蔓', '持续回合':5}]},
         {'name':'召唤蜂鸟', 'timing':'23', 'category':5, '消耗mp':6,
@@ -1404,7 +1502,7 @@ X1 = {
         {'name':'挥动镰刀', 'timing':'2', 'category':1, '消耗mp':2,
          'effects':[{'type':1, '客体':4, '伤害骰':'1d10+2d6+3', '成功率':80,
                       '可闪避性':1, '可反击性':1, '射程':2,
-                      '辅助效果':'技能惩罚骰', '辅助效果值':'p', '吸血比例':'0.35'}]},
+                      '辅助效果':'反应惩罚骰', '辅助效果值':'p', '吸血比例':'0.35'}]},
         {'name':'黑雾笼罩', 'timing':'2', 'category':8, '消耗mp':3,
          'effects':[
              {'type':8, '客体':45, '作用半径':8, '持续回合':3, '属性削减':'闪避-16', '领域中心跟随':1,
@@ -1422,8 +1520,9 @@ X1 = {
 ALL_CHARACTERS = [
     YANYAN, DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI,
     XUEREN, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG,
-    LAN, SIRUITIKA, GELIYA,
-    MAIZHIXIA, YUCHANGFENG, LINBAI, YEZHAOMING, X1
+    LAN, SIRUITIKA,
+    #GELIYA,
+    #MAIZHIXIA, YUCHANGFENG, LINBAI, YEZHAOMING
 ]
 
 # ============================================================
@@ -1504,6 +1603,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         if cca: char.set_attr(f"{prefix}cost_counter_amount", cca)
         ob = spell.get('_once_per_battle', False)
         if ob: char.set_attr(f"{prefix}_once_per_battle", 1)
+        cd_rounds = spell.get('cooldown_rounds', 0)
+        if cd_rounds:
+            char.set_attr(f"{prefix}cooldown_rounds", int(cd_rounds))
         # Blood and HP cost fields
         cbl = spell.get('cost_blood_ml', 0)
         if cbl: char.set_attr(f"{prefix}cost_blood_ml", cbl)
@@ -1562,11 +1664,15 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
     char._hp_to_blood_ml = char_data.get('hp_to_blood_ml', 200)
     engine.load_spells(user_id)
     # Load inventory items (物品栏)
+    inv_meta_keys = ('sourceTeam', 'sourceUserId', '消费追加回复hp', 'tasteBonusOwnerSerial')
     for inv_entry in char_data.get('inventory', []):
         item_name = inv_entry.get('item', '')
         count = inv_entry.get('count', 1)
         if item_name and count > 0:
-            engine.add_item_to_inventory(user_id, item_name, count)
+            meta = {k: inv_entry[k] for k in inv_meta_keys if k in inv_entry}
+            if meta.get('sourceTeam') == 'auto': meta['sourceTeam'] = None
+            if meta.get('sourceUserId') == 'auto': meta['sourceUserId'] = user_id
+            engine.add_item_to_inventory(user_id, item_name, count, metadata=meta)
     # Handle pre-transformed characters (变身前：——)
     if char_data.get('pre_transformed'):
         char.hs_transformed = True
@@ -1626,16 +1732,30 @@ def _engine_debug_log(msg: str):
 # Overridable by trainers to inject correct SUMMON_TEMPLATES for PvP vs PvE
 _SUMMON_TEMPLATES = None
 
+
+def _get_summon_template(tmpl_name):
+    """Resolve a summon template dict by template name.
+
+    Prefers the module-level `_SUMMON_TEMPLATES` registry (injected by trainers /
+    the merged backend); falls back to a lazy import of characters_data.
+    Returns None when the template is unknown."""
+    if not tmpl_name:
+        return None
+    tmpls = _SUMMON_TEMPLATES
+    if tmpls is None:
+        from characters_data import SUMMON_TEMPLATES as tmpls
+    return (tmpls or {}).get(tmpl_name)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ============================================================
 #  Constants
 # ============================================================
 # FLYING_MELEE_RULE: 近战对飞行单位的命中规则
-#   2 = 非飞行单位无法近战飞行目标（默认）
-#   1 = 非飞行单位近战飞行目标时获得1个惩罚骰
+#   2 = 非飞行单位无法近战飞行目标
+#   1 = 非飞行单位近战飞行目标时获得1个惩罚骰（当前规则）
 #   0 = 无限制（近战可正常命中飞行单位）
-FLYING_MELEE_RULE = 2
+FLYING_MELEE_RULE = 1
 
 CN_NUMS = ['零','一','二','三','四','五','六','七','八','九','十',
            '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
@@ -1658,8 +1778,12 @@ AUX_EFFECT_TYPES = {
     27:'MOV+',28:'MOV-',
     29:'消耗hp转为消耗mp',
     30:'免疫一次伤害',31:'受到伤害上限',32:'受到伤害减免阈值',
+    33:'反应惩罚骰',
+    34:'全D100检定奖励骰',
 }
 AUX_NAME_TO_CODE = {v: k for k, v in AUX_EFFECT_TYPES.items()}
+# Only implemented, read-only modifiers can be supplied by a live zone view.
+ZONE_AUX_CODES = frozenset(range(1, 23)) | {29}
 
 # ── 控制状态类型（auxType 字符串，不入 AUX_EFFECT_TYPES）──
 CONTROL_STATUS_TYPES = ('沉默','缴械','击晕','禁锢','隔离','减速','飞行')
@@ -1776,8 +1900,9 @@ def _resolve_db(dice_expr, build_or_db):
     expr = str(dice_expr)
 
     if db_val == '0':
-        # Remove the db term entirely: "+db", "-db", or bare "db"
-        expr = re.sub(r'[+-]?\s*\bdb\b', '', expr, flags=re.IGNORECASE).strip()
+        # Remove the db term entirely: "+db", "-db", "db" — including a trailing
+        # division qualifier ("+db/2") so no dangling "/N" survives (e.g. '1d6+db/2' → '1d6').
+        expr = re.sub(r'[+-]?\s*\bdb\b(?:\s*/\s*\d+)?', '', expr, flags=re.IGNORECASE).strip()
         expr = re.sub(r'^\+\s*', '', expr)  # strip leading '+'
         if not expr:
             expr = '0'
@@ -1799,9 +1924,40 @@ def _resolve_db(dice_expr, build_or_db):
     return expr
 
 
-def roll_dice(expr):
-    if not expr or expr == '0': return 0
-    expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
+_DICE_TOKEN = re.compile(r'(\d*)d(\d+)', re.IGNORECASE)
+_ARITH_ONLY = re.compile(r'[0-9+\-*/().\s]+$')
+
+# 月相表（Y17 血月斩击 damage_table='moon_phase'）— 规格见 reference/各魔法少女魔法列表.md
+# 每项: (月相名, 伤害骰或固定值, 是否生命吸取)。引擎掷 1d8 选月相。
+_MOON_PHASE_TABLE = [
+    ('满月',   '1d12+3',  True),   # 1 强行吸取 1d12+3 生命
+    ('亏凸月', '1d8',     True),   # 2 造成 1d8 伤害 + 1d8 生命吸取
+    ('弦月',   '1d12',    False),  # 3 造成 1d12 伤害
+    ('残月',   '1d6+4',   False),  # 4 造成 1d6+4 伤害
+    ('新月',   '1d16+12', False),  # 5 造成 d16+12 伤害
+    ('蛾眉月', '8',       False),  # 6 固定 8 点伤害
+    ('上弦月', '5',       True),   # 7 固定 5 点伤害 + 5 点生命吸收
+    ('盈凸月', '10',      True),   # 8 固定 10 点生命偷取
+]
+
+
+def _dice_group_value(cnt, sides, mode):
+    """Value of one NdM dice group for the given mode.
+
+    mode: 'roll' (random total), 'avg' (expected value), 'max' (maximum)."""
+    cnt = int(cnt) if cnt else 1
+    sides = int(sides)
+    if cnt <= 0 or sides <= 0:
+        return 0
+    if mode == 'avg':
+        return cnt * (sides + 1) / 2.0
+    if mode == 'max':
+        return cnt * sides
+    return sum(random.randint(1, sides) for _ in range(cnt))
+
+
+def _legacy_dice_sum(expr_n):
+    """Legacy fallback: sum dice/integer tokens, silently ignoring anything else."""
     total = 0
     for part in re.findall(r'[+-]?\s*\d*d\d+|[+-]?\s*\d+', expr_n, re.IGNORECASE):
         sign = -1 if part.strip().startswith('-') else 1
@@ -1816,18 +1972,35 @@ def roll_dice(expr):
     return total
 
 
-def roll_dice_detailed(expr):
-    """Roll dice and return (total, breakdown_string).
+def _eval_dice_expr(expr, mode='roll'):
+    """Evaluate a dice expression.
 
-    Breakdown format:
-      2d3+1d4 → "2d3(2+1=3)+1d4(4)=7"
-      1d6     → "1d6=6"
-      Static: "2d6+4" → "2d6(3+5=8)+4=12"
-      If expr is empty or '0', returns (0, '0').
-    """
+    mode: 'roll' (random totals, int) | 'avg' (expected values, float) | 'max' (max, int).
+    Supports NdM dice, integers and arithmetic + - * / ( ). Division truncates
+    toward zero, matching the JS reference implementation (parseInt).
+    Malformed tokens fall back to the legacy token-sum behavior."""
     if not expr or expr == '0':
-        return (0, '0')
-    expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
+        return 0
+    expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', str(expr), flags=re.IGNORECASE)
+    expr_v = _DICE_TOKEN.sub(lambda m: f'({_dice_group_value(m.group(1), m.group(2), mode)})', expr_n)
+    if not _ARITH_ONLY.fullmatch(expr_v):
+        return _legacy_dice_sum(expr_n)
+    try:
+        val = eval(expr_v, {'__builtins__': {}}, {})
+    except Exception:
+        # e.g. '2 3' (two bare numbers) — legacy token sum
+        return _legacy_dice_sum(expr_n)
+    if mode == 'avg':
+        return val
+    return int(val)
+
+
+def roll_dice(expr):
+    return _eval_dice_expr(expr, 'roll')
+
+
+def _legacy_dice_detailed(expr_n):
+    """Legacy detailed roll (pre-arithmetic format), kept for malformed expressions."""
     total = 0
     parts_detail = []
     for part in re.findall(r'[+-]?\s*\d*d\d+|[+-]?\s*\d+', expr_n, re.IGNORECASE):
@@ -1852,27 +2025,53 @@ def roll_dice_detailed(expr):
             val = int(clean)
             total += sign * val
             parts_detail.append(f'{sign_str}{val}' if (parts_detail or sign_str == '-') else str(val))
-    # Clean up leading '+' on first part
     detail = ''.join(parts_detail)
     if detail.startswith('+'):
         detail = detail[1:]
     return (total, f'{detail}={total}')
 
-def avg_damage(expr):
-    if not expr: return 0
-    expr = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
-    total = 0.0
-    for part in re.findall(r'[+-]?\s*\d*d\d+|[+-]?\s*\d+', expr, re.IGNORECASE):
-        sign = -1 if part.strip().startswith('-') else 1
-        clean = part.strip().lstrip('+-').strip()
-        m = re.match(r'^(\d*)d(\d+)$', clean, re.IGNORECASE)
-        if m:
-            cnt = int(m.group(1)) if m.group(1) else 1
-            total += sign * cnt * (int(m.group(2)) + 1) / 2
+
+def roll_dice_detailed(expr):
+    """Roll dice and return (total, breakdown_string).
+
+    Breakdown format:
+      2d3+1d4 → "2d3(2+1=3)+1d4(4)=7"
+      1d6     → "1d6=6"
+      Static: "2d6+4" → "2d6(3+5=8)+4=12"
+      Arithmetic: "1d6/2" → "1d6(4)/2=2"
+      If expr is empty or '0', returns (0, '0').
+    """
+    if not expr or expr == '0':
+        return (0, '0')
+    expr_n = re.sub(r'(^|[^0-9])d', r'\g<1>1d', str(expr), flags=re.IGNORECASE)
+    # Roll each dice group once; record its breakdown text, then reuse it for the
+    # arithmetic evaluation so the dice are not rolled twice.
+    parts = []
+    def sub_dice(m):
+        cnt = int(m.group(1)) if m.group(1) else 1
+        sides = int(m.group(2))
+        if cnt <= 0 or sides <= 0:
+            parts.append('0'); return '(0)'
+        rolls = [random.randint(1, sides) for _ in range(cnt)]
+        subtotal = sum(rolls)
+        if cnt == 1:
+            parts.append(f'1d{sides}({rolls[0]})')
         else:
-            try: total += sign * int(clean)
-            except: pass
-    return total
+            parts.append(f'{cnt}d{sides}({"+".join(str(r) for r in rolls)}={subtotal})')
+        return f'({subtotal})'
+    expr_v = _DICE_TOKEN.sub(sub_dice, expr_n)
+    if _ARITH_ONLY.fullmatch(expr_v):
+        try:
+            total = int(eval(expr_v, {'__builtins__': {}}, {}))
+            detail = _DICE_TOKEN.sub(lambda m: parts.pop(0), expr_n)
+            return (total, f'{detail}={total}')
+        except Exception:
+            pass
+    # Malformed expression — legacy formatting path
+    return _legacy_dice_detailed(expr_n)
+
+def avg_damage(expr):
+    return _eval_dice_expr(expr, 'avg')
 
 def success_rank(d100_val, skill_val, crit_mod_pct=0.0, crit_mod_flat=0):
     if skill_val <= 0: return 4 if d100_val <= 5 else (-2 if d100_val >= 96 else -1)
@@ -1914,93 +2113,113 @@ def roll_d100(bp_str=''):
     result = 100 if (tens == 0 and units == 0) else tens * 10 + units
     return (result, detail)
 
-def _calc_net_bp(buffs, bp_suffix='', skill_name=None):
-    """Calculate net bonus/penalty dice from all buffs with stacking (max ±3).
+def _parse_bp_token(token):
+    """Parse one bonus/penalty-dice token into a signed count.
 
-    Counts all bonus dice and penalty dice from:
-    - AUX 16 (伤害成功率奖励惩罚) buffs with auxVal like 'b','b2','b3','p','p2','p3'
-    - Skill-specific bonus/penalty dice (auxCode 17/18 or auxType 技能奖励骰/技能惩罚骰)
-    - The passed-in bp_suffix (from command like .btab/.btap)
-
-    Nets them: bonus − penalty, capped at ±3.
-    Returns formatted string: 'b3','b2','b','','p','p2','p3'
+    Accepted forms: 'b', 'b2', '2b', 'p', 'p3', '3p', '' and ints
+    (positive = bonus dice, negative = penalty dice). Unknown text → 0.
     """
-    bonus_count = 0
-    penalty_count = 0
+    if token is None or isinstance(token, bool):
+        return 0
+    if isinstance(token, int):
+        return token
+    s = str(token).strip().lower()
+    if not s:
+        return 0
+    m = re.match(r'^([bp])(\d*)$', s)
+    if m:
+        n = int(m.group(2) or 1)
+        return n if m.group(1) == 'b' else -n
+    m = re.match(r'^(\d*)([bp])$', s)
+    if m:
+        n = int(m.group(1) or 1)
+        return n if m.group(2) == 'b' else -n
+    return 0
 
-    # 1. Parse bp_suffix (from command)
-    if bp_suffix:
-        m = re.match(r'^([bp])(\d*)$', bp_suffix.lower())
-        if m:
-            cnt = int(m.group(2) or '1')
-            if m.group(1) == 'b':
-                bonus_count += cnt
-            else:
-                penalty_count += cnt
 
-    # 2. Scan all buffs
-    for b in buffs:
-        # AUX 16: 伤害成功率奖励惩罚
-        if b.get("auxCode") == 16:
-            val = str(b.get("auxVal", "")).strip().lower()
-            m = re.match(r'^([bp])(\d*)$', val)
-            if m:
-                cnt = int(m.group(2) or '1')
-                if m.group(1) == 'b':
-                    bonus_count += cnt
-                else:
-                    penalty_count += cnt
-        # Skill-specific bonus/penalty dice (auxCode 17/18)
-        if skill_name and b.get('auxCode') in (17, 18):
-            try:
-                aux_val = str(b.get('auxVal', '')).strip()
-                if aux_val.lower() == skill_name.lower():
-                    if b.get('auxCode') == 17:
-                        bonus_count += 1
-                    else:
-                        penalty_count += 1
-            except Exception:
-                pass
-        # Skill-specific bonus/penalty dice (legacy auxType string matching)
-        if skill_name:
-            try:
-                aux_type = b.get('auxType', '')
-                aux_val = str(b.get('auxVal', '')).strip()
-                if aux_type == '技能奖励骰' and aux_val.lower() == skill_name.lower():
-                    bonus_count += 1
-                if aux_type == '技能惩罚骰' and aux_val.lower() == skill_name.lower():
-                    penalty_count += 1
-            except Exception:
-                pass
-
-    # 3. Net and cap at ±3
-    net = bonus_count - penalty_count
-    net = max(-3, min(3, net))
-
+def _format_bp(net):
+    """Format a signed net dice count, capped at ±3, as 'b'/'b2'/'p'/'p2'/''."""
+    net = max(-3, min(3, int(net)))
     if net > 0:
         return f'b{net}' if net > 1 else 'b'
-    elif net < 0:
+    if net < 0:
         n = -net
         return f'p{n}' if n > 1 else 'p'
-    else:
-        return ''
+    return ''
+
+
+def _calc_net_bp(buffs, bp_suffix='', skill_name=None, extra_tokens=None,
+                 ignore_global=False, only_codes=None):
+    """Calculate net bonus/penalty dice from every source, then cap at ±3.
+
+    Sources, all summed with p+b cancellation before the cap:
+    - explicit tokens (bp_suffix / extra_tokens) like 'b','b2','2b','p','p3','3p'
+    - AUX 16 (伤害成功率奖励惩罚): a generic dice count
+    - AUX 34 (全D100检定奖励骰): bonus dice on every D100 check of the unit
+    - AUX 17/18 (技能奖励骰/技能惩罚骰): a dice count ('b2'/'p') applies to any
+      skill; a non-dice value is matched against skill_name and counts as ±1.
+    - AUX 33 (反应惩罚骰) is supplied by the caller via extra_tokens (attack-only).
+
+    ``ignore_global=True`` skips only the caster's active buffs; explicit tokens
+    (command line, effect-inherent dice) still apply.
+
+    ``only_codes`` restricts which buff AUX codes contribute (e.g. non-skill
+    checks pass {34} so attack-only modifiers never leak into saves).
+    """
+    net = _parse_bp_token(bp_suffix)
+    for tok in (extra_tokens or []):
+        net += _parse_bp_token(tok)
+
+    if not ignore_global:
+        for b in buffs or []:
+            aux_code = b.get('auxCode')
+            aux_type = b.get('auxType', '')
+            aux_val = str(b.get('auxVal', '')).strip()
+            # Tolerate spells loaded before auxCode existed.
+            if not aux_code:
+                aux_code = AUX_NAME_TO_CODE.get(aux_type, 0)
+            if only_codes is not None and aux_code not in only_codes:
+                continue
+
+            if aux_code == 16:
+                net += _parse_bp_token(aux_val)
+            elif aux_code == 34:
+                # 全D100检定奖励骰: every D100 check gets this many bonus dice,
+                # consumed once per check (this helper runs once per check).
+                net += _parse_bp_token(aux_val) or 1
+            elif aux_code in (17, 18):
+                signed = _parse_bp_token(aux_val)
+                if signed:
+                    # Generic dice count — applies to every skill.
+                    net += signed
+                elif skill_name and aux_val.lower() == str(skill_name).lower():
+                    net += 1 if aux_code == 17 else -1
+    return _format_bp(net)
+
+
+def _parse_attr_mods(spec):
+    """Parse 'MOV+5' / '闪避-30' / '斗殴+10;敏捷-5' into [(name, delta), ...]."""
+    if spec is None:
+        return []
+    mods = []
+    for part in re.split(r'[;；,，/]', str(spec)):
+        m = re.match(r'^\s*([^\d+\-]+?)\s*([+-])\s*(\d+)\s*$', part)
+        if m:
+            delta = int(m.group(3)) * (-1 if m.group(2) == '-' else 1)
+            mods.append((m.group(1).strip(), delta))
+    return mods
+
+
+_MOV_ATTR_GROUP = ('MOV', '行动力', '移动力')
+
+
+def _attr_group(name):
+    return 'MOV' if name in _MOV_ATTR_GROUP else name
 
 
 def max_damage(expr):
     if not expr: return 0
-    expr = re.sub(r'(^|[^0-9])d', r'\g<1>1d', expr, flags=re.IGNORECASE)
-    total = 0
-    for part in re.findall(r'[+-]?\s*\d*d\d+|[+-]?\s*\d+', expr, re.IGNORECASE):
-        sign = -1 if part.strip().startswith('-') else 1
-        clean = part.strip().lstrip('+-').strip()
-        m = re.match(r'^(\d*)d(\d+)$', clean, re.IGNORECASE)
-        if m:
-            cnt = int(m.group(1)) if m.group(1) else 1
-            total += sign * cnt * int(m.group(2))
-        else:
-            try: total += sign * int(clean)
-            except: pass
-    return max(0, total)
+    return max(0, _eval_dice_expr(expr, 'max'))
 
 def parse_coord(s):
     m = re.match(r'^([A-Z])(\d+)$', s.upper()); return (ord(m.group(1))-65, int(m.group(2))-1) if m else None
@@ -2045,6 +2264,17 @@ def has_object(os, code):
 # ============================================================
 #  Character data class
 # ============================================================
+class SpellInterrupted(Exception):
+    """Raised when an effect needs external resolution (e.g. PvP reaction).
+
+    ``data`` carries the pending-reaction payload. Subclasses (ReactionNeeded
+    in battle_http_server) keep the same contract.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        self.data = kwargs.get('data', {})
+
+
 class Character:
     def __init__(self, user_id, name):
         self.user_id = user_id; self.name = name; self.serial = ''
@@ -2146,6 +2376,7 @@ class CombatEngine:
         # Summon group consolidation: same-type summons share one initiative slot
         self._summon_groups = {}   # {rep_base_uid: {members, template_name, ownerId}}
         self._summon_members = {}  # {sid: {userId, name, display_name, team, coord, skills, ...}}
+        self._summon_total_spawned = {}  # {(owner_base, template_name): 本场累计成功创建数}
 
     def _get_block_skill(self, uid):
         """获取格挡技能名和值。优先：格挡 → 盾击。返回 (skill_name, skill_value)。"""
@@ -2165,9 +2396,10 @@ class CombatEngine:
             return None
         il = self._get_initiative()
         resolved = self._resolve_uid(uid)
-        for e in il:
+        for e in self._battle_unit_entries():
             if (e.get('isSummon') and e.get('ownerId') == resolved
                 and e.get('name') == redirect_name
+                and (self._get_combat_hp(e['userId']) or 0) > 0
                 and e.get('shield_block_hp', 0) > 0):
                 return e['userId']
         return None
@@ -2220,20 +2452,86 @@ class CombatEngine:
         """Find an existing summon group by owner and template name. Returns rep_uid or None."""
         for rep_uid, grp in self._summon_groups.items():
             if (grp.get('ownerId') == owner_id
-                    and grp.get('template_name') == template_name):
+                    and grp.get('template_name') == template_name
+                    and any((self._get_combat_hp(m) or 0) > 0 for m in grp.get('members', []))):
                 return rep_uid
         return None
 
+    def _get_summon_live_count(self, owner_id, template_name):
+        """统计某主人某模板当前存活的召唤物数量（含不在先攻表里的隐藏组员）。
+
+        只读：不剪枝组、不修改任何状态，可安全用于 AI 动作预检。
+        """
+        owner_base = self._resolve_uid(owner_id)
+        seen = set()
+
+        def _alive(sid):
+            return (self._get_combat_hp(sid) or 0) > 0
+
+        # 1) 先攻条目（代表/单体召唤）
+        for e in self._get_initiative():
+            if not e.get('isSummon'): continue
+            if self._resolve_uid(e.get('ownerId', '')) != owner_base: continue
+            if e.get('name', '') != template_name: continue
+            sid = self._resolve_uid(e['userId'])
+            if _alive(sid): seen.add(sid)
+        # 2) 分组登记（含隐藏组员）
+        for rep_uid, grp in self._summon_groups.items():
+            if self._resolve_uid(grp.get('ownerId', '')) != owner_base: continue
+            if grp.get('template_name') != template_name: continue
+            for m in grp.get('members', []):
+                if _alive(m): seen.add(self._resolve_uid(m))
+        # Read-only ownership fallback for legacy members without ownerId.
+        for m, mdata in self._summon_members.items():
+            if mdata.get('name') != template_name: continue
+            owner = mdata.get('ownerId')
+            if owner is None:
+                owner = (self._get_summon_group(m) or {}).get('ownerId')
+            if self._resolve_uid(owner) != owner_base:
+                continue
+            if _alive(m): seen.add(self._resolve_uid(m))
+        return len(seen)
+
+    def _get_summon_quota(self, owner_id, template_name, template=None):
+        """返回 (remaining, reason)。remaining 为本次还能新建的数量；None 表示不限。
+
+        None=无限（不设上限），0=名额已满，需与"未设置"区分。
+        """
+        tmpl = template
+        if tmpl is None:
+            tmpl = _get_summon_template(template_name) or {}
+        max_sim = tmpl.get('max_simultaneous')
+        max_total = tmpl.get('max_total_spawned')
+        live = self._get_summon_live_count(owner_id, template_name)
+        spawned = self._summon_total_spawned.get(
+            (self._resolve_uid(owner_id), template_name), 0)
+
+        sim_left = None if max_sim is None else max(0, int(max_sim) - live)
+        tot_left = None if max_total is None else max(0, int(max_total) - spawned)
+        if sim_left is None and tot_left is None:
+            return None, ''
+        if sim_left is not None and sim_left <= 0:
+            return 0, f'{template_name}已达同时存活上限({max_sim})'
+        if tot_left is not None and tot_left <= 0:
+            return 0, f'{template_name}已达本场累计召唤上限({max_total})'
+        candidates = [v for v in (sim_left, tot_left) if v is not None]
+        return min(candidates), ''
+
+    def _register_summon_spawned(self, owner_id, template_name):
+        """成功创建后累加本场累计召唤数。死亡不返还。"""
+        key = (self._resolve_uid(owner_id), template_name)
+        self._summon_total_spawned[key] = self._summon_total_spawned.get(key, 0) + 1
+
     def _find_summons_by_field(self, team, field_name):
-        """Find summons on the given team that have a truthy template field.
-        Returns list of (uid, char) tuples."""
         results = []
         for entry in self._get_initiative():
             if not entry.get('isSummon'): continue
             if entry.get('team') != team: continue
             if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
-            tmpl_data = self._summon_members.get(entry['userId'], {})
-            if tmpl_data.get(field_name):
+            # entry['name'] is always the template name (display name lives in
+            # displayName / Character.name) — resolve template fields from the registry.
+            tmpl = _get_summon_template(entry.get('name', ''))
+            if tmpl and tmpl.get(field_name):
                 results.append((entry['userId'], self.get_char(entry['userId'])))
         return results
 
@@ -2310,6 +2608,18 @@ class CombatEngine:
                 return True
         return False
 
+    def _has_moon_buff(self, uid):
+        """事象的馈赠: uid 是否持有与月能召唤物(replenish_allies)链接的 buff。
+
+        数据驱动：任意 active buff 带有 linked_summon 即视为月能链接
+        （目前只有虚假之月的 事象的馈赠 使用该字段）。"""
+        for e in self._get_effects():
+            if e.get('type') == 'buff' and e.get('targetUserId') == uid \
+               and e.get('linked_summon') \
+               and e.get('remainingRounds', 0) > 0:
+                return True
+        return False
+
     def _consume_immunity(self, uid):
         """Check and consume AUX 30 (免疫一次伤害) buff on uid. Returns True if immune."""
         effects = self._get_effects()
@@ -2333,24 +2643,9 @@ class CombatEngine:
         self._set_effects(effects)
 
     def _get_summon_group_members(self, rep_or_uid):
-        """Return list of member userIds for the group containing uid, or [uid] if not in a group.
-        Prunes dead members from the group to prevent stale accumulation."""
+        """Read members without changing lifecycle state during queries/display."""
         grp = self._get_summon_group(rep_or_uid)
-        if grp:
-            members = list(grp.get('members', []))
-            # Prune dead members (HP=0 or None) from the group list
-            alive = [m for m in members if (self._get_combat_hp(m) or 0) > 0]
-            if len(alive) != len(members):
-                if alive:
-                    grp['members'] = alive
-                else:
-                    # All dead: remove the group entirely
-                    self._summon_groups.pop(self._resolve_uid(rep_or_uid), None)
-                    for m in members:
-                        self._summon_members.pop(m, None)
-            return alive if alive else members  # Return alive members, or keep dead ones if all dead
-        base = self._resolve_uid(rep_or_uid)
-        return [base]
+        return list(grp.get('members', [])) if grp else [self._resolve_uid(rep_or_uid)]
 
     def _get_alive_summon_group_members(self, rep_or_uid):
         """Return list of alive member userIds in the group."""
@@ -2390,7 +2685,8 @@ class CombatEngine:
 
         # Track per-team last-death overflow for battle-end tiebreaker
         if old_hp is not None and old_hp > 0 and new_hp <= 0:
-            entry = next((e for e in self._get_initiative() if self._resolve_uid(e['userId']) == base), None)
+            entry = next((e for e in self._battle_unit_entries()
+                          if self._resolve_uid(e.get('userId', '')) == base), None)
             if entry and not entry.get('isSummon'):
                 team = entry.get('team', '?')
                 if not hasattr(self, '_last_death_overflow'):
@@ -2401,20 +2697,42 @@ class CombatEngine:
                 char = self.get_char(uid)
                 self._last_death_max_hp[team] = char.get_attr('体力上限', old_hp) if char else old_hp
                 if getattr(self, 'use_dying_system', False):
-                    # New system: CON save → dying or death
                     excess = max(0, source_dmg - old_hp) if source_dmg > 0 else max(0, -hp)
                     self._enter_dying_or_die(base, excess)
                 else:
-                    # Old system: immediate death, remove character + summons
-                    self._remove_summons_of_owner(base)
+                    # Legacy instant death: capture the unit and its summons first.
+                    self._record_graveyard_entry(base)
+                    self._remove_summons_of_owner(base, record_collateral=True)
+            elif entry and entry.get('isSummon'):
+                # Summons do not enter dying; record before group maintenance removes them.
+                self._record_graveyard_entry(base)
+
 
     # ---- Dying / Death helpers ----
+    def _roll_check_d100(self, uid, skill_name=None, extra_tokens=None,
+                         ignore_global=False, only_codes=None):
+        """Unified entry for unit-attributable D100 checks (saves, skills).
+
+        Every bonus/penalty source of that unit is folded in exactly once:
+        command tokens, active buffs (including AUX34 全D100检定奖励骰) and
+        live zone views. Checks with no skill name (CON saves, threshold
+        rolls) take only AUX34 so attack-only modifiers never leak in.
+        Non-D100 dice (damage/heal/count/cost) must never be routed here.
+        """
+        buffs = [] if ignore_global else self._get_active_buffs(uid)
+        if only_codes is None and skill_name is None:
+            only_codes = {34}
+        return roll_d100(_calc_net_bp(buffs, '', skill_name,
+                                      extra_tokens=extra_tokens,
+                                      only_codes=only_codes))
+
     def _check_con_save(self, uid, difficulty='normal'):
         """COC CON saving throw. difficulty: 'normal'=need success, 'hard'=need hard success, etc.
         Returns True if the save succeeds (stays alive/dying)."""
         char = self.get_char(uid)
         con = char.get_attr('体质', 50)
-        roll, detail = roll_d100('')
+        # Saving throws are not skill checks: only 全D100检定 dice apply.
+        roll, detail = self._roll_check_d100(uid, only_codes={34})
         rank = success_rank(roll, con)
         if difficulty == 'normal': return rank >= 1
         elif difficulty == 'hard': return rank >= 2
@@ -2434,6 +2752,15 @@ class CombatEngine:
             if e.get('type') == 'dying' and self._resolve_uid(e.get('targetUserId', '')) == base:
                 return e
         return None
+
+    def _is_final_dead(self, uid):
+        """True only for HP<=0 units that are not dying (and were not self-rescued).
+
+        Turn loops must use this instead of raw HP when deciding to tear down an
+        owner's summons: a dying character may still eat a cake and stay in play.
+        """
+        hp = self._get_combat_hp(uid)
+        return hp is not None and hp <= 0 and not self._is_dying(uid)
 
     def _enter_dying_or_die(self, uid, excess_damage=0):
         """On HP≤0: CON save → dying state or death. Returns True if still alive (dying)."""
@@ -2487,6 +2814,8 @@ class CombatEngine:
             self._set_effects(effects)
             # P2: Teammate first enters dying → allies' limit_gauge +2
             self._on_ally_dying(uid)
+            # A character carrying a personal HP cake eats it immediately.
+            self._auto_consume_hp_cake(uid)
             return True
         else:
             # Failed save → check for revive, else die
@@ -2504,8 +2833,9 @@ class CombatEngine:
                 effs = [e for e in effects if not (e.get('type') == 'dying' and e.get('targetUserId') == uid)]
                 self._set_effects(effs)
                 return True
-            # Death
-            self._remove_summons_of_owner(uid)
+            # Death: preserve a graveyard entry before cleanup removes the unit.
+            self._record_graveyard_entry(uid)
+            self._remove_summons_of_owner(uid, record_collateral=True)
             return False
 
     def _remove_character_from_initiative(self, uid):
@@ -2527,28 +2857,341 @@ class CombatEngine:
         self.set_json(f"combat_initiative_{self.group_id}", l)
     def _get_actions(self): return self.get_json(f"combat_actions_{self.group_id}", {})
     def _set_actions(self, a): self.set_json(f"combat_actions_{self.group_id}", a)
+    def _summon_group_key(self, uid):
+        """Resolve a physical unit to its stable summon-group action key."""
+        base = self._resolve_uid(uid)
+        # Restored/transferred summons keep their original physical UID but may
+        # have a new owner and therefore a different stable group key.
+        member = getattr(self, '_summon_members', {}).get(base, {})
+        explicit = member.get('summonGroupKey')
+        if explicit and explicit in self._summon_groups:
+            return explicit
+        for rep_uid, grp in self._summon_groups.items():
+            if base == rep_uid or base in grp.get('members', []):
+                return rep_uid
+        return base
+
     def _get_my_actions(self, uid):
         """Get actions for uid, resolving multi-action UIDs and summon groups."""
-        base = self._resolve_uid(uid)
-        grp = self._get_summon_group(base)
-        if grp:
-            rep = grp.get('members', [base])[0] if grp.get('members') else base
-            return self._get_actions().get(rep, {'主动': 0, '附加': 0})
-        return self._get_actions().get(base, {'主动': 0, '附加': 0})
+        key = self._summon_group_key(uid)
+        return self._get_actions().get(key, {'主动': 0, '附加': 0})
+
     def _consume_action(self, uid, action_type='主动', amount=1):
         """Consume one action point for uid, resolving multi-action UIDs and summon groups."""
-        base = self._resolve_uid(uid)
-        grp = self._get_summon_group(base)
-        if grp:
-            rep = grp.get('members', [base])[0] if grp.get('members') else base
-            if rep in self._summon_groups:
-                base = rep
+        key = self._summon_group_key(uid)
         actions = self._get_actions()
-        my_acts = actions.get(base, {'主动': 0, '附加': 0})
+        my_acts = actions.get(key, {'主动': 0, '附加': 0})
         my_acts[action_type] = max(0, my_acts.get(action_type, 0) - amount)
-        actions[base] = my_acts
+        actions[key] = my_acts
         self._set_actions(actions)
         return my_acts
+    def _get_summon_live_members(self, group_key):
+        """Return (all_alive_members, actionable_members) for a summon group.
+
+        只读、不剪枝。actionable 额外排除击晕/缴械等无法行动的状态。
+        """
+        grp = self._summon_groups.get(group_key)
+        if not grp:
+            alive = [group_key] if (self._get_combat_hp(group_key) or 0) > 0 else []
+            return alive, [m for m in alive if self._summon_member_can_act(m)]
+        alive = [m for m in grp.get('members', []) if (self._get_combat_hp(m) or 0) > 0]
+        return alive, [m for m in alive if self._summon_member_can_act(m)]
+
+    def _summon_member_can_act(self, member_uid):
+        """成员能否发起攻击：存活 + 未击晕 + 未缴械（召唤物无主动技能）。"""
+        if (self._get_combat_hp(member_uid) or 0) <= 0:
+            return False
+        if not self._can_basic_attack(member_uid):
+            return False
+        return True
+
+    def _replace_initiative_preserving_actor(self, entries, replacements=None):
+        """Keep the current actor (or its promoted representative) across edits."""
+        old = self._get_initiative()
+        state = self._get_state()
+        if state and old:
+            idx = min(state.get('activeIndex', 0), len(old) - 1)
+            active = old[idx]['userId']
+            wanted = (replacements or {}).get(active, active)
+            new_idx = next((i for i, e in enumerate(entries) if e['userId'] == wanted), None)
+            if new_idx is None:
+                # If the actor was removed, retain its next surviving successor.
+                survivors = {e['userId']: i for i, e in enumerate(entries)}
+                new_idx = next((survivors[e['userId']]
+                                for e in old[idx + 1:] + old[:idx]
+                                if e['userId'] in survivors), 0)
+            state['activeIndex'] = new_idx
+            self._set_state(state)
+        self._set_initiative(entries)
+
+    def _ensure_group_representative(self, group_key):
+        """Repair the single group slot without rolling or granting any actions."""
+        group_key = self._summon_group_key(group_key)
+        grp = self._summon_groups.get(group_key)
+        if not grp:
+            return None
+        members = grp.get('members', [])
+        alive = [m for m in members if (self._get_combat_hp(m) or 0) > 0]
+        if not alive:
+            return None
+        rep = grp.get('representative_uid') or group_key
+        new_rep = rep if rep in alive else alive[0]
+        il = self._get_initiative()
+        member_ids = set(members) | {group_key, rep}
+        slots = [e for e in il if e['userId'] in member_ids]
+        slot = next((e for e in slots if e['userId'] == rep), None)
+        if slot is None and slots:
+            slot = slots[0]
+        old_uid = slot['userId'] if slot else rep
+        original_slot = slot
+        if slot is not None:
+            slot = dict(slot)
+            # Save mutable resources on the physical old member before promotion.
+            old_data = self._summon_members.get(old_uid)
+            if old_data is not None:
+                old_data.update({k: v for k, v in slot.items()
+                                 if k in self._summon_resource_fields()})
+            grp['initiative_entry'] = dict(slot)
+        saved = grp.get('initiative_entry', {})
+        mdata = self._summon_members.get(new_rep, {})
+        coord = (slot or saved).get('coord') or mdata.get('coord', '')
+        if slot is None:
+            slot = dict(saved or self._get_summon_entry(new_rep) or {})
+            slot.update({k: v for k, v in mdata.items() if k in self._summon_resource_fields()})
+            slot.pop('_synthetic', None)
+            slot.setdefault('dex', mdata.get('dex', 50))
+            slot.setdefault('initRoll', 100)
+            slot.setdefault('initRank', 0)
+            slot.setdefault('actionIdx', 0)
+        if old_uid != new_rep:
+            view = self._get_summon_entry(new_rep) or {}
+            # Member combat resources must not be inherited from the dead rep.
+            slot.update({k: v for k, v in view.items()
+                         if k in self._summon_resource_fields()})
+            slot['skills'] = mdata.get('skills', slot.get('skills', []))
+            slot['name'] = mdata.get('name', slot.get('name', grp['template_name']))
+            slot['displayName'] = mdata.get('display_name', slot.get('displayName', slot['name']))
+        slot.update(userId=new_rep, baseUserId=new_rep, isSummon=True,
+                    ownerId=grp['ownerId'], coord=coord)
+        # Reconstructed/promoted slots must always carry team/name; turn loops
+        # and AI state encoding index these unguarded.
+        if not slot.get('team'):
+            owner_entry = self._unit_il_entry(grp.get('ownerId', ''), self._get_initiative())
+            slot['team'] = (mdata.get('team')
+                            or (owner_entry or {}).get('team')
+                            or self._battle_team_of(grp.get('ownerId', '')))
+        slot.setdefault('name', mdata.get('name', grp.get('template_name', new_rep)))
+        slot.setdefault('displayName', slot['name'])
+        slot.setdefault('isSummon', True)
+        slot.pop('_synthetic', None)
+        grp['representative_uid'] = new_rep
+        # Preserve slot identity/position when possible, reconstruct in saved order otherwise.
+        if slots:
+            entries = [slot if e is original_slot else e for e in il
+                       if e is original_slot or e['userId'] not in member_ids]
+        else:
+            entries = il + [slot]
+            entries.sort(key=lambda e: (-e.get('initRank', 0), -e.get('dex', 0), e.get('initRoll', 100)))
+        self._replace_initiative_preserving_actor(entries, {old_uid: new_rep})
+        grp['initiative_entry'] = dict(slot)
+        actions = self._get_actions()
+        if group_key not in actions:
+            legacy_key = next((m for m in (rep, new_rep) if m in actions), None)
+            if legacy_key is not None:
+                actions[group_key] = actions[legacy_key]
+        for m in member_ids - {group_key}:
+            actions.pop(m, None)
+        self._set_actions(actions)
+        for m in members:
+            if m in self._summon_members:
+                self._summon_members[m]['coord'] = coord
+        md = self._get_map()
+        if md:
+            occupants = md.setdefault('occupants', {})
+            footprint = {coord} if coord else set()
+            tmpl = _get_summon_template(slot.get('name', '')) or {}
+            point = parse_coord(coord) if coord else None
+            if point and tmpl.get('size_2x2'):
+                footprint = {format_coord(point[0] + dc, point[1] + dr)
+                             for dc in range(2) for dr in range(2)
+                             if point[0] + dc < md.get('width', 26)
+                             and point[1] + dr < md.get('height', 99)}
+            for cell, uid in list(occupants.items()):
+                if uid in member_ids:
+                    del occupants[cell]
+            for cell in footprint:
+                if cell not in occupants:
+                    occupants[cell] = new_rep
+            self._set_map(md)
+        return new_rep
+
+    def _reconcile_summon_groups(self):
+        """Maintain groups at mutation boundaries; never refill mid-round pools."""
+        if getattr(self, '_reconciling_summons', False):
+            return
+        self._reconciling_summons = True
+        try:
+            for key in list(self._summon_groups):
+                self._ensure_group_representative(key)
+            dead_keys = [k for k, g in self._summon_groups.items()
+                         if not any((self._get_combat_hp(m) or 0) > 0 for m in g.get('members', []))]
+            dead_ids = {m for k in dead_keys for m in (
+                self._summon_groups[k].get('members', []) +
+                [self._summon_groups[k].get('representative_uid', k), k])}
+            # Advance the active dead slot through the normal round-boundary path.
+            state = self._get_state()
+            il = self._get_initiative()
+            if (state and il and state.get('phase') == 'active'
+                    and not getattr(self, '_advancing_turn', False)
+                    and not getattr(self, '_settling_round', False)):
+                active = il[min(state.get('activeIndex', 0), len(il) - 1)]['userId']
+                if active in dead_ids:
+                    self._end_turn(active)
+            for key in dead_keys:
+                self._summon_groups.pop(key, None)
+            for uid in dead_ids:
+                self._summon_members.pop(uid, None)
+            if dead_ids:
+                self._replace_initiative_preserving_actor(
+                    [e for e in self._get_initiative() if e['userId'] not in dead_ids])
+                acts = self._get_actions()
+                for uid in dead_ids:
+                    acts.pop(uid, None)
+                self._set_actions(acts)
+            # Prune deceased members only after their representative has been repaired.
+            for grp in self._summon_groups.values():
+                deceased = [m for m in grp['members'] if (self._get_combat_hp(m) or 0) <= 0]
+                grp['members'] = [m for m in grp['members'] if m not in deceased]
+                for uid in deceased:
+                    self._summon_members.pop(uid, None)
+                dead_ids.update(deceased)
+            md = self._get_map()
+            if md and dead_ids:
+                md['occupants'] = {c: uid for c, uid in md.get('occupants', {}).items()
+                                   if uid not in dead_ids}
+                self._set_map(md)
+        finally:
+            self._reconciling_summons = False
+
+    @staticmethod
+    def _summon_resource_fields():
+        return ('zone_cooldown', 'summon_mp', 'shield_block', 'shield_block_hp',
+                'shield_block_rate', 'react_dodge_w', 'react_counter_w', 'react_block_w',
+                'ignore_unreactable_block', 'flying', 'ignited', 'ignite_dmg_dice',
+                'ignite_tick_dmg', 'battle_spirit_penalty_dice')
+
+    def _set_summon_entry_fields(self, uid, **fields):
+        """Persist physical member resources, including for synthetic target views."""
+        base = self._resolve_uid(uid)
+        il = self._get_initiative()
+        entry = next((e for e in il if self._resolve_uid(e['userId']) == base), None)
+        if entry is not None:
+            entry.update(fields)
+            self._set_initiative(il)
+        member = self._summon_members.get(base)
+        if member is not None:
+            member.update(fields)
+
+    def _register_summon_member_state(self, sid, template, owner_id):
+        """Initialize each physical member's resources, including hidden additions."""
+        data = self._summon_members[sid]
+        data['ownerId'] = self._resolve_uid(owner_id)
+        defaults = {
+            'zone_cooldown': 0, 'summon_mp': template.get('MP', 0),
+            'shield_block': template.get('shield_block', 0),
+            'shield_block_hp': template.get('shield_block', 0),
+            'shield_block_rate': template.get('shield_block_rate', 0.70),
+            'react_dodge_w': template.get('react_dodge', 50),
+            'react_counter_w': template.get('react_counter', 50),
+            'react_block_w': template.get('react_block', 0),
+            'ignore_unreactable_block': template.get('ignore_unreactable_block', 0),
+        }
+        for field, value in defaults.items():
+            data.setdefault(field, value)
+        char = self.get_char(sid)
+        char.attrs.setdefault('体力上限', template.get('HP', 10))
+        char.attrs.setdefault('魔力', template.get('MP', 0))
+        char.attrs.setdefault('魔力上限', template.get('MP', 0))
+        char.attrs.setdefault('理智', template.get('SAN', 0))
+        if template.get('无主动行动'):
+            char.set_attr('无主动行动', 1)
+        effects = self._get_effects()
+        for name in template.get('permanent_statuses', []):
+            if not any(e.get('targetUserId') == sid and e.get('auxType') == name for e in effects):
+                effects.append({'type': 'buff', 'auxType': name, 'auxVal': '0', 'auxCode': 0,
+                                'remainingRounds': 999, 'sourceUserId': owner_id,
+                                'targetUserId': sid, 'spellName': f'永久{name}', 'spellIndex': 0,
+                                'persistent': 1, 'stackable': 0})
+        self._set_effects(effects)
+        group_key = self._summon_group_key(sid)
+        group = self._summon_groups[group_key]
+        group.setdefault('representative_uid', group_key)
+        entry = self._unit_il_entry(group['representative_uid'], self._get_initiative())
+        if entry:
+            group['initiative_entry'] = dict(entry)
+
+    def _reset_round_actions(self, character_main=None):
+        """Allocate one pool per group, using its living representative's budget."""
+        acts = {}
+        for entry in self._get_initiative():
+            uid = entry.get('baseUserId', entry['userId'])
+            key = self._summon_group_key(uid)
+            if key not in acts:
+                main = (self._calc_main_actions(uid)
+                        if entry.get('isSummon') or character_main is None else character_main)
+                acts[key] = {'主动': main, '附加': 3}
+        self._set_actions(acts)
+
+    def _execute_summon_group_action(self, group_key, execute_member):
+        """执行一次共享组动作：快照→扣一次组动作→逐成员结算。
+
+        execute_member(member_uid) -> (lines, halted)
+          lines: 该成员本次行动的日志行
+          halted: True 表示因等待玩家反应而中断，需保留进度供恢复
+        返回 dict：{'lines': [...], 'action_spent': bool, 'halted': bool,
+                   'pending': list, 'remaining': int}
+        """
+        grp = self._summon_groups.get(group_key)
+        if not grp:
+            return {'lines': [], 'action_spent': False, 'halted': False,
+                    'pending': [], 'remaining': 0}
+        rep = self._ensure_group_representative(group_key)
+        if rep is None:
+            return {'lines': [], 'action_spent': False, 'halted': False,
+                    'pending': [], 'remaining': 0}
+        members = grp.get('members', [])
+        # 快照：本批次开始时的存活成员；新成员不插入当前快照
+        snapshot = [m for m in members if (self._get_combat_hp(m) or 0) > 0]
+        actionable = [m for m in snapshot if self._summon_member_can_act(m)]
+        if not actionable:
+            return {'lines': [], 'action_spent': False, 'halted': False,
+                    'pending': [], 'remaining': 0}
+        acts = self._get_my_actions(group_key)
+        if acts.get('主动', 0) <= 0:
+            return {'lines': [], 'action_spent': False, 'halted': False,
+                    'pending': [], 'remaining': 0}
+        # 扣一次共享动作
+        self._consume_action(group_key, '主动')
+        lines = []
+        pending = []
+        halted = False
+        for m in snapshot:
+            # 逐成员重新验证：轮到之前死亡/被控的成员直接跳过，不占用出手
+            if not self._summon_member_can_act(m):
+                continue
+            res = execute_member(m)
+            if res is None:
+                continue
+            m_lines, m_halt, m_pending = res if isinstance(res, tuple) else (res, False, None)
+            lines.extend(m_lines or [])
+            if m_halt:
+                halted = True
+                pending.append({'member': m, 'data': m_pending})
+                break
+        remaining = self._get_my_actions(group_key).get('主动', 0)
+        return {'lines': lines, 'action_spent': True, 'halted': halted,
+                'pending': pending, 'remaining': remaining}
+
     def _get_effects(self): return self.get_json(f"combat_effects_{self.group_id}", [])
     def _set_effects(self, e):
         self._buff_cache.clear()  # Invalidate buff cache (preserves references)
@@ -2563,29 +3206,20 @@ class CombatEngine:
         base = char.get_attr('行动力', 8)
         if char.get_attr('分离行动力移动力', 0):
             base = char.get_attr('移动力', base)
-        # Zone debuff (temporary, per-round)
-        il = self._get_initiative()
-        entry = next((e for e in il if e['userId'] == uid), None)
-        if entry:
-            base -= entry.get('_zone_penalty_移动力', 0)
-            base -= entry.get('_zone_penalty_行动力', 0)
-        return max(0, base + self._get_buff_move_mod(uid))
+        return max(0, self._apply_attr_mods(uid, base, 'MOV'))
 
     def _get_action_power(self, uid):
         """获取角色的行动力(影响反应/先攻)。默认=行动力=MOV。"""
         char = self.get_char(uid)
         base = char.get_attr('行动力', 8)
-        # Zone debuff (temporary, per-round)
-        il = self._get_initiative()
-        entry = next((e for e in il if e['userId'] == uid), None)
-        if entry:
-            base -= entry.get('_zone_penalty_行动力', 0)
-        return max(1, base + self._get_buff_move_mod(uid))
+        return max(1, self._apply_attr_mods(uid, base, 'MOV'))
 
-    def _get_effective_mov(self, uid):
+    def _get_effective_mov(self, uid, include_zone=True):
         """统一计算有效MOV。
         结算顺序: 基础MOV + buff/领域增减 → 飞行+8 → 减速倍率 → floor, min0。
-        召唤物优先读取 MOV 属性，角色用 行动力(默认8)。"""
+        召唤物优先读取 MOV 属性，角色用 行动力(默认8)。
+        include_zone=False omits the live zone aura view (used to isolate the
+        portion of a MOV change that ordinary buffs are responsible for)."""
         import math
         resolved = self._resolve_uid(uid)
         char = self.get_char(resolved)
@@ -2595,14 +3229,9 @@ class CombatEngine:
             base = char.get_attr('行动力', 8)
             if char.get_attr('分离行动力移动力', 0):
                 base = char.get_attr('移动力', base)
-        # Zone 惩罚
-        il = self._get_initiative()
-        entry = next((e for e in il if e['userId'] == uid), None)
-        if entry:
-            base -= entry.get('_zone_penalty_移动力', 0)
-            base -= entry.get('_zone_penalty_行动力', 0)
-        # Buff 修正 (AUX 23-28)
-        base += self._get_buff_move_mod(uid)
+        # Buff修正按属性名（MOV/行动力/移动力同属 MOV 组，其它名字不参与）
+        base += self._apply_buff_attr_mod(uid, 'MOV', include_zone=include_zone)
+        base += self._zone_attr_mod(uid, 'MOV')
         # 飞行: +8
         if self._is_flying(uid):
             base += 8
@@ -2611,23 +3240,28 @@ class CombatEngine:
         result = int(math.floor(max(0, base) * slow))
         return result
 
-    def _calc_main_actions(self, uid):
+    def _calc_main_actions(self, uid, include_zone=True):
         """计算每回合主动作数。公式: max(1, (effective_MOV + 4) // 5 + 额外行动数)，无上限。
         区间映射: MOV 0-5→1动, 6-10→2动, 11-15→3动, 16-20→4动, 21-25→5动, ...
         若角色/召唤物设置了 无主动行动=1，返回 0。"""
         char = self.get_char(self._resolve_uid(uid))
         if char.get_attr('无主动行动', 0) == 1:
             return 0
-        effective_mov = self._get_effective_mov(uid)
+        effective_mov = self._get_effective_mov(uid, include_zone=include_zone)
         extra = char.get_attr('额外行动数', None)
         if extra is None:
             extra = char.get_attr('回合行动数', 0)
         return max(1, (effective_mov + 4) // 5 + extra)
 
-    def _sync_actions_from_mov(self, uid):
-        """当 MOV 变化时，同步调整当前剩余主行动数。
-        新最大行动数 - 旧最大行动数 = delta，增加到当前剩余上（不减到负数）。"""
-        # Clear cached MOV modifier so _calc_main_actions sees fresh buff state
+    def _sync_actions_from_mov(self, uid, old_max=None, new_max=None):
+        """当普通 buff 的 MOV 变化时，同步调整当前剩余主行动数。
+
+        Zone auras are deliberately excluded: entering/leaving a zone changes
+        effective MOV immediately but must not reissue or claw back the action
+        pool already allocated for this round. The previous implementation
+        compared against a usually-unset ``_max_主动`` marker, which silently
+        invented deltas; callers now pass explicit pre/post action ceilings.
+        """
         il = self._get_initiative()
         base = self._resolve_uid(uid)
         for e in il:
@@ -2635,16 +3269,15 @@ class CombatEngine:
                 e.pop('_cached_buff_mov_mod', None)
         self._set_initiative(il)
         actions = self._get_actions()
-        # Resolve to base uid for action dict lookup (same logic as _get_my_actions)
-        grp = self._get_summon_group(base)
-        lookup = base
-        if grp:
-            rep = grp.get('members', [base])[0] if grp.get('members') else base
-            lookup = rep
+        lookup = self._summon_group_key(base)
         if lookup not in actions:
             return
-        old_max = actions[lookup].get('_max_主动', self._calc_main_actions(uid))
-        new_max = self._calc_main_actions(uid)
+        if old_max is None:
+            old_max = actions[lookup].get('_max_主动')
+        if old_max is None:
+            return
+        if new_max is None:
+            new_max = self._calc_main_actions(uid, include_zone=False)
         delta = new_max - old_max
         if delta != 0:
             actions[lookup]['主动'] = max(0, actions[lookup].get('主动', 0) + delta)
@@ -2652,20 +3285,65 @@ class CombatEngine:
             self._set_actions(actions)
 
     def _get_buff_move_mod(self, uid):
-        """从活跃buff中提取MOV/行动力/移动力修改量（每回合缓存）。"""
-        il = self._get_initiative()
-        entry = next((e for e in il if e['userId'] == uid), None)
-        if entry and '_cached_buff_mov_mod' in entry:
-            return entry['_cached_buff_mov_mod']
-        mod = 0
-        for b in self._get_active_buffs(uid):
-            sm = str(b.get('skillMod', ''))
-            m = re.match(r'(?:MOV|行动力|移动力)([+-]\d+)', sm)
-            if m:
-                mod += int(m.group(1))
-        if entry:
-            entry['_cached_buff_mov_mod'] = mod
-        return mod
+        """从活跃buff中提取MOV/行动力/移动力修改量（实时，含领域视图）。"""
+        return self._apply_buff_attr_mod(uid, 'MOV')
+
+    def _apply_buff_attr_mod(self, uid, attr_name, include_zone=True):
+        """Sum named attribute modifiers from active buffs (MOV group unified).
+
+        ``技能加减值`` like 'MOV+5' / '闪避-10' only ever changes the named
+        attribute group; it is never a blanket skill-value bonus.
+        """
+        target = _attr_group(attr_name)
+        total = 0
+        for b in self._get_active_buffs(uid, include_zone=include_zone):
+            for name, delta in _parse_attr_mods(b.get('skillMod', '')):
+                if _attr_group(name) == target:
+                    total += delta
+        return total
+
+    def _zone_attr_mod(self, uid, attr_name):
+        """Temporary per-round zone penalty for a named attribute group.
+
+        Non-stackable zones leave a 'strongest' penalty; stackable zones sum.
+        Values live on the initiative entry and are refreshed each round.
+        """
+        target = _attr_group(attr_name)
+        entry = next((e for e in self._get_initiative()
+                      if self._resolve_uid(e['userId']) == self._resolve_uid(uid)), None)
+        if not entry:
+            return 0
+        strongest = entry.get('_zone_penalty_' + target, 0)
+        stacked = entry.get('_zone_penalty_stack_' + target, 0)
+        return -(strongest + stacked)
+
+    def _apply_attr_mods(self, uid, base, attr_name):
+        """Apply buffs + live zone penalties to one named attribute group."""
+        adjusted = base + self._apply_buff_attr_mod(uid, attr_name)
+        adjusted += self._zone_attr_mod(uid, attr_name)
+        return adjusted
+
+    def _apply_buff_skill_mod(self, uid, base_val, skill_name=None):
+        """Resolve a skill/attribute check value from buffs.
+
+        AUX 15 (generic skill success %) and AUX 20 (skill multiplier) still
+        apply broadly; named ``技能加减值`` only applies when ``skill_name``
+        matches (``MOV`` group unified). Zone attribute debuffs apply to named
+        combat skills / attributes as well.
+        """
+        buffs = self._get_active_buffs(uid); adjusted = base_val
+        for b in buffs:
+            # AUX 15: numeric modifier
+            if b.get('auxCode') == 15 and b.get('auxVal') not in (None,''):
+                try: adjusted += int(b['auxVal'])
+                except: pass
+        if skill_name:
+            adjusted += self._apply_buff_attr_mod(uid, skill_name)
+            adjusted += self._zone_attr_mod(uid, skill_name)
+        # AUX 20: skill value multiplier (applied after flat modifiers)
+        mult = self._get_buff_skill_mult(uid)
+        adjusted = int(adjusted * mult)
+        return max(1, adjusted)
 
     def _consume_move_power(self, uid, amount):
         """消耗移动力。返回实际可消耗量。
@@ -2673,9 +3351,14 @@ class CombatEngine:
         if not self._can_move(uid):
             return 0  # 禁锢/击晕禁止移动
         il = self._get_initiative()
-        entry = next((e for e in il if e['userId'] == uid), None)
+        entry = self._unit_il_entry(uid, il)
         if not entry: return 0
         base_uid = entry.get('baseUserId', uid)
+        if entry.get('_synthetic'):
+            used = entry.get('_move_used', 0)
+            consumed = min(amount, max(0, self._get_move_power(uid) - used))
+            self._set_summon_entry_fields(uid, _move_used=used + consumed)
+            return consumed
         # 读取同角色所有行动槽中最大的 _move_used（同步读取）
         used = 0
         for e in il:
@@ -2701,17 +3384,17 @@ class CombatEngine:
             for k in list(entry.keys()):
                 if k.startswith('_zone_penalty_'):
                     del entry[k]
+        for data in self._summon_members.values():
+            data['_move_used'] = 0
 
     def _move_to_attack_range(self, uid, target_id, atk_range):
-        """移动到可攻击目标的位置。返回 (can_attack, original_coord)。"""
-        # ── 状态检查：禁锢/击晕禁止自动接近 ──
-        if not self._can_move(uid):
-            il = self._get_initiative()
-            my_entry = next((e for e in il if e['userId'] == uid), None)
-            return (False, my_entry.get('coord', '') if my_entry else '')
+        """移动到可攻击目标的位置。返回 (can_attack, original_coord)。
+
+        禁锢/击晕只能阻止「移动」，不能阻止原地攻击：先解析坐标并判断是否
+        已在射程内；确实需要接近时才检查移动权限。"""
         il = self._get_initiative()
-        my_entry = next((e for e in il if e['userId'] == uid), None)
-        t_entry = next((e for e in il if e['userId'] == target_id), None)
+        my_entry = self._unit_il_entry(uid, il)
+        t_entry = self._unit_il_entry(target_id, il)
         if not my_entry or not t_entry: return (False, '')
         my_coord = my_entry.get('coord', '')
         t_coord = t_entry.get('coord', '')
@@ -2720,7 +3403,10 @@ class CombatEngine:
         if not mp or not tp: return (False, '')
         dist = max(abs(mp[0]-tp[0]), abs(mp[1]-tp[1]))
         if dist <= atk_range:
-            return (True, my_coord)  # 已在射程内
+            return (True, my_coord)  # 已在射程内：禁锢也能原地攻击
+        # ── 只有需要接近时才检查禁锢/击晕 ──
+        if not self._can_move(uid):
+            return (False, my_coord)
         move_needed = dist - atk_range
         actual_move = self._consume_move_power(uid, move_needed)
         if actual_move <= 0:
@@ -2732,11 +3418,17 @@ class CombatEngine:
         new_coord = format_coord(new_col, new_row)
         map_data = self._get_map()
         if map_data and new_coord not in map_data.get('occupants', {}):
-            if my_coord in map_data.get('occupants', {}):
+            group = self._get_summon_group(uid)
+            occupant_uid = group.get('representative_uid', uid) if group else uid
+            if map_data['occupants'].get(my_coord) == occupant_uid:
                 del map_data['occupants'][my_coord]
-            map_data['occupants'][new_coord] = uid
+            map_data['occupants'][new_coord] = occupant_uid
             self._set_map(map_data)
             my_entry['coord'] = new_coord
+            if group:
+                self._set_summon_entry_fields(occupant_uid, coord=new_coord)
+                for member in group['members']:
+                    self._summon_members[member]['coord'] = new_coord
             # 同步同角色其他行动槽的坐标（多动角色共享位置）
             base_uid = my_entry.get('baseUserId', uid)
             for e in il:
@@ -2825,14 +3517,18 @@ class CombatEngine:
         """Get a character's inventory list. Returns list of {'item': name, 'count': N}."""
         return self.get_char(uid).inventory
 
-    def add_item_to_inventory(self, uid, item_name, count=1):
-        """Add items to a character's inventory."""
+    def add_item_to_inventory(self, uid, item_name, count=1, metadata=None):
+        """Add items, preserving source/consumption metadata on the stack."""
         char = self.get_char(uid)
+        meta = dict(metadata or {})
         for entry in char.inventory:
-            if entry['item'] == item_name:
+            if entry['item'] == item_name and all(
+                    entry.get(k) == v for k, v in meta.items()):
                 entry['count'] += count
                 return
-        char.inventory.append({'item': item_name, 'count': count})
+        new_entry = {'item': item_name, 'count': count}
+        new_entry.update(meta)
+        char.inventory.append(new_entry)
 
     def remove_item_from_inventory(self, uid, item_name, count=1):
         """Remove items from a character's inventory. Returns True if successful."""
@@ -2873,72 +3569,285 @@ class CombatEngine:
                     return True
         return False
 
-    def _remove_summons_of_owner(self, owner_uid):
-        """Remove all summons owned by owner_uid from initiative and map. Also removes dead owner."""
+    def _record_graveyard_entry(self, uid, reason='death'):
+        """Store enough state to let a data-configured revive effect restore a unit."""
+        import copy
+        base = self._resolve_uid(uid)
+        state = self._get_state() or {}
+        entry = self._unit_il_entry(base, self._get_initiative())
+        char = self.get_char(base)
+        if char is None:
+            return
+        grave = getattr(self, '_graveyard', None)
+        if grave is None:
+            grave = {}
+            self._graveyard = grave
+        if any(g.get('uid') == base and g.get('revived') is False for g in grave.values()):
+            return
+        member = self._summon_members.get(base) if (entry or {}).get('isSummon') else None
+        grave[base] = {
+            'uid': base, 'team': ((entry or {}).get('team') or (member or {}).get('team') or self._battle_team_of(base)),
+            'round': int(state.get('round', 1)),
+            'entry': copy.deepcopy(entry) if entry else None,
+            'member': copy.deepcopy(member) if member else None,
+            'ownerId': (entry or {}).get('ownerId') or (member or {}).get('ownerId'),
+            'originalOwnerId': (entry or {}).get('originalOwnerId'),
+            'isSummon': bool((entry or {}).get('isSummon')),
+            'attrs': copy.deepcopy(char.attrs), 'str_attrs': copy.deepcopy(char.str_attrs),
+            'spells': copy.deepcopy(char.spells), 'inventory': copy.deepcopy(char.inventory),
+            'name': char.name, 'serial': char.serial, 'phase': getattr(char, 'phase', 1),
+            'hs_transformed': getattr(char, 'hs_transformed', False),
+            'once_consumed': list(getattr(char, '_once_consumed', set()) or []),
+            'revived': False, 'reason': reason,
+        }
+
+    def _revive_candidates(self, caster_id, eff):
+        """Return graveyard entries selectable by a revive effect."""
+        grave = getattr(self, '_graveyard', {}) or {}
+        cur_round = int((self._get_state() or {}).get('round', 1))
+        window = int(eff.get('死亡轮窗口', 0) or 0)
+        caster_base = self._resolve_uid(caster_id)
+        caster_team = self._battle_team_of(caster_id)
+        allow_summon = int(eff.get('复活主体', 1) or 0) == 1
+        selected = getattr(self, '_revive_selected_uid', None)
+        out = []
+        for g in grave.values():
+            if g.get('revived'):
+                continue
+            if selected and g.get('uid') != selected:
+                continue
+            if g['uid'] == caster_base or g.get('team') != caster_team:
+                continue
+            if g.get('isSummon') and not allow_summon:
+                continue
+            if window and cur_round - int(g.get('round', 0)) > window:
+                continue
+            out.append(g)
+        return out
+
+    def _find_free_coord_near(self, caster_id):
         il = self._get_initiative()
-        # Use _resolve_uid to match summons even when ownerId was set from a multi-action entry
-        dead_summons = {e['userId'] for e in il
-                        if e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) == owner_uid}
-        # Also collect group members not in initiative
-        for grp in list(self._summon_groups.values()):
-            if grp.get('ownerId') == owner_uid:
-                for m in grp.get('members', []):
-                    dead_summons.add(m)
-        # Clean map occupants for dead summons
+        caster_entry = self._unit_il_entry(caster_id, il)
+        base = parse_coord((caster_entry or {}).get('coord', '')) or (1, 1)
+        md = self._get_map() or {}
+        occupied = md.get('occupants', {})
+        for radius in range(0, 10):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    c = format_coord(base[0] + dx, base[1] + dy)
+                    if c not in occupied:
+                        return c
+        return format_coord(base)
+
+    def _restore_graveyard_unit(self, caster_id, grave_entry, eff):
+        """Preflight, then restore one unit without resetting resources/actions."""
+        import copy
+        uid = self._resolve_uid(grave_entry['uid'])
+        caster = self.get_char(caster_id)
+        ratio = float(eff.get('复活回复比例', 0.4) or 0.4)
+        if not 0 < ratio <= 1 or grave_entry.get('revived'):
+            return None
+        state = self._get_state() or {}
+        now_round = int(state.get('round', 1))
+        window = int(eff.get('死亡轮窗口', 0) or 0)
+        if window and now_round - int(grave_entry.get('round', 0)) > window:
+            return None
+        caster_team = self._battle_team_of(caster_id)
+        if grave_entry.get('team') != caster_team or uid == self._resolve_uid(caster_id):
+            return None
+        if self._get_combat_hp(uid) not in (None, 0):
+            return None
+
+        is_summon = bool(grave_entry.get('isSummon'))
+        old_entry = copy.deepcopy(grave_entry.get('entry') or {})
+        old_member = copy.deepcopy(grave_entry.get('member') or {})
+        name = old_entry.get('name') or old_member.get('name') or ''
+        source_owner = self._resolve_uid(grave_entry.get('ownerId') or '') if grave_entry.get('ownerId') else ''
+        new_owner = self._resolve_uid(caster_id) if is_summon else old_entry.get('ownerId')
+        template = _get_summon_template(name) or {} if is_summon else {}
+        attrs = grave_entry.get('attrs') or {}
+        max_hp = int(attrs.get('体力上限', 1) or 1)
+        revive_hp = max(1, min(max_hp, int(max_hp * ratio)))
+
+        md = self._get_map() or {}
+        coord = old_entry.get('coord') or old_member.get('coord') or ''
+        size = 2 if template.get('size_2x2') else 1
+        def footprint_at(cell):
+            point = parse_coord(cell) if cell else None
+            if not point:
+                return None
+            cells = {format_coord(point[0] + dx, point[1] + dy)
+                     for dx in range(size) for dy in range(size)}
+            if any(c not in md.get('occupants', {}) and c not in md.get('obstacles', {})
+                   for c in cells):
+                occupied_by = {self._resolve_uid(md['occupants'][c]) for c in cells
+                               if c in md.get('occupants', {})}
+                if not occupied_by or occupied_by == {uid}:
+                    return cells
+            return None
+        footprint = footprint_at(coord)
+        if footprint is None:
+            coord = self._find_free_coord_near(caster_id)
+            footprint = footprint_at(coord)
+        if footprint is None:
+            return None
+
+        group_key = None
+        if is_summon:
+            owner_base = self._resolve_uid(new_owner)
+            # Test Y7's live quota against a hypothetical state where this UID
+            # has left the former owner; no mutations are committed on failure.
+            saved_groups, saved_members = self._summon_groups, self._summon_members
+            saved_counts = self._summon_total_spawned
+            try:
+                groups = {k: dict(g, members=list(g.get('members', []))) for k, g in saved_groups.items()}
+                for key, group in list(groups.items()):
+                    if key == uid or uid in group.get('members', []):
+                        group['members'] = [m for m in group.get('members', []) if m != uid]
+                        if not group['members']:
+                            groups.pop(key, None)
+                        elif group.get('representative_uid') == uid:
+                            group['representative_uid'] = group['members'][0]
+                members = {k: dict(v) for k, v in saved_members.items() if k != uid}
+                counts = dict(saved_counts)
+                prior = grave_entry.get('previousTransfers', [])
+                if owner_base not in prior:
+                    key = (owner_base, name)
+                    counts[key] = counts.get(key, 0) + 1
+                self._summon_groups, self._summon_members, self._summon_total_spawned = groups, members, counts
+                quota, _reason = self._get_summon_quota(owner_base, name, template)
+                group_key = next((k for k, g in groups.items()
+                                  if g.get('template_name') == name
+                                  and self._resolve_uid(g.get('ownerId', '')) == owner_base
+                                  and any((self._get_combat_hp(m) or 0) > 0 for m in g.get('members', []))), None)
+            finally:
+                self._summon_groups, self._summon_members, self._summon_total_spawned = saved_groups, saved_members, saved_counts
+            if quota == 0:
+                return None
+            if group_key is None:
+                group_key = uid
+
+        # All validation passed; now restore the saved unit and transfer ownership.
+        char = self.get_char(uid)
+        char.attrs = copy.deepcopy(attrs)
+        char.str_attrs = copy.deepcopy(grave_entry.get('str_attrs') or {})
+        char.spells = copy.deepcopy(grave_entry.get('spells') or [])
+        char.inventory = copy.deepcopy(grave_entry.get('inventory') or [])
+        char.name = grave_entry.get('name') or char.name
+        char.serial = grave_entry.get('serial') or char.serial
+        char.phase = grave_entry.get('phase', 1)
+        char.hs_transformed = grave_entry.get('hs_transformed', False)
+        char._once_consumed = set(grave_entry.get('once_consumed') or [])
+
+        if is_summon:
+            for key, group in list(self._summon_groups.items()):
+                if key == uid or uid in group.get('members', []):
+                    group['members'] = [m for m in group.get('members', []) if m != uid]
+                    if not group['members']:
+                        self._summon_groups.pop(key, None)
+                    elif group.get('representative_uid') == uid:
+                        group['representative_uid'] = group['members'][0]
+            old_member.update({'userId': uid, 'name': name, 'ownerId': new_owner,
+                               'team': caster_team, 'coord': coord,
+                               'summonGroupKey': group_key})
+            self._summon_members[uid] = old_member
+            if group_key not in self._summon_groups:
+                self._summon_groups[group_key] = {
+                    'members': [uid], 'template_name': name, 'ownerId': new_owner,
+                    'representative_uid': uid, 'initiative_entry': dict(old_entry)}
+            elif uid not in self._summon_groups[group_key].setdefault('members', []):
+                self._summon_groups[group_key]['members'].append(uid)
+            group = self._summon_groups[group_key]
+            if group.get('representative_uid') == uid:
+                group['initiative_entry'] = dict(old_entry)
+                group['initiative_entry'].update({'ownerId': new_owner, 'team': caster_team, 'coord': coord})
+            prior = list(grave_entry.get('previousTransfers', []))
+            if new_owner not in prior:
+                prior.append(new_owner)
+                spawn_key = (new_owner, name)
+                self._summon_total_spawned[spawn_key] = self._summon_total_spawned.get(spawn_key, 0) + 1
+            grave_entry['previousTransfers'] = prior
+            old_member.setdefault('name', name)
+            char.name = old_member.get('display_name') or char.name
+
+        entry = dict(old_entry)
+        entry.update({'userId': uid, 'baseUserId': uid, 'team': caster_team,
+                      'coord': coord, 'ownerId': new_owner,
+                      'initRoll': old_entry.get('initRoll', 100), 'initRank': old_entry.get('initRank', 0),
+                      'dex': old_entry.get('dex', char.get_attr('敏捷', 50)),
+                      'actionIdx': old_entry.get('actionIdx', 0), 'isSummon': is_summon})
+        entry.setdefault('name', name or char.name)
+        if is_summon:
+            entry['summonGroup'] = group_key
+        il = self._get_initiative()
+        if not any(e.get('userId') == uid for e in il):
+            il.append(entry)
+        self._set_initiative(il)
+        self._init_combat_hp(uid, revive_hp)
+        actions = self._get_actions()
+        action_key = self._summon_group_key(uid) if is_summon else uid
+        actions.setdefault(action_key, {'主动': 0, '附加': 0})
+        self._set_actions(actions)
+        md.setdefault('occupants', {})
+        for cell in footprint:
+            md['occupants'][cell] = uid
+        self._set_map(md)
+        grave_entry['revived'] = True
+        return revive_hp
+
+    def _remove_summons_of_owner(self, owner_uid, record_collateral=False):
+        """Remove an owner's physical summons, preserving the next/current actor."""
+        owner_uid = self._resolve_uid(owner_uid)
+        il = self._get_initiative()
+        if record_collateral:
+            for entry in self._battle_unit_entries():
+                if entry.get('isSummon') and self._resolve_uid(entry.get('ownerId', '')) == owner_uid \
+                        and (self._get_combat_hp(entry.get('userId', '')) or 0) > 0:
+                    self._record_graveyard_entry(entry['userId'], reason='owner_death')
+        keys = [k for k, g in self._summon_groups.items()
+                if self._resolve_uid(g.get('ownerId', '')) == owner_uid]
+        summon_ids = {self._resolve_uid(e['userId']) for e in self._battle_unit_entries()
+                      if e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) == owner_uid}
+        summon_ids.update(keys)
+        for key in keys:
+            summon_ids.update(self._summon_groups[key].get('members', []))
+            self._summon_groups.pop(key)
+        for uid in summon_ids:
+            self._summon_members.pop(uid, None)
+            self.characters.pop(uid, None)
+        removed = summon_ids | {owner_uid}
+        self._replace_initiative_preserving_actor(
+            [e for e in il if self._resolve_uid(e['userId']) not in removed])
         md = self._get_map()
         if md:
-            for sid in dead_summons:
-                for c, o in list(md.get('occupants', {}).items()):
-                    if o == sid: del md['occupants'][c]
+            md['occupants'] = {c: uid for c, uid in md.get('occupants', {}).items()
+                               if self._resolve_uid(uid) not in removed}
             self._set_map(md)
-        # Remove dead summons + dead owner + multi-action entries from initiative
-        new_il = [e for e in il
-                  if e['userId'] not in dead_summons and self._resolve_uid(e['userId']) != owner_uid]
-        if len(new_il) < len(il):
-            state = self._get_state()
-            if state and state.get('activeIndex', 0) >= len(new_il):
-                state['activeIndex'] = max(0, len(new_il) - 1)
-                self._set_state(state)
-        self._set_initiative(new_il)
-        # Clean up summon groups and members for this owner
-        keys_to_remove = [k for k, g in self._summon_groups.items() if g.get('ownerId') == owner_uid]
-        for k in keys_to_remove:
-            grp = self._summon_groups.pop(k)
-            for m in grp.get('members', []):
-                self._summon_members.pop(m, None)
-                self.characters.pop(m, None)
+        acts = self._get_actions()
+        for uid in removed:
+            acts.pop(uid, None)
+        self._set_actions(acts)
 
     def _is_untargetable(self, uid):
-        """Check if uid should be excluded from targeting.
-        Rule: Character with 不可指定=1 cannot be targeted if they have non-三合一 summons alive.
-        If 不可指定召唤物 is set, only summons matching that name trigger untargetability."""
-        entry = next((e for e in self._get_initiative() if e['userId'] == uid), None)
-        if not entry:
+        """Apply summon traits and owner bodyguards to physical hidden members too."""
+        uid = self._resolve_uid(uid)
+        entry = self._unit_il_entry(uid, self._get_initiative())
+        if entry is None:
             return False
         char = self.get_char(uid)
         if char.get_attr('不可指定', 0) != 1:
             return False
-        # For summons with 不可指定, check directly (no summon bodyguard logic)
         if entry.get('isSummon'):
             return True
         required_name = char.get_str('不可指定召唤物') or ''
-        il = self._get_initiative()
-        other = [e for e in il
-                 if e.get('isSummon') and e.get('ownerId') == uid
-                 and (self._get_combat_hp(e['userId']) or 0) > 0
-                 and e.get('name', '') != '三合一'
-                 and (not required_name or e.get('name', '') == required_name)]
-        # Also check group members not in initiative
-        for grp in self._summon_groups.values():
-            if grp.get('ownerId') == uid:
-                for m in grp.get('members', []):
-                    if m not in {e['userId'] for e in other}:
-                        mem_data = self._summon_members.get(m, {})
-                        mem_name = mem_data.get('name', '')
-                        if mem_name != '三合一' and (self._get_combat_hp(m) or 0) > 0 \
-                                and (not required_name or mem_name == required_name):
-                            other.append({'userId': m, 'name': mem_name, 'isSummon': True, 'ownerId': uid})
-        return len(other) > 0
+        return any(e.get('isSummon')
+                   and self._resolve_uid(e.get('ownerId', '')) == uid
+                   and e.get('name', '') != '三合一'
+                   and (not required_name or e.get('name') == required_name)
+                   and (self._get_combat_hp(e['userId']) or 0) > 0
+                   for e in self._battle_unit_entries())
 
     # ── 控制状态查询层 ──
 
@@ -3056,7 +3965,8 @@ class CombatEngine:
                     pass
         return max(0.0, product)
 
-    def _get_active_buffs(self, uid):
+    def _get_physical_buffs(self, uid):
+        """Real buff/debuff effects only (cached per uid)."""
         resolved = self._resolve_uid(uid)
         cache = getattr(self, '_buff_cache', None)
         if cache is not None and resolved in cache:
@@ -3085,6 +3995,166 @@ class CombatEngine:
         if cache is not None:
             cache[resolved] = result
         return result
+
+    def _get_active_buffs(self, uid, include_zone=True):
+        """Physical buffs plus a freshly-derived live view from covering zones.
+
+        Zone views are never cached and never appended to the physical list:
+        membership depends on the current position, which changes without
+        going through `_set_effects`.
+        """
+        physical = self._get_physical_buffs(uid)
+        if not include_zone:
+            return physical
+        # Cheap gate: most battles have no aura-carrying zone at all, and this
+        # accessor is on every dice/attribute query (including training loops).
+        # Scan the (already cached) effect list rather than a cached flag so a
+        # raw state restore can never hide a live zone aura.
+        if not any(x.get('type') == 'zone' and (x.get('auxType') or x.get('skillMod'))
+                   and x.get('remainingRounds', 0) != 0
+                   for x in self._get_effects()):
+            return physical
+        views = self._zone_buff_views(uid)
+        return physical + views if views else physical
+
+    def _zone_caster_coord(self, eff, il=None):
+        """Current center for a zone. Follow-zones read the caster position live."""
+        if eff.get('sourceBound'):
+            source = eff.get('sourceUserId', '')
+            source_entry = self._unit_il_entry(source, il or self._get_initiative()) if source else None
+            if not source_entry or (self._get_combat_hp(source) or 0) <= 0:
+                return ''
+            if eff.get('sourcePassive') and any(
+                    e.get('type') in ('buff', 'debuff')
+                    and e.get('auxType') == '隔离'
+                    and self._resolve_uid(e.get('targetUserId', '')) == self._resolve_uid(source)
+                    and e.get('remainingRounds', 0) != 0
+                    for e in self._get_effects()):
+                return ''
+        if eff.get('centerFollows'):
+            src = eff.get('sourceUserId')
+            if src:
+                il = il if il is not None else self._get_initiative()
+                base_src = self._resolve_uid(src)
+                entry = next((e for e in il
+                              if self._resolve_uid(e.get('userId', '')) == base_src), None)
+                if entry is None and base_src in getattr(self, '_summon_members', {}):
+                    synthetic = getattr(self, '_get_summon_entry', None)
+                    entry = synthetic(base_src) if synthetic else None
+                if entry and entry.get('coord'):
+                    return entry['coord']
+        return eff.get('center', 'A1')
+
+    def _unit_il_entry(self, uid, il):
+        """Initiative entry for uid; synthesizes hidden summon-group members."""
+        base = self._resolve_uid(uid)
+        entry = next((e for e in il
+                      if self._resolve_uid(e.get('userId', '')) == base), None)
+        if entry is not None:
+            return entry
+        mdata = getattr(self, '_summon_members', {}).get(base)
+        if not mdata:
+            return None
+        synthetic = getattr(self, '_get_summon_entry', None)
+        if synthetic:
+            return synthetic(base)
+        coord = mdata.get('coord', '')
+        owner = mdata.get('ownerId', '')
+        reps = [e for e in il
+                if self._resolve_uid(e.get('userId', '')) == self._resolve_uid(owner)]
+        rep_entry = reps[0] if reps else None
+        if rep_entry and rep_entry.get('coord'):
+            coord = rep_entry['coord']
+        return {'userId': base, 'team': mdata.get('team', 'Y'), 'coord': coord,
+                'isSummon': True, 'ownerId': owner}
+
+    def _zone_covers_uid(self, eff, uid, il=None):
+        """Is uid inside the zone's current area and allowed by its 客体 filter?"""
+        il = il if il is not None else self._get_initiative()
+        entry = self._unit_il_entry(uid, il)
+        if not entry:
+            return False
+        radius = eff.get('radius', 0) or 0
+        if radius <= 0:
+            return False
+        cp = parse_coord(self._zone_caster_coord(eff, il) or '')
+        ep = parse_coord(entry.get('coord', '') or '')
+        if not cp or not ep:
+            return False
+        if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > radius:
+            return False
+        caster_uid = eff.get('sourceUserId', '')
+        src_entry = self._unit_il_entry(caster_uid, il) if caster_uid else None
+        return self._zone_includes(
+            eff.get('filter', 35), uid, caster_uid, il,
+            uid_team=entry.get('team'),
+            caster_team=(src_entry or {}).get('team'))
+
+    def _zone_buff_views(self, uid):
+        """Live, read-only buff views granted by zones currently covering uid.
+
+        Non-stackable zones dedupe by (spellName, effectKey, auxType) regardless
+        of caster; stackable zones each contribute. Zone 属性削减 stays on its
+        own settlement path and is not duplicated here.
+        """
+        il = self._get_initiative()
+        entry = self._unit_il_entry(uid, il)
+        if not entry or not entry.get('coord'):
+            return []
+        base = self._resolve_uid(uid)
+        # Isolation is read from physical effects only — never call _has_status
+        # here: _has_status -> _get_active_buffs -> this method.
+        if any(e.get('type') in ('buff', 'debuff')
+               and e.get('auxType') == '隔离'
+               and self._resolve_uid(e.get('targetUserId', '')) == base
+               and e.get('remainingRounds', 0) != 0
+               for e in self._get_effects()):
+            return []
+        views = []
+        seen = set()
+        for eff in self._get_effects():
+            if eff.get('type') != 'zone':
+                continue
+            if eff.get('remainingRounds', 0) == 0 and not eff.get('sourceBound'):
+                continue
+            if eff.get('sourceBound') and not self._zone_caster_coord(eff, il):
+                continue
+            aux_type = eff.get('auxType', '') or ''
+            skill_mod = eff.get('skillMod', '') or ''
+            if not aux_type and not skill_mod:
+                continue
+            # A passive zone whose source is isolated is paused (same as buffs).
+            if eff.get('sourcePassive'):
+                src = self._resolve_uid(eff.get('sourceUserId', ''))
+                if any(e.get('type') in ('buff', 'debuff')
+                       and e.get('auxType') == '隔离'
+                       and self._resolve_uid(e.get('targetUserId', '')) == src
+                       and e.get('remainingRounds', 0) != 0
+                       for e in self._get_effects()):
+                    continue
+            if not self._zone_covers_uid(eff, uid, il):
+                continue
+            ident = (eff.get('spellName', ''), eff.get('effectKey', ''), aux_type)
+            if not eff.get('stackable'):
+                if ident in seen:
+                    continue
+                seen.add(ident)
+            views.append({
+                'type': 'buff',
+                'remainingRounds': eff.get('remainingRounds', 0),
+                'skillMod': skill_mod,
+                'auxType': aux_type,
+                'auxVal': eff.get('auxVal', ''),
+                'auxCode': eff.get('auxCode', 0) or 0,
+                'sourceUserId': eff.get('sourceUserId', ''),
+                'targetUserId': uid,
+                'spellName': eff.get('spellName', ''),
+                'spellIndex': eff.get('spellIndex', 0),
+                'effectKey': eff.get('effectKey', ''),
+                'stackable': eff.get('stackable', 0),
+                'sourceZone': True,
+            })
+        return views
 
     # ======== AUX helper methods ========
 
@@ -3240,22 +4310,6 @@ class CombatEngine:
         self._set_effects(effects)
         return (remaining, absorbed, msgs)
 
-    def _apply_buff_skill_mod(self, uid, base_val):
-        buffs = self._get_active_buffs(uid); adjusted = base_val
-        for b in buffs:
-            # AUX 15: numeric modifier
-            if b.get('auxCode') == 15 and b.get('auxVal') not in (None,''):
-                try: adjusted += int(b['auxVal'])
-                except: pass
-            # Legacy skillMod text
-            if b.get('skillMod'):
-                m = re.search(r'([+-]?\d+)$', str(b['skillMod']))
-                if m: adjusted += int(m.group(1))
-        # AUX 20: skill value multiplier (applied after flat modifiers)
-        mult = self._get_buff_skill_mult(uid)
-        adjusted = int(adjusted * mult)
-        return max(1, adjusted)
-
     def hp_diff(self, team):
         total = 0
         for e in self._get_initiative():
@@ -3285,11 +4339,12 @@ class CombatEngine:
             spell = {'index': i, 'name': name, 'effects': []}
             for k in ['级别','类别','消耗mp','消耗san','熟练度','里程碑','吟唱回合','默认延续性']:
                 v = char.get_attr(f"{prefix}{k}")
-                if v is None:
-                    # Try string attr (for dice expressions like '2d6')
+                if not v:
+                    # Try string attr (for dice expressions like '2d6'); get_attr
+                    # returns 0 for missing keys, so a falsy int means "not set as int"
                     vs = char.get_str(f"{prefix}{k}")
                     if vs: v = vs
-                spell[k] = v if v is not None else 0
+                spell[k] = v if v else 0
             timing = char.get_str(f"{prefix}时机"); spell['时机'] = timing or '2'
             for k in ['级别','类别','消耗mp','消耗san','吟唱回合','默认延续性']:
                 if k not in spell: spell[k] = 0
@@ -3318,6 +4373,8 @@ class CombatEngine:
             if cca: spell['cost_counter_amount'] = cca
             ob = char.get_attr(f"{prefix}_once_per_battle")
             if ob: spell['_once_per_battle'] = True
+            sp_cd = char.get_attr(f"{prefix}cooldown_rounds")
+            if sp_cd: spell['cooldown_rounds'] = int(sp_cd)
             # Read blood & HP cost fields
             cbl = char.get_attr(f"{prefix}cost_blood_ml")
             if cbl: spell['cost_blood_ml'] = cbl
@@ -3357,10 +4414,14 @@ class CombatEngine:
                     char.get_str(f"{pl}制造物模板"))
                 if not has_data and ci > 0: continue
                 stored_type = char.get_attr(f"{pl}type") or 0
+                # An explicit category type recorded on the card always wins.
+                # A zone effect that also carries AUX/skillMod must stay type 8
+                # instead of being inferred as type 4 below.
                 ct = stored_type if stored_type > 0 else (spell['类别'] if ci == 0 else (1 if char.get_str(f"{pl}伤害骰") else
                     2 if char.get_str(f"{pl}护盾值") else
                     3 if char.get_str(f"{pl}回复hp") or char.get_str(f"{pl}回复san") or char.get_str(f"{pl}回复mp") else
-                    4 if char.get_str(f"{pl}技能加减值") or char.get_str(f"{pl}辅助效果") or char.get_str(f"{pl}其他辅助效果a") else
+                    4 if (char.get_str(f"{pl}技能加减值") or char.get_str(f"{pl}辅助效果") or char.get_str(f"{pl}其他辅助效果a"))
+                        and not char.get_attr(f"{pl}领域中心跟随") else
                     5 if char.get_attr(f"{pl}召唤个数") else
                     6 if char.get_attr(f"{pl}制造个数") or char.get_str(f"{pl}制造个数") or char.get_str(f"{pl}制造物模板") else
                     7 if char.get_attr(f"{pl}引发目标法术") else
@@ -3373,13 +4434,19 @@ class CombatEngine:
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
                           'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate',
-                          '可叠加',
+                          '可叠加','忽略全局奖惩骰','ally_safe',
                           'respawn_hp','respawn_radius','max_value',
                           'cost_counter_amount','吟唱回合',
+                          '战意初始层数','战意削弱概率','战意削弱概率奖励层',
+                          '战意奖励骰阈值','战意惩罚1阈值','战意惩罚2阈值','战意惩罚骰上限',
+                          '领域立即结算','领域轮首结算次数','领域急救','领域同时上限',
+                          '死亡轮窗口','复活回复比例','复活主体',
+                          '分发自留','分发队友每人','分发给总数上限',
                           '幻造','once_per_transform','persist_through_battle',
                           'charge_moon',
                           'damage_pct_caster_max_hp','damage_pct_target_max_hp',
                           'damage_pct_caster_cur_hp','damage_mp_multiplier','damage_fixed',
+                          'damage_moon_mult','consume_moon',
                           'heal_limit_not_dying']:
                     v = char.get_attr(f"{pl}{k}");
                     if v is not None: eff[k] = v
@@ -3390,15 +4457,28 @@ class CombatEngine:
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
                           '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff',
                           'variant','weapon_state','counter_type','linked_summon',
-                          'damage_table','mp_cost_formula']:
+                          'damage_table','mp_cost_formula','制造分发','复活召唤物主人政策','消费追加回复hp','tasteBonusOwnerSerial']:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
+                # 持续回合/吟唱回合 can be dice strings ('2d3'); the int loop above
+                # stores 0 for them — roll the string variant and overwrite.
+                for k in ['持续回合','吟唱回合']:
+                    vs = char.get_str(f"{pl}{k}")
+                    if vs:
+                        try: eff[k] = roll_dice(str(vs))
+                        except Exception: eff[k] = 0
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
-                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage', 'hp_threshold_grant']:
+                for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage', 'hp_threshold_grant',
+                          '分发给总数公式','分发人数覆盖','分发削减顺序']:
                     v = char.get_str(f"{pl}{k}")
                     if v:
                         try: eff[k] = json.loads(v)
                         except: pass
+                for k in ['来源存活绑定','领域立即结算','领域轮首结算次数','领域急救','领域同时上限',
+                          '死亡轮窗口','复活回复比例','复活主体','分发自留','分发队友每人','分发给总数上限']:
+                    v = char.get_attr(f"{pl}{k}")
+                    if v not in (None, 0, ''):
+                        eff[k] = v
                 eff.setdefault('客体',4); eff.setdefault('作用半径',0)
                 # 可闪避性/可反击性: 向后兼容旧的 '可反应性' 字段
                 if '可闪避性' not in eff and '可反击性' not in eff:
@@ -3422,20 +4502,8 @@ class CombatEngine:
         Returns userId or None if no valid targets.
         """
         import random as _random_rt
-        init_list = self._get_initiative()
-        my_entry = next((e for e in init_list if e['userId'] == caster_id), None)
-        mt = my_entry.get('team', 'Y') if my_entry else 'Y'
-        candidates = []
-        for e in init_list:
-            if e['team'] == mt:
-                continue
-            if (self._get_combat_hp(e['userId']) or 0) <= 0:
-                continue
-            if self._is_untargetable(e['userId']):
-                continue
-            if not include_summons and e.get('isSummon'):
-                continue  # RP: exclude summons
-            candidates.append(e['userId'])
+        candidates = [e['userId'] for e in self._enemy_target_entries(caster_id)
+                      if include_summons or not e.get('isSummon')]
         return _random_rt.choice(candidates) if candidates else None
 
     def _get_weighted_target(self, caster_id):
@@ -3453,7 +4521,7 @@ class CombatEngine:
             return None
 
         init_list = self._get_initiative()
-        my_entry = next((e for e in init_list if e['userId'] == caster_id), None)
+        my_entry = self._unit_il_entry(caster_id, init_list)
         mt = my_entry.get('team', 'Y') if my_entry else 'Y'
         has_allies = any(e['team'] == mt and e['userId'] != caster_id
                          and (self._get_combat_hp(e['userId']) or 0) > 0
@@ -3465,10 +4533,7 @@ class CombatEngine:
             return None
 
         # Get enemies
-        enemies = [e for e in init_list
-                   if e['team'] != mt
-                   and (self._get_combat_hp(e['userId']) or 0) > 0
-                   and not self._is_untargetable(e['userId'])]
+        enemies = self._enemy_target_entries(caster_id)
         if not enemies:
             return None
 
@@ -3522,7 +4587,8 @@ class CombatEngine:
 
         if has_random_target:
             tgt = self._pick_random_target(caster_id, include_summons=random_include_summons)
-            return tgt if tgt else caster_id
+            # 无合法目标时返回 None（不再回退到施法者，否则伤害法术会打向自己）
+            return tgt
 
         if has_dmg or has_zone_dmg or has_enemy_debuff:
             # Try weight-based target selection first
@@ -3531,14 +4597,14 @@ class CombatEngine:
                 return weighted_tgt
             # Fallback: first enemy by initiative
             init_list = self._get_initiative()
-            my_entry = next((e for e in init_list if e['userId']==caster_id), None)
-            mt = my_entry.get('team','Y') if my_entry else 'Y'
-            enemies = [e for e in init_list if e['team']!=mt and (self._get_combat_hp(e['userId'])or 0)>0 and not self._is_untargetable(e['userId'])]
+            mt = self._battle_team_of(caster_id)
+            enemies = self._enemy_target_entries(caster_id)
             if not enemies:
                 all_teams = [(e.get('name', e.get('userId', '?')), e.get('team', '?')) for e in init_list]
                 _engine_debug_log(f"_smart_target: caster={caster_id} team={mt} spell={spell.get('name','?')} "
                       f"NO ENEMIES! all teams: {all_teams}")
-            return enemies[0]['userId'] if enemies else caster_id
+            # 无合法敌人 → None（由 _execute_spell 拦截并提示，不扣 MP）
+            return enemies[0]['userId'] if enemies else None
         return caster_id
 
     def process_command(self, uid, cmd):
@@ -3634,7 +4700,8 @@ class CombatEngine:
             if cd > 0:
                 return f"技能【{spell['name']}】冷却中（剩余 {cd} 回合）"
             if not has_timing(spell.get('时机','2'), '3'): return f'不能在附加动作阶段使用'
-            return self._execute_spell(uid, uid, spell)
+            target = self._smart_target(uid, spell)
+            return self._execute_spell(uid, target, spell)
         elif parts[0].lower() == 'eat':
             # .a eat [目标名] — 使用物品（给自己）或给出物品（给目标）
             target_id = None
@@ -3662,79 +4729,69 @@ class CombatEngine:
         return '用法: .a m <坐标> 或 .a s<序号> 或 .a eat [目标] 或 .a give <目标>'
 
     def _end_turn(self, uid):
-        """End current character's turn and advance initiative.
-        Single-slot system: each character has one initiative entry.
-        Turn advances when 主动 exhausted or .i end called."""
-        state = self._get_state(); il = self._get_initiative()
-        if not state: return
+        """Advance normally even when the active summon group has just died."""
+        previous = getattr(self, '_advancing_turn', False)
+        self._advancing_turn = True
+        try:
+            return self._advance_turn(uid)
+        finally:
+            self._advancing_turn = previous
 
-        # ── 回合结束：退回锚点 ──
+    def _advance_turn(self, uid):
+        state = self._get_state()
+        if not state:
+            return False
         self._return_to_anchor(self._resolve_uid(uid))
-
+        # Promotion is safe here; defer deleting dead slots until their turn is passed.
+        for key in list(self._summon_groups):
+            self._ensure_group_representative(key)
+        il = self._get_initiative()
         if not il:
             self._check_and_mark_end(state)
             return False
-
-        old_idx = state['activeIndex']
-        state['activeIndex'] = (old_idx + 1) % len(il)
-
-        if state['activeIndex'] == 0:
-            # ── New round ──
-            state['round'] = state.get('round', 1) + 1
-            self._reset_move_power()
-            # Reset all actions using formula
-            acts = {}
-            for e in il:
-                base = e.get('baseUserId', e['userId'])
-                if base not in acts:
-                    acts[base] = {
-                        '主动': self._calc_main_actions(base),
-                        '附加': 3,
-                    }
-            self._set_actions(acts)
-            self._tick_down(); self._apply_zone_effects()
-            self._sync_all_initiative_slots()  # clears buff_mov cache
-        self._set_state(state)
-        self._check_and_mark_end(state)
-
-        # ── Auto-skip dead entries ──
-        il2 = self._get_initiative()
-        safety = 0
-        while il2 and safety < len(il2) * 2:
-            safety += 1
-            cur = il2[state['activeIndex']]
-            cuid = cur['userId']
-            should_skip = False
-            chp = self._get_combat_hp(cuid)
-            if chp is not None and chp <= 0:
-                if not cur.get('isSummon'):
-                    should_skip = True
-                else:
-                    alive_members = self._get_alive_summon_group_members(cuid)
-                    if not alive_members:
-                        should_skip = True
-            if not should_skip:
+        active_uid = il[min(state.get('activeIndex', 0), len(il) - 1)]['userId']
+        if self._summon_group_key(active_uid) != self._summon_group_key(uid):
+            # An attack already removed its actor/owner and selected the successor.
+            self._reconcile_summon_groups()
+            self._check_and_mark_end(self._get_state())
+            return False
+        crossed_round = False
+        for _ in range(len(il) * 2 + 1):
+            il = self._get_initiative()
+            if not il:
                 break
-            state['activeIndex'] = (state['activeIndex'] + 1) % len(il2)
-            if state['activeIndex'] == 0:
+            state = self._get_state()
+            idx = min(state.get('activeIndex', 0), len(il) - 1)
+            state['activeIndex'] = (idx + 1) % len(il)
+            wrapped = state['activeIndex'] == 0
+            if wrapped:
+                crossed_round = True
                 state['round'] = state.get('round', 1) + 1
-                self._reset_move_power()
-                acts = {}
-                for e in il2:
-                    base = e.get('baseUserId', e['userId'])
-                    if base not in acts:
-                        acts[base] = {
-                            '主动': self._calc_main_actions(base),
-                            '附加': 3,
-                        }
-                self._set_actions(acts)
-                self._tick_down(); self._apply_zone_effects()
-                self._sync_all_initiative_slots()
-                il2 = self._get_initiative()
+            # Publish the new actor before ticks can remove/reorder entries.
             self._set_state(state)
+            if wrapped:
+                self._reset_move_power()
+                self._tick_down()
+                self._apply_zone_effects()
+                self._reconcile_summon_groups()
+                self._sync_all_initiative_slots()
+                self._reset_round_actions()
+            state = self._get_state()
             self._check_and_mark_end(state)
-
-        return state['activeIndex'] == 0 if state else False
+            if state.get('phase') != 'active':
+                break
+            il = self._get_initiative()
+            if not il:
+                break
+            cur = il[state['activeIndex']]
+            hp = self._get_combat_hp(cur['userId'])
+            if hp is None or hp > 0:
+                break
+            if cur.get('isSummon') and self._get_alive_summon_group_members(cur['userId']):
+                self._ensure_group_representative(self._summon_group_key(cur['userId']))
+                break
+        self._reconcile_summon_groups()
+        return crossed_round
 
     def _check_and_mark_end(self, state):
         """Call _check_battle_end and, if over, store result and set phase='ended'."""
@@ -3968,16 +5025,41 @@ class CombatEngine:
 
     def _get_damage_dice(self, uid, skill_name):
         """Look up damage dice with suffix support.
-        Maps skill names to damage suffixes: e.g. 剑→'a', 斗殴→'b'.
+
+        Default suffix map: 剑→'a', 斗殴→'b'. Characters may override it via the
+        str_attrs key `damage_suffix_map` (a dict, or its JSON serialization) —
+        e.g. LINBAI/YEZHAOMING declare {'剑':'a','弓术':'b'} for sword/bow variants.
         Falls back to 伤害値. Resolves 'db' token from character's 体格."""
         char = self.get_char(uid)
         db_str = _get_db_str(char)
         suffix_map = {'剑': 'a', '斗殴': 'b'}
+        override = char.get_str('damage_suffix_map')
+        if isinstance(override, dict):
+            if override: suffix_map = override
+        elif isinstance(override, str) and override:
+            try:
+                pm = json.loads(override)
+                if isinstance(pm, dict) and pm: suffix_map = pm
+            except (ValueError, TypeError):
+                pass
         suffix = suffix_map.get(skill_name, '')
         if suffix:
             dd = char.get_str(f"伤害值{suffix}")
             if dd: return _resolve_db(dd, db_str)
         return _resolve_db(char.get_str("伤害值") or "1d4", db_str)
+
+    def _get_attack_skill(self, uid, char=None):
+        """Weapon-aware basic-attack skill selection, shared by all battle paths.
+
+        _weapon_name == 'sword'/'bow' with a matching skill attr → use that skill;
+        otherwise fall back to get_best_melee(). Returns (skill_name, skill_value)."""
+        char = char or self.get_char(uid)
+        weapon = char.get_str('_weapon_name') or ''
+        if weapon == 'sword' and char.get_attr('剑', 0):
+            return '剑', char.get_attr('剑', 55)
+        if weapon == 'bow' and char.get_attr('弓术', 0):
+            return '弓术', char.get_attr('弓术', 61)
+        return char.get_best_melee()
 
     def _get_phase(self, uid):
         char = self.get_char(uid)
@@ -3987,30 +5069,590 @@ class CombatEngine:
         char = self.get_char(uid)
         if char: char.phase = p
 
+    # ---- Per-effect target resolution (each effect targets independently) ----
+    # Longest-first so concatenated codes ('24','45','135','124') match the right token.
+    _TARGET_CODES = ('135', '125', '124', '45', '35', '25', '24', '15', '14', '13', '12', '5', '4', '3', '2', '1')
+
+    def _parse_obj_codes(self, obj):
+        """Split a concatenated 客体 code string ('45','135',...) into tokens."""
+        obj = str(obj).upper().strip()
+        if obj in ('R', 'RP'):
+            return [obj]
+        codes = []
+        i = 0
+        while i < len(obj):
+            for code in self._TARGET_CODES:
+                if obj.startswith(code, i):
+                    if code not in codes:
+                        codes.append(code)
+                    i += len(code)
+                    break
+            else:
+                i += 1
+        return codes or ['4']
+
+    def _parse_target_codes(self, eff):
+        return self._parse_obj_codes(eff.get('客体', 4))
+
+    def _zone_includes(self, filter_obj, uid, caster_id, il, uid_team=None, caster_team=None):
+        """Does a zone entry's 客体 filter include uid? (客体=3 不含自身)
+
+        Zone membership uses the same token vocabulary as ordinary targeting,
+        but single-target codes act as a faction eligibility test (a radius
+        buffer cannot pick one random enemy per query).
+        `uid_team`/`caster_team` may be supplied for hidden summon members
+        whose entries are not in the initiative list."""
+        codes = self._parse_obj_codes(filter_obj)
+        if 'R' in codes or 'RP' in codes:
+            return False
+        base = self._resolve_uid(uid)
+        caster_base = self._resolve_uid(caster_id)
+        is_self = base == caster_base
+        team_of = lambda u: next((e.get('team', 'Y') for e in il
+                                 if self._resolve_uid(e['userId']) == self._resolve_uid(u)), 'Y')
+        my_team = uid_team or team_of(uid)
+        src_team = caster_team or team_of(caster_id)
+        is_ally = not is_self and my_team == src_team
+        if '135' in codes or '35' in codes:
+            return True
+        if is_self:
+            return any(c in codes for c in ('1', '12', '13', '14', '15', '124', '125'))
+        if is_ally:
+            return any(c in codes for c in ('2', '3', '12', '13', '24', '25', '124', '125'))
+        return any(c in codes for c in ('4', '5', '14', '15', '24', '25', '45', '124', '125'))
+
+    def _apply_zone_attr_penalties(self, il):
+        """Recompute live zone attribute penalties on initiative entries.
+
+        Non-stackable zones keep the strongest per-attribute penalty; stackable
+        zones sum. Values are read live by _zone_attr_mod, never written into
+        base attributes, so leaving/expiry restores the value automatically.
+        """
+        for entry in il:
+            for k in list(entry.keys()):
+                if k.startswith('_zone_penalty_'):
+                    del entry[k]
+        for eff in self._get_effects():
+            if eff.get('type') != 'zone':
+                continue
+            mods = _parse_attr_mods(eff.get('attributeDebuff', ''))
+            if not mods:
+                continue
+            cp = parse_coord(eff.get('center', 'A1'))
+            if not cp:
+                continue
+            stackable = eff.get('stackable', 0)
+            for entry in il:
+                uid = entry['userId']
+                if self._has_status(uid, '隔离'):
+                    continue
+                ep = parse_coord(entry.get('coord', '')) if entry.get('coord') else None
+                if not ep:
+                    continue
+                if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > (eff.get('radius', 0) or 0):
+                    continue
+                if not self._zone_includes(eff.get('filter', 35), uid,
+                                           eff.get('sourceUserId', ''), il):
+                    continue
+                for attr_name, delta in mods:
+                    if delta >= 0:
+                        continue  # 属性削减 is a penalty only
+                    group = _attr_group(attr_name)
+                    key = '_zone_penalty_' + group
+                    if stackable:
+                        skey = '_zone_penalty_stack_' + group
+                        entry[skey] = entry.get(skey, 0) + abs(delta)
+                    else:
+                        entry[key] = max(entry.get(key, 0), abs(delta))
+        return il
+
+    def _battle_team_of(self, uid):
+        entry = self._unit_il_entry(uid, self._get_initiative())
+        return entry.get('team', 'Y') if entry else 'Y'
+
+    def _battle_unit_entries(self):
+        """Read physical units in initiative order, then hidden group members."""
+        il = self._get_initiative()
+        picked = []
+        seen = set()
+        for entry in il:
+            uid = self._resolve_uid(entry['userId'])
+            if uid not in seen and not entry.get('_suppressed', False):
+                picked.append(entry)
+                seen.add(uid)
+        for uid in self._summon_members:
+            if uid not in seen:
+                entry = self._unit_il_entry(uid, il)
+                if entry is not None:
+                    picked.append(entry)
+                    seen.add(uid)
+        return picked
+
+    def _enemy_target_entries(self, caster_id):
+        il = self._get_initiative()
+        return [entry for uid in self._enemy_targets(caster_id)
+                if (entry := self._unit_il_entry(uid, il)) is not None]
+
+    def _allies_in_battle(self, caster_id, include_self):
+        """Alive same-team units, including hidden summon-group members."""
+        team = self._battle_team_of(caster_id)
+        base = self._resolve_uid(caster_id)
+        picked = []
+        for e in self._get_initiative():
+            uid = e['userId']
+            if e.get('team') != team:
+                continue
+            if not include_self and self._resolve_uid(uid) == base:
+                continue
+            if (self._get_combat_hp(uid) or 0) <= 0:
+                continue
+            picked.append(uid)
+        # 召唤物分组中的隐藏成员不在先攻表里，但它们同样在场上
+        for sid, mdata in self._summon_members.items():
+            if sid in picked:
+                continue
+            if mdata.get('team') != team:
+                continue
+            if not include_self and self._resolve_uid(sid) == base:
+                continue
+            if (self._get_combat_hp(sid) or 0) <= 0:
+                continue
+            picked.append(sid)
+        return picked
+
+    def _ally_targets(self, caster_id, include_self):
+        """Alive allies (same team). By rule 客体=3 excludes the caster."""
+        return self._allies_in_battle(caster_id, include_self=include_self)
+
+    def _enemy_targets(self, caster_id):
+        team = self._battle_team_of(caster_id)
+        return [self._resolve_uid(e['userId']) for e in self._battle_unit_entries()
+                if e.get('team') != team and (self._get_combat_hp(e['userId']) or 0) > 0
+                and not self._is_untargetable(e['userId'])]
+
+    def _selected_or_first(self, candidates, selected):
+        if selected and any(self._resolve_uid(c) == self._resolve_uid(selected) for c in candidates):
+            return selected
+        return candidates[0] if candidates else None
+
+    def _resolve_effect_targets(self, caster_id, selected_target, eff):
+        """Resolve one effect's actual target list from *its own* 客体 field.
+
+        `selected_target` is only a candidate (e.g. the enemy chosen on the
+        command line); it never overrides another effect's targeting.
+        """
+        codes = self._parse_target_codes(eff)
+        base_uid = self._resolve_uid(caster_id)
+        picked = []
+        for code in codes:
+            if code == 'R':
+                t = self._pick_random_target(caster_id, include_summons=True)
+                if t:
+                    picked.append(t)
+            elif code == 'RP':
+                t = self._pick_random_target(caster_id, include_summons=False)
+                if t:
+                    picked.append(t)
+            elif code == '1':
+                picked.append(caster_id)
+            elif code == '2':
+                allies = self._ally_targets(caster_id, include_self=False)
+                t = self._selected_or_first(allies, selected_target)
+                if t:
+                    picked.append(t)
+            elif code == '3':
+                picked.extend(self._ally_targets(caster_id, include_self=False))
+            elif code == '4':
+                enemies = self._enemy_targets(caster_id)
+                t = self._selected_or_first(enemies, selected_target)
+                if t:
+                    picked.append(t)
+                elif not enemies:
+                    # 未指定目标且无敌人由调用方拦截；此处不串到友方
+                    pass
+            elif code == '24':
+                # 友方单体或敌方单体：尊重显式选择，未选时优先敌方
+                if selected_target and (self._get_combat_hp(selected_target) or 0) > 0:
+                    picked.append(selected_target)
+                else:
+                    enemies = self._enemy_targets(caster_id)
+                    if enemies:
+                        picked.append(enemies[0])
+                    else:
+                        allies = self._ally_targets(caster_id, include_self=False)
+                        if allies:
+                            picked.append(allies[0])
+            elif code == '5':
+                picked.extend(self._enemy_targets(caster_id))
+            elif code == '12':
+                allies = [caster_id] + self._ally_targets(caster_id, include_self=False)
+                t = self._selected_or_first(allies, selected_target)
+                if t:
+                    picked.append(t)
+            elif code == '13':
+                picked.append(caster_id)
+                picked.extend(self._ally_targets(caster_id, include_self=False))
+            elif code in ('14', '15'):
+                picked.append(caster_id)
+                if code == '14':
+                    enemies = self._enemy_targets(caster_id)
+                    t = self._selected_or_first(enemies, selected_target)
+                    if t:
+                        picked.append(t)
+                else:
+                    picked.extend(self._enemy_targets(caster_id))
+            elif code == '124':
+                any_uid = selected_target if selected_target else self._get_weighted_target(caster_id)
+                picked.append(any_uid or caster_id)
+            elif code in ('35', '135'):
+                for e in self._allies_in_battle(caster_id, include_self=True) + self._enemy_targets(caster_id):
+                    picked.append(e)
+            elif code == '45':
+                enemies = self._enemy_targets(caster_id)
+                t = self._selected_or_first(enemies, selected_target)
+                if t:
+                    picked.append(t)
+                picked.extend(x for x in enemies if not t or self._resolve_uid(x) != self._resolve_uid(t))
+            elif code == '25':
+                allies = self._ally_targets(caster_id, include_self=False)
+                t = self._selected_or_first(allies, selected_target)
+                if t:
+                    picked.append(t)
+                picked.extend(self._enemy_targets(caster_id))
+            elif code == '125':
+                allies = [caster_id] + self._ally_targets(caster_id, include_self=False)
+                t = self._selected_or_first(allies, selected_target)
+                if t:
+                    picked.append(t)
+                picked.extend(self._enemy_targets(caster_id))
+
+        # Radius filter for group effects that declare 作用半径
+        radius = int(eff.get('作用半径', 0) or 0)
+        if radius > 0 and len(picked) > 1:
+            cpos = None
+            c_entry = next((e for e in self._get_initiative()
+                            if self._resolve_uid(e['userId']) == base_uid), None)
+            if c_entry:
+                cpos = parse_coord(c_entry.get('coord', ''))
+            if cpos:
+                kept = []
+                for uid in picked:
+                    ent = next((e for e in self._get_initiative() if e['userId'] == uid), None)
+                    pos = parse_coord(ent.get('coord', '')) if ent else None
+                    if not pos or max(abs(pos[0]-cpos[0]), abs(pos[1]-cpos[1])) <= radius:
+                        kept.append(uid)
+                picked = kept
+
+        # Dedup by base uid (multi-action slots share a character), keep order
+        seen = set(); result = []
+        for uid in picked:
+            if not uid:
+                continue
+            b = self._resolve_uid(uid)
+            if b in seen:
+                continue
+            seen.add(b)
+            result.append(uid)
+        return result
+
+    def _apply_hp_heal_amount(self, target_id, amount, *, allow_dying=True):
+        """Apply HP healing through one path for spells, zones, and items.
+
+        A zero-HP dying unit is not treated as a default-HP unit. Healing first
+        removes excess dying damage; only leftover healing revives the unit.
+        """
+        amount = max(0, int(amount or 0))
+        if amount <= 0:
+            return {'applied': 0, 'absorbed_excess': 0, 'rescued': False, 'dead': False}
+        current = self._get_combat_hp(target_id)
+        if current is None:
+            return {'applied': 0, 'absorbed_excess': 0, 'rescued': False, 'dead': True}
+        dying = self._is_dying(target_id) if allow_dying else None
+        if current <= 0 and dying is None:
+            return {'applied': 0, 'absorbed_excess': 0, 'rescued': False, 'dead': True}
+        target = self.get_char(target_id)
+        max_hp = target.get_attr('体力上限', max(current, 1)) if target else max(current, 1)
+        if dying is not None:
+            excess = max(0, int(dying.get('excessDamage', 0) or 0))
+            absorbed = min(amount, excess)
+            remaining = amount - absorbed
+            dying['excessDamage'] = excess - absorbed
+            rescued = dying['excessDamage'] <= 0 and remaining > 0
+            if rescued:
+                new_hp = min(max_hp, remaining)
+                self._set_combat_hp(target_id, new_hp)
+                effects = [e for e in self._get_effects() if e is not dying]
+                self._set_effects(effects)
+                return {'applied': new_hp, 'absorbed_excess': absorbed,
+                        'rescued': True, 'dead': False}
+            self._set_effects(self._get_effects())
+            return {'applied': 0, 'absorbed_excess': absorbed,
+                    'rescued': False, 'dead': False}
+        new_hp = min(max_hp, current + amount)
+        self._set_combat_hp(target_id, new_hp)
+        return {'applied': new_hp - current, 'absorbed_excess': 0,
+                'rescued': False, 'dead': False}
+
+    def _auto_consume_hp_cake(self, uid):
+        """Consume personal HP cakes immediately when a unit enters dying."""
+        if getattr(self, '_auto_cake_rescue', False):
+            return ''
+        if self._get_combat_hp(uid) != 0 or not self._is_dying(uid):
+            return ''
+        self._auto_cake_rescue = True
+        try:
+            messages = []
+            while self._get_combat_hp(uid) == 0 and self._is_dying(uid):
+                cake = self._find_personal_item(uid, item_kind='hp')
+                if not cake:
+                    break
+                item_name, index = cake
+                result, ok = self._consume_inventory_item(uid, index, item_name, uid)
+                if not ok:
+                    break
+                messages.append(result)
+            return '\n'.join(messages)
+        finally:
+            self._auto_cake_rescue = False
+
+    def _find_personal_item(self, uid, item_kind=None, item_name=None):
+        from characters_data import ITEM_TEMPLATES
+        char = self.get_char(uid)
+        if not char:
+            return None
+        for index, entry in enumerate(char.inventory):
+            name = entry.get('item', '')
+            if entry.get('count', 0) <= 0 or name not in ITEM_TEMPLATES:
+                continue
+            if item_name and name != item_name:
+                continue
+            if item_kind == 'hp' and not ITEM_TEMPLATES[name].get('回复hp'):
+                continue
+            if item_kind == 'mp' and not ITEM_TEMPLATES[name].get('回复mp'):
+                continue
+            return name, index
+        return None
+
+    def _consume_inventory_item(self, eater_id, index, item_name, target_id):
+        char = self.get_char(eater_id)
+        if not char or index >= len(char.inventory):
+            return '无可用的物品', False
+        entry = char.inventory[index]
+        if entry.get('item') != item_name or entry.get('count', 0) <= 0:
+            return '无可用的物品', False
+        result = self._apply_item_heal(item_name, target_id, metadata=entry)
+        entry['count'] -= 1
+        if entry['count'] <= 0:
+            char.inventory.pop(index)
+        return result, True
+
+    def _apply_target_effect(self, caster_id, tid, eff, spell, is_passive_spell, eff_idx):
+        """Execute one damage/shield/heal/buff effect on one resolved target."""
+        out = ''
+        ct = eff['type']
+        if ct == 1:  # Damage
+            return self._handle_spell_damage_effect(caster_id, tid, eff, spell)
+        if ct == 2:  # Shield
+            sv = roll_dice(eff.get('护盾值', '1d4')); dur = eff.get('持续回合', 1)
+            effects = self._get_effects()
+            shield_entry = {'type': 'shield', 'value': sv, 'remainingRounds': dur,
+                            'sourceUserId': caster_id, 'targetUserId': tid or caster_id,
+                            'spellName': spell['name'], 'spellIndex': spell['index'],
+                            'persistent': spell.get('默认延续性', 0)}
+            if is_passive_spell:
+                shield_entry['sourcePassive'] = True
+            effects.append(shield_entry)
+            self._set_effects(effects)
+            tname = self.get_char(tid).name if tid and tid != caster_id else '自身'
+            out += f'  {tname} 获得 {sv} 点护盾 ({eff.get("护盾值","1d4")})\n'
+            return out
+        if ct == 3:  # Heal
+            hp_heal = int(roll_dice(eff.get('回复hp', '0')) * self._get_buff_heal_pct(tid, 'hp'))
+            hp_heal += self._get_buff_heal_flat(tid, 'hp')
+            san_heal = roll_dice(eff.get('回复san', '0'))
+            mp_heal = int(roll_dice(eff.get('回复mp', '0')) * self._get_buff_heal_pct(tid, 'mp'))
+            mp_heal += self._get_buff_heal_flat(tid, 'mp')
+            tchar = self.get_char(tid); tname = tchar.name if tchar else tid
+            if hp_heal > 0:
+                outcome = self._apply_hp_heal_amount(tid, hp_heal)
+                if outcome['rescued']:
+                    # Continue with the latest effect list after dying was removed.
+                    pass
+                if outcome['dead']:
+                    out += f'  {tname} 已死亡，无法治疗\n'
+                elif outcome['rescued']:
+                    out += f'  {tname} 脱离濒死！回复 HP: {outcome["applied"]}\n'
+                elif outcome['absorbed_excess'] > 0:
+                    out += f'  {tname} 治愈濒死伤害 {outcome["absorbed_excess"]}点\n'
+                else:
+                    out += f'  {tname} 回复 HP +{outcome["applied"]} ({eff.get("回复hp","0")})\n'
+            if san_heal > 0:
+                cs = tchar.get_attr('理智', 50) if tchar else 50
+                tchar.set_attr('理智', min(cs + san_heal, 99)); out += f'  {tname} 回复 SAN +{san_heal}\n'
+            if mp_heal > 0:
+                cm = tchar.get_attr('魔力', 0) if tchar else 0
+                mx = tchar.get_attr('魔力上限', cm) if tchar else cm
+                actual_mp = min(cm + mp_heal, mx); overflow_mp = max(0, (cm + mp_heal) - mx)
+                tchar.set_attr('魔力', actual_mp); out += f'  {tname} 回复 MP +{mp_heal}\n'
+                if overflow_mp > 0 and self._has_moon_buff(tid):
+                    entry = next((e for e in self._get_initiative() if e['userId'] == tid), None)
+                    if entry:
+                        charged = self._charge_moon_energy(entry.get('team', 'Y'), overflow_mp)
+                        if charged > 0: out += f'  月能充能 (MP溢出): +{charged}\n'
+            return out
+        if ct == 4:  # Buff (with auxCode)
+            # load_spells 会把缺失的 持续回合 写成 0；0 视为未声明，取默认 1
+            dur = eff.get('持续回合') or 1; aux_type = _eff_get(eff, 'auxType')
+            aux_code = AUX_NAME_TO_CODE.get(aux_type, 0)
+            aux_val = _eff_get(eff, 'auxVal')
+            stackable = eff.get('可叠加', 0)
+            is_control_status = aux_type in CONTROL_STATUS_TYPES
+            # Buff identity includes the effect: two effects of the same spell
+            # with the same auxType must NOT collapse into one refresh.
+            eff_key = str(eff.get('letter', eff_idx))
+            effects = self._get_effects()
+            existing = None
+            if not stackable:
+                for e in effects:
+                    if e.get('type') != 'buff' or self._resolve_uid(e.get('targetUserId', '')) != self._resolve_uid(tid):
+                        continue
+                    if is_control_status:
+                        if e.get('auxType') == aux_type:
+                            existing = e; break
+                    else:
+                        if (e.get('spellName') == spell['name'] and e.get('auxType') == aux_type
+                                and e.get('effectKey', '') == eff_key):
+                            existing = e; break
+            tname = self.get_char(tid).name if tid and tid != caster_id else '自身'
+            if existing:
+                existing['remainingRounds'] = max(existing.get('remainingRounds', 0), dur)
+                if is_control_status and aux_type == '减速':
+                    existing['auxVal'] = aux_val
+                out += f'  {tname} 刷新辅助效果: {aux_type} {aux_val} (延长至{existing["remainingRounds"]}回合)\n'
+            else:
+                bonus_dmg = eff.get('伤害骰', '')
+                buff_entry = {'type': 'buff', 'remainingRounds': dur, 'skillMod': eff.get('技能加减值', ''),
+                    'auxType': aux_type, 'auxVal': aux_val, 'auxCode': aux_code,
+                    'sourceUserId': caster_id, 'targetUserId': tid,
+                    'spellName': spell['name'], 'spellIndex': spell['index'],
+                    'effectKey': eff_key,
+                    'persistent': spell.get('默认延续性', 0),
+                    'stackable': stackable,
+                    'exclude': eff.get('exclude', [])}
+                if bonus_dmg:
+                    buff_entry['bonusDmgDice'] = bonus_dmg
+                if is_passive_spell:
+                    buff_entry['sourcePassive'] = True
+                if eff.get('linked_summon'):
+                    buff_entry['linked_summon'] = eff['linked_summon']
+                if eff.get('hp_threshold_grant'):
+                    buff_entry['hp_threshold_grant'] = eff['hp_threshold_grant']
+                effects.append(buff_entry)
+                bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
+                label = aux_type or buff_entry.get('skillMod') or 'buff'
+                out += f'  {tname} 施加辅助效果: {label} {aux_val if aux_type else ""}{bonus_note}\n'.replace('  \n', '\n')
+            self._set_effects(effects)
+            return out
+        return out
+
     # ---- Unified _execute_spell (all 8 categories, all fixes applied) ----
     def _execute_spell(self, caster_id, target_id, spell):
         char = self.get_char(caster_id)
         tname = self.get_char(target_id).name if target_id and target_id != caster_id else '自身'
         out = f'{char.name} 释放【{spell["name"]}】→ {tname}\n'
 
-        # _once_per_battle: check if spell already used this battle
-        if spell.get('_once_per_battle'):
+        # _once_per_battle is committed only after all target/resource prechecks pass.
+        once_name = spell.get('name', '')
+        once_required = bool(spell.get('_once_per_battle'))
+        once_key = (self._resolve_uid(caster_id), spell.get('index', 0))
+        if once_required:
+            ledger = getattr(self, '_revive_use_ledger', set())
             consumed = getattr(char, '_once_consumed', set())
-            if spell['name'] in consumed:
-                return f'{char.name} 本场战斗已使用过【{spell["name"]}】！\n'
-            consumed.add(spell['name'])
-            char._once_consumed = consumed
+            if once_key in ledger or once_name in consumed:
+                return f'{char.name} 的【{once_name}】本场战斗已使用过，无法再次施放。\n'
+            if self._get_cooldown(caster_id, spell.get('index', 0)) > 0:
+                return f'{char.name} 的【{once_name}】冷却中（剩余 {self._get_cooldown(caster_id, spell.get('index', 0))} 回合）。\n'
 
         # ── 未指定目标→随机敌对目标 ──
+        # hostile 判定需覆盖所有"应对敌方施放"的效果类型，否则 type=4 敌方减益 /
+        # type=8 敌方领域会留在 target_id == caster_id 上，变成给自己上 debuff。
+        def _needs_enemy(e):
+            et = e.get('type')
+            obj = str(e.get('客体', 4)).upper().strip()
+            if et == 1:
+                return obj in ('4', '5', '24', '45', 'R', 'RP')
+            if et == 4:
+                return obj in ('5', '124')
+            if et == 8:
+                return bool(e.get('每回合伤害骰')) and not e.get('回复hp') \
+                    and obj in ('4', '5', '45', '124', '134', '135', '35')
+            return False
+        is_hostile_spell = any(_needs_enemy(e) for e in spell.get('effects', []))
+
         if not target_id or target_id == caster_id:
-            has_hostile = any(e.get('type') == 1 and str(e.get('客体', 4)) in ('4','5','45','R','RP')
-                             for e in spell.get('effects', []))
-            if has_hostile:
+            if is_hostile_spell:
                 rt = self._pick_random_target(caster_id)
                 if rt:
                     target_id = rt
                     tname = self.get_char(target_id).name if target_id else '自身'
                     out = f'{char.name} 释放【{spell["name"]}】→ {tname}（随机）\n'
+                else:
+                    # 没有任何合法敌对目标：置 None，交由下方守卫拦截（不扣 MP/SAN）
+                    target_id = None
+
+        # ── 无合法目标 → 禁止施放，不消耗任何资源 ──
+        # 只拦截"需要对敌"的法术；自我增益/治疗/召唤传 None 时仍走原逻辑（_smart_target
+        # 对它们始终返回 caster_id，None 只可能来自 .a sN 或外部调用）。
+        if target_id is None and is_hostile_spell:
+            return f'{char.name} 没有可攻击的目标！\n'
+
+        # ── 纯召唤技能：零名额时提前返回，不扣 MP/SAN、不消耗一次性标记 ──
+        # 每个召唤效果的数量只掷一次，结果存入本次调用的局部计划，避免共享 spell
+        # 对象上的 _pre_rolled_count 被下次施放误用。
+        summon_plan = {}
+        _summon_only = bool(spell.get('effects')) and all(
+            e.get('type') == 5 for e in spell.get('effects', []))
+        if _summon_only:
+            _block_reason = ''
+            for _ei, _e in enumerate(spell.get('effects', [])):
+                _tmpl_name = _e.get('召唤物模板', '')
+                if not _tmpl_name:
+                    continue
+                _count_raw = _e.get('召唤个数', 1)
+                if isinstance(_count_raw, str) and 'd' in str(_count_raw):
+                    _roll = roll_dice(str(_count_raw))
+                else:
+                    try:
+                        _roll = int(_count_raw) if _count_raw else 1
+                    except (TypeError, ValueError):
+                        _roll = 1
+                _remain, _reason = self._get_summon_quota(caster_id, _tmpl_name)
+                if _remain == 0:
+                    _block_reason = _reason
+                    summon_plan[_ei] = 0
+                    continue
+                _granted = _roll if _remain is None else max(0, min(_roll, _remain))
+                summon_plan[_ei] = _granted
+                summon_plan.setdefault('_requested', {})[_ei] = _roll
+                if _granted < _roll and not _block_reason:
+                    _block_reason = _reason or f'{_tmpl_name}名额不足'
+            if not any(v for k, v in summon_plan.items() if isinstance(k, int)):
+                return f'{char.name} 无法召唤：{_block_reason or "召唤限制"}\n'
+
+        # Per-caster non-stackable zone limit, if configured by the effect.
+        _zone_limit = next((e.get('领域同时上限') for e in spell.get('effects', [])
+                            if e.get('type') == 8 and e.get('领域同时上限')), 0)
+        if _zone_limit:
+            active = [e for e in self._get_effects() if e.get('type') == 'zone'
+                      and e.get('spellName') == spell.get('name')
+                      and self._resolve_uid(e.get('sourceUserId', '')) == self._resolve_uid(caster_id)
+                      and (e.get('remainingRounds', 0) > 0 or e.get('sourceBound'))]
+            if len(active) >= int(_zone_limit):
+                return f'{char.name} 的【{spell["name"]}】已存在，无法重复施放。\n'
+
+        revive_effects = [e for e in spell.get('effects', []) if e.get('type') == 19]
+        if revive_effects and not any(self._revive_candidates(caster_id, e) for e in revive_effects):
+            return f'{char.name} 没有符合条件的复活目标！\n'
 
         # MP cost: support dice expressions and formulas
         mp_cost_raw = spell.get('消耗mp', 0)
@@ -4020,17 +5662,20 @@ class CombatEngine:
         elif mp_formula == 'ceil_2d6_div_2':
             mp_cost = max(1, (roll_dice('2d6') + 1) // 2)
         elif mp_formula == 'summon_count_ceil_half':
-            # Roll count once, store for type 5 handler to reuse
+            # 数量已在纯召唤计划里掷过；按实际获准数量计费（非法术对象共享状态）
             summon_eff = next((e for e in spell.get('effects',[]) if e.get('type')==5), None)
             if summon_eff:
-                count_raw = summon_eff.get('召唤个数', 1)
-                if isinstance(count_raw, str) and 'd' in str(count_raw):
-                    pre_count = roll_dice(str(count_raw))
+                _ei = spell.get('effects', []).index(summon_eff)
+                if _ei in summon_plan:
+                    pre_count = summon_plan[_ei]
                 else:
-                    pre_count = int(count_raw) if count_raw else 1
-                mp_cost = max(1, (pre_count + 1) // 2)
-                # Store pre-rolled count so type 5 handler reuses it
-                spell['_pre_rolled_count'] = pre_count
+                    count_raw = summon_eff.get('召唤个数', 1)
+                    if isinstance(count_raw, str) and 'd' in str(count_raw):
+                        pre_count = roll_dice(str(count_raw))
+                    else:
+                        pre_count = int(count_raw) if count_raw else 1
+                    summon_plan[_ei] = pre_count
+                mp_cost = max(1, (pre_count + 1) // 2) if pre_count else 0
             else:
                 mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
         elif spell.get('_mp_formula_transformed') and getattr(char, 'hs_transformed', False):
@@ -4054,13 +5699,36 @@ class CombatEngine:
 
         # ── 射程检查: type=1 敌方效果 (MP扣除前) ──
         dmg_effs = [e for e in spell.get('effects', []) if e.get('type') == 1
-                    and str(e.get('客体', 0)).upper() in ('4', '5', '45', 'R', 'RP')]
+                    and str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')]
         _orig_coord = ''
         if dmg_effs:
             atk_range = _get_attack_range(spell_effect=dmg_effs[0])
             can_atk, _orig_coord = self._move_to_attack_range(caster_id, target_id, atk_range)
             if not can_atk:
                 return f'{char.name} 无法接近目标！（射程={atk_range}）'
+
+        # ── consume_moon（月光王座）：伤害 = 月能×damage_moon_mult，消耗全部月能并销毁月亮 ──
+        # 必须在 MP 扣除之前结算：无月亮时禁止施放且不消耗任何资源；
+        # 有月亮时一次性消耗（多个伤害效果/满值穿透都不会重复扣）。
+        for _cm_eff in spell.get('effects', []):
+            if _cm_eff.get('consume_moon'):
+                caster_entry_cm = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+                caster_team_cm = caster_entry_cm.get('team', 'Y') if caster_entry_cm else 'Y'
+                moons_cm = self._find_summons_by_field(caster_team_cm, 'replenish_allies')
+                if not moons_cm:
+                    return f'{char.name} 无虚假之月，无法释放【{spell["name"]}】！\n'
+                moon_char_cm = moons_cm[0][1]
+                moon_mp_cm = moon_char_cm.get_attr('魔力', 0) or 0
+                if moon_mp_cm <= 0:
+                    return f'{char.name} 月能为0，无法释放【{spell["name"]}】！\n'
+                mult_cm = _cm_eff.get('damage_moon_mult', 5)
+                spell['_moon_dmg'] = max(1, int(moon_mp_cm * mult_cm))
+                # 消耗全部月能并销毁虚假之月
+                moon_uid_cm = moons_cm[0][0]
+                moon_char_cm.set_attr('魔力', 0)
+                self._set_combat_hp(moon_uid_cm, 0)
+                out += f'  消耗全部月能 {moon_mp_cm} → 月光王座伤害 {spell["_moon_dmg"]}！虚假之月消逝...\n'
+                break
 
         # Check counter cost (rings, etc.)
         cost_ct = spell.get('cost_counter_type', '')
@@ -4161,6 +5829,12 @@ class CombatEngine:
             cur_san = char.get_attr('理智', 50)
             char.set_attr('理智', max(0, cur_san - san_cost)); out += f'  消耗 {san_cost} SAN\n'
 
+        # Commit one-per-battle only after target and resource validation.
+        if once_required:
+            consumed = getattr(char, '_once_consumed', set())
+            consumed.add(once_name)
+            char._once_consumed = consumed
+
         # ── 吟唱系统：若法术有吟唱回合 > 0，创建 chanting 效果，不立即执行效果 ──
         chant_rounds = spell.get('吟唱回合', 0) or 0
         if chant_rounds > 0:
@@ -4198,405 +5872,564 @@ class CombatEngine:
             if len(dmg_effs_all) > 1:
                 targets = set()
                 for de in dmg_effs_all:
-                    tgt = target_id  # all effects use the same target_id
-                    targets.add(tgt)
-                if len(targets) == 1:
+                    # 按各 effect 自己的客体解析，不能假定共享 target_id
+                    resolved = self._resolve_effect_targets(caster_id, target_id, de)
+                    targets.add(tuple(self._resolve_uid(t) for t in resolved))
+                if len(targets) == 1 and len(next(iter(targets))) == 1:
                     # Store multiplier so damage handlers can apply it
                     spell['_same_target_mult_active'] = stm
                     out += f'  同一目标加成: ×{stm}\n'
+                else:
+                    spell.pop('_same_target_mult_active', None)
 
-        for eff in spell.get('effects', []):
-            ct = eff['type']
-            if ct == 1:  # Damage
-                out += self._handle_spell_damage_effect(caster_id, target_id, eff, spell)
+        # ── 构造逐 effect × 逐目标的执行计划 ──
+        # 先全部解析再执行：任意一个 effect 需要外部反应（PvP）时，剩余计划可续跑，
+        # 不同 effect 的目标互不污染。
+        plan = []
+        for eff_idx, eff in enumerate(spell.get('effects', [])):
+            if eff.get('type') in (1, 2, 3, 4):
+                eff_targets = self._resolve_effect_targets(caster_id, target_id, eff)
+                if not eff_targets:
+                    tname_eff = self._parse_target_codes(eff)
+                    out += f'  [类别{eff.get("letter", eff_idx)}] 没有合法目标（客体={"/".join(tname_eff)}），跳过\n'
+                    continue
+                for _tid in eff_targets:
+                    plan.append((eff_idx, _tid))
+            else:
+                plan.append((eff_idx, None))
+
+        self._spell_plan_mp_cost = mp_cost
+        self._spell_plan_summon_plan = summon_plan
+        # Snapshot ordinary-buff action ceilings (zone auras excluded) so a
+        # zone cast/membership change never reissues or claws back actions.
+        pre_max = {}
+        for _e in self._get_initiative():
+            _base = self._resolve_uid(_e['userId'])
+            if _base not in pre_max:
+                pre_max[_base] = self._calc_main_actions(_base, include_zone=False)
+        self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)
+        # 计划执行完毕后重新读取输出（_execute_spell_plan 内部维护累积输出）
+        out = self._spell_plan_output
+        if once_required:
+            ledger = getattr(self, '_revive_use_ledger', None)
+            if ledger is None:
+                ledger = set(); self._revive_use_ledger = ledger
+            ledger.add(once_key)
+            char._once_consumed = set(getattr(char, '_once_consumed', set()) or ()) | {once_name}
+            cooldown = max([int(spell.get('cooldown_rounds', 0) or 0)] +
+                           [int(e.get('cooldown_rounds', 0) or 0) for e in spell.get('effects', [])])
+            if cooldown > 0:
+                cooldowns = self._get_effects()
+                cooldowns.append({'type': 'cooldown', 'remainingRounds': cooldown,
+                    'spellName': once_name, 'spellIndex': spell.get('index', 0),
+                    'sourceUserId': caster_id, 'targetUserId': caster_id, 'persistent': 0})
+                self._set_effects(cooldowns)
+
+        # ── MOV变化同步行动数（仅普通 buff 部分，按实际执行前的上限求差）──
+        # 每个 effect 可能改变不同单位，统一对全场刷新一次，避免额外行动数不一致
+        seen_lookup = set()
+        for _e in self._get_initiative():
+            _base = self._resolve_uid(_e['userId'])
+            if _base in seen_lookup:
                 continue
-            elif ct == 2:  # Shield
-                sv = roll_dice(eff.get('护盾值','1d4')); dur = eff.get('持续回合',1)
-                effects = self._get_effects()
-                shield_entry = {'type':'shield','value':sv,'remainingRounds':dur,'sourceUserId':caster_id,
-                    'targetUserId':target_id or caster_id,'spellName':spell['name'],
-                    'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)}
-                if is_passive_spell:
-                    shield_entry['sourcePassive'] = True
-                effects.append(shield_entry)
-                self._set_effects(effects); out += f'  获得 {sv} 点护盾 ({eff.get("护盾值","1d4")})\n'
+            seen_lookup.add(_base)
+            self._sync_actions_from_mov(
+                _base,
+                old_max=pre_max.get(_base),
+                new_max=self._calc_main_actions(_base, include_zone=False))
 
-            elif ct == 3:  # Heal (HP/SAN/MP with caps)
-                tid = target_id or caster_id
-                hp_heal = int(roll_dice(eff.get('回复hp','0')) * self._get_buff_heal_pct(tid, 'hp'))
-                hp_heal += self._get_buff_heal_flat(tid, 'hp')  # AUX code 8
-                san_heal = roll_dice(eff.get('回复san','0'))
-                mp_heal = int(roll_dice(eff.get('回复mp','0')) * self._get_buff_heal_pct(tid, 'mp'))
-                mp_heal += self._get_buff_heal_flat(tid, 'mp')  # AUX code 6
-                tchar = self.get_char(tid)
-                if hp_heal > 0:
-                    chp = self._hp_safe(tid, 10)
-                    if chp <= 0 and not self._is_dying(tid):
-                        out += f'  目标已死亡，无法治疗\n'
-                    else:
-                        mhp = tchar.get_attr('体力上限', chp) if tchar else chp
-                        # Dying: heal excess damage first
-                        dying_eff = self._is_dying(tid)
-                        if dying_eff:
-                            excess = dying_eff.get('excessDamage', 0)
-                            healed_excess = min(hp_heal, excess)
-                            dying_eff['excessDamage'] = excess - healed_excess
-                            hp_heal -= healed_excess
-                            if dying_eff['excessDamage'] <= 0 and hp_heal > 0:
-                                chp = hp_heal
-                                self._set_combat_hp(tid, chp)
-                                # Remove dying effect — re-fetch effects to minimize write-after-read window
-                                effs = [e for e in list(self._get_effects()) if e is not dying_eff]
-                                self._set_effects(effs)
-                                out += f'  脱离濒死！回复 HP: {chp}\n'
-                            else:
-                                out += f'  治愈濒死伤害 {healed_excess}点 (剩余{dying_eff["excessDamage"]})\n'
-                        else:
-                            actual_hp = min(chp+hp_heal, mhp); overflow_hp = max(0, (chp+hp_heal) - mhp)
-                            self._set_combat_hp(tid, actual_hp); out += f'  回复 HP +{hp_heal} ({eff.get("回复hp","0")})\n'
-                            # 事象的馈赠：溢出HP充能月能 (1:1)
-                            if overflow_hp > 0 and self._has_moon_buff(tid):
-                                entry = next((e for e in self._get_initiative() if e['userId'] == tid), None)
-                                if entry:
-                                    charged = self._charge_moon_energy(entry.get('team', 'Y'), overflow_hp)
-                                    if charged > 0: out += f'  月能充能 (HP溢出): +{charged}\n'
-                if san_heal > 0:
-                    cs = tchar.get_attr('理智', 50) if tchar else 50
-                    tchar.set_attr('理智', min(cs+san_heal, 99)); out += f'  回复 SAN +{san_heal}\n'
-                if mp_heal > 0:
-                    cm = tchar.get_attr('魔力', 0) if tchar else 0
-                    mx = tchar.get_attr('魔力上限', cm) if tchar else cm
-                    actual_mp = min(cm+mp_heal, mx); overflow_mp = max(0, (cm+mp_heal) - mx)
-                    tchar.set_attr('魔力', actual_mp); out += f'  回复 MP +{mp_heal}\n'
-                    # 事象的馈赠：溢出MP充能月能 (1:1)
-                    if overflow_mp > 0 and self._has_moon_buff(tid):
-                        entry = next((e for e in self._get_initiative() if e['userId'] == tid), None)
-                        if entry:
-                            charged = self._charge_moon_energy(entry.get('team', 'Y'), overflow_mp)
-                            if charged > 0: out += f'  月能充能 (MP溢出): +{charged}\n'
+        return out
 
-            elif ct == 4:  # Buff (with auxCode)
-                dur = eff.get('持续回合',1); aux_type = _eff_get(eff, 'auxType')
-                aux_code = AUX_NAME_TO_CODE.get(aux_type, 0)
-                aux_val = _eff_get(eff, 'auxVal')
-                stackable = eff.get('可叠加', 0)
-                tid = target_id or caster_id
-                is_control_status = aux_type in CONTROL_STATUS_TYPES
-                effects = self._get_effects()
-                # Dedup: control statuses match on targetUserId+auxType only (ignore spellName)
-                # Other AUX match on targetUserId+spellName+auxType
-                existing = None
-                if not stackable:
-                    for e in effects:
-                        if e.get('type') != 'buff' or e.get('targetUserId') != tid:
-                            continue
-                        if is_control_status:
-                            if e.get('auxType') == aux_type:
-                                existing = e; break
-                        else:
-                            if e.get('spellName') == spell['name'] and e.get('auxType') == aux_type:
-                                existing = e; break
-                if existing:
-                    existing['remainingRounds'] = max(existing.get('remainingRounds', 0), dur)
-                    # For 减速: also refresh auxVal (multiplier) when duration is refreshed
-                    if is_control_status and aux_type == '减速':
-                        existing['auxVal'] = aux_val
-                    out += f'  刷新辅助效果: {aux_type} {aux_val} (延长至{existing["remainingRounds"]}回合)\n'
-                else:
-                    bonus_dmg = eff.get('伤害骰', '')
-                    buff_entry = {'type':'buff','remainingRounds':dur,'skillMod':eff.get('技能加减值',''),
-                        'auxType':aux_type,'auxVal':aux_val,'auxCode':aux_code,
-                        'sourceUserId':caster_id,'targetUserId':tid,
-                        'spellName':spell['name'],'spellIndex':spell['index'],
-                        'persistent':spell.get('默认延续性',0),
-                        'stackable':stackable,
-                        'exclude': eff.get('exclude', [])}
-                    if bonus_dmg:
-                        buff_entry['bonusDmgDice'] = bonus_dmg
-                    if is_passive_spell:
-                        buff_entry['sourcePassive'] = True
-                    # 击晕: auxVal is attack protection switch (0/1), duration from 持续回合
-                    # 减速: auxVal is MOV multiplier, duration from 持续回合
-                    # Other control statuses: auxVal is duration in rounds
-                    effects.append(buff_entry)
-                    bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
-                    out += f'  施加辅助效果: {aux_type} {aux_val}{bonus_note}\n'
-                self._set_effects(effects)
-                # charge_moon: spell-level moon energy charging
-                charge_moon = spell.get('charge_moon', '')
-                if charge_moon:
-                    caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-                    if caster_entry:
-                        amt = roll_dice(str(charge_moon)) if isinstance(charge_moon, str) else int(charge_moon)
-                        charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), amt)
-                        if charged > 0: out += f'  月能充能 ({spell["name"]}): +{charged}\n'
+    def _execute_spell_plan(self, caster_id, target_id, spell, plan,
+                            is_passive_spell, out=''):
+        """Execute a pre-resolved [(effect_index, target_uid), ...] plan in order.
 
-            elif ct == 5:  # Summon — handled by subclass
-                # Use pre-rolled count from MP calculation if available
-                pre_rolled = spell.get('_pre_rolled_count')
-                if pre_rolled is not None:
-                    count = pre_rolled
-                    del spell['_pre_rolled_count']  # Clean up
-                else:
-                    count_raw = eff.get('召唤个数',1)
-                    if isinstance(count_raw, str) and 'd' in str(count_raw):
-                        count = roll_dice(str(count_raw))
-                    else:
-                        count = int(count_raw) if count_raw else 1
-                tmpl = eff.get('召唤物模板','')
-                # Check ignite flag on effect for Phase 2 summons; read params from chData
-                ignite = eff.get('ignite', False)
-                ignite_dmg_dice = eff.get('ignite_dmg_dice', '2d4')
-                ignite_tick_dmg = eff.get('ignite_tick_dmg', 3)
-                # Shared initiative roll for same-template batch summons
-                shared_s_roll = None
-                if count > 1:
-                    shared_s_roll, _ = roll_d100("")
-                for _ in range(count):
-                    sid = self._create_summon(caster_id, tmpl,
-                        summon_group=tmpl if count > 1 else None,
-                        shared_roll=shared_s_roll, shared_rank=None)
-                    if sid:
-                        # Set initial MP from spell cost for unlimited_mp summons
-                        tmpls_c = _SUMMON_TEMPLATES
-                        if tmpls_c is None:
-                            from characters_data import SUMMON_TEMPLATES as tmpls_c
-                        tmpl_data_c = tmpls_c.get(tmpl, {}) if tmpls_c else {}
-                        if tmpl_data_c.get('unlimited_mp'):
-                            s_char = self.get_char(sid)
-                            s_char.set_attr('魔力', mp_cost)
-                    if ignite and sid:
-                        # Mark newly created summon as ignited (check initiative + summon_members)
-                        il = self._get_initiative()
-                        found = False
-                        for e in il:
-                            if e['userId'] == sid:
-                                e['ignited'] = True
-                                e['ignite_dmg_dice'] = ignite_dmg_dice
-                                e['ignite_tick_dmg'] = ignite_tick_dmg
-                                if e.get('skills'):
-                                    for s in e['skills']:
-                                        s['dice'] = ignite_dmg_dice
-                                e['dmg_dice'] = ignite_dmg_dice
-                                found = True; break
-                        if not found and sid in self._summon_members:
-                            self._summon_members[sid]['ignited'] = True
-                            self._summon_members[sid]['ignite_dmg_dice'] = ignite_dmg_dice
-                            self._summon_members[sid]['ignite_tick_dmg'] = ignite_tick_dmg
-                            sm_skills = self._summon_members[sid].get('skills', [])
-                            for s in sm_skills:
+        If an item needs external resolution it raises SpellInterrupted with
+        the *remaining* plan attached, so PvP can resume without replaying
+        already-resolved effects or re-charging costs.
+        """
+        self._spell_plan_output = out
+        idx = 0
+        try:
+            while idx < len(plan):
+                eff_idx, tid = plan[idx]
+                eff = spell['effects'][eff_idx]
+                ct = eff['type']
+                if ct in (1, 2, 3, 4):
+                    self._spell_plan_output += self._apply_target_effect(
+                        caster_id, tid, eff, spell, is_passive_spell, eff_idx)
+                    if ct == 4:
+                        self._finish_buff_charge(caster_id, spell)
+                elif ct == 5:
+                    self._spell_plan_output += self._execute_summon_effect(
+                        caster_id, target_id, eff, spell, is_passive_spell)
+                elif ct in (6, 7, 8, 9, 10, 11, 13, 14, 17, 18, 19):
+                    self._spell_plan_output += self._execute_misc_effect(
+                        caster_id, target_id, eff, spell, is_passive_spell, eff_idx)
+                idx += 1
+        except SpellInterrupted as e:
+            # 附带剩余计划；调用方（PvP）在反应结算后调用 resume
+            e.data['spell_plan'] = [list(p) for p in plan[idx + 1:]]
+            e.data['spell_plan_caster'] = caster_id
+            e.data['spell_plan_passive'] = is_passive_spell
+            # 已结算效果/头部输出 + 本 effect 的前置检定行，合并给调用方展示
+            prior = (self._spell_plan_output or '').rstrip('\n')
+            own = list(e.data.get('prefix_lines') or [])
+            merged = (prior.split('\n') if prior else []) + own
+            e.data['prefix_lines'] = merged
+            raise
+        return self._spell_plan_output
+
+    def resume_spell_plan(self, state):
+        """Continue a paused spell plan after a PvP reaction (or no reaction).
+
+        Returns only the *new* output; the caller has already displayed
+        state['prefix_lines'] (header + check lines) separately.
+        """
+        plan = state.get('spell_plan') or []
+        spell = state.get('spell') or {}
+        caster_id = state.get('spell_plan_caster') or state.get('atk_uid')
+        if not plan or not spell or not caster_id:
+            return ''
+        target_id = state.get('def_uid')
+        return self._execute_spell_plan(
+            caster_id, target_id, spell, [tuple(p) for p in plan],
+            bool(state.get('spell_plan_passive')), '')
+
+    def _finish_buff_charge(self, caster_id, spell):
+        charge_moon = spell.get('charge_moon', '')
+        if not charge_moon:
+            return
+        caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
+        if caster_entry:
+            amt = roll_dice(str(charge_moon)) if isinstance(charge_moon, str) else int(charge_moon)
+            charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), amt)
+            if charged > 0:
+                self._spell_plan_output += f'  月能充能 ({spell["name"]}): +{charged}\n'
+
+    def _execute_summon_effect(self, caster_id, target_id, eff, spell, is_passive_spell):
+        """Summon effect body (extracted from _execute_spell for resumable plans)."""
+        out = ''
+        summon_plan = getattr(self, '_spell_plan_summon_plan', {}) or {}
+        mp_cost = getattr(self, '_spell_plan_mp_cost', 0) or 0
+        _eff_idx = spell.get('effects', []).index(eff)
+        if _eff_idx in summon_plan:
+            count = summon_plan[_eff_idx]
+        else:
+            count_raw = eff.get('召唤个数',1)
+            if isinstance(count_raw, str) and 'd' in str(count_raw):
+                count = roll_dice(str(count_raw))
+            else:
+                count = int(count_raw) if count_raw else 1
+            # 创建层仍按名额截断，避免直接调用/延迟路径超配
+            _remain, _ = self._get_summon_quota(caster_id, eff.get('召唤物模板',''))
+            if _remain is not None:
+                count = max(0, min(count, _remain))
+        tmpl = eff.get('召唤物模板','')
+        # Check ignite flag on effect for Phase 2 summons; read params from chData
+        ignite = eff.get('ignite', False)
+        ignite_dmg_dice = eff.get('ignite_dmg_dice', '2d4')
+        ignite_tick_dmg = eff.get('ignite_tick_dmg', 3)
+        # Shared initiative roll for same-template batch summons
+        shared_s_roll = None
+        if count > 1:
+            shared_s_roll, _ = roll_d100("")
+        for _ in range(count):
+            sid = self._create_summon(caster_id, tmpl,
+                summon_group=tmpl if count > 1 else None,
+                shared_roll=shared_s_roll, shared_rank=None)
+            if sid:
+                # Set initial MP from spell cost for unlimited_mp summons
+                tmpls_c = _SUMMON_TEMPLATES
+                if tmpls_c is None:
+                    from characters_data import SUMMON_TEMPLATES as tmpls_c
+                tmpl_data_c = tmpls_c.get(tmpl, {}) if tmpls_c else {}
+                if tmpl_data_c.get('unlimited_mp'):
+                    s_char = self.get_char(sid)
+                    s_char.set_attr('魔力', mp_cost)
+            if ignite and sid:
+                # Mark newly created summon as ignited (check initiative + summon_members)
+                il = self._get_initiative()
+                found = False
+                for e in il:
+                    if e['userId'] == sid:
+                        e['ignited'] = True
+                        e['ignite_dmg_dice'] = ignite_dmg_dice
+                        e['ignite_tick_dmg'] = ignite_tick_dmg
+                        if e.get('skills'):
+                            for s in e['skills']:
                                 s['dice'] = ignite_dmg_dice
-                        if found:
-                            self._set_initiative(il)
-                # ── Re-sync all initiative slots after batch summon creation ──
-                # Each _create_summon calls _ensure_dynamic_slots → _sync_initiative_slots,
-                # but re-sorting in each call can interact with cache; a final sync ensures
-                # all summons (and existing entities) have correct _suppressed flags.
-                self._sync_all_initiative_slots()
-                cnt_detail = f'{count_raw}={count}' if isinstance(count_raw, str) and 'd' in str(count_raw) else str(count)
-                out += f'  召唤 {cnt_detail} 个【{tmpl or "使魔"}】\n'
-                # Generic cooldown support (C1)
-                cooldown = eff.get('cooldown_rounds', 0)
-                if cooldown > 0:
-                    effects = self._get_effects()
-                    effects.append({'type': 'cooldown', 'remainingRounds': cooldown,
-                        'spellName': spell['name'], 'spellIndex': spell['index'],
-                        'sourceUserId': caster_id, 'targetUserId': caster_id,
-                        'persistent': 0})
-                    self._set_effects(effects)
+                        e['dmg_dice'] = ignite_dmg_dice
+                        found = True; break
+                if not found and sid in self._summon_members:
+                    self._summon_members[sid]['ignited'] = True
+                    self._summon_members[sid]['ignite_dmg_dice'] = ignite_dmg_dice
+                    self._summon_members[sid]['ignite_tick_dmg'] = ignite_tick_dmg
+                    sm_skills = self._summon_members[sid].get('skills', [])
+                    for s in sm_skills:
+                        s['dice'] = ignite_dmg_dice
+                if found:
+                    self._set_initiative(il)
+        # ── Re-sync all initiative slots after batch summon creation ──
+        # Each _create_summon calls _ensure_dynamic_slots → _sync_initiative_slots,
+        # but re-sorting in each call can interact with cache; a final sync ensures
+        # all summons (and existing entities) have correct _suppressed flags.
+        self._sync_all_initiative_slots()
+        _requested = None
+        if isinstance(summon_plan.get('_requested'), dict):
+            _requested = summon_plan['_requested'].get(_eff_idx)
+        if _requested is not None and _requested != count:
+            out += f'  召唤 {tmpl or "使魔"} ×{count}（请求{_requested}，受数量上限截断）\n'
+        else:
+            out += f'  召唤 {count} 个【{tmpl or "使魔"}】\n'
+        # Generic cooldown support (C1)
+        cooldown = eff.get('cooldown_rounds', 0)
+        if cooldown > 0:
+            effects = self._get_effects()
+            effects.append({'type': 'cooldown', 'remainingRounds': cooldown,
+                'spellName': spell['name'], 'spellIndex': spell['index'],
+                'sourceUserId': caster_id, 'targetUserId': caster_id,
+                'persistent': 0})
+            self._set_effects(effects)
+        return out
 
-            elif ct == 6:  # Create
-                count_raw = eff.get('制造个数',1); cr_raw = eff.get('制造花费回合数',0)
-                # Support dice formulas like '1d2+1' for count/rounds
-                if isinstance(count_raw, str) and 'd' in str(count_raw):
-                    count = roll_dice(str(count_raw))
-                else:
-                    count = int(count_raw) if count_raw else 1
-                if isinstance(cr_raw, str) and 'd' in str(cr_raw):
-                    cr = roll_dice(str(cr_raw))
-                else:
-                    cr = int(cr_raw) if cr_raw else 0
-                effects = self._get_effects()
-                for cc in range(count):
-                    effects.append({'type':'create','craftId':f"craft_{spell['index']}_{cc}",
-                        'template':eff.get('制造物模板',''),'remainingRounds':eff.get('持续回合',0),
-                        'craftRoundsRemaining':cr,'sourceUserId':caster_id,
-                        'targetUserId':target_id or caster_id,'spellName':spell['name'],
-                        'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)})
-                self._set_effects(effects); out += f'  开始制造 {count} 个（{cr}回合）\n'
+    def _select_revive_candidate(self, caster_id, candidates):
+        owners = {g.get('originalOwnerId') or g.get('ownerId') for g in candidates if g.get('isSummon')}
+        for g in candidates:
+            if not g.get('isSummon') and g.get('uid') in owners:
+                return g
+        return sorted(candidates, key=lambda g: (g.get('isSummon', False), g.get('round', 0)))[0]
 
-            elif ct == 7:  # Trigger
-                ts = eff.get('引发目标法术',0); delay = eff.get('引发延迟回合',0)
-                effects = self._get_effects()
-                effects.append({'type':'trigger','remainingRounds':delay,'triggerSpellIndex':ts,
-                    'sourceSpellIndex':spell['index'],'sourceSpellName':spell['name'],
-                    'sourceUserId':caster_id,'spellName':spell['name'],'spellIndex':spell['index'],
-                    'persistent':spell.get('默认延续性',0)})
-                self._set_effects(effects); out += f'  引发法术已设置: {delay}回合后→技能{ts}\n'
+    def _execute_personal_feast(self, caster_id, eff, spell, craft_rounds):
+        il = self._get_initiative(); team = self._battle_team_of(caster_id)
+        targets = []
+        seen = set()
+        for entry in il:
+            if entry.get('isSummon') or entry.get('team') != team:
+                continue
+            uid = self._resolve_uid(entry.get('userId', ''))
+            if uid in seen or self._get_combat_hp(uid) is None or (self._get_combat_hp(uid) <= 0 and not self._is_dying(uid)):
+                continue
+            seen.add(uid); targets.append(uid)
+        if not targets:
+            return '  没有可分配的队友\n'
+        # The caster is always the self slot, regardless of initiative order.
+        caster_base = self._resolve_uid(caster_id)
+        targets.sort(key=lambda uid: (uid != caster_base, uid))
+        n = len(targets); total_cfg = eff.get('分发给总数公式') or {'每人': 2, '加': -1}
+        per_ally = int(eff.get('分发队友每人', total_cfg.get('每人', 2)) or 0)
+        self_keep = int(eff.get('分发自留', 1) or 0)
+        cap = int(eff.get('分发给总数上限', 6) or 6)
+        override = (eff.get('分发人数覆盖') or {}).get(str(n), (eff.get('分发人数覆盖') or {}).get(n, {}))
+        if override:
+            self_keep = int(override.get('分发自留', self_keep)); per_ally = int(override.get('分发队友每人', per_ally))
+        if n == 1:
+            portions = {targets[0]: int(override.get('分发自留', 3) if override else 3)}
+        elif n == 2:
+            portions = {targets[0]: self_keep, targets[1]: per_ally}
+        else:
+            portions = {uid: (self_keep if i == 0 else per_ally) for i, uid in enumerate(targets)}
+            formula_total = max(0, int(total_cfg.get('每人', per_ally)) * n + int(total_cfg.get('加', 0)))
+            desired_total = min(cap, formula_total)
+            excess = max(0, sum(portions.values()) - desired_total)
+            if excess and portions[targets[0]]:
+                removed = min(excess, portions[targets[0]])
+                portions[targets[0]] -= removed
+                excess -= removed
+            while excess > 0:
+                eligible = [uid for uid in targets[1:] if portions[uid] > 0]
+                if not eligible:
+                    return '  款待配置无法满足总量公式，未消耗资源\n'
+                uid = random.choice(eligible)
+                portions[uid] -= 1
+                excess -= 1
+            shortfall = desired_total - sum(portions.values())
+            while shortfall > 0:
+                eligible = [uid for uid in targets[1:] if portions[uid] < per_ally]
+                if not eligible:
+                    break
+                uid = random.choice(eligible)
+                portions[uid] += 1
+                shortfall -= 1
+        item_name = eff.get('制造物模板', '')
+        # One effect makes one cake type; multi-effect feasts call this once per effect.
+        for uid, amount in portions.items():
+            if amount <= 0: continue
+            meta = {'sourceUserId': self._resolve_uid(caster_id), 'sourceTeam': team}
+            if eff.get('消费追加回复hp'):
+                meta['消费追加回复hp'] = eff.get('消费追加回复hp')
+                if eff.get('tasteBonusOwnerSerial'):
+                    meta['tasteBonusOwnerSerial'] = eff.get('tasteBonusOwnerSerial')
+            self.add_item_to_inventory(uid, item_name, amount, metadata=meta)
+        return f'  款待分发 {item_name} ×{sum(portions.values())}（按个人库存）\n'
 
-            elif ct == 8:  # Zone
-                radius = eff.get('作用半径',0); dur = eff.get('持续回合',1)
-                tick_dmg = eff.get('每回合伤害骰',''); tick_heal_hp = eff.get('回复hp','')
-                tick_heal_mp = eff.get('回复mp',''); cf = eff.get('领域中心跟随',0)
-                of = eff.get('客体',35); ad = eff.get('属性削减','')
-                # Find caster position for center
-                center = 'A1'
-                map_data = self._get_map()
-                if map_data:
-                    for c, occ in map_data.get('occupants',{}).items():
-                        if occ == caster_id: center = c; break
-                effects = self._get_effects()
-                zone_entry = {'type':'zone','center':center,'radius':radius,'remainingRounds':dur,
-                    'tickDmg':tick_dmg,'tickHealHp':tick_heal_hp,'tickHealMp':tick_heal_mp,
-                    'centerFollows':cf,'filter':of,'attributeDebuff':ad,
-                    'sourceUserId':caster_id,'spellName':spell['name'],'spellIndex':spell['index'],
-                    'persistent':spell.get('默认延续性',0),
-                    'stackable':eff.get('可叠加',0)}
-                if is_passive_spell:
-                    zone_entry['sourcePassive'] = True
-                effects.append(zone_entry)
+    def _execute_misc_effect(self, caster_id, target_id, eff, spell, is_passive_spell, eff_idx=0):
+        """Non-targeted effect types (craft/trigger/zone/...), extracted for plans."""
+        out = ''
+        char = self.get_char(caster_id)
+        ct = eff['type']
+        if ct == 6:  # Create
+            count_raw = eff.get('制造个数',1); cr_raw = eff.get('制造花费回合数',0)
+            # Support dice formulas like '1d2+1' for count/rounds
+            if isinstance(count_raw, str) and 'd' in str(count_raw):
+                count = roll_dice(str(count_raw))
+            else:
+                count = int(count_raw) if count_raw else 1
+            if isinstance(cr_raw, str) and 'd' in str(cr_raw):
+                cr = roll_dice(str(cr_raw))
+            else:
+                cr = int(cr_raw) if cr_raw else 0
+            if eff.get('制造分发') == 'personal_split':
+                return self._execute_personal_feast(caster_id, eff, spell, cr)
+            effects = self._get_effects()
+            for cc in range(count):
+                effects.append({'type':'create','craftId':f"craft_{spell['index']}_{cc}",
+                    'template':eff.get('制造物模板',''),'remainingRounds':eff.get('持续回合',0),
+                    'craftRoundsRemaining':cr,'sourceUserId':caster_id,
+                    'sourceTeam':self._battle_team_of(caster_id),
+                    'targetUserId':target_id or caster_id,'spellName':spell['name'],
+                    'spellIndex':spell['index'],'persistent':spell.get('默认延续性',0)})
+            self._set_effects(effects); out += f'  开始制造 {count} 个（{cr}回合）\n'
+        elif ct == 19:  # Data-configured revive
+            candidates = self._revive_candidates(caster_id, eff)
+            # An explicit selection is single-use: clear it after this effect.
+            self._revive_selected_uid = None
+            if not candidates:
+                return '  没有符合条件的复活目标\n'
+            target = self._select_revive_candidate(caster_id, candidates)
+            hp = self._restore_graveyard_unit(caster_id, target, eff)
+            out += f'  复活 {target.get("name", target["uid"])}，HP恢复至 {hp}\n'
+
+        elif ct == 7:  # Trigger
+            ts = eff.get('引发目标法术',0); delay = eff.get('引发延迟回合',0)
+            effects = self._get_effects()
+            effects.append({'type':'trigger','remainingRounds':delay,'triggerSpellIndex':ts,
+                'sourceSpellIndex':spell['index'],'sourceSpellName':spell['name'],
+                'sourceUserId':caster_id,'spellName':spell['name'],'spellIndex':spell['index'],
+                'persistent':spell.get('默认延续性',0)})
+            self._set_effects(effects); out += f'  引发法术已设置: {delay}回合后→技能{ts}\n'
+
+        elif ct == 8:  # Zone
+            radius = eff.get('作用半径',0); dur = eff.get('持续回合',1)
+            tick_dmg = eff.get('每回合伤害骰',''); tick_heal_hp = eff.get('回复hp','')
+            tick_heal_mp = eff.get('回复mp',''); cf = eff.get('领域中心跟随',0)
+            of = eff.get('客体',35); ad = eff.get('属性削减','')
+            # AUX / named modifiers living on the zone itself (live range view)
+            raw_aux_type = _eff_get(eff, 'auxType') or ''
+            aux_val = _eff_get(eff, 'auxVal') or ''
+            aux_code = AUX_NAME_TO_CODE.get(raw_aux_type, 0)
+            skill_mod = eff.get('技能加减值', '') or ''
+            effect_key = str(eff.get('letter', eff_idx))
+            unsupported = []
+            aux_type = raw_aux_type
+            if raw_aux_type:
+                if raw_aux_type in CONTROL_STATUS_TYPES:
+                    unsupported.append(f'{raw_aux_type}(控制状态)')
+                    aux_type, aux_val, aux_code = '', '', 0
+                elif aux_code not in ZONE_AUX_CODES:
+                    unsupported.append(f'{raw_aux_type}(不支持持续领域)')
+                    aux_type, aux_val, aux_code = '', '', 0
+            if str(of).upper().strip() in ('R', 'RP'):
+                unsupported.append('R/RP(随机目标)不作为领域过滤')
+            # Find caster position for center
+            center = 'A1'
+            map_data = self._get_map()
+            if map_data:
+                for c, occ in map_data.get('occupants',{}).items():
+                    if occ == caster_id: center = c; break
+            effects = self._get_effects()
+            caster_base = self._resolve_uid(caster_id)
+            active_same = [e for e in effects if e.get('type') == 'zone'
+                           and self._resolve_uid(e.get('sourceUserId', '')) == caster_base
+                           and e.get('spellName') == spell['name']
+                           and (e.get('remainingRounds', 0) > 0 or e.get('sourceBound'))]
+            zone_limit = int(eff.get('领域同时上限', 0) or 0)
+            if zone_limit and len(active_same) >= zone_limit:
+                self._spell_plan_output += f'  【{spell["name"]}】已达到同时存在上限，本次未消耗资源。\n'
+                return out
+            zone_entry = {'type':'zone','center':center,'radius':radius,'remainingRounds':dur,
+                'tickDmg':tick_dmg,'tickHealHp':tick_heal_hp,'tickHealMp':tick_heal_mp,
+                'centerFollows':cf,'filter':of,'attributeDebuff':ad,
+                'sourceUserId':caster_id,'sourceTeam':self._battle_team_of(caster_id),
+                'spellName':spell['name'],'spellIndex':spell['index'],
+                'persistent':spell.get('默认延续性',0),
+                'stackable':eff.get('可叠加',0),
+                'ally_safe':eff.get('ally_safe',0),
+                'skillMod':skill_mod,'auxType':aux_type,'auxVal':aux_val,'auxCode':aux_code,
+                'effectKey':effect_key,
+                'on_enter_mp_drain_pct':eff.get('on_enter_mp_drain_pct',0),
+                'on_enter_attr_debuff':eff.get('on_enter_attr_debuff',''),
+                'on_enter_trigger_rate':eff.get('on_enter_trigger_rate',1.0),
+                'sourceBound': int(bool(eff.get('来源存活绑定'))),
+                'dyingFirstAid': int(bool(eff.get('领域急救'))),
+                'roundPulsesRemaining': int(eff.get('领域轮首结算次数', dur) or 0),
+                'healedTargets': {'hp': {}, 'mp': {}},
+                'creationRound': int((self._get_state() or {}).get('round', 1))}
+            if eff.get('来源存活绑定') and is_passive_spell:
+                zone_entry['sourcePassive'] = True
+            effects.append(zone_entry)
+            self._set_effects(effects)
+            immediate = int(eff.get('领域立即结算', 0) or 0)
+            if immediate and (tick_heal_hp or tick_heal_mp):
+                result_rows = []
+                self._settle_zone_heals(zone_entry, self._get_initiative(), result_rows,
+                                        allow_dying=bool(eff.get('领域急救')),
+                                        pulse_id=f"cast{(self._get_state() or {}).get('round', 1)}")
                 self._set_effects(effects)
-                dur_text = '' if dur >= 99 else f' 持续{dur}回合'
-                out += f'  创建领域【{spell["name"]}】（半径{radius}格{dur_text}，中心{center}）\n'
+                self._zone_tick_results = getattr(self, '_zone_tick_results', []) + result_rows
+            dur_text = f' ({dur} rounds)' if dur < 99 else ''
+            out += 'Zone created, radius=%s%s, center=%s' % (radius, dur_text, center) + chr(10)
+            for item in unsupported:
+                out += '领域辅助效果不生效: %s' % item + chr(10)
+            if skill_mod:
+                out += 'Zone modifier: %s' % skill_mod + chr(10)
+            if aux_type:
+                out += 'Zone auxiliary: %s %s' % (aux_type, aux_val) + chr(10)
 
-            elif ct == 9:  # hpTrigger — HP threshold phase transition
-                thresholds = eff.get('hp_thresholds', [])
-                target_phase = eff.get('target_phase', 2)
-                trigger_san_cost = eff.get('消耗san', '2d6')
-                effects = self._get_effects()
-                effects.append({
-                    'type': 'hpTrigger',
-                    'sourceUserId': caster_id,
-                    'targetUserId': caster_id,
-                    'thresholds': thresholds,
-                    'targetPhase': target_phase,
-                    'triggerSanCost': trigger_san_cost,
-                    'triggered': False,
-                    'spellName': spell['name'],
-                    'spellIndex': spell['index'],
-                    'persistent': 1,
-                    'remainingRounds': 999,
-                })
-                self._set_effects(effects)
-                out += f'  阶段转换已准备: HP阈值触发 ({len(thresholds)}级)\n'
+        elif ct == 9:  # hpTrigger — HP threshold phase transition
+            thresholds = eff.get('hp_thresholds', [])
+            target_phase = eff.get('target_phase', 2)
+            trigger_san_cost = eff.get('消耗san', '2d6')
+            effects = self._get_effects()
+            effects.append({
+                'type': 'hpTrigger',
+                'sourceUserId': caster_id,
+                'targetUserId': caster_id,
+                'thresholds': thresholds,
+                'targetPhase': target_phase,
+                'triggerSanCost': trigger_san_cost,
+                'triggered': False,
+                'spellName': spell['name'],
+                'spellIndex': spell['index'],
+                'persistent': 1,
+                'remainingRounds': 999,
+            })
+            self._set_effects(effects)
+            out += f'  阶段转换已准备: HP阈值触发 ({len(thresholds)}级)\n'
 
-            elif ct == 10:  # delayedHeal — scheduled over N rounds
-                heal_amount = eff.get('回复总量', 0)
-                heal_rounds = eff.get('持续回合', 3)
-                per_round = max(1, heal_amount // heal_rounds) if heal_rounds > 0 else heal_amount
-                effects = self._get_effects()
-                effects.append({
-                    'type': 'delayedHeal',
-                    'remainingRounds': heal_rounds,
-                    'healPerRound': per_round,
-                    'totalHeal': heal_amount,
-                    'healed': 0,
-                    'sourceUserId': caster_id,
-                    'targetUserId': target_id or caster_id,
-                    'spellName': spell['name'],
-                    'spellIndex': spell['index'],
-                    'persistent': 0,
-                })
-                self._set_effects(effects)
-                out += f'  延迟回复: 共{heal_amount}HP, 每回合{per_round}HP ({heal_rounds}回合)\n'
+        elif ct == 10:  # delayedHeal — scheduled over N rounds
+            heal_amount = eff.get('回复总量', 0)
+            heal_rounds = eff.get('持续回合', 3)
+            per_round = max(1, heal_amount // heal_rounds) if heal_rounds > 0 else heal_amount
+            effects = self._get_effects()
+            effects.append({
+                'type': 'delayedHeal',
+                'remainingRounds': heal_rounds,
+                'healPerRound': per_round,
+                'totalHeal': heal_amount,
+                'healed': 0,
+                'sourceUserId': caster_id,
+                'targetUserId': target_id or caster_id,
+                'spellName': spell['name'],
+                'spellIndex': spell['index'],
+                'persistent': 0,
+            })
+            self._set_effects(effects)
+            out += f'  延迟回复: 共{heal_amount}HP, 每回合{per_round}HP ({heal_rounds}回合)\n'
 
-            elif ct == 11:  # battleSpirit — 战意值光环 (环花暖)
-                effects = self._get_effects()
-                effects.append({
-                    'type': 'battleSpirit',
-                    'sourceUserId': caster_id,
-                    'persistent': 1,
-                    'remainingRounds': 999,
-                    'spellName': spell['name'],
-                    'spellIndex': spell['index'],
-                })
-                self._set_effects(effects)
-                out += f'  战意值光环已激活\n'
+        elif ct == 11:  # battleSpirit — 战意值光环 (环花暖)
+            effects = self._get_effects()
+            bs_entry = {
+                'type': 'battleSpirit',
+                'sourceUserId': caster_id,
+                'sourceTeam': self._battle_team_of(caster_id),
+                'persistent': 1,
+                'remainingRounds': 999,
+                'spellName': spell['name'],
+                'spellIndex': spell['index'],
+            }
+            # Per-source tuning lives in the CharacterData effect; only carry keys
+            # that were actually declared so the generic defaults stay intact.
+            for key in ('战意初始层数', '战意削弱概率', '战意削弱概率奖励层',
+                        '战意奖励骰阈值', '战意惩罚1阈值', '战意惩罚2阈值', '战意惩罚骰上限'):
+                val = _eff_get(eff, key)
+                if val not in (None, ''):
+                    bs_entry[key] = val
+            effects.append(bs_entry)
+            self._set_effects(effects)
+            out += f'  战意值光环已激活\n'
 
-            elif ct == 13:  # deathPrevention — 残机替身
-                effects = self._get_effects()
+        elif ct == 13:  # deathPrevention — 残机替身
+            effects = self._get_effects()
+            effects.append({
+                'type': 'deathPrevention', 'sourceUserId': caster_id, 'targetUserId': caster_id,
+                'respawn_hp': eff.get('respawn_hp', 1), 'respawn_radius': eff.get('respawn_radius', 3),
+                'eject_phases': eff.get('eject_phases', []), 'once_per_transform': eff.get('once_per_transform', True),
+                'remainingRounds': eff.get('持续回合', 999), 'persistent': spell.get('默认延续性', 0),
+                'spellName': spell['name'], 'spellIndex': spell['index'],
+            })
+            if is_passive_spell:
+                effects[-1]['sourcePassive'] = True
+            self._set_effects(effects)
+            out += f'  获得残机替身（死亡时以1HP重生）\n'
+
+        elif ct == 14:  # resourceCounter — 计数器
+            effects = self._get_effects()
+            # Check if counter already exists (update it)
+            existing = None
+            for e in effects:
+                if e.get('type') == 'resourceCounter' and e.get('targetUserId') == (target_id or caster_id) \
+                   and e.get('counter_type') == eff.get('counter_type', ''):
+                    existing = e; break
+            if existing:
+                existing['max_value'] = max(existing.get('max_value', 0), eff.get('max_value', 999))
+                mod_delta = eff.get('mod_delta', 0)
+                if mod_delta:
+                    existing['current_value'] = min(existing['max_value'], existing.get('current_value', 0) + mod_delta)
+            else:
                 effects.append({
-                    'type': 'deathPrevention', 'sourceUserId': caster_id, 'targetUserId': caster_id,
-                    'respawn_hp': eff.get('respawn_hp', 1), 'respawn_radius': eff.get('respawn_radius', 3),
-                    'eject_phases': eff.get('eject_phases', []), 'once_per_transform': eff.get('once_per_transform', True),
+                    'type': 'resourceCounter', 'counter_type': eff.get('counter_type', ''),
+                    'sourceUserId': caster_id, 'targetUserId': target_id or caster_id,
+                    'max_value': eff.get('max_value', 999), 'current_value': eff.get('current_value', 0),
                     'remainingRounds': eff.get('持续回合', 999), 'persistent': spell.get('默认延续性', 0),
                     'spellName': spell['name'], 'spellIndex': spell['index'],
                 })
                 if is_passive_spell:
                     effects[-1]['sourcePassive'] = True
-                self._set_effects(effects)
-                out += f'  获得残机替身（死亡时以1HP重生）\n'
+            self._set_effects(effects)
+            out += f'  初始化 {eff.get("counter_type","")} 计数器 (max={eff.get("max_value",999)})\n'
 
-            elif ct == 14:  # resourceCounter — 计数器
-                effects = self._get_effects()
-                # Check if counter already exists (update it)
-                existing = None
-                for e in effects:
-                    if e.get('type') == 'resourceCounter' and e.get('targetUserId') == (target_id or caster_id) \
-                       and e.get('counter_type') == eff.get('counter_type', ''):
-                        existing = e; break
-                if existing:
-                    existing['max_value'] = max(existing.get('max_value', 0), eff.get('max_value', 999))
-                    mod_delta = eff.get('mod_delta', 0)
-                    if mod_delta:
-                        existing['current_value'] = min(existing['max_value'], existing.get('current_value', 0) + mod_delta)
-                else:
-                    effects.append({
-                        'type': 'resourceCounter', 'counter_type': eff.get('counter_type', ''),
-                        'sourceUserId': caster_id, 'targetUserId': target_id or caster_id,
-                        'max_value': eff.get('max_value', 999), 'current_value': eff.get('current_value', 0),
-                        'remainingRounds': eff.get('持续回合', 999), 'persistent': spell.get('默认延续性', 0),
-                        'spellName': spell['name'], 'spellIndex': spell['index'],
-                    })
-                    if is_passive_spell:
-                        effects[-1]['sourcePassive'] = True
-                self._set_effects(effects)
-                out += f'  初始化 {eff.get("counter_type","")} 计数器 (max={eff.get("max_value",999)})\n'
+        elif ct == 17:  # stateToggle — 形态/武器切换
+            target_phase = eff.get('target_phase', 0)
+            weapon_state = eff.get('weapon_state', '')
+            if target_phase:
+                self._transition_phase(caster_id, target_phase)
+                out += f'  切换到阶段 {target_phase}\n'
+            if weapon_state:
+                char.set_attr('_weapon_state', {'staff': 0, 'bow': 1, 'sword': 2}.get(weapon_state, 0))
+                char.set_str('_weapon_name', weapon_state)
+                out += f'  切换武器为 {weapon_state}\n'
 
-            elif ct == 17:  # stateToggle — 形态/武器切换
-                target_phase = eff.get('target_phase', 0)
-                weapon_state = eff.get('weapon_state', '')
-                if target_phase:
-                    self._transition_phase(caster_id, target_phase)
-                    out += f'  切换到阶段 {target_phase}\n'
-                if weapon_state:
-                    char.set_attr('_weapon_state', {'staff': 0, 'bow': 1, 'sword': 2}.get(weapon_state, 0))
-                    char.set_str('_weapon_name', weapon_state)
-                    out += f'  切换武器为 {weapon_state}\n'
-
-            elif ct == 18:  # allyTeleport — 传送至友方身边
-                ally = self.get_char(target_id)
-                if ally:
-                    caster_char = self.get_char(caster_id)
-                    # Find ally position on map
-                    ally_coord = None
-                    map_data = self._get_map()
-                    if map_data:
-                        for c, occ in map_data.get('occupants', {}).items():
-                            if occ == target_id: ally_coord = c; break
-                    if ally_coord:
-                        # Move caster to ally's position (if unoccupied or replace)
-                        caster_coord = None
-                        for c, occ in list(map_data.get('occupants', {}).items()):
-                            if occ == caster_id: caster_coord = c; break
-                        if caster_coord and caster_coord in map_data.get('occupants', {}):
-                            del map_data['occupants'][caster_coord]
-                        map_data['occupants'][ally_coord] = caster_id
-                        self._set_map(map_data)
-                        out += f'  {caster_char.name} 传送至 {ally.name} 身边\n'
-
-        # ── MOV变化同步行动数 ──
-        self._sync_actions_from_mov(caster_id)
-        if target_id and target_id != caster_id:
-            self._sync_actions_from_mov(target_id)
+        elif ct == 18:  # allyTeleport — 传送至友方身边
+            ally = self.get_char(target_id)
+            if ally:
+                caster_char = self.get_char(caster_id)
+                # Find ally position on map
+                ally_coord = None
+                map_data = self._get_map()
+                if map_data:
+                    for c, occ in map_data.get('occupants', {}).items():
+                        if occ == target_id: ally_coord = c; break
+                if ally_coord:
+                    # Move caster to ally's position (if unoccupied or replace)
+                    caster_coord = None
+                    for c, occ in list(map_data.get('occupants', {}).items()):
+                        if occ == caster_id: caster_coord = c; break
+                    if caster_coord and caster_coord in map_data.get('occupants', {}):
+                        del map_data['occupants'][caster_coord]
+                    map_data['occupants'][ally_coord] = caster_id
+                    self._set_map(map_data)
+                    out += f'  {caster_char.name} 传送至 {ally.name} 身边\n'
 
         return out
 
     def _apply_spell_damage(self, caster_id, target_id, dmg_dice, pen, leth,
                              lifesteal_ratio=0, dot_dice='', dur=0, spell_name='',
-                             spell_index=0, atk_rank=1, atk_roll=0, spell=None):
+                             spell_index=0, atk_rank=1, atk_roll=0, spell=None,
+                             moon_drain=0):
         """Apply direct spell damage to target. Shared by base and reaction paths.
         When atk_rank > 1, applies COC7 rank-based damage (rank 2=advantage, rank 3=max/pen, rank 4=×2).
+        moon_drain: 月相吸取（moon_phase）— 目标实际受伤后等量治疗施法者（上限 体力上限）。
         Returns output string for the damage application step."""
         out = ''
         # AUX 30: 月相的庇佑 — 免疫一次伤害
@@ -4683,6 +6516,17 @@ class CombatEngine:
             self._set_combat_hp(caster_id, min(chp + heal, mhp))
             out += f'  吸血回复 {heal} HP\n'
 
+        # 月相吸取（moon_phase）：目标实际受伤后等量治疗施法者（上限 体力上限）
+        if moon_drain > 0 and eff_dmg > 0:
+            c_char_md = self.get_char(caster_id)
+            chp_md = self._get_combat_hp(caster_id)
+            if chp_md and chp_md > 0:
+                mhp_md = c_char_md.get_attr('体力上限', chp_md) or chp_md
+                heal_md = min(moon_drain, max(0, mhp_md - chp_md))
+                if heal_md > 0:
+                    self._set_combat_hp(caster_id, chp_md + heal_md)
+                    out += f'  月相吸取: {c_char_md.name} 回复 {heal_md} HP\n'
+
         # On-kill effects: trigger if target died
         target_dead = cur_hp <= 0
         caster_char = self.get_char(caster_id) if caster_id else None
@@ -4722,6 +6566,21 @@ class CombatEngine:
             if dot_dice: out += f'  持续伤害: 每回合 {dot_dice} ({max(dur, 1)}回合)\n'
         return out
 
+    def _roll_spell_success_bp(self, caster_id, eff, spell=None):
+        """Roll an effect's success check with attacker-side bonus/penalty dice.
+
+        The effect-inherent 成功率奖惩骰 is folded together with the caster's
+        active buffs (generic AUX16/17/18) into one net count. An effect may
+        opt out of the caster's buffs with 忽略全局奖惩骰=1, keeping only its
+        own declared dice.
+        """
+        ignore_global = str(eff.get('忽略全局奖惩骰', 0)).strip() == '1'
+        caster_buffs = [] if ignore_global else self._get_active_buffs(caster_id)
+        skill_name = (spell or {}).get('name', '') or eff.get('技能名', '')
+        inherent = eff.get('成功率奖惩骰', 0) or 0
+        bp = _calc_net_bp(caster_buffs, '', skill_name, extra_tokens=[inherent])
+        return roll_d100(bp)
+
     def _handle_spell_damage_effect(self, caster_id, target_id, eff, spell):
         """Execute a single type==1 damage effect. Returns output string.
         Base implementation: success rate -> direct damage (no reaction).
@@ -4732,6 +6591,9 @@ class CombatEngine:
         # ── New damage formulas (computed before _resolve_db) ──
         if eff.get('damage_fixed'):
             dmg_dice = str(eff['damage_fixed'])
+        elif eff.get('damage_moon_mult'):
+            # 月光王座：伤害 = 月能×倍率（月能已在 _execute_spell 一次性消耗并存于 spell['_moon_dmg']）
+            dmg_dice = str(spell.get('_moon_dmg', 1) if spell else 1)
         elif eff.get('damage_mp_multiplier'):
             mp_spent = spell.get('_actual_mp_cost', 0) if spell else 0
             dmg_val = mp_spent * eff['damage_mp_multiplier']
@@ -4752,6 +6614,13 @@ class CombatEngine:
                 cur_hp_raw = self._get_combat_hp(caster_id) or 1
                 dmg_val = max(1, cur_hp_raw * eff['damage_pct_caster_cur_hp'] // 100)
                 dmg_dice = str(dmg_val)
+        elif eff.get('damage_table') == 'moon_phase':
+            # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
+            # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            dmg_dice = phase_dice
+            eff['_moon_drain'] = roll_dice(phase_dice) if phase_drain else 0
+            out += f'  月相判定: {phase_name}（伤害骰 {phase_dice}）\n'
         dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
@@ -4786,9 +6655,10 @@ class CombatEngine:
                     if writing_val > 0:
                         w_uid_hz = phantom_owner_hz or caster_id
                         caster_buffs = self._get_active_buffs(w_uid_hz)
-                        bp_str = _calc_net_bp(caster_buffs, '', None)
+                        bp_str = _calc_net_bp(caster_buffs, '', '写作')
                         roll, bp_detail = roll_d100(bp_str)
-                        w_rank = success_rank(roll, writing_val)
+                        w_rank = success_rank(
+                            roll, self._apply_buff_skill_mod(w_uid_hz, writing_val, '写作'))
                         if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
                         elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
                         elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
@@ -4819,8 +6689,8 @@ class CombatEngine:
         is_friendly = False
         if friend_behavior:
             il = self._get_initiative()
-            ce = next((e for e in il if e['userId'] == caster_id), None)
-            te = next((e for e in il if e['userId'] == target_id), None)
+            ce = self._unit_il_entry(caster_id, il)
+            te = self._unit_il_entry(target_id, il)
             is_friendly = ce and te and ce.get('team') == te.get('team')
 
         # Success rate check with COC7 rank
@@ -4843,18 +6713,7 @@ class CombatEngine:
                 _, sr = char.get_best_melee()
                 sr = max(1, sr)  # Ensure at least 1 to force a roll
         if sr > 0:
-            atk_rank = 4; check_roll = 1  # will be overwritten by roll below
-            sr_bp_raw = eff.get('成功率奖惩骰', 0) or 0
-            if isinstance(sr_bp_raw, int):
-                if sr_bp_raw > 0:
-                    sr_bp = 'b' + (str(sr_bp_raw) if sr_bp_raw > 1 else '')
-                elif sr_bp_raw < 0:
-                    sr_bp = 'p' + (str(abs(sr_bp_raw)) if abs(sr_bp_raw) > 1 else '')
-                else:
-                    sr_bp = ''
-            else:
-                sr_bp = str(sr_bp_raw) if sr_bp_raw else ''
-            check_roll, bp_detail = roll_d100(sr_bp)
+            check_roll, bp_detail = self._roll_spell_success_bp(caster_id, eff, spell)
             bp_str = f', {bp_detail}' if bp_detail else ''
             crit_pct, crit_flat = self._get_buff_crit_adjustment(caster_id)
             atk_rank = success_rank(check_roll, sr, crit_pct, crit_flat)
@@ -4922,86 +6781,131 @@ class CombatEngine:
             out += self._apply_spell_damage(caster_id, target_id, dmg_dice, pen, leth,
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
-                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell)
+                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell,
+                                            moon_drain=eff.get('_moon_drain', 0))
         return out
 
     # ---- Battle Spirit processing (环花暖 passive) ----
     def _process_battle_spirit(self):
-        """Process 战意值 for enemy summons. Called each round from _tick_down.
-        - Enemy summons start at 5 stacks
-        - 50% chance to reduce 1 stack per round (bonus die at ≤3)
-        - 4 stacks→1 penalty die, 2 stacks→2 penalty dice, 0→flee"""
+        """Process 战意值 for enemy summon groups. Called each round from _tick_down.
+
+        State lives on the stable summon group, not on whichever member currently
+        holds the initiative slot: representative changes keep their stacks, and
+        a group is processed once per round even with several active sources.
+        All numbers come from the source's CharacterData type-11 effect.
+        """
         effects = self._get_effects()
-        # Check if any battleSpirit effect is active
-        bs_active = any(e.get('type') == 'battleSpirit' for e in effects)
-        if not bs_active:
+        sources = []
+        il = self._get_initiative()
+        for eff in effects:
+            if eff.get('type') != 'battleSpirit':
+                continue
+            src = self._resolve_uid(eff.get('sourceUserId', ''))
+            if not src:
+                continue
+            src_entry = next((e for e in il if self._resolve_uid(e['userId']) == src), None)
+            if src_entry is None or (self._get_combat_hp(src) or 0) <= 0:
+                continue  # 来源阵亡/离场：光环停止
+            if self._has_status(src, '隔离'):
+                continue
+            sources.append((src, _eff_get(eff, 'sourceTeam') or src_entry.get('team', 'Y'), eff))
+        if not sources:
             return []
 
         msgs = []
-        il = self._get_initiative()
-        # Find 环花暖's team
-        bs_source = next((e.get('sourceUserId') for e in effects if e.get('type') == 'battleSpirit'), None)
-        if not bs_source:
-            return msgs
-        bs_entry = next((e for e in il if e['userId'] == bs_source), None)
-        bs_team = bs_entry.get('team', 'Y') if bs_entry else 'Y'
-
-        for entry in il:
-            if not entry.get('isSummon'):
-                continue
-            if entry.get('team') == bs_team:
-                continue  # Only affect enemy summons
-            uid = entry['userId']
-            if (self._get_combat_hp(uid) or 0) <= 0:
-                continue
-
-            # Initialize battle spirit if not present
-            if 'battle_spirit' not in entry:
-                entry['battle_spirit'] = 5
-                msgs.append(f"战意值: {entry.get('name',uid)} 获得 5 层战意值")
-                continue
-
-            bs = entry['battle_spirit']
-            if bs <= 0:
-                continue
-
-            # Check reduction: 50% base, bonus die at ≤3
-            success = False
-            if bs <= 3:
-                # Bonus die: roll twice, take lower
-                r1 = random.randint(1, 100)
-                r2 = random.randint(1, 100)
-                success = min(r1, r2) <= 50
-            else:
-                success = random.randint(1, 100) <= 50
-
-            if success:
-                entry['battle_spirit'] -= 1
-                bs = entry['battle_spirit']
-                msgs.append(f"战意值: {entry.get('name',uid)} 削弱至 {bs} 层")
-
-                if bs <= 0:
-                    # 脱战: remove from battle
-                    msgs.append(f"战意值: {entry.get('name',uid)} 战意归零，脱战！")
-                    self._set_combat_hp(uid, 0)
+        processed = set()
+        for src, src_team, eff in sources:
+            cfg = self._battle_spirit_config(eff)
+            for key in list(self._summon_groups):
+                grp = self._summon_groups.get(key)
+                if not grp or key in processed:
                     continue
-
-            # Apply penalty dice at thresholds
-            old_pens = entry.get('battle_spirit_penalty_dice', 0)
-            new_pens = 0
-            if bs <= 2:
-                new_pens = 2
-            elif bs <= 4:
-                new_pens = 1
-
-            if new_pens != old_pens:
-                entry['battle_spirit_penalty_dice'] = new_pens
-                if new_pens > 0:
-                    pen_label = 'p' if new_pens == 1 else 'p2'
-                    msgs.append(f"战意值: {entry.get('name',uid)} 获得 {new_pens} 惩罚骰 ({pen_label})")
-
-        self._set_initiative(il)
+                if self._summon_group_team(key) == src_team:
+                    continue  # 只影响敌方召唤组
+                members = [m for m in grp.get('members', [])
+                           if (self._get_combat_hp(m) or 0) > 0]
+                if not members:
+                    continue
+                processed.add(key)
+                label = grp.get('template_name', key)
+                stacks = grp.get('battle_spirit')
+                if stacks is None:
+                    grp['battle_spirit'] = cfg['initial']
+                    msgs.append(f"战意值: {label} 获得 {cfg['initial']} 层战意值")
+                    continue
+                if stacks <= 0:
+                    continue
+                rate = cfg['rate'] if stacks > cfg['bonus_threshold'] else cfg['rate_bonus']
+                success = random.randint(1, 100) <= rate
+                if success:
+                    grp['battle_spirit'] = stacks - 1
+                    stacks = grp['battle_spirit']
+                    msgs.append(f"战意值: {label} 削弱至 {stacks} 层")
+                    if stacks <= 0:
+                        msgs.append(f"战意值: {label} 战意归零，整组撤离战场！")
+                        grp['battle_spirit_penalty_dice'] = 0
+                        self._withdraw_summon_group(key, reason='battle_spirit')
+                        continue
+                old_pens = grp.get('battle_spirit_penalty_dice', 0)
+                new_pens = 0
+                if stacks <= cfg['penalty2_threshold']:
+                    new_pens = 2
+                elif stacks <= cfg['penalty1_threshold']:
+                    new_pens = 1
+                new_pens = min(new_pens, cfg['penalty_max'])
+                if new_pens != old_pens:
+                    grp['battle_spirit_penalty_dice'] = new_pens
+                    if new_pens > 0:
+                        pen_label = 'p' if new_pens == 1 else f'p{new_pens}'
+                        msgs.append(f"战意值: {label} 获得 {new_pens} 惩罚骰 ({pen_label})")
         return msgs
+
+    def _battle_spirit_config(self, eff):
+        """Per-source battle-spirit parameters, all declared in CharacterData."""
+        def num(key, default):
+            try:
+                return int(float(_eff_get(eff, key)))
+            except (TypeError, ValueError):
+                return default
+        return {
+            'initial': num('战意初始层数', 5),
+            'rate': num('战意削弱概率', 50),
+            'rate_bonus': num('战意削弱概率奖励层', 50),
+            'bonus_threshold': num('战意奖励骰阈值', 3),
+            'penalty1_threshold': num('战意惩罚1阈值', 4),
+            'penalty2_threshold': num('战意惩罚2阈值', 2),
+            'penalty_max': num('战意惩罚骰上限', 2),
+        }
+
+    def _summon_group_team(self, group_key):
+        grp = self._summon_groups.get(group_key) or {}
+        for m in grp.get('members', []):
+            mdata = self._summon_members.get(m) or {}
+            if mdata.get('team'):
+                return mdata['team']
+        entry = self._unit_il_entry(group_key, self._get_initiative())
+        return (entry or {}).get('team', 'Y')
+
+    def _withdraw_summon_group(self, group_key, reason='battle_spirit'):
+        """Remove a whole summon group from battle without recording deaths."""
+        grp = self._summon_groups.pop(group_key, None)
+        if not grp:
+            return
+        members = set(grp.get('members', [])) | {group_key, grp.get('representative_uid', group_key)}
+        for uid in members:
+            self._summon_members.pop(uid, None)
+        self._replace_initiative_preserving_actor(
+            [e for e in self._get_initiative()
+             if self._resolve_uid(e.get('userId', '')) not in members])
+        md = self._get_map()
+        if md:
+            md['occupants'] = {c: uid for c, uid in md.get('occupants', {}).items()
+                               if self._resolve_uid(uid) not in members}
+            self._set_map(md)
+        acts = self._get_actions()
+        for uid in members:
+            acts.pop(uid, None)
+        self._set_actions(acts)
 
     # ---- HP Threshold Trigger & Phase System ----
     def _check_hp_triggers(self):
@@ -5024,7 +6928,8 @@ class CombatEngine:
             # Check thresholds in descending order (highest ratio first)
             for t in sorted(thresholds, key=lambda x: x['ratio'], reverse=True):
                 if ratio <= t['ratio']:
-                    # Roll success check
+                    # Trigger rate is a probability roll, not a skill check;
+                    # D100-check buffs must not perturb it.
                     if random.randint(1, 100) <= t['rate']:
                         eff['triggered'] = True
                         msgs.append(f"HP降至{ratio*100:.0f}%（阈值{t['ratio']*100:.0f}%），触发阶段转换！")
@@ -5121,8 +7026,32 @@ class CombatEngine:
 
     # ---- Tick-down (unified) ----
     def _tick_down(self):
+        previous = getattr(self, '_settling_round', False)
+        self._settling_round = True
+        try:
+            return self._tick_down_effects()
+        finally:
+            self._settling_round = previous
+
+    def _tick_down_effects(self):
         effects = self._get_effects(); init_list = self._get_initiative()
         msgs = []; new_effects = []
+
+        # Configured zone first-aid resolves before the dying CON save of this round.
+        urgent_rows = []
+        for zone in effects:
+            if zone.get('type') != 'zone' or not zone.get('dyingFirstAid'):
+                continue
+            if zone.get('remainingRounds', 0) == 0 and not zone.get('sourceBound'):
+                continue
+            if zone.get('sourceBound') and not self._zone_caster_coord(zone, init_list):
+                continue
+            self._settle_zone_heals(zone, init_list, urgent_rows, allow_dying=True,
+                                    dying_only=True, pulse_id=f"r{(self._get_state() or {}).get('round', 1)}")
+        if urgent_rows:
+            self._set_effects(effects)
+        msgs.extend(f"{r['target_name']} 被治疗领域急救，HP恢复 {r['amount']}" for r in urgent_rows
+                    if r.get('type') == 'heal_hp' and (r.get('amount') or r.get('absorbed_excess')))
 
         # Check HP threshold triggers at start of round
         hp_msgs = self._check_hp_triggers()
@@ -5159,7 +7088,8 @@ class CombatEngine:
                     # Died in dying state
                     char = self.get_char(uid)
                     msgs.append(f"{char.name} 在濒死第{rnd}回合安息了...")
-                    self._remove_summons_of_owner(uid)
+                    self._record_graveyard_entry(uid, reason='dying_failed')
+                    self._remove_summons_of_owner(uid, record_collateral=True)
                     # Mark for removal
                     eff['remainingRounds'] = -1
 
@@ -5193,13 +7123,18 @@ class CombatEngine:
                     msgs.append(f"持续伤害【{eff.get('spellName','')}】→ {eff['dotDice']}={dot_dmg}，造成{remaining}点伤害(HP:{max(0,cur_hp)})")
                     if cur_hp <= 0:
                         # Remove dead target + their summons from initiative
-                        target_entry = next((e for e in init_list if e['userId'] == eff['targetUserId']), None)
+                        target_entry = self._unit_il_entry(eff['targetUserId'], self._get_initiative())
                         if target_entry and not target_entry.get('isSummon'):
                             self._remove_summons_of_owner(eff['targetUserId'])
                             msgs.append(f"目标因持续伤害死亡，召唤物一同清除！")
+                        elif self._get_summon_group(eff['targetUserId']):
+                            self._reconcile_summon_groups()
+                            msgs.append(f"目标因持续伤害死亡，维护召唤组！")
                         else:
-                            self._set_initiative([e for e in init_list if e['userId'] != eff['targetUserId']])
+                            self._replace_initiative_preserving_actor(
+                                [e for e in self._get_initiative() if e['userId'] != eff['targetUserId']])
                             msgs.append(f"目标因持续伤害死亡，退出战斗！")
+                        init_list = self._get_initiative()
 
             # Delayed heal processing
             if eff.get('type') == 'delayedHeal' and eff.get('targetUserId'):
@@ -5303,7 +7238,22 @@ class CombatEngine:
                     new_effects.append(eff)
                     continue
 
-            # linked_summon: buff expires when linked summon no longer exists on caster's team
+                # Source-bound passive zones live for the source's active lifetime.
+                # Isolation pauses membership without consuming any duration.
+                if eff.get('type') == 'zone' and eff.get('sourceBound'):
+                    source_uid = eff.get('sourceUserId', '')
+                    source_entry = self._unit_il_entry(source_uid, self._get_initiative()) if source_uid else None
+                    source_alive = bool(source_entry and (self._get_combat_hp(source_uid) or 0) > 0)
+                    if not source_alive:
+                        msgs.append(f"光环领域【{eff.get('spellName','')}】因来源离场而消散")
+                        continue
+                    if eff.get('sourcePassive') and self._has_status(source_uid, '隔离'):
+                        new_effects.append(eff)
+                        continue
+                    new_effects.append(eff)
+                    continue
+
+                # linked_summon: buff expires when linked summon no longer exists on caster's team
             linked_summon = eff.get('linked_summon', '')
             if linked_summon:
                 source_uid = eff.get('sourceUserId', '')
@@ -5319,6 +7269,14 @@ class CombatEngine:
                     eff['remainingRounds'] = 0  # Force expire
                 elif eff.get('remainingRounds', 0) <= 1:
                     eff['remainingRounds'] = 999  # Keep alive while summon exists
+
+            # Source-bound passive auras are lifetime-bound, not long timers.
+            if eff.get('type') == 'zone' and eff.get('sourceBound'):
+                src = eff.get('sourceUserId', '')
+                source_entry = self._unit_il_entry(src, self._get_initiative()) if src else None
+                if source_entry and (self._get_combat_hp(src) or 0) > 0:
+                    new_effects.append(eff)
+                continue
 
             # Regular countdown
             eff['remainingRounds'] = eff.get('remainingRounds',0) - 1
@@ -5344,11 +7302,39 @@ class CombatEngine:
 
         self._set_effects(new_effects)
 
+        # ── hp_threshold_grant: spend summon MP to grant AUX when ally HP is low ──
+        # 必须在 replenish_allies 之前执行：补满会把 HP 拉回上限，使 <50% 条件永远不成立。
+        for eff in effects:
+            hpt = eff.get('hp_threshold_grant')
+            if not hpt or not isinstance(hpt, dict): continue
+            tid = eff.get('targetUserId', '')
+            if not tid: continue
+            hp = self._get_combat_hp(tid)
+            if hp is None or hp <= 0: continue
+            ach = self.get_char(tid)
+            max_hp = ach.get_attr('体力上限', hp) or hp
+            hp_pct = float(hp) / float(max_hp) if max_hp > 0 else 1.0
+            if hp_pct >= hpt.get('ratio', 0.5): continue
+            # Check for existing buff of this AUX type
+            target_aux = hpt.get('aux_code', 0)
+            if any(e2.get('auxCode') == target_aux and e2.get('targetUserId') == tid
+                   and e2.get('remainingRounds', 0) > 0 for e2 in effects): continue
+            team = next((ee.get('team', 'Y') for ee in init_list if ee['userId'] == tid), 'Y')
+            cost = hpt.get('cost_moon', 0)
+            moons = self._find_summons_by_field(team, 'replenish_allies')
+            if not moons: continue
+            moon_char = moons[0][1]
+            moon_mp = moon_char.get_attr('魔力', 0) or 0
+            if moon_mp >= cost:
+                moon_char.set_attr('魔力', moon_mp - cost)
+                self._apply_immunity_buff(tid, moons[0][0])
+                msgs.append(f'hp_threshold_grant: 消耗{cost}MP，{ach.name} 获得 AUX{target_aux}！(剩余:{moon_mp - cost})')
+
         # ── replenish_allies: summon spends MP to top up allies with linked buff ──
         for entry in init_list:
             if not entry.get('isSummon'): continue
             if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
-            tmpl_data = self._summon_members.get(entry['userId'], {})
+            tmpl_data = _get_summon_template(entry.get('name', '')) or {}
             if not tmpl_data.get('replenish_allies'): continue
             moon_uid = entry['userId']
             moon_char = self.get_char(moon_uid)
@@ -5394,33 +7380,6 @@ class CombatEngine:
                     moon_char.set_attr('魔力', moon_mp)
                     msgs.append(f'{template_name} 维持消耗 {maint} MP (剩余:{moon_mp})')
 
-        # ── hp_threshold_grant: spend summon MP to grant AUX when ally HP is low ──
-        for eff in effects:
-            hpt = eff.get('hp_threshold_grant')
-            if not hpt or not isinstance(hpt, dict): continue
-            tid = eff.get('targetUserId', '')
-            if not tid: continue
-            hp = self._get_combat_hp(tid)
-            if hp is None or hp <= 0: continue
-            ach = self.get_char(tid)
-            max_hp = ach.get_attr('体力上限', hp) or hp
-            hp_pct = float(hp) / float(max_hp) if max_hp > 0 else 1.0
-            if hp_pct >= hpt.get('ratio', 0.5): continue
-            # Check for existing buff of this AUX type
-            target_aux = hpt.get('aux_code', 0)
-            if any(e.get('auxCode') == target_aux and e.get('targetUserId') == tid
-                   and e.get('remainingRounds', 0) > 0 for e2 in [e for e in effects]): continue
-            team = next((ee.get('team', 'Y') for ee in init_list if ee['userId'] == tid), 'Y')
-            cost = hpt.get('cost_moon', 0)
-            moons = self._find_summons_by_field(team, 'replenish_allies')
-            if not moons: continue
-            moon_char = moons[0][1]
-            moon_mp = moon_char.get_attr('魔力', 0) or 0
-            if moon_mp >= cost:
-                moon_char.set_attr('魔力', moon_mp - cost)
-                self._apply_immunity_buff(tid, moons[0][0])
-                msgs.append(f'hp_threshold_grant: 消耗{cost}MP，{ach.name} 获得 AUX{target_aux}！(剩余:{moon_mp - cost})')
-
         # Ignite damage: Phase 2 summons take 3 damage/turn
         for entry in init_list:
             if entry.get('ignited') and entry.get('isSummon'):
@@ -5452,6 +7411,7 @@ class CombatEngine:
                 mx = char.get_attr('魔力上限',cm) or cm
                 regen = roll_dice('2d6')
                 if regen > 0: char.set_attr('魔力', min(cm+regen, mx))
+        self._reconcile_summon_groups()
         return '\n'.join(msgs) if msgs else ''
 
     # ---- Summon system (stub — overridden by subclasses) ----
@@ -5470,22 +7430,123 @@ class CombatEngine:
     def _check_trinity_merge(self):
         pass  # Override
 
+
+    # ---- Shared zone healing ----
+    def _zone_heal_targets(self, eff, il, kind):
+        """Yield eligible (uid, entry) for a zone heal, including hidden summons."""
+        team = eff.get('sourceTeam')
+        if team is None:
+            src = eff.get('sourceUserId')
+            team = self._battle_team_of(src) if src else 'Y'
+        cp = parse_coord(self._zone_caster_coord(eff, il))
+        if not cp:
+            return []
+        radius = eff.get('radius', 0) or 0
+        picked = []
+        seen = set()
+        # Hidden summon-group members are not in initiative but are valid allies.
+        entries = list(il)
+        for sid in getattr(self, '_summon_members', {}):
+            ent = self._unit_il_entry(sid, il)
+            if ent is not None:
+                entries.append(ent)
+        for entry in entries:
+            uid = entry.get('userId', '')
+            base = self._resolve_uid(uid)
+            if base in seen:
+                continue
+            seen.add(base)
+            if entry.get('team') != team:
+                continue
+            if entry.get('isSummon') and entry.get('ignited'):
+                continue
+            ep = parse_coord(entry.get('coord', '') or '')
+            if not ep:
+                continue
+            if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > radius:
+                continue
+            if self._has_status(uid, '隔离'):
+                continue
+            if not self._zone_covers_uid(eff, uid, il):
+                continue
+            picked.append((uid, entry))
+        return picked
+
+    def _settle_zone_heals(self, eff, il, tick_results, *, allow_dying=False,
+                           dying_only=False, pulse_id=None):
+        """Settle one configured pulse once per target, HP and MP independently."""
+        pulse_id = str(pulse_id if pulse_id is not None else (self._get_state() or {}).get('round', 1))
+        healed = eff.setdefault('healedTargets', {'hp': {}, 'mp': {}})
+        spell_name = eff.get('spellName', '')
+        for kind, key in (('hp', 'tickHealHp'), ('mp', 'tickHealMp')):
+            dice = eff.get(key)
+            if not dice:
+                continue
+            done = healed.setdefault(kind, {})
+            for uid, entry in self._zone_heal_targets(eff, il, kind):
+                if dying_only and not self._is_dying(uid):
+                    continue
+                if done.get(uid) == pulse_id:
+                    continue
+                amount = roll_dice(dice)
+                if kind == 'hp':
+                    amount = int(amount * self._get_buff_heal_pct(uid, 'hp'))
+                    amount += self._get_buff_heal_flat(uid, 'hp')
+                    outcome = self._apply_hp_heal_amount(uid, amount, allow_dying=allow_dying)
+                    actual, absorbed = outcome['applied'], outcome['absorbed_excess']
+                else:
+                    amount = int(amount * self._get_buff_heal_pct(uid, 'mp'))
+                    amount += self._get_buff_heal_flat(uid, 'mp')
+                    ch = self.get_char(uid)
+                    cm = ch.get_attr('魔力', 0) or 0
+                    mx = ch.get_attr('魔力上限', cm) or cm
+                    actual = max(0, min(cm + amount, mx) - cm)
+                    ch.set_attr('魔力', cm + actual)
+                    absorbed = 0
+                done[uid] = pulse_id
+                tname = entry.get('displayName', entry.get('name', uid))
+                tick_results.append({
+                    'spell_name': spell_name, 'target_name': tname,
+                    'type': f'heal_{kind}', 'dice': dice, 'roll': amount,
+                    'amount': actual, 'absorbed_excess': absorbed,
+                    'hp': self._get_combat_hp(uid) or 0,
+                    'hp_max': self.get_char(uid).get_attr('体力上限', 1) if self.get_char(uid) else 1,
+                    'alive': True,
+                })
+
     # ---- Item/cake system (shared by both engines) ----
-    def _apply_item_heal(self, item_name, target_id):
-        """Apply an item's healing effect to target. Returns formatted result string."""
+    def _inventory_item_allowed(self, entry, owner_uid, user_uid=None, target_uid=None):
+        """Return whether an inventory stack may be used by this team."""
+        source_team = entry.get('sourceTeam')
+        if not source_team:
+            return True  # Legacy items, including starting personal inventory.
+        return source_team == self._battle_team_of(user_uid or owner_uid)
+
+    def _apply_item_heal(self, item_name, target_id, metadata=None):
+        """Apply an item's healing effect through the shared HP-heal path."""
         from characters_data import ITEM_TEMPLATES
         item = ITEM_TEMPLATES[item_name]
         tchar = self.get_char(target_id)
         tname = tchar.name if tchar else target_id
         hp_heal = int(roll_dice(item.get('回复hp', '0')) * self._get_buff_heal_pct(target_id, 'hp'))
+        hp_heal += self._get_buff_heal_flat(target_id, 'hp')
         mp_heal = int(roll_dice(item.get('回复mp', '0')) * self._get_buff_heal_pct(target_id, 'mp'))
+        mp_heal += self._get_buff_heal_flat(target_id, 'mp')
         san_heal = roll_dice(item.get('回复san', '0'))
+        meta = metadata or {}
+        # Tasting is a consumption event, not a spell: only cakes marked by
+        # the maker contribute the extra healing, and only once per cake.
+        extra_dice = meta.get('消费追加回复hp', '')
+        if extra_dice and not meta.get('消费追加已触发'):
+            hp_heal += int(roll_dice(str(extra_dice)) * self._get_buff_heal_pct(target_id, 'hp'))
+            meta['消费追加已触发'] = 1
         parts = []
         if hp_heal > 0:
-            chp = self._hp_safe(target_id, 10)
-            mhp = tchar.get_attr('体力上限', chp) if tchar else chp
-            self._set_combat_hp(target_id, min(chp + hp_heal, mhp))
-            parts.append(f'{hp_heal} HP')
+            outcome = self._apply_hp_heal_amount(target_id, hp_heal)
+            if outcome['rescued']:
+                parts.append(f"脱离濒死 +{outcome['applied']} HP")
+            elif outcome['applied']:
+                parts.append(f"{outcome['applied']} HP")
         if mp_heal > 0:
             cmp = tchar.get_attr('魔力', 0) if tchar else 0
             mx = tchar.get_attr('魔力上限', cmp) if tchar else cmp
@@ -5495,71 +7556,88 @@ class CombatEngine:
             cs = tchar.get_attr('理智', 50) if tchar else 50
             tchar.set_attr('理智', min(cs + san_heal, 99))
             parts.append(f'{san_heal} SAN')
-        # Apply buff if item template specifies one (e.g. 闪避+10 from cake)
+        # Apply buff if item template specifies one (e.g. 闪避+10 from cake).
         buff_msg = ''
         skill_mod = item.get('技能加减值', '')
+        aux_type = item.get('辅助效果', '')
+        aux_val = item.get('辅助效果值', '')
         buff_dur = item.get('buff持续回合', 0)
-        if skill_mod and buff_dur > 0:
+        if (skill_mod or aux_type) and buff_dur > 0:
             effects = self._get_effects()
-            effects.append({
-                'type': 'buff',
-                'remainingRounds': buff_dur,
-                'skillMod': skill_mod,
-                'auxType': '',
-                'auxVal': '',
-                'auxCode': 0,
-                'sourceUserId': target_id,
-                'targetUserId': target_id,
-                'spellName': f'食用【{item_name}】',
-                'spellIndex': 0,
-                'persistent': 0,
-                'stackable': 0,
-            })
+            existing = None
+            for e in effects:
+                if (e.get('type') == 'buff'
+                        and self._resolve_uid(e.get('targetUserId', '')) == self._resolve_uid(target_id)
+                        and e.get('spellName') == f'食用【{item_name}】'):
+                    existing = e; break
+            if existing:
+                existing['remainingRounds'] = max(existing.get('remainingRounds', 0), buff_dur)
+            else:
+                effects.append({
+                    'type': 'buff', 'remainingRounds': buff_dur,
+                    'skillMod': skill_mod,
+                    'auxType': aux_type, 'auxVal': aux_val,
+                    'auxCode': AUX_NAME_TO_CODE.get(aux_type, 0),
+                    'sourceUserId': target_id, 'targetUserId': target_id,
+                    'spellName': f'食用【{item_name}】', 'spellIndex': 0,
+                    'persistent': 0, 'stackable': 0,
+                })
             self._set_effects(effects)
-            buff_msg = f'，{skill_mod}({buff_dur}回合)'
-        return f"食用【{item_name}】→ {tname} 回复 {'+'.join(parts)}{buff_msg}"
+            buff_msg = f"，{skill_mod or (aux_type + ' ' + aux_val)}({buff_dur}回合)"
+        return f"食用【{item_name}】→ {tname} 回复 {'+'.join(parts) or '0'}{buff_msg}"
 
     def _eat_cake(self, eater_id, target_id=None):
-        """Consume a ready cake from inventory or shared effects pool.
-        First checks eater's personal inventory (物品栏), then falls back to
-        the shared battle effects pool (for mid-battle crafted items).
+        """Consume a usable cake from inventory, or a same-team crafted pool.
         Returns (result_text, success)."""
         from characters_data import ITEM_TEMPLATES
         tid = target_id or eater_id
+        if (self._get_combat_hp(tid) or 0) <= 0 and not self._is_dying(tid):
+            return ('目标已死亡，无法食用蛋糕', False)
 
-        # 1) Check eater's personal inventory first
+        # 1) Prefer the eater's own inventory; only same-team entries are usable.
         eater_char = self.get_char(eater_id)
         for i, entry in enumerate(eater_char.inventory):
             item_name = entry['item']
-            if item_name in ITEM_TEMPLATES and entry['count'] > 0:
-                # Consume one from inventory
-                result = self._apply_item_heal(item_name, tid)
-                entry['count'] -= 1
-                if entry['count'] <= 0:
-                    eater_char.inventory.pop(i)
+            if item_name not in ITEM_TEMPLATES or entry['count'] <= 0:
+                continue
+            if not self._inventory_item_allowed(entry, eater_id, eater_id, tid):
+                continue
+            result, ok = self._consume_inventory_item(eater_id, i, item_name, tid)
+            if ok:
                 return (result, True)
 
-        # 2) Fall back to shared effects pool (mid-battle crafted items)
+        # 2) Fall back to ready crafted items belonging to the eater's team.
+        team = self._battle_team_of(eater_id)
         effects = self._get_effects()
         for i, e in enumerate(effects):
             if e.get('type') != 'create': continue
             if e.get('craftRoundsRemaining', 1) > 0: continue
+            if e.get('sourceTeam') and e['sourceTeam'] != team: continue
             tmpl = e.get('template', '')
             if not tmpl or tmpl not in ITEM_TEMPLATES: continue
-            result = self._apply_item_heal(tmpl, tid)
+            result = self._apply_item_heal(tmpl, tid, metadata=e)
             effects.pop(i); self._set_effects(effects)
             return (result, True)
         return ("无可用的蛋糕", False)
 
-    def _has_ready_cake(self):
-        """Check if any ready cake exists (checks inventories + shared effects)."""
+    def _has_ready_cake(self, uid=None, target_id=None, item_kind=None):
+        """Check usable cakes for a team (or personal inventory for uid)."""
         from characters_data import ITEM_TEMPLATES
-        # Check all characters' inventories
-        for char in self.characters.values():
-            for entry in char.inventory:
-                if entry.get('item', '') in ITEM_TEMPLATES and entry.get('count', 0) > 0:
-                    return True
-        # Check shared effects pool
+        if uid is None:
+            for char in self.characters.values():
+                for entry in char.inventory:
+                    if entry.get('item', '') in ITEM_TEMPLATES and entry.get('count', 0) > 0:
+                        return True
+        else:
+            if self._find_personal_item(uid, item_kind=item_kind):
+                return True
+            team = self._battle_team_of(uid)
+            if any(e.get('type') == 'create' and e.get('craftRoundsRemaining', 1) <= 0
+                   and e.get('template', '') in ITEM_TEMPLATES
+                   and (not e.get('sourceTeam') or e['sourceTeam'] == team)
+                   for e in self._get_effects()):
+                return True
+            return False
         for e in self._get_effects():
             if e.get('type') == 'create' and e.get('craftRoundsRemaining', 1) <= 0:
                 if e.get('template', '') in ITEM_TEMPLATES: return True
@@ -5606,6 +7684,16 @@ class FullBattleEngine(CombatEngine):
     def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
         w, h = map(int, map_size.split("x"))
         self.group_id = f"battle_{random.randint(1000,9999)}"
+        # ── 新战斗重置召唤账本 / 分组 / unique 记录（必须在被动施放之前）──
+        self._summon_groups = {}
+        self._summon_members = {}
+        self._summon_total_spawned = {}
+        self._revive_use_ledger = set()
+        self._summoned_once = {}
+        self._summoned_templates = {}
+        self._graveyard = {}
+        for uid in team_a + team_b:
+            self.get_char(uid)._once_consumed = set()
         self._set_map({"width":w, "height":h, "entryRow":math.ceil(h/2), "obstacles":{}, "occupants":{}})
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         # Y team (left side) — single initiative entry per character
@@ -5660,8 +7748,22 @@ class FullBattleEngine(CombatEngine):
         self._set_actions(acts)
 
         self._set_state({"phase":"active", "round":1, "activeIndex":0})
+        self._resolve_inventory_sources()
         # Skip dead entries to find first valid active
         self._skip_to_valid_active()
+
+    def _resolve_inventory_sources(self):
+        """Bind starting-item provenance to its actual owner/team."""
+        for uid, char in self.characters.items():
+            if not hasattr(char, 'inventory'):
+                continue
+            owner = self._resolve_uid(uid)
+            team = self._battle_team_of(owner)
+            for entry in char.inventory:
+                if entry.get('sourceTeam') is None:
+                    entry['sourceTeam'] = team
+                if entry.get('sourceUserId') in (None, ''):
+                    entry['sourceUserId'] = owner
 
     def _skip_to_valid_active(self):
         """Advance activeIndex past dead entries without triggering round logic."""
@@ -5713,16 +7815,16 @@ class FullBattleEngine(CombatEngine):
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
         aname = achar.name; dname = dchar.name; lines = []
         # ── protect_allies_on_hit: summon's allies gain immunity when it is attacked ──
-        def_entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
+        def_entry = self._unit_il_entry(def_uid, self._get_initiative())
         if def_entry and def_entry.get('isSummon'):
-            def_tmpl = self._summon_members.get(def_uid, {})
+            def_tmpl = _get_summon_template(def_entry.get('name', '')) or {}
             if def_tmpl.get('protect_allies_on_hit'):
                 owner_id = def_entry.get('ownerId')
-                def_name = def_tmpl.get('name', def_entry.get('name', ''))
+                def_name = def_entry.get('name', '')
                 il_clone = self._get_initiative()
                 for e_clone in il_clone:
                     if e_clone['userId'] != def_uid:
-                        is_same_type = e_clone.get('isSummon') and (self._summon_members.get(e_clone['userId'], {}).get('protect_allies_on_hit'))
+                        is_same_type = e_clone.get('isSummon') and (_get_summon_template(e_clone.get('name', '')) or {}).get('protect_allies_on_hit')
                         is_owner_of = e_clone.get('baseUserId', e_clone['userId']) == owner_id or e_clone['userId'] == owner_id
                         if is_same_type or is_owner_of:
                             self._apply_immunity_buff(e_clone['userId'], def_uid)
@@ -5739,7 +7841,8 @@ class FullBattleEngine(CombatEngine):
             lines.append(f'{aname} 无法近战飞行目标 {dname}！')
             return (def_uid, atk_uid, lines)
         if fly_penalty:
-            bp_suffix = (bp_suffix or '') + 'p'  # 飞行近战惩罚骰
+            # 飞行近战惩罚骰并入统一净额结算（不再与命令后缀拼成 'pb'）
+            bp_suffix = 'p'
 
         # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
         # Check attacker's own buff first; if attacker is a summon, also check owner's buff
@@ -5752,7 +7855,7 @@ class FullBattleEngine(CombatEngine):
                     phantom_ce = ce
                     break
                 # If attacker is a summon, check if owner has the buff
-                atk_entry = next((e for e in self._get_initiative() if e['userId'] == atk_uid), None)
+                atk_entry = self._unit_il_entry(atk_uid, self._get_initiative())
                 if atk_entry and atk_entry.get('isSummon'):
                     owner_id = atk_entry.get('ownerId', '')
                     if ce.get('targetUserId') == owner_id:
@@ -5764,9 +7867,9 @@ class FullBattleEngine(CombatEngine):
             if writing_val > 0:
                 w_uid = phantom_owner_uid or atk_uid
                 atk_buffs_hz = self._get_active_buffs(w_uid)
-                bp_str_hz = _calc_net_bp(atk_buffs_hz, '', None)
+                bp_str_hz = _calc_net_bp(atk_buffs_hz, '', '写作')
                 roll, bp_detail = roll_d100(bp_str_hz)
-                w_rank = success_rank(roll, writing_val)
+                w_rank = success_rank(roll, self._apply_buff_skill_mod(w_uid, writing_val, '写作'))
                 if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
                 elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
                 elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
@@ -5803,19 +7906,17 @@ class FullBattleEngine(CombatEngine):
                     dchar._round_consumed = consumed_round
                 # Auto-trigger the reaction spell (self-target or at attacker)
                 react_target = atk_uid if any(
-                    str(e.get('客体', 0)).upper() in ('4', '5', '45', 'R', 'RP')
+                    str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')
                     for e in ds.get('effects', []) if e.get('type') == 1
                 ) else def_uid
                 react_out = self._execute_spell(def_uid, react_target, ds)
                 lines.append(f'  [{dname} 反应] {react_out.strip()}')
-        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
+        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
-        # 行动力优势合并到攻击BP
+        # 行动力优势合并到攻击BP（不再字符串拼接，统一净额结算）
         ap_atk_b, ap_def_p = self._calc_action_power_bp(atk_uid, def_uid)
-        merged_bp = bp_suffix
-        if ap_atk_b:
-            merged_bp = (merged_bp or '') + ap_atk_b
-        eff_bp = _calc_net_bp(atk_buffs, merged_bp, skill_name)
+        eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name,
+                              extra_tokens=[ap_atk_b] if ap_atk_b else None)
         # AUX 21/22: crit rate modifier
         crit_pct, crit_flat = self._get_buff_crit_adjustment(atk_uid)
         atk_result, bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill, crit_pct, crit_flat)
@@ -5838,17 +7939,22 @@ class FullBattleEngine(CombatEngine):
                 return (def_uid, atk_uid, lines)
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
-        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val); bmv = self._apply_buff_skill_mod(def_uid, bmv)
+        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val, '闪避')
+        bmv = self._apply_buff_skill_mod(def_uid, bmv, bmn)
         def_buffs = self._get_active_buffs(def_uid)
         _, ap_def_p2 = self._calc_action_power_bp(atk_uid, def_uid)
-        def_bp = _calc_net_bp(def_buffs, ap_def_p2, skill_name)
 
         # ── 格挡可用性检查 ──
         block_name, block_val = self._get_block_skill(def_uid)
-        block_val = self._apply_buff_skill_mod(def_uid, block_val)
+        block_val = self._apply_buff_skill_mod(def_uid, block_val, block_name)
+        # 防御方反应骰：按实际反应技能名结算，不再把攻方技能名传给防御方
+        _def_extra = [ap_def_p2] if ap_def_p2 else None
+        def_bp_dodge = _calc_net_bp(def_buffs, '', '闪避', extra_tokens=_def_extra)
+        def_bp_counter = _calc_net_bp(def_buffs, '', bmn, extra_tokens=_def_extra)
+        def_bp_block = _calc_net_bp(def_buffs, '', block_name, extra_tokens=_def_extra)
         can_block = (dchar.get_attr('可格挡', 0) == 1
                      and block_name is not None and block_val > 0)
-        block_hp = next((e for e in self._get_initiative() if e['userId'] == def_uid), {}).get('shield_block_hp', 0)
+        block_hp = (self._unit_il_entry(def_uid, self._get_initiative()) or {}).get('shield_block_hp', 0)
         # Check for block_redirect (summon takes damage instead of defender)
         _block_redirect = self._get_block_redirect_target(def_uid)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
@@ -5859,9 +7965,10 @@ class FullBattleEngine(CombatEngine):
             react_choice = None
         else:
             # ── 三维反应选择 (dodge / counter / block) ──
-            ai_dw = self._ai_react_dodge_w.get(def_uid, 50)
-            ai_cw = self._ai_react_counter_w.get(def_uid, 50)
-            ai_bw = self._ai_react_block_w.get(def_uid, 0) if can_block else 0
+            defender = self._unit_il_entry(def_uid, self._get_initiative()) or {}
+            ai_dw = self._ai_react_dodge_w.get(def_uid, defender.get('react_dodge_w', 50))
+            ai_cw = self._ai_react_counter_w.get(def_uid, defender.get('react_counter_w', 50))
+            ai_bw = self._ai_react_block_w.get(def_uid, defender.get('react_block_w', 0)) if can_block else 0
             total_w = ai_dw + ai_cw + ai_bw
             if total_w > 0:
                 r = random.random() * total_w
@@ -5872,7 +7979,7 @@ class FullBattleEngine(CombatEngine):
                 react_choice = 'dodge' if dodge_val >= bmv else 'counter'
 
         if react_choice == 'dodge':
-            rr, rd = roll_d100(def_bp); react_rank = success_rank(rr, dodge_val)
+            rr, rd = roll_d100(def_bp_dodge); react_rank = success_rank(rr, dodge_val)
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【闪避={dodge_val}】:"); lines.append(f"  D100={rr}/{dodge_val}{rbs} {rank_text(react_rank)}")
             eff_atk = atk_rank
@@ -5885,7 +7992,7 @@ class FullBattleEngine(CombatEngine):
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
         elif react_choice == 'counter':
-            rr, rd = roll_d100(def_bp); react_rank = success_rank(rr, bmv)
+            rr, rd = roll_d100(def_bp_counter); react_rank = success_rank(rr, bmv)
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【反击:{bmn}={bmv}】:"); lines.append(f"  D100={rr}/{bmv}{rbs} {rank_text(react_rank)}")
             eff_atk, eff_react = atk_rank, react_rank
@@ -5902,8 +8009,10 @@ class FullBattleEngine(CombatEngine):
                     return (def_uid, atk_uid, lines)
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
                 loser_name, winner_name = aname, dname; winner_roll = rr
-                cdmg = dchar.get_str("伤害值") or "1d4"; cpen = dchar.get_attr("伤害贯穿",1)
-                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
+                # 反击骰按防御方的反击技能名解析（支持 伤害值a/b + damage_suffix_map），
+                # 不能直接读 伤害值——只声明了 伤害值a/b 的角色会退化成 1d4。
+                cdmg = self._get_damage_dice(def_uid, bmn)
+                cpen = dchar.get_attr("伤害贯穿",1)
                 cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
             elif eff_atk > eff_react and eff_atk > 0:
@@ -5939,8 +8048,7 @@ class FullBattleEngine(CombatEngine):
 
                     # ---- Defender counter-hits attacker ----
                     if not self._is_untargetable(atk_uid):
-                        cdmg = dchar.get_str("伤害值") or "1d4"
-                        cdmg = _resolve_db(cdmg, _get_db_str(dchar))
+                        cdmg = self._get_damage_dice(def_uid, bmn)
                         cpen = dchar.get_attr("伤害贯穿",1)
                         cleth = dchar.get_attr("致死骰",1) or 0
                         dmx = max_damage(cdmg); ddmg = 0; ddetail = ""
@@ -5974,7 +8082,7 @@ class FullBattleEngine(CombatEngine):
                     return (None, None, lines)
         else:  # react_choice == 'block'
             # ── 格挡反应 ──
-            rr, rd = roll_d100(def_bp); react_rank = success_rank(rr, block_val)
+            rr, rd = roll_d100(def_bp_block); react_rank = success_rank(rr, block_val)
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【格挡:{block_name}={block_val}】:")
             lines.append(f"  D100={rr}/{block_val}{rbs} {rank_text(react_rank)}")
@@ -6010,13 +8118,13 @@ class FullBattleEngine(CombatEngine):
                 # ── block_redirect: 伤害由召唤物承担 ──
                 _block_redirect = self._get_block_redirect_target(def_uid)
                 if _block_redirect:
-                    rt_entry = next((e for e in self._get_initiative() if e['userId'] == _block_redirect), None)
+                    rt_entry = self._unit_il_entry(_block_redirect, self._get_initiative())
                     rt_name = rt_entry.get('displayName', '召唤物') if rt_entry else '召唤物'
                     rt_block_hp = rt_entry.get('shield_block_hp', 0) if rt_entry else 0
                     if blk_eff > 0 and rt_block_hp > 0:
                         absorbed = min(blk_eff, rt_block_hp)
                         blk_eff -= absorbed
-                        rt_entry['shield_block_hp'] = rt_block_hp - absorbed
+                        self._set_summon_entry_fields(_block_redirect, shield_block_hp=rt_block_hp - absorbed)
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点 (剩余护盾HP: {rt_block_hp - absorbed})")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff)
@@ -6030,8 +8138,8 @@ class FullBattleEngine(CombatEngine):
                 if blk_eff > 0 and block_hp > 0:
                     absorbed = min(blk_eff, block_hp)
                     blk_eff -= absorbed
-                    entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
-                    if entry: entry['shield_block_hp'] = block_hp - absorbed
+                    entry = self._unit_il_entry(def_uid, self._get_initiative())
+                    self._set_summon_entry_fields(def_uid, shield_block_hp=block_hp - absorbed)
                     lines.append(f"  盾牌吸收: {absorbed}点 (剩余护盾HP: {block_hp - absorbed})")
                 # 溢出伤害扣HP（不触发致死骰）
                 cur_hp = self._get_combat_hp(def_uid) or 10
@@ -6042,7 +8150,7 @@ class FullBattleEngine(CombatEngine):
                     lines.append(f"  伤害全部被吸收: {blk_detail}")
                 lines.append(f"  {dname} HP: {cur_hp}")
                 if cur_hp <= 0:
-                    loser_entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
+                    loser_entry = self._unit_il_entry(def_uid, self._get_initiative())
                     if loser_entry and not loser_entry.get('isSummon'):
                         self._remove_summons_of_owner(def_uid)
                 return (def_uid, atk_uid, lines)
@@ -6146,6 +8254,9 @@ class FullBattleEngine(CombatEngine):
         # ── New damage formulas (computed before _resolve_db) ──
         if eff.get('damage_fixed'):
             dmg_dice = str(eff['damage_fixed'])
+        elif eff.get('damage_moon_mult'):
+            # 月光王座：伤害 = 月能×倍率（月能已在 _execute_spell 一次性消耗并存于 spell['_moon_dmg']）
+            dmg_dice = str(spell.get('_moon_dmg', 1) if spell else 1)
         elif eff.get('damage_mp_multiplier'):
             mp_spent = spell.get('_actual_mp_cost', 0) if spell else 0
             dmg_val = mp_spent * eff['damage_mp_multiplier']
@@ -6166,6 +8277,13 @@ class FullBattleEngine(CombatEngine):
                 cur_hp_raw = self._get_combat_hp(caster_id) or 1
                 dmg_val = max(1, cur_hp_raw * eff['damage_pct_caster_cur_hp'] // 100)
                 dmg_dice = str(dmg_val)
+        elif eff.get('damage_table') == 'moon_phase':
+            # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
+            # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            dmg_dice = phase_dice
+            eff['_moon_drain'] = roll_dice(phase_dice) if phase_drain else 0
+            out += f'  月相判定: {phase_name}（伤害骰 {phase_dice}）\n'
         dmg_dice = _resolve_db(dmg_dice, _get_db_str(char))
         pen = eff.get('可贯穿性', 0)
         leth = eff.get('致死值', 0)
@@ -6199,9 +8317,10 @@ class FullBattleEngine(CombatEngine):
                     if writing_val > 0:
                         w_uid_hz2 = phantom_owner_hz2 or caster_id
                         caster_buffs_hz = self._get_active_buffs(w_uid_hz2)
-                        bp_str_hz = _calc_net_bp(caster_buffs_hz, '', None)
+                        bp_str_hz = _calc_net_bp(caster_buffs_hz, '', '写作')
                         roll, bp_detail = roll_d100(bp_str_hz)
-                        w_rank = success_rank(roll, writing_val)
+                        w_rank = success_rank(
+                            roll, self._apply_buff_skill_mod(w_uid_hz2, writing_val, '写作'))
                         if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
                         elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
                         elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
@@ -6233,8 +8352,8 @@ class FullBattleEngine(CombatEngine):
         is_friendly = False
         if friend_behavior:
             il = self._get_initiative()
-            ce = next((e for e in il if e['userId'] == caster_id), None)
-            te = next((e for e in il if e['userId'] == target_id), None)
+            ce = self._unit_il_entry(caster_id, il)
+            te = self._unit_il_entry(target_id, il)
             is_friendly = ce and te and ce.get('team') == te.get('team')
 
         # Success rate check with COC7 rank
@@ -6257,18 +8376,7 @@ class FullBattleEngine(CombatEngine):
                 _, sr = char.get_best_melee()
                 sr = max(1, sr)  # Ensure at least 1 to force a roll
         if sr > 0:
-            atk_rank = 4; check_roll = 1  # will be overwritten by roll below
-            sr_bp_raw = eff.get('成功率奖惩骰', 0) or 0
-            if isinstance(sr_bp_raw, int):
-                if sr_bp_raw > 0:
-                    sr_bp = 'b' + (str(sr_bp_raw) if sr_bp_raw > 1 else '')
-                elif sr_bp_raw < 0:
-                    sr_bp = 'p' + (str(abs(sr_bp_raw)) if abs(sr_bp_raw) > 1 else '')
-                else:
-                    sr_bp = ''
-            else:
-                sr_bp = str(sr_bp_raw) if sr_bp_raw else ''
-            check_roll, bp_detail = roll_d100(sr_bp)
+            check_roll, bp_detail = self._roll_spell_success_bp(caster_id, eff, spell)
             bp_str = f', {bp_detail}' if bp_detail else ''
             # AUX 21/22: crit rate modifier for spells
             crit_pct, crit_flat = self._get_buff_crit_adjustment(caster_id)
@@ -6364,7 +8472,8 @@ class FullBattleEngine(CombatEngine):
             out += self._apply_spell_damage(caster_id, target_id, dmg_dice, pen, leth,
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
-                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell)
+                                            atk_rank=atk_rank, atk_roll=check_roll, spell=spell,
+                                            moon_drain=eff.get('_moon_drain', 0))
         return out
 
     def _trigger_spell_reaction(self, caster_id, target_id, eff, spell, dmg_dice,
@@ -6380,21 +8489,21 @@ class FullBattleEngine(CombatEngine):
         dchar = self.get_char(target_id)
         dodge_val = dchar.get_attr("闪避", 25)
         bmn, bmv = dchar.get_best_melee()
-        dodge_val = self._apply_buff_skill_mod(target_id, dodge_val)
-        bmv = self._apply_buff_skill_mod(target_id, bmv)
+        dodge_val = self._apply_buff_skill_mod(target_id, dodge_val, '闪避')
+        bmv = self._apply_buff_skill_mod(target_id, bmv, bmn)
 
         # ── 格挡可用性 ──
         block_name, block_val = self._get_block_skill(target_id)
-        block_val = self._apply_buff_skill_mod(target_id, block_val)
+        block_val = self._apply_buff_skill_mod(target_id, block_val, block_name)
         can_block = can_block and (dchar.get_attr('可格挡', 0) == 1
                      and block_name is not None and block_val > 0)
-        block_hp = next((e for e in self._get_initiative() if e['userId'] == target_id), {}).get('shield_block_hp', 0)
+        block_hp = (self._unit_il_entry(target_id, self._get_initiative()) or {}).get('shield_block_hp', 0)
         # Check for block_redirect (summon takes damage instead of defender)
         _block_redirect = self._get_block_redirect_target(target_id)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
 
         # ── 玄武/三合一等: 护盾格挡无视"不可反应"标记 ──
-        def_entry = next((e for e in self._get_initiative() if e['userId'] == target_id), None)
+        def_entry = self._unit_il_entry(target_id, self._get_initiative())
         ignore_unreact = def_entry.get('ignore_unreactable_block', 0) if def_entry else 0
         if ignore_unreact and not can_block and (dchar.get_attr('可格挡', 0) == 1
             and block_name is not None and block_val > 0
@@ -6408,9 +8517,10 @@ class FullBattleEngine(CombatEngine):
             return (False, False, [])
 
         # AI three-way weighted choice
-        ai_dw = self._ai_react_dodge_w.get(target_id, 50)
-        ai_cw = self._ai_react_counter_w.get(target_id, 50)
-        ai_bw = self._ai_react_block_w.get(target_id, 0) if can_block else 0
+        defender = self._unit_il_entry(target_id, self._get_initiative()) or {}
+        ai_dw = self._ai_react_dodge_w.get(target_id, defender.get('react_dodge_w', 50))
+        ai_cw = self._ai_react_counter_w.get(target_id, defender.get('react_counter_w', 50))
+        ai_bw = self._ai_react_block_w.get(target_id, defender.get('react_block_w', 0)) if can_block else 0
         if not can_dodge:
             ai_dw = 0
         if not can_counter:
@@ -6433,6 +8543,29 @@ class FullBattleEngine(CombatEngine):
             return self._resolve_spell_block(caster_id, target_id, eff, spell,
                                               dmg_dice, block_name, block_val, block_hp, atk_rank)
 
+    def _spell_reaction_extra(self, eff):
+        """Dice tokens an attack effect imposes on the defender's reaction.
+
+        AUX 33 (反应惩罚骰) applies to this attack only (dodge/counter/block).
+        Legacy data used 技能惩罚骰 with a dice value ('p') for the same
+        purpose; keep reading that form so old cards behave identically.
+        """
+        aux_type = _eff_get(eff, 'auxType')
+        aux_val = _eff_get(eff, 'auxVal')
+        if not aux_type:
+            return []
+        if AUX_NAME_TO_CODE.get(aux_type) == 33:
+            return [aux_val]
+        if aux_type == '技能惩罚骰' and _parse_bp_token(aux_val):
+            return [aux_val]
+        return []
+
+    def _calc_spell_reaction_bp(self, target_id, eff, skill_name):
+        """Net reaction dice for a spell attack's defender (per-reaction skill)."""
+        def_buffs = self._get_active_buffs(target_id)
+        return _calc_net_bp(def_buffs, '', skill_name,
+                            extra_tokens=self._spell_reaction_extra(eff))
+
     def _resolve_spell_dodge(self, caster_id, target_id, eff, spell, dmg_dice,
                               dodge_val, atk_rank=4):
         """Roll defender dodge vs spell attack rank. Returns (dodged, countered, lines)."""
@@ -6440,14 +8573,7 @@ class FullBattleEngine(CombatEngine):
         dchar = self.get_char(target_id)
         lines = []
 
-        def_buffs = self._get_active_buffs(target_id)
-        def_bp = _calc_net_bp(def_buffs, "", "")
-        # Spell effect imposes penalty on reactions (e.g. 挥动镰刀)
-        if _eff_get(eff, 'auxType') == '技能惩罚骰' and _eff_get(eff, 'auxVal') == 'p':
-            if def_bp == '': def_bp = 'p'
-            elif def_bp == 'b': def_bp = ''
-            elif def_bp == 'b2': def_bp = 'b'
-            elif def_bp == 'b3': def_bp = 'b2'
+        def_bp = self._calc_spell_reaction_bp(target_id, eff, '闪避')
         rr, rd = roll_d100(def_bp)
         react_rank = success_rank(rr, dodge_val)
         rbs = f", {rd}" if rd else ""
@@ -6476,14 +8602,7 @@ class FullBattleEngine(CombatEngine):
         dchar = self.get_char(target_id)
         lines = []
 
-        def_buffs = self._get_active_buffs(target_id)
-        def_bp = _calc_net_bp(def_buffs, "", "")
-        # Spell effect imposes penalty on reactions (e.g. 挥动镰刀)
-        if _eff_get(eff, 'auxType') == '技能惩罚骰' and _eff_get(eff, 'auxVal') == 'p':
-            if def_bp == '': def_bp = 'p'
-            elif def_bp == 'b': def_bp = ''
-            elif def_bp == 'b2': def_bp = 'b'
-            elif def_bp == 'b3': def_bp = 'b2'
+        def_bp = self._calc_spell_reaction_bp(target_id, eff, counter_skill)
         rr, rd = roll_d100(def_bp)
         react_rank = success_rank(rr, counter_val)
         rbs = f", {rd}" if rd else ""
@@ -6537,8 +8656,9 @@ class FullBattleEngine(CombatEngine):
             if self._is_untargetable(caster_id):
                 lines.append(f"  {dchar.name} 反击成功！但 {achar.name} 不可选中，无法命中。法术被击破。")
                 return (False, True, lines)
-            cdmg = dchar.get_str("伤害值") or "1d4"
-            cdmg = _resolve_db(cdmg, dchar.get_attr('体格', 0))
+            # 反击骰按防御方的反击技能名解析（原实现直接用 体格 解析 db，会忽略
+            # str_attrs['db'] 与 伤害值a/b，只声明 a/b 的角色会退化成 1d4）
+            cdmg = self._get_damage_dice(target_id, counter_skill)
             cpen = dchar.get_attr("伤害贯穿", 1)
             cleth = dchar.get_attr("致死骰", 1) or 0
             _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
@@ -6553,8 +8673,7 @@ class FullBattleEngine(CombatEngine):
         elif eff_react == eff_atk and eff_react > 0:
             # Mutual hit — both take damage
             if not self._is_untargetable(caster_id):
-                cdmg = dchar.get_str("伤害值") or "1d4"
-                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
+                cdmg = self._get_damage_dice(target_id, counter_skill)
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
             else:
@@ -6574,8 +8693,7 @@ class FullBattleEngine(CombatEngine):
         dchar = self.get_char(target_id)
         lines = []
 
-        def_buffs = self._get_active_buffs(target_id)
-        def_bp = _calc_net_bp(def_buffs, "", "")
+        def_bp = self._calc_spell_reaction_bp(target_id, eff, block_skill)
         rr, rd = roll_d100(def_bp)
         react_rank = success_rank(rr, block_val)
         rbs = f", {rd}" if rd else ""
@@ -6601,13 +8719,13 @@ class FullBattleEngine(CombatEngine):
             # ── block_redirect: 伤害由召唤物承担 ──
             _block_redirect = self._get_block_redirect_target(target_id)
             if _block_redirect:
-                rt_entry = next((e for e in self._get_initiative() if e['userId'] == _block_redirect), None)
+                rt_entry = self._unit_il_entry(_block_redirect, self._get_initiative())
                 rt_name = rt_entry.get('displayName', '召唤物') if rt_entry else '召唤物'
                 rt_block_hp = rt_entry.get('shield_block_hp', 0) if rt_entry else 0
                 if blk_eff > 0 and rt_block_hp > 0:
                     absorbed = min(blk_eff, rt_block_hp)
                     blk_eff -= absorbed
-                    rt_entry['shield_block_hp'] = rt_block_hp - absorbed
+                    self._set_summon_entry_fields(_block_redirect, shield_block_hp=rt_block_hp - absorbed)
                     lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点 (剩余护盾HP: {rt_block_hp - absorbed})")
                 if blk_eff > 0:
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
@@ -6621,8 +8739,8 @@ class FullBattleEngine(CombatEngine):
             if blk_eff > 0 and block_hp > 0:
                 absorbed = min(blk_eff, block_hp)
                 blk_eff -= absorbed
-                entry = next((e for e in self._get_initiative() if e['userId'] == target_id), None)
-                if entry: entry['shield_block_hp'] = block_hp - absorbed
+                entry = self._unit_il_entry(target_id, self._get_initiative())
+                self._set_summon_entry_fields(target_id, shield_block_hp=block_hp - absorbed)
                 lines.append(f"  盾牌吸收: {absorbed}点 (剩余护盾HP: {block_hp - absorbed})")
             # 溢出伤害扣HP（不触发致死）
             if blk_eff > 0:
@@ -6676,7 +8794,8 @@ class FullBattleEngine(CombatEngine):
             if not spell: return f"未找到技能{sn}"
             if not has_timing(spell.get('时机','2'), '3'):
                 return f"【{spell['name']}】不能在附加动作阶段使用"
-            return self._execute_spell(uid, uid, spell)
+            target = self._smart_target(uid, spell)
+            return self._execute_spell(uid, target, spell)
         elif parts[0].lower() == 'eat':
             # .a eat [目标名] — 使用物品（给自己）或给出物品（给目标）
             target_id = None
@@ -6709,16 +8828,17 @@ class FullBattleEngine(CombatEngine):
             statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
             return f"无法普通攻击（{'/'.join(statuses)}中）"
         char = self.get_char(uid); il = self._get_initiative()
-        me = next((e for e in il if e["userId"]==uid), None)
+        me = self._unit_il_entry(uid, il)
         if not me: return "No position"
-        enemies = [e for e in il if e["team"]!=me.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
+        enemies = self._enemy_target_entries(uid)
         if not enemies:
             all_teams = [(e.get('name', e.get('userId', '?')), e.get('team', '?')) for e in il]
             _engine_debug_log(f"_basic_attack: {char.name}({uid}) team={me.get('team','?')} "
                   f"NO ENEMIES! all teams: {all_teams}")
             return "No enemies"
         t = enemies[0]; tid = t["userId"]
-        bn, bv = char.get_best_melee()
+        # Weapon-aware skill selection (for characters with weapon switching)
+        bn, bv = self._get_attack_skill(uid, char)
         dd = self._get_damage_dice(uid, bn); p = char.get_attr("伤害贯穿",1); l = char.get_attr("致死骰",1) or 0
         _, _, lines = self._coc7_attack(uid, tid, bn, bv, dd, p, l)
         return "\n".join(lines)
@@ -6743,6 +8863,9 @@ class FullBattleEngine(CombatEngine):
             if meta_unique:
                 existing = self._summoned_once.get(caster_id, set())
                 options = [n for n in options if n not in existing]
+            # 只从还有名额的实际模板中抽取（None=无限，0=已满）
+            options = [n for n in options
+                       if self._get_summon_quota(caster_id, n, tmpls.get(n) or {})[0] != 0]
             if not options:
                 return None
             template_name = random.choice(options)
@@ -6751,6 +8874,12 @@ class FullBattleEngine(CombatEngine):
             # Track as summoned (unique_per_caster: once per battle — survives death)
             if meta_unique:  # Use the saved flag from meta template
                 self._summoned_once.setdefault(caster_id, set()).add(template_name)
+        # ── 数量上限最终校验（在 _meta 解析出实际模板之后）──
+        # 直接调用 / 被动 / 延迟召唤也必须受限；返回 None 时调用方不得记成功。
+        _quota, _quota_reason = self._get_summon_quota(caster_id, template_name, tmpl)
+        if _quota == 0:
+            _engine_debug_log(f'_create_summon blocked: owner={caster_id} tmpl={template_name} {_quota_reason}')
+            return None
         # Generate summon ID: {caster_serial}_sum_{n} (e.g. Y12_sum_1)
         caster_info = self.get_char(caster_id)
         caster_serial = (caster_info.serial if caster_info and caster_info.serial else caster_id)
@@ -6782,23 +8911,36 @@ class FullBattleEngine(CombatEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        owner_base = self._resolve_uid(caster_id)
+        self._reconcile_summon_groups()
+        existing_rep = self._find_summon_group_by(owner_base, template_name)
         init_list = self._get_initiative()
-        ce = next((e for e in init_list if e["userId"]==caster_id), None)
-        coord = "A1"
-        if ce and ce.get("coord"):
-            mp = parse_coord(ce["coord"])
-            if mp:
-                for r in range(1,6):
-                    for dc in range(-r,r+1):
-                        for dr in range(-r,r+1):
-                            if abs(dc)+abs(dr)!=r: continue
-                            nc, nr = mp[0]+dc, mp[1]+dr
-                            if 0<=nc<26 and 0<=nr<99:
-                                c = format_coord(nc,nr); md = self._get_map()
-                                if md and c not in md.get("occupants",{}):
-                                    coord=c; md["occupants"][c]=sid; self._set_map(md); break
-                        else: continue; break
-                    else: continue; break
+        ce = self._unit_il_entry(caster_id, init_list)
+        group_entry = (self._unit_il_entry(
+            self._summon_groups[existing_rep]['representative_uid'], init_list)
+            if existing_rep is not None else None)
+        coord = (group_entry or {}).get('coord', 'A1')
+        if existing_rep is None and ce and ce.get('coord'):
+            point = parse_coord(ce['coord'])
+            md = self._get_map()
+            if point and md:
+                size = 2 if tmpl.get('size_2x2') else 1
+                candidates = ((point[0] + dc, point[1] + dr)
+                              for radius in range(1, 6)
+                              for dc in range(-radius, radius + 1)
+                              for dr in range(-radius, radius + 1)
+                              if abs(dc) + abs(dr) == radius)
+                spot = next(((col, row) for col, row in candidates
+                             if 0 <= col and col + size <= md.get('width', 26)
+                             and 0 <= row and row + size <= md.get('height', 99)
+                             and all(format_coord(col + dc, row + dr) not in md.get('occupants', {})
+                                     and format_coord(col + dc, row + dr) not in md.get('obstacles', {})
+                                     for dc in range(size) for dr in range(size))), None)
+                if spot is None:
+                    return None
+                coord = format_coord(*spot)
+                md['occupants'][coord] = sid
+                self._set_map(md)
         team = ce.get("team","Y") if ce else "Y"
         caster = self.get_char(caster_id)
         caster_name = caster.name if caster else caster_id
@@ -6810,9 +8952,7 @@ class FullBattleEngine(CombatEngine):
         else:
             sum_init_roll, _ = roll_d100("")
             sum_init_rank = success_rank(sum_init_roll, dex)
-        # ── Summon group consolidation: check for existing same-type group ──
-        owner_base = self._resolve_uid(caster_id)
-        existing_rep = self._find_summon_group_by(owner_base, template_name)
+        # ── Add to the live/repaired group found before reserving any map cell ──
         if existing_rep is not None:
             # ── Add to existing group: no new initiative entry, shared action pool ──
             grp = self._summon_groups[existing_rep]
@@ -6830,6 +8970,8 @@ class FullBattleEngine(CombatEngine):
             summon_char2 = self.get_char(sid)
             summon_char2.name = summon_display_name
             summon_char2.set_attr('MOV', tmpl.get('MOV', 6))
+            if tmpl.get('不可指定'):
+                summon_char2.set_attr('不可指定', 1)
             if parsed and parsed[0].get('dice'):
                 summon_char2.set_str('伤害值', parsed[0]['dice'])
             summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
@@ -6860,21 +9002,8 @@ class FullBattleEngine(CombatEngine):
                 if caster:
                     summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
                     summon_char2.set_str('db', caster.get_str('db') or '0')
-            # Group members share the representative's map position.
-            # Do NOT place them on separate cells (would fill the map).
-            rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
-            if rep_entry and rep_entry.get('coord'):
-                self._summon_members[sid]['coord'] = rep_entry['coord']
-            if tmpl.get('size_2x2'):
-                mp2 = parse_coord(self._summon_members[sid]['coord'])
-                if mp2:
-                    for dr2x in range(2):
-                        for dc2x in range(2):
-                            if dr2x == 0 and dc2x == 0: continue
-                            nc2x, nr2x = mp2[0]+dc2x, mp2[1]+dr2x
-                            if 0 <= nc2x < 26 and 0 <= nr2x < 99:
-                                self._get_map()['occupants'][format_coord(nc2x, nr2x)] = sid
-                    self._set_map(self._get_map())
+            # Hidden members share the group's footprint; no extra cell is reserved.
+            self._register_summon_member_state(sid, tmpl, owner_base)
             mg2 = tmpl.get('merge_group', '')
             if mg2:
                 if not hasattr(self, '_summoned_templates'):
@@ -6883,6 +9012,7 @@ class FullBattleEngine(CombatEngine):
                 if caster_id not in st2: st2[caster_id] = {}
                 if mg2 not in st2[caster_id]: st2[caster_id][mg2] = set()
                 st2[caster_id][mg2].add(template_name)
+            self._register_summon_spawned(caster_id, template_name)
             return sid
         # ── No existing group: create normal initiative entry ──
         init_list.append({"userId":sid,"name":template_name,"displayName":summon_display_name,"team":team,"dex":dex,"initRoll":sum_init_roll,"initRank":sum_init_rank,
@@ -6916,6 +9046,8 @@ class FullBattleEngine(CombatEngine):
         summon_char.set_attr('MOV', tmpl.get('MOV', 6))
         if tmpl.get('无主动行动'):
             summon_char.set_attr('无主动行动', 1)
+        if tmpl.get('不可指定'):
+            summon_char.set_attr('不可指定', 1)
         if tmpl.get('unlimited_mp'):
             summon_char.set_attr('魔力上限', 99999)
         if parsed and parsed[0].get('dice'):
@@ -6975,7 +9107,7 @@ class FullBattleEngine(CombatEngine):
         # ── Create summon group for first summon of this type ──
         self._summon_groups[sid] = {
             'members': [sid], 'template_name': template_name,
-            'ownerId': owner_base,
+            'ownerId': owner_base, 'representative_uid': sid,
         }
         self._summon_members[sid] = {
             'userId': sid, 'name': template_name,
@@ -7016,10 +9148,53 @@ class FullBattleEngine(CombatEngine):
             current_entry = next((e for e in self._get_initiative() if e['userId'] == tracked_uid), None)
             if current_entry:
                 self._slot_actions_given[tracked_base] = current_entry.get('actionIdx', 0)
+        self._register_summon_member_state(sid, tmpl, owner_base)
+        self._register_summon_spawned(caster_id, template_name)
         return sid
 
+    def _get_summon_entry(self, summon_id):
+        """Read a physical member, sharing only position with its initiative rep."""
+        summon_id = self._resolve_uid(summon_id)
+        il = self._get_initiative()
+        entry = next((e for e in il if self._resolve_uid(e['userId']) == summon_id), None)
+        if entry is not None:
+            return entry
+        data = self._summon_members.get(summon_id)
+        if data is None:
+            return None
+        key = self._summon_group_key(summon_id)
+        group = self._summon_groups.get(key, {})
+        rep = group.get('representative_uid', key)
+        rep_entry = next((e for e in il if e['userId'] == rep), None)
+        saved = group.get('initiative_entry', {})
+        tmpl = _get_summon_template(data.get('name', '')) or {}
+        skills = data.get('skills', [])
+        first = (skills or [{}])[0]
+        view = dict(data)
+        view.update({
+            'userId': summon_id, 'baseUserId': summon_id, 'isSummon': True,
+            'displayName': data.get('display_name', data.get('name', summon_id)),
+            'team': data.get('team', (rep_entry or saved).get('team', 'Y')),
+            'ownerId': data.get('ownerId', group.get('ownerId', '')),
+            'coord': (rep_entry or saved).get('coord') or data.get('coord', ''),
+            'skill_name': first.get('name', '斗殴'), 'skill_val': first.get('val', 25),
+            'dmg_dice': first.get('dice', '1d4'),
+            'zone_skills': [s for s in skills if s.get('skill_type') == 'zone_heal'],
+            'zone_cooldown': data.get('zone_cooldown', 0),
+            'summon_mp': data.get('summon_mp', tmpl.get('MP', 0)),
+            'react_dodge_w': data.get('react_dodge_w', tmpl.get('react_dodge', 50)),
+            'react_counter_w': data.get('react_counter_w', tmpl.get('react_counter', 50)),
+            'react_block_w': data.get('react_block_w', tmpl.get('react_block', 0)),
+            'shield_block': data.get('shield_block', tmpl.get('shield_block', 0)),
+            'shield_block_hp': data.get('shield_block_hp', tmpl.get('shield_block', 0)),
+            'shield_block_rate': data.get('shield_block_rate', tmpl.get('shield_block_rate', 0.70)),
+            'ignore_unreactable_block': data.get('ignore_unreactable_block', tmpl.get('ignore_unreactable_block', 0)),
+            '_synthetic': True,
+        })
+        return view
+
     def _summon_attack(self, summon_id):
-        il = self._get_initiative(); entry = next((e for e in il if e["userId"]==summon_id), None)
+        entry = self._get_summon_entry(summon_id)
         if not entry: return ["未找到召唤物"]
         sname = entry.get("displayName", entry.get("name", summon_id))
         lines = []
@@ -7028,6 +9203,7 @@ class FullBattleEngine(CombatEngine):
         zone_cooldown = entry.get("zone_cooldown", 0)
         if zone_cooldown > 0:
             entry["zone_cooldown"] = zone_cooldown - 1
+            self._set_summon_entry_fields(summon_id, zone_cooldown=entry['zone_cooldown'])
         if entry.get("zone_cooldown", 0) <= 0:
             zone_skills = entry.get("zone_skills", [])
             if zone_skills:
@@ -7037,6 +9213,8 @@ class FullBattleEngine(CombatEngine):
                 if summon_mp >= mp_cost:
                     entry["summon_mp"] = summon_mp - mp_cost
                     entry["zone_cooldown"] = zsk.get("cooldown_rounds", 0) + zsk.get("zone_duration", 3)
+                    self._set_summon_entry_fields(summon_id, summon_mp=entry['summon_mp'],
+                                                  zone_cooldown=entry['zone_cooldown'])
                     center = entry.get("coord", "A1")
                     effects = self._get_effects()
                     effects.append({
@@ -7054,10 +9232,12 @@ class FullBattleEngine(CombatEngine):
                     lines.append(f"{zname} → 创建治愈领域（半径{zsk.get('zone_radius',8)}格，持续{zsk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）")
                     return lines
 
-        enemies = [e for e in il if e["team"]!=entry.get("team","Y") and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
+        il = self._get_initiative()
+        enemies = self._enemy_target_entries(summon_id)
         if not enemies: return ["无可用目标"]
         tid = enemies[0]["userId"]
         skills = entry.get("skills",[])
+        sk_name = ""
         if skills:
             best_score = -1; best = skills[0]
             for sk in skills:
@@ -7082,8 +9262,11 @@ class FullBattleEngine(CombatEngine):
             if owner_char:
                 dmg_dice = _resolve_db(dmg_dice, _get_db_str(owner_char))
         sk_label = sk_name or "攻击"
-        # Battle spirit penalty dice
-        pens = entry.get('battle_spirit_penalty_dice', 0)
+        # Battle spirit penalty dice live on the stable group; fall back to the
+        # representative entry for legacy states and ungrouped summons.
+        _bs_group = self._summon_groups.get(self._summon_group_key(summon_id)) or {}
+        pens = _bs_group.get('battle_spirit_penalty_dice',
+                             entry.get('battle_spirit_penalty_dice', 0))
         bp_suffix = f"p{pens}" if pens > 1 else ("p" if pens == 1 else "")
 
         # ── Delegate to _coc7_attack for dice / damage / shield / lethality / reaction ──
@@ -7099,7 +9282,12 @@ class FullBattleEngine(CombatEngine):
                 m = re.search(r'造成\s+(\d+)\s+点伤害', l)
                 if m: total_dmg = int(m.group(1)); break
             for hi in range(1, hits):
-                if random.randint(1, 100) > sv: continue
+                # Extra hits repeat the same attack check, so the battle-spirit
+                # penalty suffix applies here too (bonus/penalty dice fold once).
+                extra_roll, _ = self._roll_check_d100(
+                    summon_id, sk_label,
+                    extra_tokens=[bp_suffix] if bp_suffix else None)
+                if extra_roll > sv: continue
                 dmg = roll_dice(dmg_dice)
                 eff_dmg, shield_abs, _ = self._absorb_damage_with_shield(tid, dmg)
                 eff_dmg = self._apply_shield_block(tid, eff_dmg)
@@ -7133,18 +9321,19 @@ class FullBattleEngine(CombatEngine):
         return lines
 
     def _apply_shield_block(self, target_id, dmg):
-        il = self._get_initiative(); entry = next((e for e in il if e["userId"]==target_id), None)
+        il = self._get_initiative(); entry = self._unit_il_entry(target_id, il)
         if not entry: return dmg
         block_hp = entry.get("shield_block_hp",0)
         if block_hp <= 0: return dmg
         rate = entry.get("shield_block_rate", 0.70)
         if random.random() < rate:
-            absorbed = min(dmg, block_hp); entry["shield_block_hp"] = block_hp - absorbed
+            absorbed = min(dmg, block_hp)
+            self._set_summon_entry_fields(target_id, shield_block_hp=block_hp - absorbed)
             return dmg - absorbed
         return dmg
 
     def _is_flying(self, uid):
-        il = self._get_initiative(); entry = next((e for e in il if e["userId"]==uid), None)
+        il = self._get_initiative(); entry = self._unit_il_entry(uid, il)
         if entry and entry.get("flying"): return True
         char = self.get_char(uid)
         if char and char.get_attr('飞行', 0): return True
@@ -7170,7 +9359,7 @@ class FullBattleEngine(CombatEngine):
         processed_zone_positions = set()
         for eff in effects:
             if eff.get("type")!="zone" or eff.get("radius",0)<=0: continue
-            cp = parse_coord(eff.get("center","A1"))
+            cp = parse_coord(self._zone_caster_coord(eff, il))
             if not cp: continue
             stackable = eff.get("stackable", 0)
             spell_name = eff.get("spellName", "")
@@ -7189,6 +9378,9 @@ class FullBattleEngine(CombatEngine):
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
                     # 隔离：不受领域效果影响
                     if self._has_status(entry['userId'], '隔离'):
+                        continue
+                    # 客体/范围筛选（不满足者不占用去重键）
+                    if not self._zone_covers_uid(eff, entry['userId'], il):
                         continue
                     # ally_safe: skip allies if zone is marked ally-safe
                     if eff.get('ally_safe') and entry.get('team') == zone_team:
@@ -7221,78 +9413,12 @@ class FullBattleEngine(CombatEngine):
                             'amount': ed, 'hp': hp - ed, 'hp_max': hp_max,
                             'alive': (hp - ed) > 0,
                         })
-            if eff.get("tickHealHp"):
-                for entry in il:
-                    if entry.get("team") != zone_team: continue
-                    if entry.get("isSummon") and entry.get("ignited"): continue  # Ignited summons cannot be healed
-                    ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
-                    if not ep: continue
-                    if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
-                    # 隔离：不受领域效果影响
-                    if self._has_status(entry['userId'], '隔离'):
-                        continue
-                    # Dedup: skip if this (coord, spellName) already processed
-                    pos_key = (ec, spell_name)
-                    if not stackable and pos_key in processed_zone_positions:
-                        continue
-                    processed_zone_positions.add(pos_key)
-                    heal = roll_dice(eff["tickHealHp"])
-                    if heal > 0:
-                        heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'hp'))
-                        heal += self._get_buff_heal_flat(entry["userId"], 'hp')  # AUX code 8
-                        hp = self._get_combat_hp(entry["userId"]) or 10
-                        ch = self.get_char(entry["userId"])
-                        mhp = ch.get_attr("体力上限", hp) if ch else hp
-                        self._set_combat_hp(entry["userId"], min(hp+heal, mhp))
-                        tname = entry.get("displayName", entry.get("name", entry["userId"]))
-                        tick_results.append({
-                            'spell_name': spell_name, 'target_name': tname,
-                            'type': 'heal_hp', 'dice': eff["tickHealHp"], 'roll': heal,
-                            'amount': heal, 'hp': min(hp+heal, mhp), 'hp_max': mhp,
-                            'alive': True,
-                        })
-            if eff.get("tickHealMp"):
-                for entry in il:
-                    if entry.get("team") != zone_team: continue
-                    ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
-                    if not ep: continue
-                    if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
-                    # 隔离：不受领域效果影响
-                    if self._has_status(entry['userId'], '隔离'):
-                        continue
-                    # Dedup: skip if this (coord, spellName) already processed
-                    pos_key = (ec, spell_name)
-                    if not stackable and pos_key in processed_zone_positions:
-                        continue
-                    processed_zone_positions.add(pos_key)
-                    heal = roll_dice(eff["tickHealMp"])
-                    if heal > 0:
-                        heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'mp'))
-                        heal += self._get_buff_heal_flat(entry["userId"], 'mp')  # AUX code 6
-                        tname = entry.get("displayName", entry.get("name", entry["userId"]))
-                        tick_results.append({
-                            'spell_name': spell_name, 'target_name': tname,
-                            'type': 'heal_mp', 'dice': eff["tickHealMp"], 'roll': heal,
-                            'amount': heal, 'hp': 0, 'hp_max': 0,
-                            'alive': True,
-                        })
-                        ch = self.get_char(entry["userId"])
-                        cm = ch.get_attr("魔力",0) or 0; mx = ch.get_attr("魔力上限",cm) or cm
-                        ch.set_attr("魔力", min(cm+heal, mx))
-            # Attribute debuff per round (属性削减, e.g. 行动力-5) — temporary on entry
-            ad = eff.get("attributeDebuff", "")
-            if ad:
-                match = re.match(r'^(.+?)([+-]\d+)$', ad)
-                if match:
-                    attr_name = match.group(1)
-                    delta = int(match.group(2))
-                    for entry in il:
-                        ec = entry.get("coord", ""); ep = parse_coord(ec) if ec else None
-                        if not ep: continue
-                        if max(abs(ep[0]-cp[0]), abs(ep[1]-cp[1])) > eff["radius"]: continue
-                        if attr_name in ('行动力', '移动力'):
-                            key = '_zone_penalty_' + attr_name
-                            entry[key] = max(entry.get(key, 0), abs(delta))
+            if eff.get('roundPulsesRemaining', 1) > 0:
+                pulse = f"r{(self._get_state() or {}).get('round', 1)}"
+                self._settle_zone_heals(eff, il, tick_results, pulse_id=pulse)
+                eff['roundPulsesRemaining'] = max(0, int(eff.get('roundPulsesRemaining', 1)) - 1)
+            # Attribute debuff per round (属性削减, e.g. 闪避-30/行动力-5)
+            # 由 _apply_zone_attr_penalties 在循环后统一按属性名与敌我/范围结算。
             # Fix #1: Update zone center if follows caster
             if eff.get("centerFollows"):
                 src = eff.get("sourceUserId")
@@ -7303,42 +9429,53 @@ class FullBattleEngine(CombatEngine):
                         need_save = True
         if need_save:
             self._set_effects(effects)
+        # 领域属性削减统一结算（含敌我过滤、范围、非叠加取最强）
+        self._apply_zone_attr_penalties(il)
+        self._set_initiative(il)
         self._zone_tick_results = tick_results
 
     def _process_zone_specials(self):
-        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects."""
+        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects.
+
+        Only the one-time MP drain is settled here. Attribute penalties
+        (on_enter_attr_debuff) are versioned like 属性削减 and applied live by
+        _apply_zone_attr_penalties, so leaving the zone restores the value.
+        """
         effects = self._get_effects(); il = self._get_initiative()
         for eff in effects:
             if eff.get("type") != "zone": continue
             mp_drain_pct = eff.get("on_enter_mp_drain_pct", 0)
-            attr_debuff = eff.get("on_enter_attr_debuff", "")
+            if not (mp_drain_pct > 0):
+                continue
+            cp = parse_coord(eff.get("center", "A1"))
+            if not cp:
+                continue
             trigger_rate = eff.get("on_enter_trigger_rate", 1.0)
-            if not (mp_drain_pct > 0 or attr_debuff): continue
+            caster_uid = eff.get("sourceUserId", "")
             entered = set(eff.get("_entered_ids", []))
             for entry in il:
                 uid = entry["userId"]
                 if uid in entered: continue
+                ep = parse_coord(entry.get("coord", "")) if entry.get("coord") else None
+                if not ep: continue
+                if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > (eff.get("radius", 0) or 0):
+                    continue
+                if self._has_status(uid, '隔离'):
+                    continue
+                if not self._zone_includes(eff.get('filter', 35), uid, caster_uid, il):
+                    continue
                 if random.randint(1, 100) / 100.0 > trigger_rate: continue
                 entered.add(uid)
                 char = self.get_char(uid)
-                if mp_drain_pct > 0:
-                    cmp = char.get_attr("魔力", 0) or 0
-                    absorbed = int(cmp * mp_drain_pct)
-                    char.set_attr("魔力", cmp - absorbed)
-                    # Transfer drained MP to zone caster
-                    caster_uid = eff.get("sourceUserId")
-                    if caster_uid:
-                        bc = self.get_char(caster_uid)
-                        bm = bc.get_attr("魔力", 0) or 0
-                        bmx = bc.get_attr("魔力上限", bm) or bm
-                        bc.set_attr("魔力", min(bm + absorbed, bmx))
-                if attr_debuff:
-                    match = re.match(r'^(.+?)([+-]\d+)$', attr_debuff)
-                    if match:
-                        attr_name = match.group(1)
-                        delta = int(match.group(2))
-                        old_val = char.get_attr(attr_name, 0)
-                        char.set_attr(attr_name, max(1, old_val + delta))
+                cmp = char.get_attr("魔力", 0) or 0
+                absorbed = int(cmp * mp_drain_pct)
+                char.set_attr("魔力", cmp - absorbed)
+                # Transfer drained MP to zone caster
+                if caster_uid:
+                    bc = self.get_char(caster_uid)
+                    bm = bc.get_attr("魔力", 0) or 0
+                    bmx = bc.get_attr("魔力上限", bm) or bm
+                    bc.set_attr("魔力", min(bm + absorbed, bmx))
             eff["_entered_ids"] = list(entered)
         self._set_effects(effects)
 
@@ -7448,6 +9585,16 @@ class FastBattleEngine(FullBattleEngine):
     def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
         w, h = map(int, map_size.split("x"))
         self.group_id = f"fast_{random.randint(10000,99999)}"
+        # ── 新战斗重置召唤账本 / 分组 / unique 记录 ──
+        self._summon_groups = {}
+        self._summon_members = {}
+        self._summon_total_spawned = {}
+        self._revive_use_ledger = set()
+        self._summoned_once = {}
+        self._summoned_templates = {}
+        self._graveyard = {}
+        for uid in team_a + team_b:
+            self.get_char(uid)._once_consumed = set()
         self._set_map({"width":w, "height":h, "entryRow":math.ceil(h/2), "obstacles":{}, "occupants":{}})
         all_chars = team_a + team_b; init_list = []; map_data = self._get_map()
         for i, uid in enumerate(team_a):
@@ -7516,6 +9663,9 @@ class FastBattleEngine(FullBattleEngine):
             if meta_unique:
                 existing = self._summoned_once.get(caster_id, set())
                 options = [n for n in options if n not in existing]
+            # 只从还有名额的实际模板中抽取（None=无限，0=已满）
+            options = [n for n in options
+                       if self._get_summon_quota(caster_id, n, tmpls.get(n) or {})[0] != 0]
             if not options:
                 return None
             template_name = random.choice(options)
@@ -7524,6 +9674,12 @@ class FastBattleEngine(FullBattleEngine):
             # Track as summoned (unique_per_caster: once per battle — survives death)
             if meta_unique:  # Use the saved flag from meta template
                 self._summoned_once.setdefault(caster_id, set()).add(template_name)
+        # ── 数量上限最终校验（在 _meta 解析出实际模板之后）──
+        # 直接调用 / 被动 / 延迟召唤也必须受限；返回 None 时调用方不得记成功。
+        _quota, _quota_reason = self._get_summon_quota(caster_id, template_name, tmpl)
+        if _quota == 0:
+            _engine_debug_log(f'_create_summon blocked: owner={caster_id} tmpl={template_name} {_quota_reason}')
+            return None
         # Generate summon ID: {caster_serial}_sum_{n} (e.g. Y12_sum_1)
         caster_info = self.get_char(caster_id)
         caster_serial = (caster_info.serial if caster_info and caster_info.serial else caster_id)
@@ -7555,23 +9711,36 @@ class FastBattleEngine(FullBattleEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        owner_base = self._resolve_uid(caster_id)
+        self._reconcile_summon_groups()
+        existing_rep = self._find_summon_group_by(owner_base, template_name)
         init_list = self._get_initiative()
-        ce = next((e for e in init_list if e["userId"]==caster_id), None)
-        coord = "A1"
-        if ce and ce.get("coord"):
-            mp = parse_coord(ce["coord"])
-            if mp:
-                for r in range(1,6):
-                    for dc in range(-r,r+1):
-                        for dr in range(-r,r+1):
-                            if abs(dc)+abs(dr)!=r: continue
-                            nc, nr = mp[0]+dc, mp[1]+dr
-                            if 0<=nc<26 and 0<=nr<99:
-                                c = format_coord(nc,nr); md = self._get_map()
-                                if md and c not in md.get("occupants",{}):
-                                    coord=c; md["occupants"][c]=sid; self._set_map(md); break
-                        else: continue; break
-                    else: continue; break
+        ce = self._unit_il_entry(caster_id, init_list)
+        group_entry = (self._unit_il_entry(
+            self._summon_groups[existing_rep]['representative_uid'], init_list)
+            if existing_rep is not None else None)
+        coord = (group_entry or {}).get('coord', 'A1')
+        if existing_rep is None and ce and ce.get('coord'):
+            point = parse_coord(ce['coord'])
+            md = self._get_map()
+            if point and md:
+                size = 2 if tmpl.get('size_2x2') else 1
+                candidates = ((point[0] + dc, point[1] + dr)
+                              for radius in range(1, 6)
+                              for dc in range(-radius, radius + 1)
+                              for dr in range(-radius, radius + 1)
+                              if abs(dc) + abs(dr) == radius)
+                spot = next(((col, row) for col, row in candidates
+                             if 0 <= col and col + size <= md.get('width', 26)
+                             and 0 <= row and row + size <= md.get('height', 99)
+                             and all(format_coord(col + dc, row + dr) not in md.get('occupants', {})
+                                     and format_coord(col + dc, row + dr) not in md.get('obstacles', {})
+                                     for dc in range(size) for dr in range(size))), None)
+                if spot is None:
+                    return None
+                coord = format_coord(*spot)
+                md['occupants'][coord] = sid
+                self._set_map(md)
         team = ce.get("team","Y") if ce else "Y"
         caster = self.get_char(caster_id)
         caster_name = caster.name if caster else caster_id
@@ -7583,9 +9752,7 @@ class FastBattleEngine(FullBattleEngine):
         else:
             sum_init_roll, _ = roll_d100("")
             sum_init_rank = success_rank(sum_init_roll, dex)
-        # ── Summon group consolidation: check for existing same-type group ──
-        owner_base = self._resolve_uid(caster_id)
-        existing_rep = self._find_summon_group_by(owner_base, template_name)
+        # ── Add to the live/repaired group found before reserving any map cell ──
         if existing_rep is not None:
             # ── Add to existing group: no new initiative entry, shared action pool ──
             grp = self._summon_groups[existing_rep]
@@ -7603,6 +9770,8 @@ class FastBattleEngine(FullBattleEngine):
             summon_char2 = self.get_char(sid)
             summon_char2.name = summon_display_name
             summon_char2.set_attr('MOV', tmpl.get('MOV', 6))
+            if tmpl.get('不可指定'):
+                summon_char2.set_attr('不可指定', 1)
             if parsed and parsed[0].get('dice'):
                 summon_char2.set_str('伤害值', parsed[0]['dice'])
             summon_char2.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
@@ -7633,21 +9802,8 @@ class FastBattleEngine(FullBattleEngine):
                 if caster:
                     summon_char2.set_str('伤害值', caster.get_str('伤害值') or '1d4')
                     summon_char2.set_str('db', caster.get_str('db') or '0')
-            # Group members share the representative's map position.
-            # Do NOT place them on separate cells (would fill the map).
-            rep_entry = next((e for e in self._get_initiative() if e.get('baseUserId', e['userId']) == existing_rep), None)
-            if rep_entry and rep_entry.get('coord'):
-                self._summon_members[sid]['coord'] = rep_entry['coord']
-            if tmpl.get('size_2x2'):
-                mp2 = parse_coord(self._summon_members[sid]['coord'])
-                if mp2:
-                    for dr2x in range(2):
-                        for dc2x in range(2):
-                            if dr2x == 0 and dc2x == 0: continue
-                            nc2x, nr2x = mp2[0]+dc2x, mp2[1]+dr2x
-                            if 0 <= nc2x < 26 and 0 <= nr2x < 99:
-                                self._get_map()['occupants'][format_coord(nc2x, nr2x)] = sid
-                    self._set_map(self._get_map())
+            # Hidden members share the group's footprint; no extra cell is reserved.
+            self._register_summon_member_state(sid, tmpl, owner_base)
             mg2 = tmpl.get('merge_group', '')
             if mg2:
                 if not hasattr(self, '_summoned_templates'):
@@ -7656,6 +9812,7 @@ class FastBattleEngine(FullBattleEngine):
                 if caster_id not in st2: st2[caster_id] = {}
                 if mg2 not in st2[caster_id]: st2[caster_id][mg2] = set()
                 st2[caster_id][mg2].add(template_name)
+            self._register_summon_spawned(caster_id, template_name)
             return sid
         # ── No existing group: create normal initiative entry ──
         init_list.append({"userId":sid,"name":template_name,"displayName":summon_display_name,"team":team,"dex":dex,"initRoll":sum_init_roll,"initRank":sum_init_rank,
@@ -7687,9 +9844,22 @@ class FastBattleEngine(FullBattleEngine):
         summon_char_fast.name = summon_display_name
         # 设置动态行动数所需的属性（召唤物也使用统一公式）
         summon_char_fast.set_attr('MOV', tmpl.get('MOV', 6))
+        if tmpl.get('不可指定'):
+            summon_char_fast.set_attr('不可指定', 1)
         if parsed and parsed[0].get('dice'):
             summon_char_fast.set_str('伤害值', parsed[0]['dice'])
         summon_char_fast.set_attr('额外行动数', tmpl.get('额外行动数', tmpl.get('回合行动数', 0)))
+        # Copy template-based skill attrs to character (needed for get_best_melee/reactions)
+        # 之前 Fast 路径漏了这一步：蜂鸟 闪避65 / 爪击70 只进了 entry，没进 Character，
+        # 导致训练时召唤物的命中/闪避仍按默认值计算。
+        _tmpl_skill_keys_f = ['斗殴', '闪避', '格挡', '盾击', '鞭', '爪击']
+        for _k in _tmpl_skill_keys_f:
+            if _k in tmpl:
+                summon_char_fast.set_attr(_k, tmpl[_k])
+        for _ps in parsed:
+            _sn = _ps.get('name', '')
+            if _sn and _ps.get('skill_type', 'attack') == 'attack':
+                summon_char_fast.set_attr(_sn, _ps['val'])
         # Copy spells from template to character (for .s1/.s2 commands)
         summon_char_fast.spells = list(tmpl.get('spells', []))
         # Ensure initiative entry has correct fields
@@ -7718,7 +9888,23 @@ class FastBattleEngine(FullBattleEngine):
         acts = self._get_actions()
         acts[sid] = {"主动": self._calc_main_actions(sid), "附加": 3}
         self._set_actions(acts)
-        # 2x2占据
+        # ── Create summon group for first summon of this type ──
+        # Full 引擎在此登记；Fast 之前漏了这一步，导致训练路径下生灵/蜂鸟
+        # 每只各占一个先攻槽、各有一份动作池（与线上的合组语义分叉）。
+        self._summon_groups[sid] = {
+            'members': [sid], 'template_name': template_name,
+            'ownerId': self._resolve_uid(caster_id),
+            'representative_uid': sid,
+        }
+        self._summon_members[sid] = {
+            'userId': sid, 'name': template_name,
+            'display_name': summon_display_name,
+            'team': team, 'coord': coord,
+            'skills': parsed, 'dex': dex,
+            'flying': tmpl.get('flying', False),
+            'ignited': False, 'ignite_dmg_dice': '', 'ignite_tick_dmg': 0,
+            'summonGroup': summon_group,
+        }
         if tmpl.get("size_2x2"):
             mp = parse_coord(coord)
             if mp:
@@ -7748,6 +9934,8 @@ class FastBattleEngine(FullBattleEngine):
             current_entry = next((e for e in self._get_initiative() if e['userId'] == tracked_uid), None)
             if current_entry:
                 self._slot_actions_given[tracked_base] = current_entry.get('actionIdx', 0)
+        self._register_summon_member_state(sid, tmpl, owner_base)
+        self._register_summon_spawned(caster_id, template_name)
         return sid
 
     # _summon_attack and _apply_shield_block are inherited from FullBattleEngine
@@ -7763,7 +9951,7 @@ class FastBattleEngine(FullBattleEngine):
         processed_zone_positions = set()
         for eff in effects:
             if eff.get("type")!="zone" or eff.get("radius",0)<=0: continue
-            cp = parse_coord(eff.get("center","A1"))
+            cp = parse_coord(self._zone_caster_coord(eff, il))
             if not cp: continue
             stackable = eff.get("stackable", 0)
             spell_name = eff.get("spellName", "")
@@ -7782,6 +9970,9 @@ class FastBattleEngine(FullBattleEngine):
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
                     # 隔离：不受领域效果影响
                     if self._has_status(entry['userId'], '隔离'):
+                        continue
+                    # 客体/范围筛选（不满足者不占用去重键）
+                    if not self._zone_covers_uid(eff, entry['userId'], il):
                         continue
                     # ally_safe: skip allies if zone is marked ally-safe
                     if eff.get('ally_safe') and entry.get('team') == zone_team:
@@ -7814,78 +10005,12 @@ class FastBattleEngine(FullBattleEngine):
                             'amount': ed, 'hp': hp - ed, 'hp_max': hp_max,
                             'alive': (hp - ed) > 0,
                         })
-            if eff.get("tickHealHp"):
-                for entry in il:
-                    if entry.get("team") != zone_team: continue
-                    if entry.get("isSummon") and entry.get("ignited"): continue  # Ignited summons cannot be healed
-                    ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
-                    if not ep: continue
-                    if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
-                    # 隔离：不受领域效果影响
-                    if self._has_status(entry['userId'], '隔离'):
-                        continue
-                    # Dedup: skip if this (coord, spellName) already processed
-                    pos_key = (ec, spell_name)
-                    if not stackable and pos_key in processed_zone_positions:
-                        continue
-                    processed_zone_positions.add(pos_key)
-                    heal = roll_dice(eff["tickHealHp"])
-                    if heal > 0:
-                        heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'hp'))
-                        heal += self._get_buff_heal_flat(entry["userId"], 'hp')  # AUX code 8
-                        hp = self._get_combat_hp(entry["userId"]) or 10
-                        ch = self.get_char(entry["userId"])
-                        mhp = ch.get_attr("体力上限", hp) if ch else hp
-                        self._set_combat_hp(entry["userId"], min(hp+heal, mhp))
-                        tname = entry.get("displayName", entry.get("name", entry["userId"]))
-                        tick_results.append({
-                            'spell_name': spell_name, 'target_name': tname,
-                            'type': 'heal_hp', 'dice': eff["tickHealHp"], 'roll': heal,
-                            'amount': heal, 'hp': min(hp+heal, mhp), 'hp_max': mhp,
-                            'alive': True,
-                        })
-            if eff.get("tickHealMp"):
-                for entry in il:
-                    if entry.get("team") != zone_team: continue
-                    ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
-                    if not ep: continue
-                    if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
-                    # 隔离：不受领域效果影响
-                    if self._has_status(entry['userId'], '隔离'):
-                        continue
-                    # Dedup: skip if this (coord, spellName) already processed
-                    pos_key = (ec, spell_name)
-                    if not stackable and pos_key in processed_zone_positions:
-                        continue
-                    processed_zone_positions.add(pos_key)
-                    heal = roll_dice(eff["tickHealMp"])
-                    if heal > 0:
-                        heal = int(heal * self._get_buff_heal_pct(entry["userId"], 'mp'))
-                        heal += self._get_buff_heal_flat(entry["userId"], 'mp')  # AUX code 6
-                        tname = entry.get("displayName", entry.get("name", entry["userId"]))
-                        tick_results.append({
-                            'spell_name': spell_name, 'target_name': tname,
-                            'type': 'heal_mp', 'dice': eff["tickHealMp"], 'roll': heal,
-                            'amount': heal, 'hp': 0, 'hp_max': 0,
-                            'alive': True,
-                        })
-                        ch = self.get_char(entry["userId"])
-                        cm = ch.get_attr("魔力",0) or 0; mx = ch.get_attr("魔力上限",cm) or cm
-                        ch.set_attr("魔力", min(cm+heal, mx))
-            # Attribute debuff per round (属性削减, e.g. 行动力-5) — temporary on entry
-            ad = eff.get("attributeDebuff", "")
-            if ad:
-                match = re.match(r'^(.+?)([+-]\d+)$', ad)
-                if match:
-                    attr_name = match.group(1)
-                    delta = int(match.group(2))
-                    for entry in il:
-                        ec = entry.get("coord", ""); ep = parse_coord(ec) if ec else None
-                        if not ep: continue
-                        if max(abs(ep[0]-cp[0]), abs(ep[1]-cp[1])) > eff["radius"]: continue
-                        if attr_name in ('行动力', '移动力'):
-                            key = '_zone_penalty_' + attr_name
-                            entry[key] = max(entry.get(key, 0), abs(delta))
+            if eff.get('roundPulsesRemaining', 1) > 0:
+                pulse = f"r{(self._get_state() or {}).get('round', 1)}"
+                self._settle_zone_heals(eff, il, tick_results, pulse_id=pulse)
+                eff['roundPulsesRemaining'] = max(0, int(eff.get('roundPulsesRemaining', 1)) - 1)
+            # Attribute debuff per round (属性削减, e.g. 闪避-30/行动力-5)
+            # 由 _apply_zone_attr_penalties 在循环后统一按属性名与敌我/范围结算。
             # Fix #1: Update zone center if follows caster
             if eff.get("centerFollows"):
                 src = eff.get("sourceUserId")
@@ -7896,42 +10021,53 @@ class FastBattleEngine(FullBattleEngine):
                         need_save = True
         if need_save:
             self._set_effects(effects)
+        # 领域属性削减统一结算（含敌我过滤、范围、非叠加取最强）
+        self._apply_zone_attr_penalties(il)
+        self._set_initiative(il)
 
     # ---- Zone enter triggers (generalized) + 三合一 (generalized) ----
     def _process_zone_specials(self):
-        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects."""
+        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects.
+
+        Only the one-time MP drain is settled here. Attribute penalties
+        (on_enter_attr_debuff) are versioned like 属性削减 and applied live by
+        _apply_zone_attr_penalties, so leaving the zone restores the value.
+        """
         effects = self._get_effects(); il = self._get_initiative()
         for eff in effects:
             if eff.get("type") != "zone": continue
             mp_drain_pct = eff.get("on_enter_mp_drain_pct", 0)
-            attr_debuff = eff.get("on_enter_attr_debuff", "")
+            if not (mp_drain_pct > 0):
+                continue
+            cp = parse_coord(eff.get("center", "A1"))
+            if not cp:
+                continue
             trigger_rate = eff.get("on_enter_trigger_rate", 1.0)
-            if not (mp_drain_pct > 0 or attr_debuff): continue
+            caster_uid = eff.get("sourceUserId", "")
             entered = set(eff.get("_entered_ids", []))
             for entry in il:
                 uid = entry["userId"]
                 if uid in entered: continue
+                ep = parse_coord(entry.get("coord", "")) if entry.get("coord") else None
+                if not ep: continue
+                if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > (eff.get("radius", 0) or 0):
+                    continue
+                if self._has_status(uid, '隔离'):
+                    continue
+                if not self._zone_includes(eff.get('filter', 35), uid, caster_uid, il):
+                    continue
                 if random.randint(1, 100) / 100.0 > trigger_rate: continue
                 entered.add(uid)
                 char = self.get_char(uid)
-                if mp_drain_pct > 0:
-                    cmp = char.get_attr("魔力", 0) or 0
-                    absorbed = int(cmp * mp_drain_pct)
-                    char.set_attr("魔力", cmp - absorbed)
-                    # Transfer drained MP to zone caster
-                    caster_uid = eff.get("sourceUserId")
-                    if caster_uid:
-                        bc = self.get_char(caster_uid)
-                        bm = bc.get_attr("魔力", 0) or 0
-                        bmx = bc.get_attr("魔力上限", bm) or bm
-                        bc.set_attr("魔力", min(bm + absorbed, bmx))
-                if attr_debuff:
-                    match = re.match(r'^(.+?)([+-]\d+)$', attr_debuff)
-                    if match:
-                        attr_name = match.group(1)
-                        delta = int(match.group(2))
-                        old_val = char.get_attr(attr_name, 0)
-                        char.set_attr(attr_name, max(1, old_val + delta))
+                cmp = char.get_attr("魔力", 0) or 0
+                absorbed = int(cmp * mp_drain_pct)
+                char.set_attr("魔力", cmp - absorbed)
+                # Transfer drained MP to zone caster
+                if caster_uid:
+                    bc = self.get_char(caster_uid)
+                    bm = bc.get_attr("魔力", 0) or 0
+                    bmx = bc.get_attr("魔力上限", bm) or bm
+                    bc.set_attr("魔力", min(bm + absorbed, bmx))
             eff["_entered_ids"] = list(entered)
         self._set_effects(effects)
 
@@ -8034,7 +10170,7 @@ class FastBattleEngine(FullBattleEngine):
         return True
 
     def _is_flying(self, uid):
-        il = self._get_initiative(); entry = next((e for e in il if e["userId"]==uid), None)
+        il = self._get_initiative(); entry = self._unit_il_entry(uid, il)
         if entry and entry.get("flying"): return True
         char = self.get_char(uid)
         if char and char.get_attr('飞行', 0): return True
@@ -8056,6 +10192,9 @@ class FastBattleEngine(FullBattleEngine):
     def _fast_coc7_attack(self, atk_uid, def_uid, skill_name, skill_val, dmg_dice, pen, leth):
         """Full COC7 attack for training: rank-based damage + trainable reaction."""
         achar = self.get_char(atk_uid); dchar = self.get_char(def_uid)
+        # bp_suffix: 攻击检定的奖励/惩罚骰（如飞行近战惩罚骰），与 Full 引擎一致。
+        # 注意与 pen（伤害贯穿）区分——两者含义完全不同。
+        bp_suffix = ''
         # ── 射程移动 ──
         atk_range = _get_attack_range(skill_name=skill_name)
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
@@ -8066,7 +10205,7 @@ class FastBattleEngine(FullBattleEngine):
         if not can_melee:
             return (def_uid, atk_uid, 0, f"无法近战飞行目标")
         if fly_penalty:
-            pen += 1  # 飞行近战惩罚骰
+            bp_suffix = 'p'  # 飞行近战惩罚骰
         # ── 幻造兵武 (phantom creation): basic attacks also benefit from 幻造 buff ──
         atk_effects2 = self._get_effects()
         for ce in atk_effects2:
@@ -8075,9 +10214,9 @@ class FastBattleEngine(FullBattleEngine):
                 writing_val2 = int(achar.get_attr('写作', 0) or 0)
                 if writing_val2 > 0:
                     atk_buffs_hz2 = self._get_active_buffs(atk_uid)
-                    bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', None)
+                    bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', '写作')
                     roll2, _ = roll_d100(bp_str_hz2)
-                    w_rank2 = success_rank(roll2, writing_val2)
+                    w_rank2 = success_rank(roll2, self._apply_buff_skill_mod(atk_uid, writing_val2, '写作'))
                     if w_rank2 >= 4:      phantom_val2 = roll_dice('2d6')
                     elif w_rank2 == 3:    phantom_val2 = 6 + roll_dice('1d6')
                     elif w_rank2 == 2:    phantom_val2 = roll_dice('1d6')
@@ -8092,11 +10231,12 @@ class FastBattleEngine(FullBattleEngine):
         bonus_dice = self._get_buff_dmg_dice_bonus(atk_uid)
         if bonus_dice:
             dmg_dice = f"{dmg_dice}+{bonus_dice}" if dmg_dice else bonus_dice
-        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
+        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
-        # 行动力优势合并到攻击BP
+        # 行动力优势合并到攻击BP（同样合并飞行近战惩罚骰 bp_suffix）
         ap_atk_b, ap_def_p = self._calc_action_power_bp(atk_uid, def_uid)
-        eff_bp = _calc_net_bp(atk_buffs, ap_atk_b, skill_name)
+        eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name,
+                              extra_tokens=[ap_atk_b] if ap_atk_b else None)
         crit_pct, crit_flat = self._get_buff_crit_adjustment(atk_uid)
         atk_result, atk_bp_detail = roll_d100(eff_bp); atk_rank = success_rank(atk_result, eff_skill, crit_pct, crit_flat)
         bp_str = f", {atk_bp_detail}" if atk_bp_detail else ""
@@ -8106,29 +10246,33 @@ class FastBattleEngine(FullBattleEngine):
             return (def_uid, atk_uid, 0, f"D100={atk_result}/{eff_skill}{bp_str} {rank_text(atk_rank)}")
 
         dodge_val = dchar.get_attr("闪避",25); bmn, bmv = dchar.get_best_melee()
-        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
-        bmv = self._apply_buff_skill_mod(def_uid, bmv)
+        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val, '闪避')
+        bmv = self._apply_buff_skill_mod(def_uid, bmv, bmn)
         def_buffs = self._get_active_buffs(def_uid)
         _, ap_def_p2 = self._calc_action_power_bp(atk_uid, def_uid)
-        def_bp = _calc_net_bp(def_buffs, ap_def_p2, skill_name)
+        _def_extra = [ap_def_p2] if ap_def_p2 else None
 
         # ── 格挡可用性 ──
         block_name, block_val = self._get_block_skill(def_uid)
-        block_val = self._apply_buff_skill_mod(def_uid, block_val)
+        block_val = self._apply_buff_skill_mod(def_uid, block_val, block_name)
         can_block = (dchar.get_attr('可格挡', 0) == 1
                      and block_name is not None and block_val > 0)
-        block_hp = next((e for e in self._get_initiative() if e['userId'] == def_uid), {}).get('shield_block_hp', 0)
+        block_hp = (self._unit_il_entry(def_uid, self._get_initiative()) or {}).get('shield_block_hp', 0)
         # Check for block_redirect (summon takes damage instead of defender)
         _block_redirect = self._get_block_redirect_target(def_uid)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
+        def_bp_dodge = _calc_net_bp(def_buffs, '', '闪避', extra_tokens=_def_extra)
+        def_bp_counter = _calc_net_bp(def_buffs, '', bmn, extra_tokens=_def_extra)
+        def_bp_block = _calc_net_bp(def_buffs, '', block_name, extra_tokens=_def_extra)
 
         # ── 击晕禁止所有反应 ──
         if not self._can_react(def_uid):
             return (def_uid, atk_uid, 0, f"击晕中，无法反应")
         # Reaction: use stored character weights (trainable, three-way)
-        dw = getattr(self, '_react_dw', {}).get(def_uid, 50)
-        cw = getattr(self, '_react_cw', {}).get(def_uid, 50)
-        bw = getattr(self, '_react_bw', {}).get(def_uid, 0) if can_block else 0
+        defender = self._unit_il_entry(def_uid, self._get_initiative()) or {}
+        dw = self._react_dw.get(def_uid, defender.get('react_dodge_w', 50))
+        cw = self._react_cw.get(def_uid, defender.get('react_counter_w', 50))
+        bw = self._react_bw.get(def_uid, defender.get('react_block_w', 0)) if can_block else 0
         total_w = dw + cw + bw
         if total_w > 0:
             r = random.random() * total_w
@@ -8139,7 +10283,7 @@ class FastBattleEngine(FullBattleEngine):
             react_choice = 'dodge' if dodge_val >= bmv else 'counter'
 
         if react_choice == 'dodge':
-            rr, rd_detail = roll_d100(def_bp); react_rank = success_rank(rr, dodge_val)
+            rr, rd_detail = roll_d100(def_bp_dodge); react_rank = success_rank(rr, dodge_val)
             eff_atk = atk_rank
             if react_rank > 0: eff_atk -= react_rank
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
@@ -8148,15 +10292,14 @@ class FastBattleEngine(FullBattleEngine):
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             is_counter = False
         elif react_choice == 'counter':
-            rr, rd_detail = roll_d100(def_bp); react_rank = success_rank(rr, bmv)
+            rr, rd_detail = roll_d100(def_bp_counter); react_rank = success_rank(rr, bmv)
             eff_atk, eff_react = atk_rank, react_rank
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
             if eff_atk == -2: eff_react = min(4, eff_react + 1)
             eff_atk, eff_react = max(-2, min(4, eff_atk)), max(-2, min(4, eff_react))
             if eff_react > eff_atk and eff_react > 0:
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
-                cdmg = dchar.get_str("伤害值") or "1d4"
-                cdmg = _resolve_db(cdmg, _get_db_str(dchar))
+                cdmg = self._get_damage_dice(def_uid, bmn)
                 cpen = dchar.get_attr("伤害贯穿",1); cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
             elif eff_atk > eff_react and eff_atk > 0:
@@ -8165,7 +10308,7 @@ class FastBattleEngine(FullBattleEngine):
 
         else:  # react_choice == 'block'
             # ── 格挡反应 (训练引擎) ──
-            rr, rd_detail = roll_d100(def_bp); react_rank = success_rank(rr, block_val)
+            rr, rd_detail = roll_d100(def_bp_block); react_rank = success_rank(rr, block_val)
             eff_atk = atk_rank
             if react_rank > 0: eff_atk -= react_rank
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
@@ -8183,12 +10326,12 @@ class FastBattleEngine(FullBattleEngine):
                 # ── block_redirect: 伤害由召唤物承担 ──
                 _block_redirect = self._get_block_redirect_target(def_uid)
                 if _block_redirect:
-                    rt_entry = next((e for e in self._get_initiative() if e['userId'] == _block_redirect), None)
+                    rt_entry = self._unit_il_entry(_block_redirect, self._get_initiative())
                     rt_block_hp = rt_entry.get('shield_block_hp', 0) if rt_entry else 0
                     if blk_eff > 0 and rt_block_hp > 0:
                         absorbed = min(blk_eff, rt_block_hp)
                         blk_eff -= absorbed
-                        rt_entry['shield_block_hp'] = rt_block_hp - absorbed
+                        self._set_summon_entry_fields(_block_redirect, shield_block_hp=rt_block_hp - absorbed)
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff)
                     self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff)
@@ -8197,8 +10340,8 @@ class FastBattleEngine(FullBattleEngine):
                 if blk_eff > 0 and block_hp > 0:
                     absorbed = min(blk_eff, block_hp)
                     blk_eff -= absorbed
-                    entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
-                    if entry: entry['shield_block_hp'] = block_hp - absorbed
+                    entry = self._unit_il_entry(def_uid, self._get_initiative())
+                    self._set_summon_entry_fields(def_uid, shield_block_hp=block_hp - absorbed)
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff)
                 self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff)
@@ -8283,7 +10426,10 @@ class FastBattleEngine(FullBattleEngine):
         atk_range = _get_attack_range(skill_name=bn_tmp)
         reachable = []
         for e in enemies:
-            if self._can_melee(uid, e["userId"]):
+            # _can_melee 返回 (can_melee, fly_penalty) 元组，必须解包——
+            # 直接判真值会把 (False, False) 当成可用，使飞行过滤失效。
+            can_melee, _fly_penalty = self._can_melee(uid, e["userId"])
+            if can_melee:
                 can, orig = self._move_to_attack_range(uid, e["userId"], atk_range)
                 if can:
                     reachable.append((e, orig))
@@ -8294,8 +10440,11 @@ class FastBattleEngine(FullBattleEngine):
             for e, oc in reachable:
                 if e["userId"]==tid: target, _orig_coord = e, oc; break
         tid = target["userId"]
-        bn, bv = char.get_best_melee(); bv = self._apply_buff_skill_mod(uid, bv)
-        if random.randint(1,100) > bv:
+        bn, bv = char.get_best_melee(); bv = self._apply_buff_skill_mod(uid, bv, bn)
+        # 奖惩骰参与普通攻击命中判定（原先只掷裸随机数）
+        atk_bp = _calc_net_bp(self._get_active_buffs(uid), '', bn)
+        hit_roll, _ = roll_d100(atk_bp)
+        if success_rank(hit_roll, bv) <= 0:
             return ""
         dd = self._get_damage_dice(uid, bn); p = char.get_attr("伤害贯穿",1); l = char.get_attr("致死骰",1) or 0
         # AUX code 4: merge bonus damage dice
@@ -8453,7 +10602,7 @@ def get_character_combat_value(engine, uid):
 
     # Best melee damage
     try:
-        bn, bv = char.get_best_melee()
+        bn, bv = engine._get_attack_skill(uid, char)
         basic_dice = engine._get_damage_dice(uid, bn)
         basic_avg = avg_damage(basic_dice) if basic_dice else 0.0
     except Exception:
@@ -8501,7 +10650,8 @@ def cake_reward_modifier(engine, actor_uid, ak):
         teammates = [e for e in init_list if e['team'] == my_team
                      and e['userId'] != actor_uid
                      and not e.get('isSummon')
-                     and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                     and ((engine._get_combat_hp(e['userId']) or 0) > 0
+                          or engine._is_dying(e['userId']))]
         if not teammates: return 1.0
         target_uid = select_teammate_by_strategy(engine, actor_uid, target_strat, teammates)
         if not target_uid: return 1.0
@@ -8558,14 +10708,13 @@ def targeting_reward_modifier(engine, uid, ak):
         return 1.0
 
     init_list = engine._get_initiative()
-    my_entry = next((e for e in init_list if e['userId'] == uid), None)
+    # 隐藏召唤组员没有独立先攻条目——与线上一致地通过合成条目解析其阵营。
+    my_entry = engine._unit_il_entry(uid, init_list)
     if not my_entry:
         return 1.0
-    my_team = my_entry.get('team', 'Y')
 
-    enemies = [e for e in init_list
-               if e['team'] != my_team
-               and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    enemies = [e for e in engine._enemy_target_entries(uid)
+               if (engine._get_combat_hp(e['userId']) or 0) > 0]
 
     has_non_summon = any(not e.get('isSummon') for e in enemies)
 
@@ -8648,7 +10797,7 @@ def encode_state(engine, uid):
                         and not has_timing(s.get('时机','2'), '1')]), 4)
 
     # Dim 8: skill_power = best damage skill / basic attack ratio
-    bn, bv = char.get_best_melee()
+    bn, bv = engine._get_attack_skill(uid, char)
     basic_dice = engine._get_damage_dice(uid, bn)
     basic_avg = avg_damage(basic_dice) if basic_dice else 1.0
     basic_avg = max(basic_avg, 0.5)
@@ -8692,8 +10841,8 @@ def encode_state(engine, uid):
     # Dim 12: buffs_active
     buffs_active = int(len(engine._get_active_buffs(uid)) > 0)
 
-    # Dim 13: has_cake
-    has_cake = int(hasattr(engine, '_has_ready_cake') and engine._has_ready_cake())
+    # Dim 13: has_cake — actor-scoped: personal inventory + own team's crafted pool
+    has_cake = int(hasattr(engine, '_has_ready_cake') and engine._has_ready_cake(uid))
 
     # Dim 14: phase
     phase = getattr(char, 'phase', 1)
@@ -8732,14 +10881,22 @@ def encode_state(engine, uid):
 
 
 def encode_summon_state(engine, uid):
-    """Encode combat state for a summon entity into a hashable key."""
+    """Encode combat state for a summon entity into a hashable key.
+
+    Hidden group members have no initiative slot of their own; resolve them via
+    the engine's synthetic-entry helper so every living member can be trained.
+    """
     init_list = engine._get_initiative()
-    entry = next((e for e in init_list if e['userId'] == uid), None)
+    entry = engine._unit_il_entry(uid, init_list)
     if not entry: return None  # sentinel: summon not in initiative
     my_team = entry.get('team', 'Y')
 
     my_hp = engine._get_combat_hp(uid) or 0
-    my_max_hp = entry.get('max_hp', max(my_hp, 1))
+    # 合成条目可能不带 max_hp；退回到角色的体力上限，最后才用当前 HP。
+    my_max_hp = entry.get('max_hp')
+    if my_max_hp is None:
+        _ch = engine.get_char(uid)
+        my_max_hp = _ch.get_attr('体力上限', 0) or my_hp or 1
     my_b = bucket(my_hp, my_max_hp)
 
     # Enemy HP
@@ -8828,34 +10985,51 @@ def _mp_run_battle(args):
         if not init_list: break
         round_count = state.get('round', 1)
 
+        # ── 派发前先做召唤组维护并刷新快照 ──
+        # 代表阵亡提升/缺失条目修复/全灭组删除都在这里统一完成，
+        # 之后重新读取 initiative/state，避免拿过期 activeIndex 派发行动。
+        engine._reconcile_summon_groups()
+        init_list = engine._get_initiative()
+        state = engine._get_state()
+        if not init_list or not state or state.get('phase') != 'active':
+            # 引擎维护可能已判定战斗结束（phase='ended'），记录结果供终局奖励。
+            _res = getattr(engine, '_battle_result', None)
+            if _res and _res.get('winner'):
+                winner = _res['winner']
+            break
+        round_count = state.get('round', 1)
+
         if round_count != getattr(engine, '_last_zone_round', 0):
             has_zones = any(e.get('type') == 'zone' for e in engine._get_effects())
             has_summons = any(e.get('isSummon') for e in engine._get_initiative())
             if has_zones: engine._process_zone_specials()
             if has_summons:
                 engine._check_trinity_merge()
+                # 主人死亡后的清理统一走 _remove_summons_of_owner：它会同步
+                # 组/成员/地图并保留当前行动者索引（不再手写先攻过滤）。
+                engine._reconcile_summon_groups()
                 dead_owners = {e['userId'] for e in engine._get_initiative()
-                               if not e.get('isSummon') and (engine._get_combat_hp(e['userId']) or 0) <= 0}
+                               if not e.get('isSummon') and engine._is_final_dead(e['userId'])}
+                for owner_uid in dead_owners:
+                    engine._remove_summons_of_owner(owner_uid)
                 if dead_owners:
-                    il = engine._get_initiative()
-                    new_il = [e for e in il if not (e.get('isSummon') and e.get('ownerId') in dead_owners)]
-                    engine._set_initiative(new_il)
-                    # Clamp activeIndex in case the removed summons were before current position
-                    if state and state.get('activeIndex', 0) >= len(new_il):
-                        state['activeIndex'] = state['activeIndex'] % max(1, len(new_il))
-                        engine._set_state(state)
+                    engine._reconcile_summon_groups()
+                    init_list = engine._get_initiative()
+                    state = engine._get_state()
+                    if not init_list or not state or state.get('phase') != 'active': break
             for attr in list(engine.__dict__.keys()):
                 if attr.startswith('_xingshan_attacked_'): delattr(engine, attr)
             engine._last_zone_round = round_count
 
-        dead_owners_r = {e['userId'] for e in init_list if not e.get('isSummon') and (engine._get_combat_hp(e['userId']) or 0) <= 0}
+        dead_owners_r = {e['userId'] for e in init_list
+                         if not e.get('isSummon') and engine._is_final_dead(e['userId'])}
+        for owner_uid in dead_owners_r:
+            engine._remove_summons_of_owner(owner_uid)
         if dead_owners_r:
-            init_list = [e for e in init_list if not (e.get('isSummon') and e.get('ownerId') in dead_owners_r)]
-            engine._set_initiative(init_list)
-            # Clamp activeIndex in case removed summons were before current position
-            if state.get('activeIndex', 0) >= len(init_list):
-                state['activeIndex'] = state['activeIndex'] % max(1, len(init_list))
-                engine._set_state(state)
+            engine._reconcile_summon_groups()
+            init_list = engine._get_initiative()
+            state = engine._get_state()
+            if not init_list or not state or state.get('phase') != 'active': break
 
         y_alive = sum(1 for e in init_list if e['team'] == 'Y' and (engine._get_combat_hp(e['userId']) or 0) > 0)
         x_alive = sum(1 for e in init_list if e['team'] == 'X' and (engine._get_combat_hp(e['userId']) or 0) > 0)
@@ -8871,53 +11045,60 @@ def _mp_run_battle(args):
         is_summon = entry.get('isSummon', False)
 
         if hp <= 0:
-            state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
-            if state['activeIndex'] == 0:
-                state['round'] = state.get('round', 1) + 1
-                engine._reset_move_power()
-                acts_r = engine._get_actions()
-                for k in list(acts_r.keys()): acts_r[k] = {'主动': 2, '附加': 3}
-                engine._set_actions(acts_r)
-                engine._tick_down(); engine._apply_zone_effects()
-            engine._set_state(state)
+            old_round = state.get('round', 1)
+            engine._end_turn(uid)
+            if (engine._get_state() or {}).get('round', old_round) > old_round:
+                engine._reset_round_actions(character_main=2)
             continue
 
         if is_summon:
-            # Summon Q-training: random action in subprocess
-            st = encode_summon_state(engine, uid)
-            if st is None: engine._end_turn(uid); continue
-            av = get_summon_actions(engine, uid)
-            if av:
-                ak, an = random.choice(av)
+            # ── 共享动作、全员出手（训练路径）──
+            # 一次组动作让当前存活成员各执行一次，整组只扣一次主动作。
+            group_key = engine._summon_group_key(uid)
+            summon_name = entry.get('name', uid)
+
+            def _one_member(m_uid):
+                st_m = encode_summon_state(engine, m_uid)
+                av_m = get_summon_actions(engine, m_uid)
+                if st_m is None or not av_m:
+                    engine._summon_attack(m_uid)
+                    return ([], False, None)
+                ak_m, an_m = random.choice(av_m)
                 prev_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
-                execute_summon_action(engine, uid, ak)
+                execute_summon_action(engine, m_uid, ak_m)
                 curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
                 max_hp = max(abs(prev_diff), abs(curr_diff), 1)
                 reward = (curr_diff - prev_diff) / max_hp
-                reward *= targeting_reward_modifier(engine, uid, ak)
-                next_st = encode_summon_state(engine, uid)
-                summon_name = entry.get('name', uid)
+                reward *= targeting_reward_modifier(engine, m_uid, ak_m)
+                next_st = encode_summon_state(engine, m_uid)
                 if next_st is not None:
-                    updates.append(('summon', summon_name, st, ak, reward, next_st))
-            else:
-                engine._summon_attack(uid)
-            state['activeIndex'] = (state['activeIndex'] + 1) % len(init_list)
-            if state['activeIndex'] == 0:
-                state['round'] = state.get('round', 1) + 1
-                engine._reset_move_power()
-                acts_r = engine._get_actions()
-                for k in list(acts_r.keys()): acts_r[k] = {'主动': 2, '附加': 3}
-                engine._set_actions(acts_r)
-                engine._tick_down(); engine._apply_zone_effects()
-            engine._set_state(state)
+                    updates.append(('summon', summon_name, st_m, ak_m, reward, next_st))
+                return ([], False, None)
+
+            r = engine._execute_summon_group_action(group_key, _one_member)
+            # 组动作期间可能发生代表阵亡/主人死亡，重新取快照后再推进。
+            init_list = engine._get_initiative()
+            state = engine._get_state()
+            if not init_list or not state or state.get('phase') != 'active': break
+            # 共享动作未耗尽则继续由该组行动；否则推进到下一个先攻条目
+            if r.get('action_spent') and r.get('remaining', 0) > 0:
+                if state.get('activeIndex', 0) >= len(init_list):
+                    state['activeIndex'] %= len(init_list)
+                    engine._set_state(state)
+                continue
+            old_round = state.get('round', 1)
+            engine._end_turn(uid)
+            if (engine._get_state() or {}).get('round', old_round) > old_round:
+                engine._reset_round_actions(character_main=2)
             continue
 
         actions = engine._get_actions().get(uid, {'主动': 2, '附加': 3})
-        if actions['主动'] <= 0: engine._end_turn(uid); continue
+        if actions['主动'] <= 0 and actions.get('附加', 0) <= 0:
+            engine._end_turn(uid); continue
 
         st = encode_state(engine, uid)
         if st is None: engine._end_turn(uid); continue
-        available = get_available_actions(engine, uid)
+        available = affordable_actions(engine, uid, get_available_actions(engine, uid))
         if not available: engine._end_turn(uid); continue
 
         # Determine solo vs team for this character
@@ -8931,10 +11112,11 @@ def _mp_run_battle(args):
         ak, an = random.choice(available)
 
         prev_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
+        slot = action_slot_for(engine, uid, ak)
         execute_action(engine, uid, ak)
-        actions['主动'] -= 1
-        engine._set_actions(engine._get_actions())
-        if actions['主动'] <= 0: engine._end_turn(uid)
+        engine._consume_action(uid, slot)
+        acts_now = engine._get_my_actions(uid)
+        if acts_now.get('主动', 0) <= 0: engine._end_turn(uid)
         curr_diff = engine.hp_diff(my_team) - engine.hp_diff('X' if my_team == 'Y' else 'Y')
         max_hp = max(abs(prev_diff), abs(curr_diff), 1)
         reward = (curr_diff - prev_diff) / max_hp
@@ -8963,6 +11145,11 @@ def _mp_run_battle(args):
         if ck and next_st is not None: updates.append((table_type, ck, st, ak, reward, next_st))
 
     # Terminal rewards
+    if winner is None:
+        # 引擎在维护/回合推进中可能已直接判定胜负，补记结果供终局更新使用。
+        _res = getattr(engine, '_battle_result', None)
+        if _res and _res.get('winner'):
+            winner = _res['winner']
     if winner:
         for s in team_a + team_b:
             uid = char_map_dict[s]
@@ -8973,9 +11160,10 @@ def _mp_run_battle(args):
             term_r = 3.0 if winner == mt2 else -3.0
             # Determine table type for terminal update
             init_list_end = engine._get_initiative()
-            my_entry_end = next((e for e in init_list_end if e['userId'] == uid), None)
+            my_entry_end = engine._unit_il_entry(uid, init_list_end)
             my_team_end = my_entry_end.get('team', mt2) if my_entry_end else mt2
-            living_allies_end = [e for e in init_list_end if e['team'] == my_team_end
+            living_allies_end = [e for e in engine._battle_unit_entries()
+                                 if e['team'] == my_team_end
                                  and e['userId'] != uid
                                  and not e.get('isSummon')
                                  and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -9015,8 +11203,7 @@ def get_available_actions(engine, uid):
         base = []
         for s in spells:
             timing = s.get('时机', '2')
-            is_mfg = any(e.get('type') == 6 for e in s.get('effects', []))
-            if (has_timing(timing, '2') or (has_timing(timing, '3') and is_mfg)) and not has_timing(timing, '1'):
+            if (has_timing(timing, '2') or has_timing(timing, '3')) and not has_timing(timing, '1'):
                 for ts, tl in target_strats:
                     base.append((f'SKILL_{s["index"]}__{ts}', f'{s["name"]}→{tl}'))
         for ts, tl in target_strats:
@@ -9065,15 +11252,18 @@ def get_available_actions(engine, uid):
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
                     continue
-                # Same-template summon still alive
-                summon_dup = False
+                # 召唤数量上限：满额/累计耗尽才禁选；有名额时允许补召第二只
+                summon_blocked = False
                 for eff in sp.get('effects', []):
                     if eff.get('type') == 5:
                         tmpl = eff.get('召唤物模板', '')
-                        if tmpl and any(sn == tmpl or sn.endswith(f"的{tmpl}") for sn in my_summons):
-                            summon_dup = True
+                        if not tmpl:
+                            continue
+                        remain, _reason = engine._get_summon_quota(uid, tmpl)
+                        if remain == 0:
+                            summon_blocked = True
                             break
-                if summon_dup:
+                if summon_blocked:
                     continue
         filtered.append((ak, an))
 
@@ -9108,7 +11298,7 @@ def get_available_actions(engine, uid):
                         atk_range = _get_attack_range(spell_effect=dmg_eff)
             elif ak.startswith('BASIC_ATTACK'):
                 need_range_check = True
-                atk_range = _get_attack_range(skill_name=char.get_best_melee()[0])
+                atk_range = _get_attack_range(skill_name=engine._get_attack_skill(uid, char)[0])
             if need_range_check and my_ep:
                 max_dist = atk_range + mv
                 reachable = any(
@@ -9133,7 +11323,7 @@ def get_available_actions(engine, uid):
     filtered = status_filtered
 
     # CAKE actions: available when ready cakes exist (type 6 制造物)
-    if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+    if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake(uid):
         # EAT_CAKE: 自己食用蛋糕 → self-heal
         filtered.append(('EAT_CAKE__SELF', '食用蛋糕→自己'))
         # GIVE_CAKE: 送出蛋糕给队友 → support/heal teammate
@@ -9145,7 +11335,8 @@ def get_available_actions(engine, uid):
             my_team_gc = my_entry_gc.get('team', 'Y')
             living_teammates = [e for e in il if e['team'] == my_team_gc
                                 and e['userId'] != uid
-                                and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                                and ((engine._get_combat_hp(e['userId']) or 0) > 0
+                                     or engine._is_dying(e['userId']))]
             if living_teammates:
                 for ts, tl in teammate_strats:
                     filtered.append((f'GIVE_CAKE__{ts}', f'送出蛋糕→{tl}'))
@@ -9159,6 +11350,43 @@ def parse_action(action_key):
         base, target = action_key.split('__')
         return base, target
     return action_key, 'T0'
+
+
+def action_slot_for(engine, uid, action_key):
+    """Which budget slot an action consumes: '附加' or '主动'.
+
+    - Cake eat/give always use an additional action.
+    - A dual-timing skill (e.g. timing '23') prefers 附加 while one remains,
+      and falls back to 主动 only when additional actions are exhausted.
+    - Everything else uses a main action.
+    """
+    base, _ = parse_action(action_key)
+    if base in ('EAT_CAKE', 'GIVE_CAKE'):
+        return '附加'
+    acts = engine._get_my_actions(uid) if hasattr(engine, '_get_my_actions') else {}
+    if base.startswith('SKILL_'):
+        try:
+            sn = int(base.split('_')[1])
+        except (IndexError, ValueError):
+            return '主动'
+        char = engine.get_char(uid)
+        spells = (char.spells if char and char.spells else None) or engine.load_spells(uid)
+        spell = next((s for s in spells if s['index'] == sn), None)
+        timing = spell.get('时机', '2') if spell else ''
+        if has_timing(timing, '3'):
+            if not has_timing(timing, '2') or acts.get('附加', 0) > 0:
+                return '附加'
+    return '主动'
+
+
+def affordable_actions(engine, uid, actions):
+    """Filter an action list to those whose budget slot still has points."""
+    acts = engine._get_my_actions(uid)
+    out = []
+    for ak, an in actions:
+        if acts.get(action_slot_for(engine, uid, ak), 0) > 0:
+            out.append((ak, an))
+    return out
 
 
 def _compute_threat(engine, enemy_entry):
@@ -9189,7 +11417,7 @@ def _compute_threat(engine, enemy_entry):
         return enemy_entry.get('dex', 50)  # fallback
 
     # 基本攻击期望
-    bn, bv = char.get_best_melee()
+    bn, bv = engine._get_attack_skill(uid, char)
     basic_dice = engine._get_damage_dice(uid, bn)
     basic_avg = avg_damage(basic_dice) if basic_dice else 1.0
     basic_hit = bv / 100.0 if bv > 0 else 0.5
@@ -9274,8 +11502,7 @@ def select_teammate_by_strategy(engine, uid, strategy, teammates):
 
 def get_summon_actions(engine, uid):
     """Get available actions for a summon entity. Returns list of (action_key, description)."""
-    init_list = engine._get_initiative()
-    entry = next((e for e in init_list if e['userId'] == uid), None)
+    entry = engine._unit_il_entry(uid, engine._get_initiative())
     if not entry: return []
     skills = entry.get('skills', [])
     if not skills: return []
@@ -9295,10 +11522,9 @@ def get_summon_actions(engine, uid):
 def execute_summon_action(engine, uid, action_key):
     """Execute a summon action. Returns list of detail lines for display."""
     init_list = engine._get_initiative()
-    entry = next((e for e in init_list if e['userId'] == uid), None)
+    entry = engine._unit_il_entry(uid, init_list)
     if not entry: return []
     sname = entry.get('name', uid)
-    my_team = entry.get('team', 'Y')
     lines = []
 
     base, target_strat = parse_action(action_key)
@@ -9314,8 +11540,10 @@ def execute_summon_action(engine, uid, action_key):
                 mp_cost = sk.get("mp_cost", 0)
                 summon_mp = entry.get("summon_mp", 0)
                 if summon_mp >= mp_cost:
-                    entry["summon_mp"] = summon_mp - mp_cost
-                    entry["zone_cooldown"] = sk.get("cooldown_rounds", 0) + sk.get("zone_duration", 3)
+                    new_cooldown = sk.get("cooldown_rounds", 0) + sk.get("zone_duration", 3)
+                    # 持久化到实际条目/隐藏组员元数据；合成条目写入不会自动落盘。
+                    engine._set_summon_entry_fields(
+                        uid, summon_mp=summon_mp - mp_cost, zone_cooldown=new_cooldown)
                     center = entry.get("coord", "A1")
                     effects = engine._get_effects()
                     effects.append({
@@ -9330,13 +11558,13 @@ def execute_summon_action(engine, uid, action_key):
                     })
                     engine._set_effects(effects)
                     lines.append(f"{sname} 的【{sk.get('name', '治愈领域')}】（领域）")
-                    lines.append(f"  → 创建治愈领域（半径{sk.get('zone_radius',8)}格，持续{sk.get('zone_duration',3)}回合，剩余MP:{entry['summon_mp']}）")
+                    lines.append(f"  → 创建治愈领域（半径{sk.get('zone_radius',8)}格，持续{sk.get('zone_duration',3)}回合，剩余MP:{summon_mp - mp_cost}）")
                 else:
                     lines.append(f"{sname} MP不足，无法施放领域")
         return lines
 
-    enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
-    if not enemies: return ["无可用目标"]
+    enemy_entries = engine._enemy_target_entries(uid)
+    if not enemy_entries: return ["无可用目标"]
 
     if not base.startswith('SUMMON_SKILL_'):
         return engine._summon_attack(uid)
@@ -9351,10 +11579,10 @@ def execute_summon_action(engine, uid, action_key):
     if sk.get("skill_type") == "zone_heal":
         return engine._summon_attack(uid)
 
-    # Select target by strategy
-    tid = select_target_by_strategy(engine, uid, target_strat, enemies)
-    if not tid: tid = enemies[0]['userId']
-    tname = next((e.get('name', tid) for e in init_list if e['userId'] == tid), tid)
+    # Select target by strategy (enemy_entries统一包含隐藏的组成员)
+    tid = select_target_by_strategy(engine, uid, target_strat, enemy_entries)
+    if not tid: tid = enemy_entries[0]['userId']
+    tname = next((e.get('name', tid) for e in enemy_entries if e['userId'] == tid), tid)
 
     sv = sk['val']; dmg_dice = sk['dice']
     sk_name = sk.get('name', '攻击')
@@ -9385,7 +11613,7 @@ def execute_summon_action(engine, uid, action_key):
                 if omp >= on_whiff_mp:
                     oc.set_attr('魔力', omp - on_whiff_mp)
                     lines.append(f"  消耗{on_whiff_mp}MP触发溅射!")
-                    for enemy in enemies:
+                    for enemy in enemy_entries:
                         aoe_dmg = roll_dice(on_whiff_aoe) // 2
                         ehp = engine._get_combat_hp(enemy['userId']) or 10
                         engine._set_combat_hp(enemy['userId'], max(0, ehp - aoe_dmg))
@@ -9399,21 +11627,21 @@ def execute_action(engine, uid, action_key):
     base, target_strat = parse_action(action_key)
     # Get enemies for target selection
     init_list = engine._get_initiative()
-    my_entry = next((e for e in init_list if e['userId'] == uid), None)
+    my_entry = engine._unit_il_entry(uid, init_list)
     my_team = my_entry.get('team', 'Y') if my_entry else 'Y'
-    enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    # 敌方候选统一走引擎 helper：包含隐藏组成员、与线上目标规则一致。
+    enemies = engine._enemy_target_entries(uid)
     tid = select_target_by_strategy(engine, uid, target_strat, enemies)
 
     if base == 'BASIC_ATTACK':
         # Use full COC7 attack for training accuracy
-        char = engine.get_char(uid); bn, bv = char.get_best_melee()
+        char = engine.get_char(uid); bn, bv = engine._get_attack_skill(uid, char)
         dd = engine._get_damage_dice(uid, bn); p = char.get_attr("伤害贯穿",1); l = char.get_attr("致死骰",1) or 0
-        if not tid: tid = engine._find_enemy(uid)
-        if tid:
-            if hasattr(engine, '_fast_coc7_attack'):
-                engine._fast_coc7_attack(uid, tid, bn, bv, dd, p, l)
-            else:
-                engine._coc7_attack(uid, tid, bn, bv, dd, p, l)
+        if not tid: return ""
+        if hasattr(engine, '_fast_coc7_attack'):
+            engine._fast_coc7_attack(uid, tid, bn, bv, dd, p, l)
+        else:
+            engine._coc7_attack(uid, tid, bn, bv, dd, p, l)
         return ""
     elif base == 'MOVE_TOWARD':
         if hasattr(engine, '_fast_move'):
@@ -9427,20 +11655,24 @@ def execute_action(engine, uid, action_key):
         spells = engine.load_spells(uid)
         spell = next((s for s in spells if s['index'] == skill_num), None)
         if spell:
-            target = tid or engine._smart_target(uid, spell)
+            timing = spell.get('时机', '2')
+            acts_now = engine._get_my_actions(uid) if hasattr(engine, '_get_my_actions') else {}
+            if has_timing(timing, '3') and (not has_timing(timing, '2')
+                                            or acts_now.get('附加', 0) > 0):
+                return engine._additional_action(uid, f's{skill_num}')
+            target = tid if tid is not None else engine._smart_target(uid, spell)
             return engine._execute_spell(uid, target, spell)
     elif base == 'EAT_CAKE':
-        # 自己食用蛋糕 → self-heal (uses _eat_cake with no target_id)
-        if hasattr(engine, '_eat_cake') and hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+        if hasattr(engine, '_eat_cake') and engine._has_ready_cake(uid):
             engine._eat_cake(uid)
         return ''
     elif base == 'GIVE_CAKE':
-        # 送出蛋糕给队友 → heal teammate
-        if hasattr(engine, '_eat_cake') and hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
-            # Get living teammates for target selection
-            teammates = [e for e in init_list if e['team'] == my_team
-                         and e['userId'] != uid
-                         and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        if hasattr(engine, '_eat_cake') and engine._has_ready_cake(uid):
+            teammates = [e for e in engine._battle_unit_entries()
+                         if e.get('team') == my_team and not e.get('isSummon')
+                         and engine._resolve_uid(e['userId']) != engine._resolve_uid(uid)
+                         and ((engine._get_combat_hp(e['userId']) or 0) > 0
+                              or engine._is_dying(e['userId']))]
             if teammates:
                 tm_id = select_teammate_by_strategy(engine, uid, target_strat, teammates)
                 if tm_id:
@@ -9451,11 +11683,10 @@ def execute_action(engine, uid, action_key):
 def _fast_move(engine, uid):
     """Move one step toward nearest enemy."""
     init_list = engine._get_initiative()
-    my_entry = next((e for e in init_list if e['userId'] == uid), None)
+    my_entry = engine._unit_il_entry(uid, init_list)
     if not my_entry: return ''
-    my_team = my_entry.get('team', 'Y')
     my_coord = my_entry.get('coord', '')
-    enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+    enemies = engine._enemy_target_entries(uid)
     if not enemies or not my_coord: return ''
     target = enemies[0]; ec = target.get('coord', '')
     if not ec: return ''
@@ -9624,12 +11855,12 @@ def _mp_run_summon_battle(args):
             state["activeIndex"] = (state["activeIndex"] + 1) % len(il)
             if state["activeIndex"] == 0:
                 state["round"] = state.get("round", 1) + 1
+                engine._tick_down()
+                engine._apply_zone_effects()
                 acts_r = engine._get_actions()
                 for k in list(acts_r.keys()):
                     acts_r[k] = {"主动": 2, "附加": 3}
                 engine._set_actions(acts_r)
-                engine._tick_down()
-                engine._apply_zone_effects()
             engine._set_state(state)
             continue
 
@@ -9654,12 +11885,12 @@ def _mp_run_summon_battle(args):
         state["activeIndex"] = (state["activeIndex"] + 1) % len(il)
         if state["activeIndex"] == 0:
             state["round"] = state.get("round", 1) + 1
+            engine._tick_down()
+            engine._apply_zone_effects()
             acts_r = engine._get_actions()
             for k in list(acts_r.keys()):
                 acts_r[k] = {"主动": 2, "附加": 3}
             engine._set_actions(acts_r)
-            engine._tick_down()
-            engine._apply_zone_effects()
         engine._set_state(state)
 
     return updates
@@ -9719,27 +11950,39 @@ class QTrainer:
             if not state or state.get('phase')!='active': break
             il = engine._get_initiative()
             if not il: break; rc = state.get('round',1)
+            # ── 派发前先做召唤组维护并刷新快照 ──
+            engine._reconcile_summon_groups()
+            il = engine._get_initiative()
+            state = engine._get_state()
+            if not il or not state or state.get('phase') != 'active': break
+            rc = state.get('round', 1)
             if rc != getattr(engine,'_last_zone_round',0):
                 if any(e.get('type')=='zone' for e in engine._get_effects()): engine._process_zone_specials()
                 if any(e.get('isSummon') for e in il):
                     engine._check_trinity_merge()
-                    do = {e['userId'] for e in il if not e.get('isSummon') and (engine._get_combat_hp(e['userId'])or 0)<=0}
+                    # 主人死亡的清理统一走 _remove_summons_of_owner（保留行动者索引）。
+                    engine._reconcile_summon_groups()
+                    do = {e['userId'] for e in engine._get_initiative()
+                          if not e.get('isSummon') and engine._is_final_dead(e['userId'])}
+                    for owner_uid in do:
+                        engine._remove_summons_of_owner(owner_uid)
                     if do:
-                        new_il = [e for e in il if not (e.get('isSummon') and e.get('ownerId') in do)]
-                        engine._set_initiative(new_il)
-                        if state.get('activeIndex', 0) >= len(new_il):
-                            state['activeIndex'] = state['activeIndex'] % max(1, len(new_il))
-                            engine._set_state(state)
+                        engine._reconcile_summon_groups()
+                        il = engine._get_initiative()
+                        state = engine._get_state()
+                        if not il or not state or state.get('phase') != 'active': break
                 for a in list(engine.__dict__.keys()):
                     if a.startswith('_xingshan_attacked_'): delattr(engine, a)
                 engine._last_zone_round = rc
-            do2 = {e['userId'] for e in il if not e.get('isSummon') and (engine._get_combat_hp(e['userId'])or 0)<=0}
+            do2 = {e['userId'] for e in il
+                   if not e.get('isSummon') and engine._is_final_dead(e['userId'])}
+            for owner_uid in do2:
+                engine._remove_summons_of_owner(owner_uid)
             if do2:
-                il = [e for e in il if not (e.get('isSummon') and e.get('ownerId') in do2)]
-                engine._set_initiative(il)
-                if state.get('activeIndex', 0) >= len(il):
-                    state['activeIndex'] = state['activeIndex'] % max(1, len(il))
-                    engine._set_state(state)
+                engine._reconcile_summon_groups()
+                il = engine._get_initiative()
+                state = engine._get_state()
+                if not il or not state or state.get('phase') != 'active': break
             ya = sum(1 for e in il if e['team']=='Y' and (engine._get_combat_hp(e['userId'])or 0)>0)
             xa = sum(1 for e in il if e['team']=='X' and (engine._get_combat_hp(e['userId'])or 0)>0)
             if ya==0: winner='X'; break
@@ -9747,23 +11990,28 @@ class QTrainer:
             entry = il[state['activeIndex']]; uid = entry['userId']
             hp = engine._get_combat_hp(uid) or 0; mt = entry.get('team','Y')
             if hp<=0:
-                state['activeIndex']=(state['activeIndex']+1)%len(il)
-                if state['activeIndex']==0:
-                    state['round']=state.get('round',1)+1
-                    engine._reset_move_power()
-                    acts_r = engine._get_actions()
-                    for k in list(acts_r.keys()): acts_r[k]={'主动':2,'附加':3}
-                    engine._set_actions(acts_r)
-                    engine._tick_down(); engine._apply_zone_effects()
-                engine._set_state(state); continue
+                old_round = state.get('round', 1)
+                engine._end_turn(uid)
+                if (engine._get_state() or {}).get('round', old_round) > old_round:
+                    engine._reset_round_actions(character_main=2)
+                continue
             if entry.get('isSummon'):
-                # Summon Q-training
-                st = encode_summon_state(engine, uid)
-                if st is None: engine._end_turn(uid); continue
-                av = get_summon_actions(engine, uid)
-                if av:
+                # Summon Q-training —— 与 _mp_run_battle 一样按共享组动作池行动，
+                # 一次组动作只扣一次主动作，存活成员各出手一次。
+                group_key = engine._summon_group_key(uid)
+                summon_name = entry.get('name', uid)
+
+                def _one_member(m_uid):
+                    st = encode_summon_state(engine, m_uid)
+                    if st is None:
+                        # 合成条目不可用：退回普通召唤攻击，不额外推进回合。
+                        engine._summon_attack(m_uid)
+                        return ([], False, None)
+                    av = get_summon_actions(engine, m_uid)
+                    if not av:
+                        engine._summon_attack(m_uid)
+                        return ([], False, None)
                     TEMPERATURE = 1.0
-                    summon_name = entry.get('name', uid)
                     q_vals = [self.Q_summon[summon_name].get((st, aak), 0.0) for aak, aan in av]
                     # 状态 deformation for summons too
                     zt = random.randint(40, 80)  # summons have ~60 average 状态
@@ -9778,29 +12026,37 @@ class QTrainer:
                     idx = random.choices(range(len(av)), weights=probs, k=1)[0]
                     ak, an = av[idx]
                     pd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
-                    execute_summon_action(engine, uid, ak)
+                    execute_summon_action(engine, m_uid, ak)
                     cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
                     reward = (cd-pd)/max(abs(pd),abs(cd),1)
-                    reward *= targeting_reward_modifier(engine, uid, ak)
-                    ns = encode_summon_state(engine, uid)
+                    reward *= targeting_reward_modifier(engine, m_uid, ak)
+                    ns = encode_summon_state(engine, m_uid)
                     if ns is not None:
                         updates.append(('summon', summon_name, st, ak, reward, ns))
-                else:
-                    engine._summon_attack(uid)
-                state['activeIndex']=(state['activeIndex']+1)%len(il)
-                if state['activeIndex']==0:
-                    state['round']=state.get('round',1)+1
-                    engine._reset_move_power()
-                    acts_r = engine._get_actions()
-                    for k in list(acts_r.keys()): acts_r[k]={'主动':2,'附加':3}
-                    engine._set_actions(acts_r)
-                    engine._tick_down(); engine._apply_zone_effects()
-                engine._set_state(state); continue
+                    return ([], False, None)
+
+                r = engine._execute_summon_group_action(group_key, _one_member)
+                # 组动作期间可能发生代表阵亡/主人死亡，重新取快照后再推进。
+                il = engine._get_initiative()
+                state = engine._get_state()
+                if not il or not state or state.get('phase') != 'active': break
+                # 共享动作未耗尽则继续由该组行动；否则推进到下一个先攻条目。
+                if r.get('action_spent') and r.get('remaining', 0) > 0:
+                    if state.get('activeIndex', 0) >= len(il):
+                        state['activeIndex'] %= len(il)
+                        engine._set_state(state)
+                    continue
+                old_round = state.get('round', 1)
+                engine._end_turn(uid)
+                if (engine._get_state() or {}).get('round', old_round) > old_round:
+                    engine._reset_round_actions(character_main=2)
+                continue
             acts = engine._get_actions().get(uid,{'主动':2,'附加':3})
-            if acts['主动']<=0: engine._end_turn(uid); continue
+            if acts['主动']<=0 and acts.get('附加',0)<=0:
+                engine._end_turn(uid); continue
             ck = self._char_key(uid); st = encode_state(engine, uid)
             if st is None: engine._end_turn(uid); continue
-            av = get_available_actions(engine, uid)
+            av = affordable_actions(engine, uid, get_available_actions(engine, uid))
             if not av: engine._end_turn(uid); continue
 
             # Determine solo vs team
@@ -9844,13 +12100,10 @@ class QTrainer:
             idx = random.choices(range(len(av)), weights=probs, k=1)[0]
             ak, an = av[idx]
             pd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
+            slot = action_slot_for(engine, uid, ak)
             execute_action(engine, uid, ak)
-            is_bonus_act = ak.startswith('EAT_CAKE') or ak.startswith('GIVE_CAKE')
-            if is_bonus_act:
-                acts['附加'] = max(0, acts.get('附加', 0) - 1); engine._set_actions(engine._get_actions())
-            else:
-                acts['主动']-=1; engine._set_actions(engine._get_actions())
-            if acts['主动']<=0: engine._end_turn(uid)
+            engine._consume_action(uid, slot)
+            if engine._get_my_actions(uid).get('主动', 0) <= 0: engine._end_turn(uid)
             cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
             reward = (cd-pd)/max(abs(pd),abs(cd),1)
             if ak.startswith('SKILL_'):
@@ -9874,6 +12127,10 @@ class QTrainer:
             if ns is not None:
                 updates.append((table_type, ck, st, ak, reward, ns))
         # Update reaction weights based on outcome
+        if winner is None:
+            _res = getattr(engine, '_battle_result', None)
+            if _res and _res.get('winner'):
+                winner = _res['winner']
         if winner:
             for uid in a_uids + b_uids:
                 ck = self._char_key(uid); won = (uid in a_uids and winner=='Y') or (uid in b_uids and winner=='X')
@@ -9895,9 +12152,10 @@ class QTrainer:
                 tr = 3.0 if winner==mt2 else -3.0
                 # Determine table type for terminal state
                 il_end = engine._get_initiative()
-                me_end = next((e for e in il_end if e['userId'] == uid), None)
+                me_end = engine._unit_il_entry(uid, il_end)
                 my_team_end = me_end.get('team', mt2) if me_end else mt2
-                living_allies_end = [e for e in il_end if e['team'] == my_team_end
+                living_allies_end = [e for e in engine._battle_unit_entries()
+                                     if e['team'] == my_team_end
                                      and e['userId'] != uid
                                      and not e.get('isSummon')
                                      and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -10158,6 +12416,13 @@ GET /log    → 查看实时日志
   Phase 3: 3v3 (10x10, 20x20) — 包含固定战队
   Phase 4: Y9+Y12 联合对抗 (2人/3人/4人组)
   Phase 5: 双循环 → 8强淘汰赛 ×10轮
+
+用法:
+  python ai_battle.py                        # 全部赛制 (1v1 + 2v2 + 3v3)
+  python ai_battle.py --modes=1v1            # 仅 1v1
+  python ai_battle.py --modes=1v1,2v2        # 1v1 + 2v2
+  python ai_battle.py --modes 3v3 --time 3   # 仅 3v3，跑 3 次
+  python ai_battle.py --modes=2v2 --type=0   # 仅 2v2 预赛，跳过淘汰赛
 """
 
 import sys, os, random, math, json, re, time, threading, logging, itertools
@@ -10178,7 +12443,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # [INLINED]     is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage,
 # [INLINED]     season_status_roll)
 # [INLINED] from characters_data import ALL_CHARACTERS, load_character_to_engine
-# [INLINED] from ai_trainer import load_q_table, encode_state, get_available_actions, execute_action
+# [INLINED] from ai_trainer import (load_q_table, encode_state, get_available_actions, execute_action,
+# [INLINED]                             action_slot_for, affordable_actions)
 # [INLINED] from ai_trainer import encode_summon_state, get_summon_actions, execute_summon_action
 # [INLINED] from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
 
@@ -10350,14 +12616,42 @@ def battle_log(level, msg):
     getattr(logger, level)(msg)
 
 
+ALL_MODES = ('1v1', '2v2', '3v3')
+
+
+def _parse_modes(raw):
+    """Parse a comma/plus/space separated mode list like '1v1,2v2' or '3v3'."""
+    parts = [p.strip().lower() for p in re.split(r'[,+;/\s]+', raw) if p.strip()]
+    if not parts:
+        print(f'--modes 需要至少一个赛制: {", ".join(ALL_MODES)}', file=sys.stderr)
+        sys.exit(1)
+    if len(parts) == 1 and parts[0] in ('all', '*'):
+        return list(ALL_MODES)
+    unknown = [p for p in parts if p not in ALL_MODES]
+    if unknown:
+        print(f'不支持的赛制: {", ".join(unknown)}。可用: {", ".join(ALL_MODES)} (或 all)', file=sys.stderr)
+        sys.exit(1)
+    # Preserve canonical order and drop duplicates
+    return [m for m in ALL_MODES if m in parts]
+
+
 def parse_cli_args(argv):
     port = 8888
     tournament_type = 1
     run_times = 1
+    enabled_modes = list(ALL_MODES)
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg.startswith('--type='):
+        if arg.startswith('--modes='):
+            enabled_modes = _parse_modes(arg.split('=', 1)[1])
+        elif arg == '--modes':
+            i += 1
+            if i >= len(argv):
+                print('--modes requires a value, e.g. --modes=1v1,2v2', file=sys.stderr)
+                sys.exit(1)
+            enabled_modes = _parse_modes(argv[i])
+        elif arg.startswith('--type='):
             val = arg.split('=', 1)[1]
             if val not in ('0', '1'):
                 print(f'Unsupported --type value: {val}. Use 0 or 1.', file=sys.stderr)
@@ -10422,7 +12716,7 @@ def parse_cli_args(argv):
             else:
                 battle_log('info', f'忽略多余位置参数: {arg}')
         i += 1
-    return port, tournament_type, run_times
+    return port, tournament_type, run_times, enabled_modes
 
 
 # ============================================================
@@ -10501,11 +12795,13 @@ class AIController:
                 return '.a eat'
             return '.i end'
         actions = engine._get_actions()
-        my_acts = actions.get(user_id, {'主动': 2, '附加': 3})
-        if my_acts['主动'] <= 0: return '.i end'
+        my_acts = engine._get_my_actions(user_id) if hasattr(engine, '_get_my_actions') else             actions.get(user_id, {'主动': 2, '附加': 3})
+        if my_acts['主动'] <= 0 and my_acts.get('附加', 0) <= 0: return '.i end'
 
         st = encode_state(engine, user_id)
         available = get_available_actions(engine, user_id)
+        if hasattr(available, '__iter__') and available:
+            available = affordable_actions(engine, user_id, available)
         if not available: return '.i end'
 
         # Determine solo vs team: count living non-summon allies (exclude self)
@@ -10513,7 +12809,7 @@ class AIController:
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return self._rule_decide(engine, user_id)
         my_team = my_entry.get('team', 'Y')
-        living_allies = [e for e in init_list if e['team'] == my_team
+        living_allies = [e for e in init_list if e.get('team') == my_team
                          and e['userId'] != user_id
                          and not e.get('isSummon')
                          and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -10532,6 +12828,9 @@ class AIController:
         # Filter MOVE_TOWARD if already moved this turn (max 1 move)
         moved = getattr(engine, '_moved_this_turn', set())
         actions_pool = [(ak, an) for ak, an in available if not (ak == 'MOVE_TOWARD' and user_id in moved)]
+        # Repair-focused states (low HP / low MP, or an ally in dying) prioritise
+        # support actions whose slot is still affordable over raw damage.
+        actions_pool = self._prioritize_support(engine, user_id, actions_pool)
         if not actions_pool: actions_pool = available
 
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
@@ -10563,6 +12862,9 @@ class AIController:
         if base_ak == 'EAT_CAKE':
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a eat {target}' if target else '.i end'
+        if base_ak == 'GIVE_CAKE':
+            target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
+            return f'.a give {target}' if target else '.i end'
         if base_ak == 'END_TURN': return '.i end'
         if base_ak.startswith('SKILL_'):
             skill_num = int(base_ak.split('_')[1])
@@ -10570,10 +12872,41 @@ class AIController:
             spell = next((s for s in spells if s['index'] == skill_num), None)
             if spell:
                 timing = spell.get('时机', '2')
+                # Dual-timing skills use the additional slot while available,
+                # preserving main actions; timing-3-only must use it.
+                if has_timing(timing, '3') and (not has_timing(timing, '2')
+                                                or my_acts.get('附加', 0) > 0):
+                    return f'.a s{skill_num}'
                 if has_timing(timing, '1') or has_timing(timing, '2'):
                     return f'.s{skill_num}'
             return self._rule_decide(engine, user_id)
         return self._rule_decide(engine, user_id)
+
+    def _prioritize_support(self, engine, user_id, actions):
+        """Keep only support actions when the team clearly needs recovery.
+
+        Generic priority from CharacterData-driven state (HP ratios and ready
+        cakes), never by role name or skill index.
+        """
+        char = engine.get_char(user_id)
+        if not char:
+            return actions
+        my_hp = engine._get_combat_hp(user_id) or 0
+        max_hp = char.get_attr('体力上限', my_hp) or my_hp or 1
+        my_mp = char.get_attr('魔力', 0) or 0
+        max_mp = char.get_attr('魔力上限', my_mp) or my_mp or 1
+        team = engine._battle_team_of(user_id)
+        ally_dying = any(e.get('team') == team and not e.get('isSummon')
+                         and e['userId'] != user_id and engine._is_dying(e['userId'])
+                         for e in engine._get_initiative())
+        urgent = my_hp < max_hp * 0.4 or my_mp < max_mp * 0.25 or ally_dying
+        if not urgent:
+            return actions
+        support = [(ak, an) for ak, an in actions
+                   if ak.split('__')[0] in ('EAT_CAKE', 'GIVE_CAKE')]
+        if not support:
+            return actions
+        return support
 
     def _move_cmd(self, engine, user_id):
         init_list = engine._get_initiative()
@@ -10581,7 +12914,7 @@ class AIController:
         if not my_entry: return None
         my_coord = my_entry.get('coord', '')
         my_team = my_entry.get('team', 'Y')
-        enemies = [e for e in init_list if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        enemies = [e for e in init_list if e.get('team') != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
         if not enemies or not my_coord: return None
         nearest = self._nearest(engine, user_id, enemies)
         if nearest:
@@ -10595,7 +12928,6 @@ class AIController:
         if not state or state.get('phase') != 'active':
             return '.i end'
 
-        # Dying characters can only use healing items (or end turn)
         if engine._is_dying(user_id):
             if engine._has_healing_item(user_id):
                 return '.a eat'
@@ -10609,7 +12941,7 @@ class AIController:
         if not my_entry: return '.i end'
 
         my_team_rd = my_entry.get('team', 'Y')
-        enemies = [e for e in init_list if e['team'] != my_team_rd]
+        enemies = [e for e in init_list if e.get('team') != my_team_rd]
         my_coord = my_entry.get('coord', 'A1')
 
         # Build blocked-spell sets (same logic as get_available_actions dynamic filters)
@@ -10625,14 +12957,18 @@ class AIController:
                 my_summons.add(e.get('name', ''))
 
         def _spell_blocked(sp):
-            """True if spell has active same-name effect or its summoned creature is still alive."""
+            """True if spell has active same-name effect or a summon template is at its cap.
+
+            同模板仍有名额时允许补召（如第二根藤蔓），只有满额/累计耗尽才禁选。"""
             if sp['name'] in active_spell_names:
                 return True
             for eff in sp.get('effects', []):
                 if eff.get('type') == 5:
                     tmpl = eff.get('召唤物模板', '')
-                    if tmpl and any(sn == tmpl or sn.endswith(f"的{tmpl}") for sn in my_summons):
-                        return True
+                    if tmpl:
+                        remain, _reason = engine._get_summon_quota(user_id, tmpl)
+                        if remain == 0:
+                            return True
             return False
 
         if my_acts['主动'] > 0:
@@ -10681,7 +13017,7 @@ class AIController:
                 return f'.s{summon_spells[0]["index"]}'
 
             # Eat cake (if available and HP < 60% or MP < 30%)
-            if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake():
+            if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake(user_id):
                 my_mp = char.get_attr('魔力', 0) or 0
                 max_mp = char.get_attr('魔力上限', my_mp) or my_mp
                 if my_hp < max_hp * 0.6 or my_mp < max_mp * 0.3:
@@ -10724,7 +13060,7 @@ class AIController:
         il = engine._get_initiative()
         my_entry = next((e for e in il if e['userId'] == user_id), None)
         if not my_entry: return user_id
-        allies = [e for e in il if e['team'] == my_entry.get('team') and (engine._get_combat_hp(e['userId']) or 0) > 0 and not e.get('isSummon')]
+        allies = [e for e in il if e.get('team') == my_entry.get('team') and (engine._get_combat_hp(e['userId']) or 0) > 0 and not e.get('isSummon')]
         if not allies: return user_id
         if strategy == 'T0':  # 最低HP ally
             return min(allies, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
@@ -10806,7 +13142,7 @@ class BattleEngine(FullBattleEngine):
                 mhp = char.get_attr('体力上限', chp) if char else chp
                 if mhp > 0:
                     ratio = chp / mhp
-                    if e['team'] == 'Y':
+                    if e.get('team') == 'Y':
                         y_sum += ratio; y_cnt += 1
                     else:
                         x_sum += ratio; x_cnt += 1
@@ -10854,6 +13190,7 @@ class BattleEngine(FullBattleEngine):
             rc = 0; last_round = 0; header_shown = False; step_count = 0
             while rc < self.max_rounds and step_count < 2000:
                 if self.delay > 0: time.sleep(self.delay)
+                self._reconcile_summon_groups()
                 state = self._get_state()
                 if not state or state.get('phase') != 'active': break
                 il = self._get_initiative()
@@ -10876,7 +13213,7 @@ class BattleEngine(FullBattleEngine):
                         for _he in il:
                             if _he.get('isSummon') or _he.get('_suppressed'): continue
                             _hbase = _he.get('baseUserId', _he['userId'])
-                            if _he['team'] == 'Y':
+                            if _he.get('team') == 'Y':
                                 if _hbase in y_header_seen: continue
                                 y_header_seen.add(_hbase)
                                 _hn = _ACT_SUFFIX_RE.sub('', _he.get('name','?'))
@@ -10893,10 +13230,10 @@ class BattleEngine(FullBattleEngine):
                         # Collect summon HP by owner (living summons only)
                         summon_total = {}       # ownerId → total summon HP
                         summon_detail = {}       # ownerId → {summon_name: hp} for 斯瑞提卡
-                        for e in il:
+                        for e in self._battle_unit_entries():
                             if not e.get('isSummon'): continue
                             if e.get('_suppressed', False): continue  # 跳过被抑制的召唤物槽
-                            owner = e.get('ownerId')
+                            owner = self._resolve_uid(e.get('ownerId', ''))
                             if not owner: continue
                             shp = self._get_combat_hp(e['userId']) or 0
                             if shp <= 0: continue
@@ -10914,7 +13251,7 @@ class BattleEngine(FullBattleEngine):
                             if e.get('_suppressed', False): continue  # 不显示被抑制条目
                             base = e.get('baseUserId', e['userId'])
                             uid = e['userId']
-                            if e['team'] == 'Y':
+                            if e.get('team') == 'Y':
                                 if base in seen_y_uids:
                                     continue
                                 seen_y_uids.add(base)
@@ -10927,7 +13264,7 @@ class BattleEngine(FullBattleEngine):
                             # Strip " (行动N)" suffix from multi-action slot names
                             name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
                             # Append summon HP suffix
-                            shp = summon_total.get(uid, 0)
+                            shp = summon_total.get(self._resolve_uid(uid), 0)
                             if shp > 0:
                                 char = self.get_char(uid)
                                 if char and char.get_attr('召唤物HP单独显示', 0) == 1:
@@ -10938,51 +13275,31 @@ class BattleEngine(FullBattleEngine):
                                     hp_str = f'{name}(HP:{hp}|召{shp})'
                             else:
                                 hp_str = f'{name}(HP:{hp})'
-                            if e['team'] == 'Y':
+                            if e.get('team') == 'Y':
                                 y_hp_parts.append(hp_str)
                             else:
                                 x_hp_parts.append(hp_str)
                         _bl('info', f'    第{rc}回合 Y: {", ".join(y_hp_parts)} | X: {", ".join(x_hp_parts)}')
-                dead_owners = {e['userId'] for e in il if not e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
+                dead_owners = {e['userId'] for e in il
+                               if not e.get('isSummon') and self._is_final_dead(e['userId'])}
                 # Also track resolved base UIDs so we can clean up summons whose ownerId
                 # might be the base uid (even when dead_owners contains __act suffixed entries)
                 dead_base_uids = {self._resolve_uid(uid) for uid in dead_owners}
                 if dead_owners:
-                    # Remove dead summons (owned by dead characters) — match by resolved base UID
-                    il = [e for e in il if not (e.get('isSummon') and self._resolve_uid(e.get('ownerId', '')) in dead_base_uids)]
-                    # Also remove dead characters themselves from initiative & map
-                    md = self._get_map()
-                    for uid in dead_owners:
-                        if md:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == uid: del md['occupants'][c]; break
-                    if md: self._set_map(md)
-                    il = [e for e in il if e['userId'] not in dead_owners]
-                    self._set_initiative(il)
-                    if state['activeIndex'] >= len(il):
-                        state['activeIndex'] = state['activeIndex'] % max(1, len(il))
-                        self._set_state(state)
-                # Remove ALL dead summons (including those whose owner is still alive)
-                # to prevent initiative list bloat that causes premature step_count timeouts.
-                dead_summons = {e['userId'] for e in il if e.get('isSummon') and (self._get_combat_hp(e['userId']) or 0) <= 0}
-                if dead_summons:
-                    il = [e for e in il if e['userId'] not in dead_summons]
-                    # Clean map for dead summons
-                    md = self._get_map()
-                    if md:
-                        for sid in dead_summons:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == sid: del md['occupants'][c]
-                        self._set_map(md)
-                    self._set_initiative(il)
-                    if state['activeIndex'] >= len(il):
-                        state['activeIndex'] = state['activeIndex'] % max(1, len(il))
-                        self._set_state(state)
+                    for owner in dead_base_uids:
+                        self._remove_summons_of_owner(owner)
+                    state = self._get_state()
+                    il = self._get_initiative()
+                # Reconciliation owns grouped summon death/removal; do not discard
+                # a representative before its surviving members have been promoted.
+                self._reconcile_summon_groups()
+                state = self._get_state()
+                il = self._get_initiative()
                 # Check battle end: count non-summon alive characters per team
                 end_result = self._check_battle_end()
                 if end_result:
-                    y_chars_d = [e.get('name','?') for e in il if e['team']=='Y' and not e.get('isSummon')]
-                    x_chars_d = [e.get('name','?') for e in il if e['team']=='X' and not e.get('isSummon')]
+                    y_chars_d = [e.get('name','?') for e in il if e.get('team')=='Y' and not e.get('isSummon')]
+                    x_chars_d = [e.get('name','?') for e in il if e.get('team')=='X' and not e.get('isSummon')]
                     y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
                     x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
                     if end_result.get('mutual_death'):
@@ -11012,28 +13329,12 @@ class BattleEngine(FullBattleEngine):
                 is_summon = entry.get('isSummon', False)
                 if hp <= 0:
                     if is_summon:
-                        # Remove dead summon from map
-                        md = self._get_map()
-                        if md:
-                            for c, o in list(md.get('occupants', {}).items()):
-                                if o == uid: del md['occupants'][c]; break
-                            self._set_map(md)
-                        # Also remove from initiative list to prevent bloat
-                        # (dead summons with alive owners were never cleaned up)
-                        idx = state['activeIndex']
-                        il = [e for e in il if e['userId'] != uid]
-                        self._set_initiative(il)
-                        if not il:
-                            # All entries removed — check end
-                            self._check_and_mark_end(state)
-                            break
-                        # Adjust activeIndex: the removed entry was at idx;
-                        # the next entry slides into that position, so keep idx
-                        # unless it's now out of bounds.
-                        if idx >= len(il):
-                            idx = idx % len(il)
-                        state['activeIndex'] = idx
-                        self._set_state(state)
+                        self._reconcile_summon_groups()
+                        if any(e['userId'] == uid for e in self._get_initiative()) and not self._get_summon_group(uid):
+                            # Legacy standalone summon, with no group registration.
+                            self._end_turn(uid)
+                            self._replace_initiative_preserving_actor(
+                                [e for e in self._get_initiative() if e['userId'] != uid])
                         continue
                     self._end_turn(uid); continue
 
@@ -11042,44 +13343,48 @@ class BattleEngine(FullBattleEngine):
                     self._sync_initiative_slots(uid)
 
                 if is_summon:
-                    # Use summon Q-table if available
-                    if AIController.Q_SUMMON is not None:
-                        summon_name = entry.get('name', uid)
-                        if summon_name in AIController.Q_SUMMON:
-                            st = encode_summon_state(self, uid)
-                            av = get_summon_actions(self, uid)
-                            sdict = AIController.Q_SUMMON[summon_name]
-                            q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
-                            # deformation for summons
-                            zt = random.randint(40, 80)
-                            deform_prob = (100 - zt) / 100.0 * 0.4
-                            if random.random() < deform_prob:
-                                scale = max(max(abs(q) for q in q_vals), 1.0)
-                                q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
-                            if q_vals:
-                                max_q = max(q_vals)
-                                exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
-                                total = sum(exp_vals)
-                                probs = [e / total for e in exp_vals] if total > 0 else None
-                                idx = random.choices(range(len(av)), weights=probs, k=1)[0]
-                                ak, an = av[idx]
-                                result = execute_summon_action(self, uid, ak)
-                            else:
-                                result = self._summon_attack(uid)
-                        else:
-                            result = self._summon_attack(uid)
-                    else:
-                        result = self._summon_attack(uid)
+                    # ── 共享动作、全员出手 ──
+                    # 一组召唤物只有一个先攻入口和一份动作池；每次组动作让当前存活成员
+                    # 各出手一次。成员死亡立即减少本批及后续批次的出手数。
+                    group_key = self._summon_group_key(uid)
                     team_tag = entry.get('team', '?')
                     summon_name = entry.get('name', uid)
-                    _bl('debug', f'    [{team_tag}] {summon_name}(召) (HP:{hp}) 行动')
-                    if result:
-                        if isinstance(result, list):
-                            for rline in result:
-                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        else:
-                            for rline in result.split('\n'):
-                                if rline.strip(): _bl('debug', f'        {rline.strip()}')
+
+                    def _one_member(m_uid):
+                        if AIController.Q_SUMMON is not None:
+                            m_entry = self._unit_il_entry(m_uid, self._get_initiative())
+                            m_name = (m_entry or {}).get('name', summon_name)
+                            if m_name in AIController.Q_SUMMON:
+                                st = encode_summon_state(self, m_uid)
+                                av = get_summon_actions(self, m_uid)
+                                sdict = AIController.Q_SUMMON[m_name]
+                                q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
+                                zt = random.randint(40, 80)
+                                deform_prob = (100 - zt) / 100.0 * 0.4
+                                if q_vals and random.random() < deform_prob:
+                                    scale = max(max(abs(q) for q in q_vals), 1.0)
+                                    q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale
+                                              for q in q_vals]
+                                if q_vals:
+                                    max_q = max(q_vals)
+                                    exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                                    total = sum(exp_vals)
+                                    probs = [e / total for e in exp_vals] if total > 0 else None
+                                    idx = random.choices(range(len(av)), weights=probs, k=1)[0]
+                                    ak, an = av[idx]
+                                    return (execute_summon_action(self, m_uid, ak), False, None)
+                        return (self._summon_attack(m_uid), False, None)
+
+                    r = self._execute_summon_group_action(group_key, _one_member)
+                    if r.get('lines'):
+                        _bl('debug', f'    [{team_tag}] {summon_name}(召) 行动 '
+                                     f'(组动作, 剩余{r.get("remaining", 0)})')
+                        for rline in r['lines']:
+                            if isinstance(rline, str) and rline.strip():
+                                _bl('debug', f'        {rline.strip()}')
+                    # 共享动作未耗尽则保持该组为当前行动者，继续下一批成员
+                    if r.get('action_spent') and r.get('remaining', 0) > 0:
+                        continue
                     self._end_turn(uid); continue
                 team_tag = entry.get('team', '?')
                 _bl('debug', f'    [{team_tag}] {char_name} (HP:{hp}) 行动')
@@ -11091,12 +13396,9 @@ class BattleEngine(FullBattleEngine):
                     is_dying = self._is_dying(_base_uid)
                     for _ in range(5):
                         cmd = ai.decide_action(self, _base_uid)
-                        # Dying characters: only allow .a eat (use healing item) or .i end
-                        if is_dying and cmd not in ('.i end',) and not cmd.startswith('.a eat'):
-                            if self._has_healing_item(_base_uid):
-                                cmd = '.a eat'
-                            else:
-                                cmd = '.i end'
+                        # Dying characters can only end the turn; personal HP cakes already auto-rescue.
+                        if is_dying and cmd != '.i end':
+                            cmd = '.i end'
                         if cmd == '.i end':
                             if not acted:
                                 _bl('debug', f'      -> 结束回合')
@@ -11128,18 +13430,17 @@ class BattleEngine(FullBattleEngine):
                         else: break
                         for rline in (result_text.split('\n') if result_text else []):
                             if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        # Action consumption: .s0/.sN consume 主动; .a eat/.a m/.a s consume 附加
+                        # Action consumption: .s0/.sN consume main; .a commands consume extra.
+                        # Budgets are keyed by the stable summon-group key.
                         is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
                         is_bonus = cmd.startswith('.a ')
-                        if cmd in ('.s0',) or is_skill:
-                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                            ma['主动'] -= 1; self._set_actions(acts_d)
-                        elif is_bonus:
-                            acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                            ma['附加'] = max(0, ma.get('附加', 0) - 1); self._set_actions(acts_d)
+                        if is_bonus:
+                            self._consume_action(_base_uid, '附加')
+                        elif cmd == '.s0' or is_skill:
+                            self._consume_action(_base_uid, '主动')
                         # Check remaining actions — end turn when 主动 exhausted
-                        acts_d = self._get_actions(); ma = acts_d.get(_base_uid, {'主动':2,'附加':3})
-                        if ma['主动'] <= 0: self._end_turn(uid)
+                        ma = self._get_my_actions(_base_uid)
+                        if ma.get('主动', 0) <= 0: self._end_turn(uid)
                         s2 = self._get_state()
                         if not s2 or s2.get('phase')!='active': break
                         i2 = self._get_initiative()
@@ -11150,8 +13451,8 @@ class BattleEngine(FullBattleEngine):
             br = getattr(self, '_battle_result', None)
             if br:
                 il_final = self._get_initiative()
-                y_chars_d = [e.get('name','?') for e in il_final if e['team']=='Y' and not e.get('isSummon')]
-                x_chars_d = [e.get('name','?') for e in il_final if e['team']=='X' and not e.get('isSummon')]
+                y_chars_d = [e.get('name','?') for e in il_final if e.get('team')=='Y' and not e.get('isSummon')]
+                x_chars_d = [e.get('name','?') for e in il_final if e.get('team')=='X' and not e.get('isSummon')]
                 y_disp = '+'.join(y_chars_d) if y_chars_d else '?'
                 x_disp = '+'.join(x_chars_d) if x_chars_d else '?'
                 if br.get('mutual_death'):
@@ -11914,6 +14215,19 @@ class Tournament:
         battle_log('info', f'(排名展示{DELAY_STANDINGS_DISPLAY}秒...)')
         time.sleep(DELAY_STANDINGS_DISPLAY)
 
+        # Collect ranking info (also needed by prelim-only mode / sim.py multi-run stats)
+        self._rankings_info = {
+            '1v1': [(rank, serial, pts, player_wins.get(serial, 0), player_battles.get(serial, 0),
+                     self._team_display([serial]))
+                    for rank, (serial, pts) in enumerate(ranked_1v1, 1)],
+            '2v2': [(rank, idx, s['pts'], s['wins'], s['battles'],
+                     self._team_display(teams_2v2[idx]))
+                    for rank, (idx, s) in enumerate(ranked_2v2, 1)],
+            '3v3': [(rank, idx, s['pts'], s['wins'], s['battles'],
+                     self._team_display(teams_3v3[idx]))
+                    for rank, (idx, s) in enumerate(ranked_3v3, 1)],
+        }
+
         if self.tournament_type == 0:
             battle_log('info', '')
             battle_log('info', '=' * 60)
@@ -11926,18 +14240,6 @@ class Tournament:
 
         # ---- Run knockouts for each format (5-12 play-in → 8-team bracket) ----
         all_brackets = []
-        # Collect ranking info for saving
-        self._rankings_info = {
-            '1v1': [(rank, serial, pts, player_wins.get(serial, 0), player_battles.get(serial, 0),
-                     self._team_display([serial]))
-                    for rank, (serial, pts) in enumerate(ranked_1v1, 1)],
-            '2v2': [(rank, idx, s['pts'], s['wins'], s['battles'],
-                     self._team_display(teams_2v2[idx]))
-                    for rank, (idx, s) in enumerate(ranked_2v2, 1)],
-            '3v3': [(rank, idx, s['pts'], s['wins'], s['battles'],
-                     self._team_display(teams_3v3[idx]))
-                    for rank, (idx, s) in enumerate(ranked_3v3, 1)],
-        }
         # Helper: run 5-12 play-in → 5v12, 6v11, 7v10, 8v9, winners + ranks 1-4 = top8
         # Combined draw: play-in pairing and QF seed assignment merged into one draw
         def _build_top8_with_playin(ranked_list, get_team_fn, label, map_size='10x10'):
@@ -12837,6 +15139,7 @@ from flask import Flask, request, jsonify
 # [INLINED]     roll_dice, parse_coord, format_coord,
 # [INLINED]     is_in_melee_range, has_timing, has_object,
 # [INLINED]     rank_text, avg_damage, success_rank, roll_d100, max_damage, _calc_net_bp,
+# [INLINED]     SpellInterrupted, _parse_bp_token, _format_bp,
 # [INLINED]     CN_NUMS, CAT_LETTERS,
 # [INLINED] )
 
@@ -13046,11 +15349,15 @@ def merge_character(engine, uid: str, js_data: dict) -> object:
                 char.set_attr(k, v)
 
         # Inventory items from chData (物品栏)
+        inv_meta_keys = ('sourceTeam', 'sourceUserId', '消费追加回复hp', 'tasteBonusOwnerSerial')
         for inv_entry in ch_data.get('inventory', []):
             item_name = inv_entry.get('item', '')
             count = inv_entry.get('count', 1)
             if item_name and count > 0:
-                engine.add_item_to_inventory(uid, item_name, count)
+                meta = {k: inv_entry[k] for k in inv_meta_keys if k in inv_entry}
+                if meta.get('sourceTeam') == 'auto': meta['sourceTeam'] = None
+                if meta.get('sourceUserId') == 'auto': meta['sourceUserId'] = uid
+                engine.add_item_to_inventory(uid, item_name, count, metadata=meta)
 
     engine.load_spells(uid)
     return char
@@ -13154,10 +15461,10 @@ def _serialize_battle_state(engine) -> dict:
 #  Reaction handling
 # ═══════════════════════════════════════════════════════════════
 
-class ReactionNeeded(Exception):
+class ReactionNeeded(SpellInterrupted):
     """Raised when the engine needs a player reaction decision (PvP mode)."""
     def __init__(self, **kwargs):
-        super().__init__()
+        super().__init__(**kwargs)
         self.data = kwargs
 
 
@@ -13178,7 +15485,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         dname = dchar.name
         lines = []
 
-        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val)
+        eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
 
@@ -13197,15 +15504,16 @@ class PvPFullBattleEngine(FullBattleEngine):
 
         dodge_val = dchar.get_attr("闪避", 25)
         bmn, bmv = dchar.get_best_melee()
-        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val)
-        bmv = self._apply_buff_skill_mod(def_uid, bmv)
+        dodge_val = self._apply_buff_skill_mod(def_uid, dodge_val, '闪避')
+        bmv = self._apply_buff_skill_mod(def_uid, bmv, bmn)
         def_buffs = self._get_active_buffs(def_uid)
-        def_bp = _calc_net_bp(def_buffs, "", skill_name)
 
         # ── 格挡可用性 ──
         block_name, block_val = self._get_block_skill(def_uid)
-        block_val = self._apply_buff_skill_mod(def_uid, block_val)
-        def_entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
+        block_val = self._apply_buff_skill_mod(def_uid, block_val, block_name)
+        # Hidden group members have no initiative slot — resolve canonical metadata
+        # (shield_block_hp / ignore_unreactable_block) via the unit entry fallback.
+        def_entry = self._unit_il_entry(def_uid, self._get_initiative())
         can_block = (dchar.get_attr('可格挡', 0) == 1
                      and block_name is not None and block_val > 0)
         block_hp = def_entry.get('shield_block_hp', 0) if def_entry else 0
@@ -13213,21 +15521,27 @@ class PvPFullBattleEngine(FullBattleEngine):
         _block_redirect = self._get_block_redirect_target(def_uid)
         can_block = can_block and (block_hp > 0 or _block_redirect is not None)
 
-        # ── INTERCEPT: raise instead of AI random choice ──
-        raise ReactionNeeded(
+        # 防御方反应骰按各自技能名结算（闪避/反击/格挡可不同）
+        state = dict(
             atk_uid=atk_uid, def_uid=def_uid,
             atk_name=aname, def_name=dname,
             atk_rank=atk_rank, atk_result=atk_result,
             dodge_val=dodge_val, counter_val=bmv, counter_skill=bmn,
             dmg_dice=dmg_dice, pen=pen, leth=leth,
             bp_suffix=bp_suffix, dmg_adv=dmg_adv, dmg_dis=dmg_dis,
-            def_bp=def_bp, atk_roll_detail=bp_detail,
+            def_bp=_calc_net_bp(def_buffs, "", '闪避'),
+            def_bp_dodge=_calc_net_bp(def_buffs, "", '闪避'),
+            def_bp_counter=_calc_net_bp(def_buffs, "", bmn),
+            def_bp_block=_calc_net_bp(def_buffs, "", block_name),
+            atk_roll_detail=bp_detail,
             skill_name=skill_name, skill_val=skill_val,
             can_block=can_block,
             block_skill=block_name, block_val=block_val,
-            block_hp=block_hp if not _block_redirect else (next((e for e in self._get_initiative() if e['userId'] == _block_redirect), {}).get('shield_block_hp', 0)),
+            block_hp=block_hp if not _block_redirect else (self._unit_il_entry(_block_redirect, self._get_initiative()) or {}).get('shield_block_hp', 0),
             prefix_lines=lines,
         )
+        # ── INTERCEPT: raise instead of AI random choice ──
+        raise ReactionNeeded(**state)
         # unreachable — return is just to satisfy type checker
         return (None, None, lines)
 
@@ -13250,11 +15564,13 @@ class PvPFullBattleEngine(FullBattleEngine):
         dmg_dis = state.get('dmg_dis', False)
         atk_result = state['atk_result']
         atk_rank = state['atk_rank']
-        def_bp = state.get('def_bp', '')
+        def_bp_dodge = state.get('def_bp_dodge', state.get('def_bp', ''))
+        def_bp_counter = state.get('def_bp_counter', state.get('def_bp', ''))
+        def_bp_block = state.get('def_bp_block', state.get('def_bp', ''))
 
         if choice == 'dodge':
             # ── Dodge resolution (parent lines 1212-1221) ──
-            rr, rd = roll_d100(def_bp)
+            rr, rd = roll_d100(def_bp_dodge)
             react_rank = success_rank(rr, state['dodge_val'])
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【闪避={state['dodge_val']}】:")
@@ -13273,7 +15589,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         elif choice == 'counter':
             # ── Counter resolution (parent lines 1223-1291) ──
             dchar = self.get_char(def_uid)
-            rr, rd = roll_d100(def_bp)
+            rr, rd = roll_d100(def_bp_counter)
             react_rank = success_rank(rr, state['counter_val'])
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【反击:{state['counter_skill']}={state['counter_val']}】:")
@@ -13290,7 +15606,9 @@ class PvPFullBattleEngine(FullBattleEngine):
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
                 loser_name, winner_name = aname, dname
                 winner_roll = rr
-                cdmg = dchar.get_str("伤害值") or "1d4"
+                # 反击骰按防御方的反击技能名解析（原实现直接读 伤害值 且不解析 db，
+                # 只声明 伤害值a/b 的角色会退化成 1d4）
+                cdmg = self._get_damage_dice(def_uid, state['counter_skill'])
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 cleth = dchar.get_attr("致死骰", 1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
@@ -13350,7 +15668,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                 lines.append(f"  {dname} HP: {achp}")
 
                 # Defender counter-hits attacker
-                cdmg = dchar.get_str("伤害值") or "1d4"
+                # 同上：互命中时防御方反击骰也按反击技能名解析
+                cdmg = self._get_damage_dice(def_uid, state['counter_skill'])
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 cleth = dchar.get_attr("致死骰", 1) or 0
                 dmx = max_damage(cdmg)
@@ -13402,7 +15721,7 @@ class PvPFullBattleEngine(FullBattleEngine):
             block_name = state.get('block_skill', '格挡')
             block_val = state.get('block_val', 0)
             block_hp = state.get('block_hp', 0)
-            rr, rd = roll_d100(def_bp)
+            rr, rd = roll_d100(def_bp_block)
             react_rank = success_rank(rr, block_val)
             rbs = f", {rd}" if rd else ""
             lines.append(f"{dname} 的反应【格挡:{block_name}={block_val}】:")
@@ -13423,13 +15742,15 @@ class PvPFullBattleEngine(FullBattleEngine):
                 # ── block_redirect: 伤害由召唤物承担 ──
                 _block_redirect = self._get_block_redirect_target(def_uid)
                 if _block_redirect:
-                    rt_entry = next((e for e in self._get_initiative() if e['userId'] == _block_redirect), None)
+                    rt_entry = self._unit_il_entry(_block_redirect, self._get_initiative())
                     rt_name = rt_entry.get('displayName', '召唤物') if rt_entry else '召唤物'
                     rt_block_hp = rt_entry.get('shield_block_hp', 0) if rt_entry else 0
                     if blk_eff > 0 and rt_block_hp > 0:
                         absorbed = min(blk_eff, rt_block_hp)
                         blk_eff -= absorbed
-                        rt_entry['shield_block_hp'] = rt_block_hp - absorbed
+                        # Persist on the physical member backing, not a temp/visible dict.
+                        self._set_summon_entry_fields(_block_redirect,
+                                                      shield_block_hp=rt_block_hp - absorbed)
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff)
@@ -13439,8 +15760,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                 # ── 标准逻辑 ──
                 if blk_eff > 0 and block_hp > 0:
                     absorbed = min(blk_eff, block_hp); blk_eff -= absorbed
-                    entry = next((e for e in self._get_initiative() if e['userId'] == def_uid), None)
-                    if entry: entry['shield_block_hp'] = block_hp - absorbed
+                    # Persist via the engine setter so hidden defenders keep the value.
+                    self._set_summon_entry_fields(def_uid, shield_block_hp=block_hp - absorbed)
                     lines.append(f"  盾牌吸收: {absorbed}点")
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff)
@@ -13530,7 +15851,7 @@ class PvPFullBattleEngine(FullBattleEngine):
 
         if not def_controllers:
             # AI defender -> sync react weights from initiative entry, then delegate to base
-            def_entry = next((e for e in self._get_initiative() if e['userId'] == target_id), None)
+            def_entry = self._unit_il_entry(target_id, self._get_initiative())
             if def_entry:
                 self._ai_react_dodge_w[target_id] = def_entry.get('react_dodge_w', 50)
                 self._ai_react_counter_w[target_id] = def_entry.get('react_counter_w', 50)
@@ -13543,13 +15864,14 @@ class PvPFullBattleEngine(FullBattleEngine):
         achar = self.get_char(caster_id)
         dodge_val = dchar.get_attr("闪避", 25)
         bmn, bmv = dchar.get_best_melee()
-        dodge_val = self._apply_buff_skill_mod(target_id, dodge_val)
-        bmv = self._apply_buff_skill_mod(target_id, bmv)
+        dodge_val = self._apply_buff_skill_mod(target_id, dodge_val, '闪避')
+        bmv = self._apply_buff_skill_mod(target_id, bmv, bmn)
 
         # ── 格挡可用性（含 ignore_unreactable_block 检查）──
         block_name, block_val = self._get_block_skill(target_id)
-        block_val = self._apply_buff_skill_mod(target_id, block_val)
-        def_entry = next((e for e in self._get_initiative() if e['userId'] == target_id), None)
+        block_val = self._apply_buff_skill_mod(target_id, block_val, block_name)
+        # Hidden group members: fall back to the canonical unit entry for metadata.
+        def_entry = self._unit_il_entry(target_id, self._get_initiative())
         ignore_unreact = def_entry.get('ignore_unreactable_block', 0) if def_entry else 0
         can_physically_block = (dchar.get_attr('可格挡', 0) == 1
                                 and block_name is not None and block_val > 0)
@@ -13565,7 +15887,7 @@ class PvPFullBattleEngine(FullBattleEngine):
             return (False, False, [])
 
         def_buffs = self._get_active_buffs(target_id)
-        def_bp = _calc_net_bp(def_buffs, "", "")
+        def_bp = self._calc_spell_reaction_bp(target_id, eff, '闪避')
 
         raise ReactionNeeded(
             reaction_type='spell',
@@ -13620,8 +15942,12 @@ class PvPFullBattleEngine(FullBattleEngine):
                 state['dmg_dice'], state['counter_skill'], state['counter_val'],
                 state['atk_rank'])
         elif choice == 'block':
-            block_hp_val = next((e for e in self._get_initiative()
-                if e['userId'] == state['def_uid']), {}).get('shield_block_hp', 0)
+            # Resolve live shield HP via the unit-entry fallback (hidden members
+            # have no initiative slot; their resources live in member backing).
+            # The engine's _resolve_spell_block persists the post-block HP with
+            # _set_summon_entry_fields, so it survives reaction pause/resume.
+            block_hp_val = (self._unit_il_entry(state['def_uid'], self._get_initiative())
+                            or {}).get('shield_block_hp', 0)
             dodged, countered, lines = self._resolve_spell_block(
                 state['atk_uid'], state['def_uid'],
                 state.get('effect', {}), state.get('spell', {}),
@@ -13647,9 +15973,22 @@ class PvPFullBattleEngine(FullBattleEngine):
                 spell_name=state.get('spell_name', spell.get('name', '')),
                 spell_index=state.get('spell_index', spell.get('index', 0)),
                 atk_rank=state.get('atk_rank', 1),
-                atk_roll=state.get('atk_roll', 0))
+                atk_roll=state.get('atk_roll', 0),
+                moon_drain=eff.get('_moon_drain', 0))
             if dmg_out:
                 lines.append(dmg_out.rstrip('\n'))
+
+        # ── Resume the remaining effects of the paused spell (if any) ──
+        if state.get('spell_plan'):
+            try:
+                resume_out = self.resume_spell_plan(state)
+                if resume_out:
+                    lines.extend(resume_out.rstrip('\n').split('\n'))
+            except ReactionNeeded as e2:
+                # Another effect targets another human defender → keep what we
+                # have so far and pause the remaining plan again.
+                e2.data['prefix_lines'] = list(lines) + list(e2.data.get('prefix_lines') or [])
+                raise
 
         return (dodged, countered, lines)
 
@@ -13681,9 +16020,14 @@ class PvPFullBattleEngine(FullBattleEngine):
                 if san_cost > 0:
                     header_lines.append(f'  消耗 {san_cost} SAN')
 
-            # Prepend header to any prefix_lines from _handle_spell_damage_effect
+            # Prepend header to any prefix_lines from _handle_spell_damage_effect.
+            # 逐行去重：计划已累积的输出与重建的 header 会重复。
             existing = list(e.data.get('prefix_lines', []))
-            e.data['prefix_lines'] = header_lines + existing
+            deduped = []
+            for line in header_lines + existing:
+                if line and line not in deduped:
+                    deduped.append(line)
+            e.data['prefix_lines'] = deduped
             raise
 
     def _create_summon(self, caster_id, template_name, summon_group=None, shared_roll=None, shared_rank=None):
@@ -13767,7 +16111,7 @@ def _is_override_action_available(engine, uid, action_str):
     char = engine.get_char(uid)
     if not char: return (False, '角色不存在')
     il = engine._get_initiative()
-    my_entry = next((e for e in il if e['userId'] == uid), None)
+    my_entry = engine._unit_il_entry(uid, il)
     if not my_entry: return (False, '不在先攻列表中')
 
     a = action_str.strip()
@@ -13781,11 +16125,10 @@ def _is_override_action_available(engine, uid, action_str):
         bn, bv = char.get_best_melee()
         if bv <= 0:
             return (False, '没有可用的近战技能')
-        # Check range: any enemy within move+range reach
+        # Check range: any enemy within move+range reach (includes hidden members)
         my_coord = my_entry.get('coord', '')
         my_team = my_entry.get('team', 'Y')
-        enemies = [e for e in il if e['team'] != my_team
-                   and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        enemies = engine._enemy_target_entries(uid)
         if not enemies:
             return (False, '没有存活的敌方目标')
         # If target specified (e.g. "s0 Y1", "s0 R", "s0 RP"), check target exists
@@ -13860,8 +16203,7 @@ def _is_override_action_available(engine, uid, action_str):
                 # Random target: always available for skills (pool checked at execution time)
                 return (True, '')
             my_team2 = my_entry.get('team', 'Y')
-            enemies2 = [e for e in il if e['team'] != my_team2
-                        and (engine._get_combat_hp(e['userId']) or 0) > 0]
+            enemies2 = engine._enemy_target_entries(uid)
             found2 = False
             for e in enemies2:
                 ec = engine.get_char(e.get('baseUserId', e['userId']))
@@ -13879,8 +16221,7 @@ def _is_override_action_available(engine, uid, action_str):
         if bv <= 0:
             return (False, '没有可用的近战技能')
         my_team3 = my_entry.get('team', 'Y')
-        enemies3 = [e for e in il if e['team'] != my_team3
-                    and (engine._get_combat_hp(e['userId']) or 0) > 0]
+        enemies3 = engine._enemy_target_entries(uid)
         if not enemies3:
             return (False, '没有存活的敌方目标')
         return (True, '')
@@ -13893,21 +16234,18 @@ def _is_override_action_available(engine, uid, action_str):
 
     # ── eat / give (蛋糕) ──
     if a.lower() == 'eat':
-        if not hasattr(engine, '_has_ready_cake') or not engine._has_ready_cake():
+        if not hasattr(engine, '_has_ready_cake') or not engine._has_ready_cake(uid):
             return (False, '没有可用的蛋糕')
-        if not hasattr(engine, '_has_healing_item') or not engine._has_healing_item(uid):
-            return (False, '没有可用的治疗物品')
         return (True, '')
     if a.lower() == 'give':
-        if not hasattr(engine, '_has_ready_cake') or not engine._has_ready_cake():
+        if not hasattr(engine, '_has_ready_cake') or not engine._has_ready_cake(uid):
             return (False, '没有可用的蛋糕')
-        if not hasattr(engine, '_has_healing_item') or not engine._has_healing_item(uid):
-            return (False, '没有可用的治疗物品')
         my_team4 = my_entry.get('team', 'Y')
-        teammates = [e for e in il if e['team'] == my_team4
+        teammates = [e for e in il if e.get('team') == my_team4
                      and e['userId'] != uid
                      and not e.get('isSummon')
-                     and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                     and ((engine._get_combat_hp(e['userId']) or 0) > 0
+                          or engine._is_dying(e['userId']))]
         if not teammates:
             return (False, '没有存活的队友可以给予')
         return (True, '')
@@ -14122,7 +16460,7 @@ def _ai_decide_action(engine, uid: str, Q=None):
                 il = engine._get_initiative()
                 my_entry = next((e for e in il if e['userId'] == uid), None)
                 my_team = my_entry.get('team', 'Y') if my_entry else 'Y'
-                living_allies = [e for e in il if e['team'] == my_team
+                living_allies = [e for e in il if e.get('team') == my_team
                                  and e['userId'] != uid
                                  and not e.get('isSummon')
                                  and (engine._get_combat_hp(e['userId']) or 0) > 0]
@@ -14151,19 +16489,27 @@ def _ai_decide_action(engine, uid: str, Q=None):
                         if base_ak == 'BASIC_ATTACK': return ('.s0', ak)
                         if base_ak == 'MOVE_TOWARD': return ('.s0', ak)
                         if base_ak == 'EAT_CAKE':
-                            # Only eat if character has healing items
-                            if engine._has_healing_item(uid):
+                            # Any ready cake (HP/MP/buff) can be eaten.
+                            if engine._has_ready_cake(uid):
                                 return ('.a eat', ak)
                         if base_ak == 'GIVE_CAKE':
-                            # Only give if character has healing items
-                            if engine._has_healing_item(uid):
+                            # Any ready cake can be given to a teammate.
+                            if engine._has_ready_cake(uid):
                                 return ('.a give', ak)
                         if base_ak.startswith('SKILL_'):
                             sn = int(base_ak.split('_')[1])
-                            # Validate: skill must be usable as a main action (timing 2)
                             spell = next((s for s in spells if s['index'] == sn), None)
-                            if spell and has_timing(spell.get('时机', '2'), '2'):
-                                return (f'.s{sn}', ak)
+                            if spell:
+                                timing = spell.get('时机', '2')
+                                my_acts_now = engine._get_my_actions(uid)
+                                # Dual-timing skills use the additional slot while
+                                # available; timing-3-only skills always do.
+                                if has_timing(timing, '3') and (
+                                        not has_timing(timing, '2')
+                                        or my_acts_now.get('附加', 0) > 0):
+                                    return (f'.a s{sn}', ak)
+                                if has_timing(timing, '2'):
+                                    return (f'.s{sn}', ak)
                             # Invalid for main action → fall through to random fallback
         except Exception:
             pass
@@ -14532,6 +16878,14 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
         if not state or state.get('phase') != 'active':
             _debug_log(f"_run_ai_turns: BREAK phase={state.get('phase') if state else 'None'}")
             break
+        # ── Mutation boundary: reconcile summon-group lifecycle BEFORE reading
+        # the active actor. Promotes living reps, retires all-dead groups and
+        # keeps the active slot/action pools consistent with the initiative.
+        engine._reconcile_summon_groups()
+        state = engine._get_state()
+        if not state or state.get('phase') != 'active':
+            _debug_log("_run_ai_turns: BREAK phase after reconcile")
+            break
 
         il = engine._get_initiative()
         idx = state.get('activeIndex', 0)
@@ -14570,27 +16924,25 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
             # Buffer summon turn info; don't output individual announcements
             _summon_enemy_text = _enemy_list_text(engine, uid)
             if hp <= 0:
-                # Dead summon: check if group has alive members that can act instead
-                alive_members = engine._get_alive_summon_group_members(uid) if hasattr(engine, '_get_alive_summon_group_members') else []
-                if alive_members:
-                    # Redirect to first alive member of the same summon group
-                    uid = alive_members[0]
-                    entry = next((e for e in il if e['userId'] == uid), entry)
-                    hp = engine._get_combat_hp(uid) or 0
-                    hp_max = (engine.get_char(uid) or char_for_hp).get_attr('体力上限', hp) if (engine.get_char(uid) or char_for_hp) else hp
-                    # Fall through to alive summon processing below
-                else:
-                    # All group members dead: buffer and skip
-                    engine._end_turn(uid)
+                # Unexpected dead representative: run the real lifecycle refresh
+                # (promotes a living rep / retires an all-dead group) instead of
+                # patching only the local actor, then re-dispatch so the repaired
+                # active slot is resolved like a normal turn.
+                _dead_uid = uid
+                _dead_name = entry.get('name', uid)
+                engine._reconcile_summon_groups()
+                if not engine._get_alive_summon_group_members(_dead_uid):
+                    # Group retired. Reconciliation already advanced the turn if
+                    # this slot was the active actor; never _end_turn a removed slot.
                     summon_buf.append({
-                        'name': entry.get('name', uid),
-                        'display_name': entry.get('name', uid),
-                        'hp': hp, 'hp_max': hp_max, 'alive': False,
+                        'name': _dead_name,
+                        'display_name': _dead_name,
+                        'hp': 0, 'hp_max': hp_max, 'alive': False,
                         'round_header': _round_header,
                         'enemy_text': _summon_enemy_text,
                         'attack_header': '已阵亡，跳过回合。', 'attack_details': [],
                     })
-                    continue
+                continue
             # Alive summon: capture announcement info, attack processing follows below
         else:
             _flush_summons()
@@ -14667,15 +17019,15 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                             match_ak, match_an = sak, san
                             break
                     if match_ak:
-                        # Resolve target display name
-                        my_team_s = entry.get('team', 'Y')
-                        enemies_s = [e for e in il if e['team'] != my_team_s and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                        # Resolve target display name from canonical enemy candidates
+                        # (includes hidden summon-group members).
+                        enemies_s = engine._enemy_target_entries(uid)
                         if match_an and '→' in match_an:
                             skill_part, _ = match_an.rsplit('→', 1)
                             _, target_strat_s = parse_action(match_ak)
                             target_id_s = select_target_by_strategy(engine, uid, target_strat_s, enemies_s)
                             if target_id_s:
-                                tgt_entry = next((e for e in il if e['userId'] == target_id_s), None)
+                                tgt_entry = engine._unit_il_entry(target_id_s, il)
                                 if tgt_entry:
                                     match_an = f"{skill_part}→{tgt_entry.get('name', target_id_s)}"
                         summon_lines_s = execute_summon_action(engine, uid, match_ak)
@@ -14715,14 +17067,14 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                                 idx = _random.choices(range(len(av)), weights=probs, k=1)[0]
                                 ak, an = av[idx]
                                 # Resolve actual target name from strategy for display
-                                my_team = entry.get('team', 'Y')
-                                enemies = [e for e in il if e['team'] != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                                # (canonical candidates include hidden group members)
+                                enemies = engine._enemy_target_entries(uid)
                                 if '→' in an:
                                     skill_part, strat_label = an.rsplit('→', 1)
                                     _, target_strat = parse_action(ak)
                                     target_id = select_target_by_strategy(engine, uid, target_strat, enemies)
                                     if target_id:
-                                        target_entry = next((e for e in il if e['userId'] == target_id), None)
+                                        target_entry = engine._unit_il_entry(target_id, il)
                                         if target_entry:
                                             an = f"{skill_part}→{target_entry.get('name', target_id)}"
                                 summon_lines = execute_summon_action(engine, uid, ak)
@@ -14794,9 +17146,10 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                 if action_key and action_key.startswith('GIVE_CAKE'):
                     base_gc, target_strat_gc = parse_action(action_key)
                     my_team_g = entry.get('team', 'Y')
-                    teammates_give = [e for e in il if e['team'] == my_team_g
+                    teammates_give = [e for e in il if e.get('team') == my_team_g
                                       and e['userId'] != uid
-                                      and (engine._get_combat_hp(e['userId']) or 0) > 0]
+                                      and ((engine._get_combat_hp(e['userId']) or 0) > 0
+                                           or engine._is_dying(e['userId']))]
                     if teammates_give:
                         tm_id = select_teammate_by_strategy(engine, uid, target_strat_gc, teammates_give)
                         if tm_id:
@@ -14821,6 +17174,21 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                             outputs.append(f"{entry.get('name', uid)} 找不到给予目标: {target_name}")
                     else:
                         outputs.append(f"{entry.get('name', uid)} 用法: .a give <目标名>")
+            elif re.match(r'^s\d+$', sub.strip(), re.IGNORECASE):
+                # .a sN — additional-action skill (e.g. timing-3 manufacture/buff)
+                sn_add = int(sub.strip()[1:])
+                spells_add = engine.get_char(uid).spells or engine.load_spells(uid)
+                spell_add = next((s for s in spells_add if s['index'] == sn_add), None)
+                if not spell_add:
+                    outputs.append(f"{entry.get('name', uid)} 未找到技能{sn_add}")
+                    engine._consume_action(uid, '附加')
+                elif not has_timing(spell_add.get('时机', '2'), '3'):
+                    outputs.append(f"【{spell_add['name']}】不能在附加动作阶段使用")
+                    engine._consume_action(uid, '附加')
+                else:
+                    out_add = engine._additional_action(uid, f's{sn_add}')
+                    outputs.append(out_add if isinstance(out_add, str) else str(out_add))
+                    engine._consume_action(uid, '附加')
             elif sub.startswith('m '):
                 coord = sub[2:].upper()
                 # Update map
@@ -14859,10 +17227,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                 dd = engine._get_damage_dice(uid, bn)
                 p = engine.get_char(uid).get_attr("伤害贯穿", 1)
                 l = engine.get_char(uid).get_attr("致死骰", 1) or 0
-                # Find nearest enemy
-                enemies = [e for e in il if e.get("team") != entry.get("team", "Y")
-                           and (engine._get_combat_hp(e["userId"]) or 0) > 0
-                           and not engine._is_untargetable(e['userId'])]
+                # Find nearest enemy — canonical list includes hidden group members.
+                enemies = engine._enemy_target_entries(uid)
                 if enemies:
                     try:
                         # Resolve target via strategy (Q-table) or fallback to nearest
@@ -15002,11 +17368,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                             else:
                                 # Serial-based target (e.g. "s3 Y1")
                                 target_id = engine._smart_target(uid, spell)  # fallback
-                                il5 = engine._get_initiative()
                                 mt5 = entry.get('team', 'Y')
-                                for e5 in il5:
-                                    if e5.get('team') == mt5: continue
-                                    if (engine._get_combat_hp(e5['userId']) or 0) <= 0: continue
+                                for e5 in engine._enemy_target_entries(uid):
                                     ec5 = engine.get_char(e5.get('baseUserId', e5['userId']))
                                     if ec5 and getattr(ec5, 'serial', '') and ec5.serial.upper() == tgt_spec_sp:
                                         target_id = e5['userId']
@@ -15016,9 +17379,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                     elif action_key:
                         base_act_sk, target_strat_sk = parse_action(action_key)
                         if base_act_sk.startswith('SKILL_'):
-                            enemies_sk = [e for e in il if e.get('team') != entry.get('team', 'Y')
-                                          and (engine._get_combat_hp(e['userId']) or 0) > 0
-                                          and not engine._is_untargetable(e['userId'])]
+                            enemies_sk = engine._enemy_target_entries(uid)
                             if enemies_sk:
                                 tid = select_target_by_strategy(engine, uid, target_strat_sk, enemies_sk)
                                 target_id = tid if tid else engine._smart_target(uid, spell)
@@ -15057,8 +17418,16 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                                     spell_name_rn2 = e.data.get('skill_name', '技能')
                                     outputs.append(f"{e.data['atk_name']} 释放【{spell_name_rn2}】→ {e.data['def_name']}！")
                                 outputs.append('\n'.join(e.data.get('prefix_lines', [])))
-                                dodged_rn, countered_rn, lines_rn = engine.resolve_spell_reaction(e.data, choice_rn)
-                                outputs.append('\n'.join(lines_rn))
+                                try:
+                                    dodged_rn, countered_rn, lines_rn = engine.resolve_spell_reaction(e.data, choice_rn)
+                                    outputs.append('\n'.join(lines_rn))
+                                except ReactionNeeded as e_chain:
+                                    # 后续 effect 仍需人类反应：挂起并停止本轮 AI 推进
+                                    e_chain.data['battle_id'] = engine.group_id
+                                    _pending_reactions[engine.group_id] = e_chain.data
+                                    outputs.append('\n'.join(e_chain.data.get('prefix_lines', [])))
+                                    outputs.append('（该技能还有后续效果需要玩家反应）')
+                                    return outputs
                                 auto_label_rn = '闪避' if choice_rn == 'dodge' else '格挡' if choice_rn == 'block' else '反击'
                                 remaining_rn = engine._auto_react.get(def_base_rn, {}).get('remaining', 0)
                                 outputs.append(f"（自动反应：{auto_label_rn}，剩余 {remaining_rn} 次）")
@@ -15126,6 +17495,9 @@ def _build_global_list(engine) -> list:
     """Return ALL living characters in initiative order, each with a global index.
 
     Deduplicates multi-action slots (by baseUserId) and skips suppressed entries.
+    Visible (initiative-scheduled) entries keep their existing order and index
+    mapping; hidden summon-group members (which share their group's single
+    initiative slot) are appended deterministically after them with UID dedup.
     Each entry: {index, userId, name, serial, team, hp, hpMax, mp, mpMax, san,
                  isSummon, initRoll, dex, isActive}
     """
@@ -15138,7 +17510,20 @@ def _build_global_list(engine) -> list:
     if 0 <= active_idx < len(il):
         active_base = il[active_idx].get('baseUserId', il[active_idx]['userId'])
 
+    _group_key_fn = getattr(engine, '_summon_group_key', None)
+
+    def _group_key(uid):
+        if not uid:
+            return None
+        if callable(_group_key_fn):
+            try:
+                return _group_key_fn(uid)
+            except Exception:
+                return uid
+        return uid
+
     result = []
+    visible_bases = set()
     for i, e in enumerate(il):
         # Skip suppressed entries (inactive dynamic action slots)
         if e.get('_suppressed', False):
@@ -15154,6 +17539,7 @@ def _build_global_list(engine) -> list:
         # Strip " (行动N)" suffix from display name
         display_name = e.get('name', uid)
         display_name = re.sub(r'\s*\(行动\d+\)\s*', '', display_name)
+        visible_bases.add(engine._resolve_uid(uid))
         result.append({
             'index': len(result) + 1,
             'origIndex': i,
@@ -15171,6 +17557,54 @@ def _build_global_list(engine) -> list:
             'dex': e.get('dex', 50),
             'isActive': (base == active_base),
             'shield_hp': e.get('shield_block_hp', 0) or 0,
+        })
+
+    # ── Hidden summon-group members: no initiative slot, still physical units ──
+    for unit in engine._battle_unit_entries():
+        uid = unit.get('userId', '')
+        if not uid:
+            continue
+        base = engine._resolve_uid(uid)
+        if base in visible_bases:
+            continue
+        hp = engine._get_combat_hp(uid)
+        if hp is None or hp <= 0:
+            continue
+        char = engine.get_char(uid)
+        display_name = unit.get('displayName') or unit.get('name', uid)
+        display_name = re.sub(r'\s*\(行动\d+\)\s*', '', str(display_name))
+        group_key = _group_key(uid)
+        grp = getattr(engine, '_summon_groups', {}).get(group_key) if group_key else None
+        rep_entry = None
+        if grp:
+            rep_uid = grp.get('representative_uid')
+            rep_entry = next((e for e in il if e.get('userId') == rep_uid), None)
+        if rep_entry is None and group_key:
+            rep_entry = next((e for e in il
+                              if engine._resolve_uid(e.get('userId', '')) == group_key), None)
+        orig_index = next((i for i, e in enumerate(il) if e is rep_entry), 0)
+        visible_bases.add(base)
+        result.append({
+            'index': len(result) + 1,
+            'origIndex': orig_index,
+            'userId': uid,
+            'name': display_name,
+            'serial': getattr(char, 'serial', '') or '',
+            'team': unit.get('team', (rep_entry or {}).get('team', '?')),
+            'hp': hp,
+            'hpMax': char.get_attr('体力上限', hp) if char else hp,
+            'mp': char.get_attr('魔力', 0) if char else 0,
+            'mpMax': char.get_attr('魔力上限', 0) if char else 0,
+            'san': char.get_attr('理智', 50) if char else 50,
+            'isSummon': True,
+            'initRoll': (rep_entry or {}).get('initRoll', 0),
+            'dex': unit.get('dex', (rep_entry or {}).get('dex', 50)),
+            'isActive': False,  # hidden members never occupy the active slot themselves
+            'shield_hp': unit.get('shield_block_hp', 0) or 0,
+            # Hidden members are display/target-only; scheduling stays one entry per group.
+            'isHidden': True,
+            'baseUserId': uid,
+            'ownerId': unit.get('ownerId', ''),
         })
     return result
 
@@ -15222,7 +17656,7 @@ def _initiative_list_text(engine) -> str:
 def _ally_list_text(engine, player_uid: str) -> str:
     """Ally list (same team, excluding self) with HP/MP/shield."""
     entries = _build_global_list(engine)
-    player_entry = next((e for e in engine._get_initiative() if e['userId'] == player_uid), None)
+    player_entry = engine._unit_il_entry(player_uid, engine._get_initiative())
     player_team = player_entry.get('team', 'Y') if player_entry else 'Y'
     allies = [e for e in entries if e['team'] == player_team and e['userId'] != player_uid]
     if not allies:
@@ -15243,7 +17677,7 @@ def _enemy_list_text(engine, player_uid: str) -> str:
     """Enemy-only list using the same global initiative numbers.
     Filters out untargetable characters (不可指定) and shows MP/shield."""
     entries = _build_global_list(engine)
-    player_entry = next((e for e in engine._get_initiative() if e['userId'] == player_uid), None)
+    player_entry = engine._unit_il_entry(player_uid, engine._get_initiative())
     player_team = player_entry.get('team', 'Y') if player_entry else 'Y'
     # Filter: different team AND not untargetable
     enemies = [e for e in entries if e['team'] != player_team
@@ -15392,10 +17826,13 @@ def _resolve_enemy_index(engine, player_uid: str, idx: int) -> str | None:
     if not uid:
         return None
     il = engine._get_initiative()
-    player_entry = next((e for e in il if e['userId'] == player_uid), None)
+    player_entry = engine._unit_il_entry(player_uid, il)
     player_team = player_entry.get('team', 'Y') if player_entry else 'Y'
-    target_entry = next((e for e in il if e['userId'] == uid), None)
-    if target_entry and target_entry.get('team') != player_team and not engine._is_untargetable(uid):
+    # Hidden summon-group members have no initiative slot — resolve metadata via
+    # the canonical unit-entry helper instead of scanning initiative only.
+    target_entry = engine._unit_il_entry(uid, il)
+    if target_entry and target_entry.get('team') != player_team \
+            and not engine._is_untargetable(uid):
         return uid
     return None  # same team or untargetable → not a valid enemy target
 
@@ -15412,6 +17849,36 @@ def _parse_target_index(args: str) -> int | None:
     return None
 
 
+def _resolve_graveyard_target(engine, player_uid: str, args: str):
+    """Resolve a revive target from the graveyard by serial or name.
+
+    Returns the graveyard UID, or None when the token does not name a dead
+    unit. Mirrors are distinguished by the actual physical UID, not by the
+    living-enemy serial resolver.
+    """
+    if not args:
+        return None
+    token = args.strip().split()[0].upper()
+    if not token:
+        return None
+    grave = getattr(engine, '_graveyard', {}) or {}
+    for g in grave.values():
+        if g.get('revived'):
+            continue
+        serial = (g.get('serial') or '').upper()
+        name = (g.get('name') or '').upper()
+        if token in (serial, name):
+            return g.get('uid')
+    return None
+
+
+def _revive_target_arg(engine, player_uid, spell):
+    """Whether this spell has a revive effect (so args may name the dead)."""
+    if not spell:
+        return False
+    return any(e.get('type') == 19 for e in spell.get('effects', []))
+
+
 def _resolve_target_by_serial(engine, player_uid: str, args: str) -> str | None:
     """Resolve a target from args by serial number (e.g. 'Y4', 'Y5').
 
@@ -15423,21 +17890,24 @@ def _resolve_target_by_serial(engine, player_uid: str, args: str) -> str | None:
         return None
     token = args.strip().split()[0].upper()
     il = engine._get_initiative()
-    player_entry = next((e for e in il if e['userId'] == player_uid), None)
+    player_entry = engine._unit_il_entry(player_uid, il)
     player_team = player_entry.get('team', 'Y') if player_entry else 'Y'
-    for e in il:
-        if e.get('team') == player_team:
+    # Include hidden summon-group members (they have no initiative slot but are
+    # valid physical targets).
+    for e in engine._battle_unit_entries():
+        if e.get('team', player_team) == player_team:
             continue  # skip same-team
-        if (engine._get_combat_hp(e['userId']) or 0) <= 0:
+        uid = e.get('userId', '')
+        if (engine._get_combat_hp(uid) or 0) <= 0:
             continue  # skip dead
-        if engine._is_untargetable(e['userId']):
+        if engine._is_untargetable(uid):
             continue  # skip untargetable
         # Match by serial (stored in initiative entry)
-        if e.get('serial', '').upper() == token:
-            return e['userId']
+        if (e.get('serial') or '').upper() == token:
+            return uid
         # Match by name (case-insensitive)
-        if e.get('name', '').upper() == token:
-            return e['userId']
+        if (e.get('name') or '').upper() == token:
+            return uid
     return None
 
 
@@ -16022,6 +18492,16 @@ def submit_action(battle_id):
         is_prep = (state.get('phase') == 'preparation')
         round_before = state.get('round', 1) if not is_prep else 0
 
+        # ── Mutation boundary: reconcile summon groups before dispatching the
+        # player's action so the active slot is always a living representative.
+        # Skip when a reaction is pending so the paused attack context is stable.
+        if not is_prep and not _pending_reactions.get(battle_id):
+            engine._reconcile_summon_groups()
+            state = engine._get_state()
+            if not state or state.get('phase') not in ('active', 'preparation'):
+                return jsonify({'error': True, 'message': '当前不在战斗中'}), 400
+            is_prep = (state.get('phase') == 'preparation')
+
         il = engine._get_initiative()
         idx = state.get('activeIndex', 0)
         if idx >= len(il):
@@ -16062,7 +18542,9 @@ def submit_action(battle_id):
         batch_summons = []
         if active_entry.get('isSummon') and player_id in controllers:
             active_base = active_entry.get('baseUserId', active_entry['userId'])
-            grp = getattr(engine, '_summon_groups', {}).get(active_base)
+            grp = engine._get_summon_group(active_base) if hasattr(engine, '_get_summon_group') else None
+            if not grp:
+                grp = getattr(engine, '_summon_groups', {}).get(active_base)
             if not grp:
                 # Fallback: check if active_base is a member of any group
                 for rep_uid, g in getattr(engine, '_summon_groups', {}).items():
@@ -16131,9 +18613,11 @@ def submit_action(battle_id):
                 remaining_main = my_acts.get('主动', 0)
                 remaining_extra = my_acts.get('附加', 0)
                 char_name = engine.get_char(effective_uid).name
-                base = engine._resolve_uid(entry_uid)
+                # Action pool lives under the stable summon-group key, never the
+                # (possibly promoted) representative uid.
+                group_key = engine._summon_group_key(entry_uid)
                 actions_dict = engine._get_actions()
-                actions_dict[base] = {'主动': 0, '附加': 0}
+                actions_dict[group_key] = {'主动': 0, '附加': 0}
                 engine._set_actions(actions_dict)
                 output = engine._end_turn(entry_uid)
                 if isinstance(output, str):
@@ -16150,14 +18634,12 @@ def submit_action(battle_id):
                     sum_name = active_entry.get('name', '召唤物')
 
                     # Determine common enemy and reaction choice (used for all summons)
-                    enemies_s = [e for e in il
-                               if e.get('team') != batch_summons[0].get('team', 'Y')
-                               and (engine._get_combat_hp(e['userId']) or 0) > 0
-                               and not engine._is_untargetable(e['userId'])]
+                    enemies_s = engine._enemy_target_entries(batch_summons[0]['userId'])
                     if not enemies_s:
                         return jsonify({'error': True, 'message': '没有可攻击的敌人'}), 400
                     common_tid = enemies_s[0]['userId']
-                    tgt_name = next((e.get('name', common_tid) for e in il if e['userId'] == common_tid), common_tid)
+                    tgt_entry_common = engine._unit_il_entry(common_tid, il)
+                    tgt_name = (tgt_entry_common or {}).get('name', common_tid)
 
                     # Determine if defender is human and pre-compute AI reaction choice
                     is_human_defender = _is_human_controlled(engine, common_tid)
@@ -16285,13 +18767,8 @@ def submit_action(battle_id):
                             bn, bv = char.get_best_melee()
                     else:
                         bn, bv = char.get_best_melee()
-                    enemies = [e for e in il
-                               if e.get('team') != active_entry.get('team', 'Y')
-                               and (engine._get_combat_hp(e['userId']) or 0) > 0
-                               and not engine._is_untargetable(e['userId'])]
-                    if not enemies:
-                        return jsonify({'error': True, 'message': '没有可攻击的敌人'}), 400
-
+                    enemies = [e for e in engine._enemy_target_entries(effective_uid)
+                               if e.get('team') != active_entry.get('team', 'Y')]
                     if not enemies:
                         return jsonify({'error': True, 'message': '没有可攻击的敌人'}), 400
 
@@ -16463,10 +18940,21 @@ def submit_action(battle_id):
 
                 action_type = '附加' if use_extra else '主动'
 
-                # Resolve target: serial from args > numeric index from args > smart target
+                # Resolve target: graveyard (revive) > serial > numeric index > smart target
                 tgt = None
                 args_stripped = (args or '').strip()
-                tgt = _resolve_target_by_serial(engine, effective_uid, args)
+                revive_arg_uid = None
+                if _revive_target_arg(engine, effective_uid, spell):
+                    revive_arg_uid = _resolve_graveyard_target(engine, effective_uid, args)
+                if revive_arg_uid:
+                    # Dead allies are not living-enemy targets: bind the revive
+                    # to the exact graveyard UID resolved for this cast.
+                    engine._revive_selected_uid = revive_arg_uid
+                    tgt = revive_arg_uid
+                else:
+                    if _revive_target_arg(engine, effective_uid, spell):
+                        engine._revive_selected_uid = None
+                    tgt = _resolve_target_by_serial(engine, effective_uid, args)
                 if not tgt:
                     tgt_idx = _parse_target_index(args)
                     if tgt_idx is not None:
@@ -16486,10 +18974,14 @@ def submit_action(battle_id):
                         tgt = engine._smart_target(effective_uid, spell)
                 all_sp_out = []
                 actual_sp = 0
+                _is_revive_spell = _revive_target_arg(engine, effective_uid, spell)
                 for _sc in range(count):
                     if my_acts.get(action_type, 0) <= 0: break
                     tgt_hp_sp = engine._get_combat_hp(tgt) if tgt else None
-                    if tgt_hp_sp is not None and tgt_hp_sp <= 0 and actual_sp > 0: break
+                    # A revive target is dead by definition; only break when the
+                    # revive actually brought it back and the next cast has no target.
+                    if (not _is_revive_spell and tgt_hp_sp is not None
+                            and tgt_hp_sp <= 0 and actual_sp > 0): break
                     try:
                         out = engine._execute_spell(effective_uid, tgt, spell)
                         all_sp_out.append(out if isinstance(out, str) else str(out))
@@ -16639,6 +19131,8 @@ def submit_action(battle_id):
                     if actual_sp > 0:
                         all_sp_out.append(f'（已执行 {actual_sp} 次技能，剩余 {len(pending_attacks_list)} 次待反应）')
                 output = '\n'.join(all_sp_out) if all_sp_out else ''
+                if _is_revive_spell:
+                    engine._revive_selected_uid = None
             elif action.startswith('.a '):
                 # ── Additional action ──
                 if my_acts.get('附加', 0) <= 0:
@@ -17203,8 +19697,19 @@ def submit_reaction(battle_id):
             return jsonify({'error': True, 'message': '这个反应不是你的'}), 403
 
         try:
+            chained_pending = None
             if is_spell_reaction:
-                dodged_sp, countered_sp, lines_sp = engine.resolve_spell_reaction(pending, choice)
+                try:
+                    dodged_sp, countered_sp, lines_sp = engine.resolve_spell_reaction(pending, choice)
+                except ReactionNeeded as e_next:
+                    # 该法术的后续 effect 又需要对另一名玩家反应：先把本次结果发出，
+                    # 再把剩余计划挂起，等待下一次 .e。
+                    e_next.data['battle_id'] = battle_id
+                    e_next.data['restim_mode'] = pending.get('restim_mode', 0)
+                    chained_pending = e_next.data
+                    _pending_reactions[battle_id] = chained_pending
+                    lines_sp = list(chained_pending.get('prefix_lines') or [])
+                    lines_sp.append('\n（该技能还有后续效果需要反应）')
                 # ── .setrestim=1: prepend withheld attack roll ──
                 if pending.get('restim_mode') == 1:
                     withheld = '\n'.join(pending.get('prefix_lines', []))
@@ -17215,20 +19720,8 @@ def submit_reaction(battle_id):
                 else:
                     output = '\n'.join(lines_sp)
 
-                # ── Apply spell damage if not fully dodged or cleanly countered ──
-                if not dodged_sp and not countered_sp:
-                    dmg_lines = engine._apply_spell_damage(
-                        pending['atk_uid'], pending['def_uid'],
-                        pending['dmg_dice'], pending.get('pen', 0), pending.get('leth', 0),
-                        lifesteal_ratio=pending.get('lifesteal_ratio', 0),
-                        dot_dice=pending.get('dot_dice', ''),
-                        dur=pending.get('dur', 0),
-                        spell_name=pending.get('spell_name', pending.get('spell', {}).get('name', '')),
-                        spell_index=pending.get('spell_index', pending.get('spell', {}).get('index', 0)),
-                        atk_rank=pending.get('atk_rank', 4),
-                        atk_roll=pending.get('atk_roll', 1))
-                    if dmg_lines:
-                        output += '\n' + dmg_lines
+                # 伤害已在 engine.resolve_spell_reaction 内部结算一次（AI/PvP 同路径），
+                # 此处不再重复结算——此前这里会双倍结算伤害/吸血/DOT（旧 bug，已修）。
 
                 # ── Action was consumed at attack time; just check if turn should advance ──
                 il = engine._get_initiative()
@@ -17287,8 +19780,32 @@ def submit_reaction(battle_id):
             auto_turns = []
             needs_reaction = False
             pending_attack = None
+            if chained_pending:
+                # 同一法术的后续 effect 仍在等待反应 — 不要再跑 AI 回合
+                needs_reaction = True
+                p_ch = chained_pending
+                def_ch = engine.get_char(p_ch.get('def_uid', ''))
+                pending_attack = {
+                    'attacker_name': p_ch.get('atk_name', ''),
+                    'defender_name': p_ch.get('def_name', ''),
+                    'defender_id': p_ch.get('def_uid', ''),
+                    'defender_serial': getattr(def_ch, 'serial', '') if def_ch else '',
+                    'skill_name': p_ch.get('spell_name', p_ch.get('skill_name', '')),
+                    'skill_value': p_ch.get('skill_val', 100),
+                    'atk_roll': p_ch.get('atk_result', 1),
+                    'atk_rank': p_ch.get('atk_rank', 1),
+                    'atk_rank_text': rank_text(p_ch.get('atk_rank', 1)),
+                    'dodge_val': p_ch.get('dodge_val', 0),
+                    'counter_val': p_ch.get('counter_val', 0),
+                    'damage_dice': p_ch.get('dmg_dice', '1d4'),
+                    'penetration': p_ch.get('pen', 0),
+                    'reaction_type': 'spell',
+                    'can_dodge': p_ch.get('can_dodge', True),
+                    'can_counter': p_ch.get('can_counter', True),
+                    'can_block': p_ch.get('can_block', False),
+                }
             st = engine._get_state()
-            if st and st.get('phase') == 'active':
+            if not chained_pending and st and st.get('phase') == 'active':
                 il2 = engine._get_initiative()
                 idx2 = st.get('activeIndex', 0)
                 if idx2 < len(il2):
@@ -17491,14 +20008,34 @@ def get_alist(battle_id):
                             break
                         dmg_display = eff['伤害骰']
                         break
-                skills.append({
+                skill_info = {
                     'index': s['index'], 'name': s['name'],
                     'timing': timing_str, 'mp_cost': mp_cost, 'available': available,
                     'dmg_dice': dmg_display,
-                })
+                }
+                if s.get('_once_per_battle'):
+                    consumed = getattr(char, '_once_consumed', set()) or set()
+                    skill_info['once_per_battle'] = True
+                    skill_info['used'] = s['name'] in consumed
+                cd_left = engine._get_cooldown(uid, s['index']) if hasattr(engine, '_get_cooldown') else 0
+                if cd_left:
+                    skill_info['cooldown'] = cd_left
+                revive_effs = [e for e in s.get('effects', []) if e.get('type') == 19]
+                if revive_effs:
+                    cands = []
+                    for g in engine._revive_candidates(uid, revive_effs[0]):
+                        cands.append({
+                            'uid': g.get('uid'),
+                            'name': g.get('name', ''),
+                            'serial': g.get('serial', ''),
+                            'isSummon': bool(g.get('isSummon')),
+                            'diedRound': g.get('round'),
+                        })
+                    skill_info['revive_candidates'] = cands
+                skills.append(skill_info)
 
-            # Check items
-            has_eat = engine._has_healing_item(uid) if hasattr(engine, '_has_healing_item') else False
+            # Check items — any ready cake (HP/MP/buff), personal or team-crafted
+            has_eat = engine._has_ready_cake(uid) if hasattr(engine, '_has_ready_cake') else False
             has_craft = any(e.get('type') == 'create' and e.get('craftRoundsRemaining', 1) <= 0
                            for e in engine._get_effects() if e.get('sourceUserId') == uid)
 
@@ -17548,9 +20085,15 @@ def get_clist(battle_id):
         for e in entries:
             uid = e['userId']
             orig_idx = e.get('origIndex', e['index'] - 1)
-            base_uid = il[orig_idx].get('baseUserId', uid) if orig_idx < len(il) else uid
+            base_uid = e.get('baseUserId', uid)
+            if not e.get('isHidden'):
+                base_uid = il[orig_idx].get('baseUserId', uid) if orig_idx < len(il) else uid
             ctrls = controllers.get(base_uid, [])
             char = engine.get_char(uid)
+            owner_name = next((ie.get('name', '') for ie in il if ie.get('isSummon') and ie['userId'] == uid), '')
+            if not owner_name and e.get('ownerId'):
+                owner_char = engine.get_char(e['ownerId'])
+                owner_name = getattr(owner_char, 'name', '') if owner_char else ''
             characters.append({
                 'index': e['index'],
                 'name': e['name'],
@@ -17562,8 +20105,10 @@ def get_clist(battle_id):
                 'serial': getattr(char, 'serial', ''),
                 'is_summon': e['isSummon'],
                 'controller_ids': ctrls,
-                'is_active': e.get('origIndex', e['index'] - 1) == active_idx,
-                'owner_name': next((ie.get('name', '') for ie in il if ie.get('isSummon') and ie['userId'] == uid), ''),
+                # Hidden members share their group's slot; only the scheduled
+                # representative is ever the active actor.
+                'is_active': bool(e.get('isActive')) and not e.get('isHidden'),
+                'owner_name': owner_name,
             })
 
         return jsonify({
@@ -18847,6 +21392,9 @@ if "_resolve_db" in dir():_bem._resolve_db = _resolve_db
 if "_get_db_str" in dir():_bem._get_db_str = _get_db_str
 if "_calc_net_bp" in dir():_bem._calc_net_bp = _calc_net_bp
 if "season_status_roll" in dir():_bem.season_status_roll = season_status_roll
+if "_parse_bp_token" in dir():_bem._parse_bp_token = _parse_bp_token
+if "_format_bp" in dir():_bem._format_bp = _format_bp
+if "_parse_attr_mods" in dir():_bem._parse_attr_mods = _parse_attr_mods
 sys.modules['battle_engine'] = _bem
 
 # Main entry

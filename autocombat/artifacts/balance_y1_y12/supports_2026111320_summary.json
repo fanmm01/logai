@@ -1,0 +1,404 @@
+{
+  "suite": "supports",
+  "batch": 2026111320,
+  "matches": 360,
+  "workers": 3,
+  "source_root": "D:\\Datastruct\\logai\\autocombat",
+  "error_count": 7,
+  "errors": [
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y3",
+        "Y2"
+      ],
+      "b": [
+        "Y2",
+        "Y11"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 12280867327127158846,
+      "repeat": 2,
+      "carry": "Y3",
+      "support": "Y2",
+      "enemy": [
+        "Y2",
+        "Y11"
+      ],
+      "carry_side": "a",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1016, in run_battle\n    y_chars_d = [e.get('name','?') for e in il_final if e['team']=='Y' and not e.get('isSummon')]\n                                                        ~^^^^^^^^\nKeyError: 'team'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y5",
+        "Y7"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 10212918149862805852,
+      "repeat": 2,
+      "carry": "Y5",
+      "support": "Y7",
+      "enemy": [
+        "Y9",
+        "Y12"
+      ],
+      "carry_side": "a",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 976, in run_battle\n    result_text = self._use_skill(uid, sn, '')\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 6861, in _use_skill\n    return self._execute_spell(uid, target, spell)\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4068, in _execute_spell\n    self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)\n    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4122, in _execute_spell_plan\n    self._spell_plan_output += self._execute_summon_effect(\n                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n        caster_id, target_id, eff, spell, is_passive_spell)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4196, in _execute_summon_effect\n    sid = self._create_summon(caster_id, tmpl,\n        summon_group=tmpl if count > 1 else None,\n        shared_roll=shared_s_roll, shared_rank=None)\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 7122, in _create_summon\n    init_list.sort(key=lambda e: (-e[\"initRank\"], -e[\"dex\"], e[\"initRoll\"])); self._set_initiative(init_list)\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 7122, in <lambda>\n    init_list.sort(key=lambda e: (-e[\"initRank\"], -e[\"dex\"], e[\"initRoll\"])); self._set_initiative(init_list)\n                                   ~^^^^^^^^^^^^\nKeyError: 'initRank'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y2",
+        "Y11"
+      ],
+      "b": [
+        "Y5",
+        "Y2"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 7770430885968850433,
+      "repeat": 1,
+      "carry": "Y5",
+      "support": "Y2",
+      "enemy": [
+        "Y2",
+        "Y11"
+      ],
+      "carry_side": "b",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 959, in run_battle\n    cmd = ai.decide_action(self, _base_uid)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 380, in decide_action\n    return self._q_decide(engine, user_id, ck)\n           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 397, in _q_decide\n    st = encode_state(engine, user_id)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_trainer.py\", line 217, in encode_state\n    team_hps = [engine._get_combat_hp(e['userId']) or 0 for e in init_list if e['team'] == my_team]\n                                                                              ~^^^^^^^^\nKeyError: 'team'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y1",
+        "Y2"
+      ],
+      "b": [
+        "Y9",
+        "Y7"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 11154358680918097848,
+      "repeat": 1,
+      "carry": "Y9",
+      "support": "Y7",
+      "enemy": [
+        "Y1",
+        "Y2"
+      ],
+      "carry_side": "b",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 976, in run_battle\n    result_text = self._use_skill(uid, sn, '')\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 6861, in _use_skill\n    return self._execute_spell(uid, target, spell)\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4068, in _execute_spell\n    self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)\n    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4125, in _execute_spell_plan\n    self._spell_plan_output += self._execute_misc_effect(\n                               ~~~~~~~~~~~~~~~~~~~~~~~~~^\n        caster_id, target_id, eff, spell, is_passive_spell, eff_idx)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4341, in _execute_misc_effect\n    hp = self._restore_graveyard_unit(caster_id, target, eff)\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1926, in _restore_graveyard_unit\n    self._register_summon_member_state(uid, tmpl, owner)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1389, in _register_summon_member_state\n    group = self._summon_groups[group_key]\n            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^\nKeyError: 'Y9_sum_8'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y9",
+        "Y7"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 17988503920984134330,
+      "repeat": 1,
+      "carry": "Y9",
+      "support": "Y7",
+      "enemy": [
+        "Y9",
+        "Y12"
+      ],
+      "carry_side": "b",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 976, in run_battle\n    result_text = self._use_skill(uid, sn, '')\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 6861, in _use_skill\n    return self._execute_spell(uid, target, spell)\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4068, in _execute_spell\n    self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)\n    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4125, in _execute_spell_plan\n    self._spell_plan_output += self._execute_misc_effect(\n                               ~~~~~~~~~~~~~~~~~~~~~~~~~^\n        caster_id, target_id, eff, spell, is_passive_spell, eff_idx)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4341, in _execute_misc_effect\n    hp = self._restore_graveyard_unit(caster_id, target, eff)\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1926, in _restore_graveyard_unit\n    self._register_summon_member_state(uid, tmpl, owner)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1389, in _register_summon_member_state\n    group = self._summon_groups[group_key]\n            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^\nKeyError: 'Y9_sum_4'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y9",
+        "Y7"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 4489457606344231511,
+      "repeat": 2,
+      "carry": "Y9",
+      "support": "Y7",
+      "enemy": [
+        "Y9",
+        "Y12"
+      ],
+      "carry_side": "a",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 976, in run_battle\n    result_text = self._use_skill(uid, sn, '')\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 6861, in _use_skill\n    return self._execute_spell(uid, target, spell)\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4068, in _execute_spell\n    self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)\n    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4125, in _execute_spell_plan\n    self._spell_plan_output += self._execute_misc_effect(\n                               ~~~~~~~~~~~~~~~~~~~~~~~~~^\n        caster_id, target_id, eff, spell, is_passive_spell, eff_idx)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 4341, in _execute_misc_effect\n    hp = self._restore_graveyard_unit(caster_id, target, eff)\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1926, in _restore_graveyard_unit\n    self._register_summon_member_state(uid, tmpl, owner)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\battle_engine.py\", line 1389, in _register_summon_member_state\n    group = self._summon_groups[group_key]\n            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^\nKeyError: 'Y9_sum_3'\n"
+    },
+    {
+      "suite": "support_control",
+      "batch": 2026111320,
+      "a": [
+        "Y2",
+        "Y11"
+      ],
+      "b": [
+        "Y11",
+        "Y2"
+      ],
+      "map": "10x10",
+      "season": 50,
+      "limit": 30,
+      "seed": 12089554260220415111,
+      "repeat": 1,
+      "carry": "Y11",
+      "support": "Y2",
+      "enemy": [
+        "Y2",
+        "Y11"
+      ],
+      "carry_side": "b",
+      "error": "Traceback (most recent call last):\n  File \"d:\\Datastruct\\logai\\autocombat\\artifacts\\balance_y1_y12\\run_balance_prelims.py\", line 67, in run_match\n    w, _, rounds, result = t.battle(job[\"a\"], job[\"b\"], job[\"map\"],\n                           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                    job[\"suite\"], delay=0,\n                                    ^^^^^^^^^^^^^^^^^^^^^^\n                                    max_rounds=job[\"limit\"])\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 1148, in battle\n    result = engine.run_battle(self.ai_map)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 959, in run_battle\n    cmd = ai.decide_action(self, _base_uid)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 380, in decide_action\n    return self._q_decide(engine, user_id, ck)\n           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_battle.py\", line 397, in _q_decide\n    st = encode_state(engine, user_id)\n  File \"D:\\Datastruct\\logai\\autocombat\\ai_trainer.py\", line 217, in encode_state\n    team_hps = [engine._get_combat_hp(e['userId']) or 0 for e in init_list if e['team'] == my_team]\n                                                                              ~^^^^^^^^\nKeyError: 'team'\n"
+    }
+  ],
+  "elapsed": 11.158815383911133,
+  "season": 50,
+  "policy": "current ai_weights.json; fresh AI per match; no reaction training",
+  "hashes": {
+    "characters_data.py": "61f646ba518fa666b3e6d5c42cb2177f91c76d26ac1929e5356c1dd02ef09b66",
+    "characters_data_pvp.py": "7d9a78ad1a258be17f729a3ef453e0ee90738f6a86760a4b7e75850689dfed03",
+    "battle_engine.py": "b794942bc18a6bf3c54ae10afb17201c099be8a2071068ee141b81df8f5b8fb6",
+    "ai_battle.py": "657cde5fc6b6433a0e305bdbdc96176d587fb0bb9ddc98a522172558a912ab2c",
+    "ai_trainer.py": "6e1ee267a173c5086f196ef7dfc8d7cc65502a9edc9a26478091e70ecbe0587a",
+    "ai_weights.json": "fa8ef501920b807fd9135b21de14c2aaeda29410829ec1929632eb3e29fe2b2d",
+    "team_tables.py": "90a051ec1ad7e57f23b2a792bff14721413f1ade12f8b34a97fe1684a66b0968"
+  },
+  "hashes_unchanged": true,
+  "stats": [
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y1",
+      "n": 149,
+      "wins": 75,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 695,
+      "points": 225.0,
+      "rate": 0.503356,
+      "wilson_lo": 0.424004,
+      "wilson_hi": 0.582539,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.664,
+      "avg_points": 1.5101
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y10",
+      "n": 90,
+      "wins": 77,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 404,
+      "points": 231.0,
+      "rate": 0.855556,
+      "wilson_lo": 0.768399,
+      "wilson_hi": 0.913601,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.489,
+      "avg_points": 2.5667
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y11",
+      "n": 146,
+      "wins": 73,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 632,
+      "points": 219.0,
+      "rate": 0.5,
+      "wilson_lo": 0.419941,
+      "wilson_hi": 0.580059,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.329,
+      "avg_points": 1.5
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y12",
+      "n": 87,
+      "wins": 80,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 375,
+      "points": 240.0,
+      "rate": 0.91954,
+      "wilson_lo": 0.843116,
+      "wilson_hi": 0.96048,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.31,
+      "avg_points": 2.7586
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y2",
+      "n": 245,
+      "wins": 167,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 1063,
+      "points": 501.0,
+      "rate": 0.681633,
+      "wilson_lo": 0.62088,
+      "wilson_hi": 0.736777,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.339,
+      "avg_points": 2.0449
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y3",
+      "n": 59,
+      "wins": 9,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 268,
+      "points": 27.0,
+      "rate": 0.152542,
+      "wilson_lo": 0.082384,
+      "wilson_hi": 0.265182,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.542,
+      "avg_points": 0.4576
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y4",
+      "n": 150,
+      "wins": 91,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 651,
+      "points": 273.0,
+      "rate": 0.606667,
+      "wilson_lo": 0.526765,
+      "wilson_hi": 0.681241,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.34,
+      "avg_points": 1.82
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y5",
+      "n": 58,
+      "wins": 10,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 231,
+      "points": 30.0,
+      "rate": 0.172414,
+      "wilson_lo": 0.096442,
+      "wilson_hi": 0.289085,
+      "timeout_rate": 0.0,
+      "avg_rounds": 3.983,
+      "avg_points": 0.5172
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y6",
+      "n": 72,
+      "wins": 12,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 356,
+      "points": 36.0,
+      "rate": 0.166667,
+      "wilson_lo": 0.097993,
+      "wilson_hi": 0.269109,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.944,
+      "avg_points": 0.5
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y7",
+      "n": 68,
+      "wins": 7,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 373,
+      "points": 21.0,
+      "rate": 0.102941,
+      "wilson_lo": 0.050765,
+      "wilson_hi": 0.197581,
+      "timeout_rate": 0.0,
+      "avg_rounds": 5.485,
+      "avg_points": 0.3088
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y8",
+      "n": 72,
+      "wins": 8,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 314,
+      "points": 24.0,
+      "rate": 0.111111,
+      "wilson_lo": 0.057388,
+      "wilson_hi": 0.204231,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.361,
+      "avg_points": 0.3333
+    },
+    {
+      "suite": "support_control",
+      "map": "10x10",
+      "serial": "Y9",
+      "n": 144,
+      "wins": 95,
+      "timeouts": 0,
+      "timeout_wins": 0,
+      "rounds": 621,
+      "points": 285.0,
+      "rate": 0.659722,
+      "wilson_lo": 0.579084,
+      "wilson_hi": 0.73206,
+      "timeout_rate": 0.0,
+      "avg_rounds": 4.312,
+      "avg_points": 1.9792
+    }
+  ]
+}

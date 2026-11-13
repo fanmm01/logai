@@ -105,7 +105,8 @@ def main():
     for _sym in ['roll_dice','roll_d100','is_in_melee_range','has_timing','has_object',
                  'parse_coord','format_coord','avg_damage','success_rank','rank_text',
                  'max_damage','_get_attack_range','chebyshev_dist','_resolve_db',
-                 '_get_db_str','_calc_net_bp','season_status_roll']:
+                 '_get_db_str','_calc_net_bp','season_status_roll','_parse_bp_token',
+                 '_format_bp','_parse_attr_mods']:
         output_lines.append(f'if \"{_sym}\" in dir():_bem.{_sym} = {_sym}\n')
     output_lines.append('sys.modules[\'battle_engine\'] = _bem\n')
 

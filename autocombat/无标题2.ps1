@@ -1,0 +1,1 @@
+﻿python sim.py --mode prelim --format 1v1 -n 20 --workers 14        # 只跑 1v1

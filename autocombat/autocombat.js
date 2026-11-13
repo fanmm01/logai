@@ -177,85 +177,66 @@ function rollD100(ctx, bpStr) {
   return { result: r, detail: `${label}${extraStr}` };
 }
 
-/** Calculate net bonus/penalty dice from all buffs with stacking (max ±3).
+/** Parse one bonus/penalty token into a signed count.
+ *  Accepts 'b','b2','2b','p','p3','3p','' and numbers (positive = bonus). */
+function parseBpToken(token) {
+  if (token === undefined || token === null || typeof token === 'boolean') return 0;
+  if (typeof token === 'number') return token;
+  const s = String(token).trim().toLowerCase();
+  if (!s) return 0;
+  let m = s.match(/^([bp])(\d*)$/);
+  if (m) {
+    const n = m[2] ? parseInt(m[2]) : 1;
+    return m[1] === 'b' ? n : -n;
+  }
+  m = s.match(/^(\d*)([bp])$/);
+  if (m) {
+    const n = m[1] ? parseInt(m[1]) : 1;
+    return m[2] === 'b' ? n : -n;
+  }
+  return 0;
+}
+
+/** Format a signed net count, capped at ±3. */
+function formatBp(net) {
+  net = Math.max(-3, Math.min(3, net | 0));
+  if (net > 0) return net > 1 ? 'b' + net : 'b';
+  if (net < 0) { const n = -net; return n > 1 ? 'p' + n : 'p'; }
+  return '';
+}
+
+/** Calculate net bonus/penalty dice from all sources, netting + and − before ±3.
  *
- *  Counts all bonus dice and penalty dice from:
- *  - AUX 16 (伤害成功率奖励惩罚) buffs with auxVal like 'b','b2','b3','p','p2','p3'
- *  - Skill-specific bonus/penalty dice (技能奖励骰/技能惩罚骰) matching skillName
- *  - The passed-in bpSuffix (from command like .btab/.btap)
- *
- *  Nets them: bonus − penalty, capped at ±3.
- *  Returns formatted string: 'b3','b2','b','','p','p2','p3'
+ *  - explicit bpSuffix (from command like .btab/.btap)
+ *  - AUX 16 (伤害成功率奖励惩罚): generic dice count
+ *  - AUX 17/18 (技能奖励骰/技能惩罚骰): a dice count ('b2'/'p') applies to any
+ *    skill; a non-dice value is matched against skillName (±1)
+ *  Returns 'b3','b2','b','','p','p2','p3'.
  */
-function calcNetBp(buffs, bpSuffix, skillName) {
-  let bonusCount = 0;
-  let penaltyCount = 0;
+function calcNetBp(buffs, bpSuffix, skillName, extraTokens, ignoreGlobal) {
+  let net = parseBpToken(bpSuffix);
+  for (const tok of (extraTokens || [])) net += parseBpToken(tok);
 
-  // 1. Parse bpSuffix (from command)
-  if (bpSuffix) {
-    const m = bpSuffix.match(/^([bp])(\d*)$/i);
-    if (m) {
-      const cnt = m[2] ? parseInt(m[2]) : 1;
-      if (m[1].toLowerCase() === 'b') {
-        bonusCount += cnt;
-      } else {
-        penaltyCount += cnt;
-      }
-    }
-  }
+  if (!ignoreGlobal) {
+    for (const b of (buffs || [])) {
+      let auxCode = b.auxCode;
+      const auxType = b.auxType || '';
+      const auxVal = String(b.auxVal === undefined || b.auxVal === null ? '' : b.auxVal).trim();
+      if (!auxCode) auxCode = AUX_EFFECT_NAMES_TO_CODE[auxType] || 0;
 
-  // 2. Scan all buffs
-  for (const b of buffs) {
-    // AUX 16: 伤害成功率奖励惩罚
-    if (b.auxCode === 16 && b.auxVal) {
-      const val = String(b.auxVal).trim().toLowerCase();
-      const m = val.match(/^([bp])(\d*)$/);
-      if (m) {
-        const cnt = m[2] ? parseInt(m[2]) : 1;
-        if (m[1] === 'b') {
-          bonusCount += cnt;
-        } else {
-          penaltyCount += cnt;
+      if (auxCode === 16) {
+        net += parseBpToken(auxVal);
+      } else if (auxCode === 17 || auxCode === 18) {
+        const signed = parseBpToken(auxVal);
+        if (signed) {
+          net += signed;  // generic dice count → every skill
+        } else if (skillName && auxVal.toLowerCase() === String(skillName).toLowerCase()) {
+          net += auxCode === 17 ? 1 : -1;
         }
       }
     }
-    // Skill-specific bonus/penalty dice (auxCode 17/18)
-    if (skillName && (b.auxCode === 17 || b.auxCode === 18)) {
-      try {
-        const auxVal = String(b.auxVal || '').trim();
-        if (auxVal.toLowerCase() === skillName.toLowerCase()) {
-          if (b.auxCode === 17) bonusCount += 1;
-          else penaltyCount += 1;
-        }
-      } catch (e) { /* ignore */ }
-    }
-    // Skill-specific bonus/penalty dice (legacy auxType string matching)
-    if (skillName) {
-      try {
-        const auxType = b.auxType || '';
-        const auxVal = String(b.auxVal || '').trim();
-        if (auxType === '技能奖励骰' && auxVal.toLowerCase() === skillName.toLowerCase()) {
-          bonusCount += 1;
-        }
-        if (auxType === '技能惩罚骰' && auxVal.toLowerCase() === skillName.toLowerCase()) {
-          penaltyCount += 1;
-        }
-      } catch (e) { /* ignore */ }
-    }
   }
-
-  // 3. Net and cap at ±3
-  let net = bonusCount - penaltyCount;
-  net = Math.max(-3, Math.min(3, net));
-
-  if (net > 0) {
-    return net > 1 ? 'b' + net : 'b';
-  } else if (net < 0) {
-    const n = -net;
-    return n > 1 ? 'p' + n : 'p';
-  } else {
-    return '';
-  }
+  return formatBp(net);
 }
 
 /** COC7 success rank (rule 2: domestic common).
@@ -545,6 +526,23 @@ function hasObject(objStr, code) {
   return String(objStr).indexOf(String(code)) !== -1;
 }
 
+/** Zone 客体 eligibility test, mirroring Python `_zone_includes`.
+ *  Single-target codes act as a faction filter; '3' excludes self,
+ *  '35'/'135' include everyone, 'R'/'RP' are not valid zone filters. */
+function zoneIncludes(filterObj, uid, casterId, gid) {
+  const codes = parseObjCodes(filterObj);
+  if (codes.indexOf('R') >= 0 || codes.indexOf('RP') >= 0) return false;
+  const isSelf = uid === casterId;
+  const casterTeam = getCharFaction(gid, casterId) || 'Y';
+  const uidTeam = getCharFaction(gid, uid) || 'Y';
+  const isAlly = !isSelf && uidTeam === casterTeam;
+  if (codes.indexOf('135') >= 0 || codes.indexOf('35') >= 0) return true;
+  const anyOf = (list) => list.some(c => codes.indexOf(c) >= 0);
+  if (isSelf) return anyOf(['1','12','13','14','15','124','125']);
+  if (isAlly) return anyOf(['2','3','12','13','24','25','124','125']);
+  return anyOf(['4','5','14','15','24','25','45','124','125']);
+}
+
 /** Determine if a context represents an NPC (has no character card attributes). */
 function isNPCContext(ctx) {
   const keyAttrs = ['力量', '体质', '敏捷', '智力', '意志', '外貌', '教育', '体型', '幸运'];
@@ -599,19 +597,7 @@ function flushCombatHP(groupId, userId, ctx) {
   }
 }
 
-/** Get active buffs for a user from combat effects.
- *  Returns array of buff objects with {skillMod, auxType, auxCode, auxVal, attrMod}. */
-function getActiveBuffs(groupId, userId) {
-  const raw = ext.storageGet(`combat_effects_${groupId}`);
-  if (!raw) return [];
-  let effects;
-  try { effects = JSON.parse(raw); } catch(e) { return []; }
-  return effects.filter(eff =>
-    (eff.type === 'buff' || eff.type === 'debuff') &&
-    eff.targetUserId === userId &&
-    eff.remainingRounds !== 0  // 0=expired (will be cleaned up), -1=persistent
-  );
-}
+// (getActiveBuffs is defined once below, combined with live zone views)
 
 // ======== AUX helper functions ========
 
@@ -743,8 +729,38 @@ function absorbDamageWithShield(groupId, userId, dmgValue) {
   return { remainingDamage: remaining, absorbedByShield: absorbed, shieldMsgs: msgs };
 }
 
-/** Apply skill modifier from active buffs. Returns adjusted skill value. */
-function applyBuffSkillMod(groupId, userId, baseSkillVal) {
+/** Parse 'MOV+5' / '闪避-30' / '斗殴+10;敏捷-5' into [{name, delta}, ...]. */
+function parseAttrMods(spec) {
+  if (spec === undefined || spec === null) return [];
+  const mods = [];
+  for (const part of String(spec).split(/[;；,，/]/)) {
+    const m = part.match(/^\s*([^\d+\-]+?)\s*([+-])\s*(\d+)\s*$/);
+    if (m) mods.push({ name: m[1].trim(), delta: parseInt(m[3]) * (m[2] === '-' ? -1 : 1) });
+  }
+  return mods;
+}
+
+const MOV_ATTR_GROUP = ['MOV', '行动力', '移动力'];
+function attrGroup(name) {
+  return MOV_ATTR_GROUP.indexOf(name) >= 0 ? 'MOV' : name;
+}
+
+/** Sum named attribute modifiers from active buffs (MOV group unified).
+ *  '技能加减值' only ever changes the attribute it names. */
+function applyBuffAttrMod(groupId, userId, attrName) {
+  const target = attrGroup(attrName);
+  let total = 0;
+  for (const b of getActiveBuffs(groupId, userId)) {
+    for (const m of parseAttrMods(b.skillMod || '')) {
+      if (attrGroup(m.name) === target) total += m.delta;
+    }
+  }
+  return total;
+}
+
+/** Apply skill modifier from active buffs. Returns adjusted skill value.
+ *  Named 技能加减值 only applies when skillName matches; AUX 15/20 stay broad. */
+function applyBuffSkillMod(groupId, userId, baseSkillVal, skillName) {
   const buffs = getActiveBuffs(groupId, userId);
   let adjusted = baseSkillVal;
   for (const b of buffs) {
@@ -753,16 +769,44 @@ function applyBuffSkillMod(groupId, userId, baseSkillVal) {
       const mod = parseInt(b.auxVal);
       if (!isNaN(mod)) adjusted += mod;
     }
-    // Legacy: skillMod field (from 技能加减值) may contain format like "斗殴+10"
-    if (b.skillMod) {
-      const m = String(b.skillMod).match(/([+-]?\d+)$/);
-      if (m) adjusted += parseInt(m[1]);
-    }
   }
+  if (skillName) adjusted += applyBuffAttrMod(groupId, userId, skillName);
+  // 领域属性削减（临时、按属性名、敌我/范围过滤）
+  if (skillName) adjusted += zoneAttrPenalty(groupId, userId, skillName);
   // AUX 20: skill value multiplier (applied after flat modifiers)
   const mult = getBuffSkillMult(groupId, userId);
   adjusted = Math.floor(adjusted * mult);
   return Math.max(1, adjusted);
+}
+
+/** Live zone attribute penalty for a named attribute group.
+ *  Non-stackable zones keep the strongest penalty; stackable zones sum. */
+function zoneAttrPenalty(gid, userId, attrName) {
+  const target = attrGroup(attrName);
+  let strongest = 0, stacked = 0;
+  const effRaw = ext.storageGet(`combat_effects_${gid}`);
+  if (!effRaw) return 0;
+  let effects;
+  try { effects = JSON.parse(effRaw); } catch(e) { return 0; }
+  const initList = getInitiative(gid);
+  const selfEntry = initList.find(e => e.userId === userId);
+  const selfCoord = selfEntry ? selfEntry.coord : '';
+  const selfPos = selfCoord ? parseCoord(selfCoord) : null;
+  for (const eff of effects) {
+    if (eff.type !== 'zone' || !eff.attributeDebuff) continue;
+    const mods = parseAttrMods(eff.attributeDebuff).filter(m => attrGroup(m.name) === target && m.delta < 0);
+    if (!mods.length) continue;
+    const cp = parseCoord(zoneCenter(gid, eff));
+    if (!cp || !selfPos) continue;
+    if (Math.max(Math.abs(selfPos.col - cp.col), Math.abs(selfPos.row - cp.row)) > (eff.radius || 0)) continue;
+    if (hasStatus(gid, userId, '隔离')) continue;
+    if (!zoneIncludes(eff.filter === undefined ? 35 : eff.filter, userId, eff.sourceUserId, gid)) continue;
+    for (const m of mods) {
+      if (eff.stackable) stacked += Math.abs(m.delta);
+      else strongest = Math.max(strongest, Math.abs(m.delta));
+    }
+  }
+  return -(strongest + stacked);
 }
 
 /** Check HP thresholds and fire triggers. Called during tick-down.
@@ -1514,7 +1558,7 @@ function makeBtaCmd(baseName) {
 
     // --- Apply active buffs/debuffs to attacker's skill ---
     const gid3 = groupId;
-    effectiveSkill = applyBuffSkillMod(gid3, ctx.player.userId, effectiveSkill);
+    effectiveSkill = applyBuffSkillMod(gid3, ctx.player.userId, effectiveSkill, displaySkillName);
 
     const atkResults = [];
     // AUX 21/22: crit rate adjustment from buffs
@@ -2308,10 +2352,13 @@ function makeECmd(baseName) {
 
       // Roll reaction for this attack — apply buffs to defender's skill
       const reactGid = pending.groupId || gid;
-      reactSkillValue = applyBuffSkillMod(reactGid, ctx.player.userId, reactSkillValue);
-      // Check buffs for bonus/penalty dice (stacking, max ±3) on defender
+      reactSkillValue = applyBuffSkillMod(reactGid, ctx.player.userId, reactSkillValue, reactSkillName);
+      // Check buffs for bonus/penalty dice (stacking, max ±3) on defender.
+      // 法术的 反应惩罚骰 只作用于本次攻击的反应，不落成持久 buff。
       const reactBuffs = getActiveBuffs(reactGid, ctx.player.userId);
-      const reactEffectiveBp = calcNetBp(reactBuffs, bpSuffix || '', reactSkillName);
+      const reactExtra = [];
+      if (pending.reactionPenalty) reactExtra.push(pending.reactionPenalty);
+      const reactEffectiveBp = calcNetBp(reactBuffs, bpSuffix || '', reactSkillName, reactExtra);
       const reactRollInfo = rollD100(defCtx, reactEffectiveBp);
       const reactRoll = reactRollInfo.result;
       const rawReactRank = successRank(reactRoll, reactSkillValue);
@@ -4903,15 +4950,100 @@ function setActions(groupId, data) {
 // ── 控制状态常量 ──
 const CONTROL_STATUS_TYPES = ['沉默','缴械','击晕','禁锢','隔离','减速','飞行'];
 
-// ── 状态查询 helper ──
+/** Combined active buffs: physical buff/debuff effects plus a freshly derived
+ *  live view from covering zones. Zone views are never stored in effects and
+ *  never cached — membership follows the current position. */
 function getActiveBuffs(gid, uid) {
   const effects = JSON.parse(ext.storageGet(`combat_effects_${gid}`) || '[]');
-  return effects.filter(e =>
+  const physical = effects.filter(e =>
     (e.type === 'buff' || e.type === 'debuff') &&
     e.targetUserId === uid &&
     (e.remainingRounds || 0) !== 0
   );
+  const views = zoneBuffViews(gid, uid, effects);
+  return views.length ? physical.concat(views) : physical;
 }
+
+/** Is uid currently isolated? Reads physical effects only (no recursion). */
+function hasPhysicalIsolation(effects, uid) {
+  return effects.some(e =>
+    (e.type === 'buff' || e.type === 'debuff') &&
+    e.auxType === '隔离' &&
+    e.targetUserId === uid &&
+    (e.remainingRounds || 0) !== 0
+  );
+}
+
+/** Current center of a zone; follow-zones read the caster position live. */
+function zoneCenter(gid, eff) {
+  if (!eff.centerFollows || !eff.sourceUserId) return eff.center || 'A1';
+  const mapRaw = ext.storageGet(`combat_map_${gid}`);
+  if (mapRaw) {
+    try {
+      const md = JSON.parse(mapRaw);
+      for (const [c, occ] of Object.entries(md.occupants || {})) {
+        if (occ === eff.sourceUserId) return c;
+      }
+    } catch (e) {}
+  }
+  return eff.center || 'A1';
+}
+
+/** Is uid inside a zone's current area and allowed by its 客体 filter? */
+function zoneCoversUid(gid, eff, uid) {
+  const radius = eff.radius || 0;
+  if (radius <= 0) return false;
+  const il = getInitiative(gid);
+  const entry = il.find(e => e.userId === uid);
+  if (!entry || !entry.coord) return false;
+  if (!zoneIncludes(eff.filter === undefined ? 35 : eff.filter, uid, eff.sourceUserId, gid)) {
+    return false;
+  }
+  const cp = parseCoord(zoneCenter(gid, eff));
+  const ep = parseCoord(entry.coord);
+  if (!cp || !ep) return false;
+  return Math.max(Math.abs(ep.col - cp.col), Math.abs(ep.row - cp.row)) <= radius;
+}
+
+/** Live, read-only buff views granted by zones covering uid.
+ *  Non-stackable zones dedupe by (spellName, effectKey, auxType). */
+function zoneBuffViews(gid, uid, effectsIn) {
+  const effects = effectsIn || JSON.parse(ext.storageGet(`combat_effects_${gid}`) || '[]');
+  const zones = effects.filter(e => e.type === 'zone' && (e.remainingRounds || 0) !== 0);
+  if (!zones.length) return [];
+  if (hasPhysicalIsolation(effects, uid)) return [];
+  const views = [];
+  const seen = {};
+  for (const eff of zones) {
+    let auxType = eff.auxType || '';
+    const skillMod = eff.skillMod || '';
+    if (!auxType && !skillMod) continue;
+    // Unsupported AUX is refused; a valid named modifier on the same zone stays.
+    if (auxType && ZONE_UNSUPPORTED_AUX.indexOf(auxType) >= 0) auxType = '';
+    if (!auxType && !skillMod) continue;
+    if (eff.sourcePassive && hasPhysicalIsolation(effects, eff.sourceUserId)) continue;
+    if (!zoneCoversUid(gid, eff, uid)) continue;
+    const ident = `${eff.spellName || ''}|${eff.effectKey || ''}|${auxType}`;
+    if (!eff.stackable) {
+      if (seen[ident]) continue;
+      seen[ident] = true;
+    }
+    views.push({
+      type: 'buff', remainingRounds: eff.remainingRounds, skillMod,
+      auxType, auxVal: eff.auxVal || '', auxCode: eff.auxCode || 0,
+      sourceUserId: eff.sourceUserId, targetUserId: uid,
+      spellName: eff.spellName || '', spellIndex: eff.spellIndex || 0,
+      effectKey: eff.effectKey || '', stackable: eff.stackable || 0,
+      sourceZone: true,
+    });
+  }
+  return views;
+}
+
+const ZONE_UNSUPPORTED_AUX = ['免疫一次伤害', '反应惩罚骰',
+  '沉默','缴械','击晕','禁锢','隔离','减速','飞行',
+  '行动力+','行动力-','移动力+','移动力-','MOV+','MOV-',
+  '受到伤害上限','受到伤害减免阈值'];
 function hasStatus(gid, uid, statusName) {
   return getActiveBuffs(gid, uid).some(b => b.auxType === statusName);
 }
@@ -4931,7 +5063,10 @@ function calcEffectiveMOV(gid, uid) {
   const ch = getChData(gid, uid);
   let base = ch ? (ch.attrs['MOV'] || ch.attrs['行动力'] || 8) : 8;
   if (ch && ch.attrs['分离行动力移动力']) base = ch.attrs['移动力'] || base;
-  // Zone penalties + buff mods — simplified for local mode
+  // Named MOV/行动力/移动力 modifiers from buffs and live zone auras
+  base += applyBuffAttrMod(gid, uid, 'MOV');
+  // Zone 属性削减 penalties (live, non-destructive)
+  base += zoneAttrPenalty(gid, uid, 'MOV');
   if (isFlying(gid, uid)) base += 8;
   // Slow — simplified
   return Math.max(0, Math.floor(base));
@@ -5975,7 +6110,8 @@ const AUX_EFFECT_TYPES = {
   15:'伤害成功率加减', 16:'伤害成功率奖励惩罚',
   17:'技能奖励骰', 18:'技能惩罚骰',
   19:'伤害骰倍增/倍减', 20:'技能值倍增/倍减',
-  21:'暴击率', 22:'暴击值'
+  21:'暴击率', 22:'暴击值',
+  33:'反应惩罚骰'
 };
 const AUX_EFFECT_NAMES_TO_CODE = {};
 for (const [k, v] of Object.entries(AUX_EFFECT_TYPES)) {
@@ -6036,40 +6172,52 @@ function loadSpells(ctx) {
                       seal.vars.strGet(ctx, `${prefix}类别${letter}护盾值`)[1] ||
                       seal.vars.strGet(ctx, `${prefix}类别${letter}回复hp`)[1] ||
                       seal.vars.strGet(ctx, `${prefix}类别${letter}技能加减值`)[1] ||
+                      seal.vars.strGet(ctx, `${prefix}类别${letter}辅助效果`)[1] ||
+                      seal.vars.strGet(ctx, `${prefix}类别${letter}其他辅助效果a`)[1] ||
                       seal.vars.intGet(ctx, `${prefix}类别${letter}召唤个数`)[1] ||
                       seal.vars.intGet(ctx, `${prefix}类别${letter}引发目标法术`)[1] ||
                       seal.vars.intGet(ctx, `${prefix}类别${letter}领域中心跟随`)[1] ||
                       seal.vars.strGet(ctx, `${prefix}类别${letter}每回合伤害骰`)[1];
       if (!hasData && ci > 0) continue;  // Only letter 'a' is mandatory
       // Determine category type (spec: 1伤害 2护盾 3回复 4辅助 5召唤 6制造 0其他)
+      // An explicit 类别{letter}type on the card always wins, so a zone that
+      // also carries AUX/skillMod stays type 8 instead of being inferred as 4.
+      const storedType = seal.vars.intGet(ctx, `${prefix}类别${letter}type`);
       let catType;
-      if (ci === 0) {
+      if (storedType[1] && storedType[0] > 0) {
+        catType = storedType[0];
+      } else if (ci === 0) {
         catType = spell['类别'] || 1;
       } else {
         // Infer from which keys exist
+        const isZone = seal.vars.intGet(ctx, `${prefix}类别${letter}领域中心跟随`)[1] ||
+          (seal.vars.strGet(ctx, `${prefix}类别${letter}每回合伤害骰`)[1] &&
+           seal.vars.intGet(ctx, `${prefix}类别${letter}作用半径`)[1] > 0);
         if (seal.vars.strGet(ctx, `${prefix}类别${letter}伤害骰`)[1]) catType = 1;
         else if (seal.vars.strGet(ctx, `${prefix}类别${letter}护盾值`)[1]) catType = 2;
         else if (seal.vars.strGet(ctx, `${prefix}类别${letter}回复hp`)[1] ||
                  seal.vars.strGet(ctx, `${prefix}类别${letter}回复san`)[1] ||
                  seal.vars.strGet(ctx, `${prefix}类别${letter}回复mp`)[1]) catType = 3;
-        else if (seal.vars.strGet(ctx, `${prefix}类别${letter}技能加减值`)[1]) catType = 4;
+        else if (!isZone && (seal.vars.strGet(ctx, `${prefix}类别${letter}技能加减值`)[1] ||
+                 seal.vars.strGet(ctx, `${prefix}类别${letter}辅助效果`)[1] ||
+                 seal.vars.strGet(ctx, `${prefix}类别${letter}其他辅助效果a`)[1])) catType = 4;
         else if (seal.vars.intGet(ctx, `${prefix}类别${letter}召唤个数`)[1]) catType = 5;
         else if (seal.vars.intGet(ctx, `${prefix}类别${letter}引发目标法术`)[1]) catType = 7;
-        else if (seal.vars.intGet(ctx, `${prefix}类别${letter}领域中心跟随`)[1] ||
-                 (seal.vars.strGet(ctx, `${prefix}类别${letter}每回合伤害骰`)[1] &&
-                  seal.vars.intGet(ctx, `${prefix}类别${letter}作用半径`)[1] > 0)) catType = 8;
+        else if (isZone) catType = 8;
         else catType = 0;
       }
       const eff = { type: catType, letter };
       const catIntKeys = ['客体','作用半径','可调节性','成功率','成功率奖惩骰',
         '可反应性','可贯穿性','致死值','致死值优劣','附加效果时长','持续回合',
-        '引发目标法术','引发延迟回合','制造个数','制造花费回合数','领域中心跟随','触发HP比例'];
+        '引发目标法术','引发延迟回合','制造个数','制造花费回合数','领域中心跟随','触发HP比例',
+        '可叠加','ally_safe'];
       for (const k of catIntKeys) {
         const v = seal.vars.intGet(ctx, `${prefix}类别${letter}${k}`);
         if (v[1]) eff[k] = v[0];
       }
       const catStrKeys = ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp',
-        '技能加减值','其他辅助效果a','辅助效果值a','召唤个数','召唤物模板','制造物模板',
+        '技能加减值','辅助效果','辅助效果值','其他辅助效果a','辅助效果值a',
+        '召唤个数','召唤物模板','制造物模板',
         '每回合伤害骰','吸血比例','属性削减'];
       for (const k of catStrKeys) {
         const v = seal.vars.strGet(ctx, `${prefix}类别${letter}${k}`);
@@ -6088,6 +6236,51 @@ function loadSpells(ctx) {
   return spells;
 }
 
+/** Reaction dice an attack effect imposes on the defender (this attack only).
+ *  New AUX33 反应惩罚骰; legacy 技能惩罚骰 with a dice value ('p','p2') kept. */
+function getReactionPenalty(eff) {
+  const auxType = eff['辅助效果'] || eff['其他辅助效果a'] || '';
+  const auxVal = String(eff['辅助效果值'] || eff['辅助效果值a'] || '').trim();
+  if (!auxType) return '';
+  if (AUX_EFFECT_NAMES_TO_CODE[auxType] === 33) return auxVal;
+  if (auxType === '技能惩罚骰' && parseBpToken(auxVal) !== 0) return auxVal;
+  return '';
+}
+
+/** Split a 客体 code string into tokens (longest-first, same as Python engine). */
+function parseObjCodes(obj) {
+  const s = String(obj === undefined ? 4 : obj).toUpperCase().trim();
+  if (s === 'R' || s === 'RP') return [s];
+  const codes = [];
+  const table = ['135','125','124','45','35','25','24','15','14','13','12','5','4','3','2','1'];
+  let i = 0;
+  while (i < s.length) {
+    let hit = null;
+    for (const c of table) { if (s.startsWith(c, i)) { hit = c; break; } }
+    if (hit) { if (codes.indexOf(hit) < 0) codes.push(hit); i += hit.length; }
+    else i += 1;
+  }
+  return codes.length ? codes : ['4'];
+}
+
+/** Local-mode per-effect target kind: 'self', 'target', or unsupported note. */
+function jsEffectTargetKinds(eff, hasTarget) {
+  const codes = parseObjCodes(eff['客体']);
+  const kinds = [];
+  let note = '';
+  const wantsSelf = codes.some(c => ['1','12','13','14','15','124','125'].indexOf(c) >= 0);
+  const wantsEnemy = codes.some(c => ['4','24','14','124','125'].indexOf(c) >= 0);
+  // '24' = 友方单体或敌方单体：本地模式按当前指定目标结算（可选本方）
+  const allyOrEnemy = codes.indexOf('24') >= 0;
+  const groupOnly = codes.some(c => ['3','5','35','45','135'].indexOf(c) >= 0);
+  if (wantsSelf) kinds.push('self');
+  if (allyOrEnemy && hasTarget) kinds.push('target');
+  else if (wantsEnemy && hasTarget) kinds.push('target');
+  if (wantsEnemy && !hasTarget) note += '  （未指定目标，跳过单体部分）';
+  if (groupOnly) note += '  （本地单目标模式仅结算当前目标，群体/其他友方需后端模式）';
+  return { kinds, note };
+}
+
 /** Execute a damage effect against a target. Returns { dmgValue, outText }.
  *  Supports DOT (持续回合>0 stores recurring damage), lifesteal (吸血),
  *  and knockback/stun (附加效果). */
@@ -6102,13 +6295,19 @@ function execDamageEffect(ctx, mctx, spell, eff, gid) {
   const lifestealRatio = eff['吸血比例'] ? parseFloat(eff['吸血比例']) : 0;
   const dotDice = eff['每回合伤害骰'] || '';  // DOT: damage per round
 
-  // If spell has success rate, roll check
+  // If spell has success rate, roll check (奖惩骰 is handled inside the skill)
   if (successRate > 0) {
-    const checkRoll = rollDice(ctx, '1d100');
+    const ignoreGlobal = String(eff['忽略全局奖惩骰'] || '') === '1';
+    const buffs = ignoreGlobal ? [] : getActiveBuffs(gid, ctx.player.userId);
+    const bp = calcNetBp(buffs, '', spell.name,
+      [eff['成功率奖惩骰'] || 0], ignoreGlobal);
+    const rollInfo = rollD100(ctx, bp);
+    const checkRoll = rollInfo.result;
     if (checkRoll > successRate) {
-      return { dmgValue: 0, outText: `成功率检定: ${checkRoll}/${successRate} 失败！法术未命中。\n` };
+      const bpNote = rollInfo.detail ? `, ${rollInfo.detail}` : '';
+      return { dmgValue: 0, outText: `成功率检定: D100=${checkRoll}/${successRate}${bpNote} 失败！法术未命中。\n` };
     }
-    out += `成功率检定: ${checkRoll}/${successRate} 成功。\n`;
+    out += `成功率检定: D100=${checkRoll}/${successRate}${rollInfo.detail ? ', ' + rollInfo.detail : ''} 成功。\n`;
   }
 
   // If target can react and is a player, prompt for reaction
@@ -6125,7 +6324,8 @@ function execDamageEffect(ctx, mctx, spell, eff, gid) {
       targetName, targetUserId: mctx.player.userId, groupId: gid,
       atkResults: [{ roll: 1, rank: 4, detail: '' }], atkCount: 1,
       attackerRestimMode: 0, ts: Date.now(),
-      lifestealRatio, dotDice, dur
+      lifestealRatio, dotDice, dur,
+      reactionPenalty: getReactionPenalty(eff)
     }));
     // Track for cleanup
     const tgtKey = `pending_targets_${gid}`;
@@ -6305,6 +6505,21 @@ function execZoneEffect(ctx, mctx, spell, eff, gid) {
   const centerFollows = eff['领域中心跟随'] || 0;
   const filter = eff['客体'] || 35;  // default: all in area
   const attributeDebuff = eff['属性削减'] || '';
+  // AUX / named modifiers carried by the zone itself (live range view)
+  const auxTypeRaw = eff['辅助效果'] || eff['其他辅助效果a'] || '';
+  const auxVal = String(eff['辅助效果值'] || eff['辅助效果值a'] || '');
+  const skillMod = eff['技能加减值'] || '';
+  const stackable = eff['可叠加'] || 0;
+  const allySafe = eff['ally_safe'] || 0;
+  const effectKey = String(eff.letter !== undefined ? eff.letter : (spell.effects || []).indexOf(eff));
+  let auxType = auxTypeRaw;
+  let auxCode = AUX_EFFECT_NAMES_TO_CODE[auxTypeRaw] || 0;
+  let unsupported = '';
+  if (auxTypeRaw && ZONE_UNSUPPORTED_AUX.indexOf(auxTypeRaw) >= 0) {
+    unsupported = auxTypeRaw;
+    auxType = '';
+    auxCode = 0;
+  }
 
   // Find current caster position
   let centerCoord = '';
@@ -6334,6 +6549,8 @@ function execZoneEffect(ctx, mctx, spell, eff, gid) {
     type: 'zone', center: centerCoord, radius, remainingRounds: dur,
     tickDmg, tickHealHp, tickHealMp, tickHealSan,
     centerFollows, filter, attributeDebuff,
+    skillMod, auxType, auxVal, auxCode, effectKey,
+    stackable, ally_safe: allySafe,
     sourceUserId: ctx.player.userId, spellName: spell.name,
     spellIndex: spell.index, persistent: spell['默认延续性'] || 0
   });
@@ -6344,6 +6561,9 @@ function execZoneEffect(ctx, mctx, spell, eff, gid) {
   if (tickHealHp) out += `每回合治疗: HP ${tickHealHp}\n`;
   if (tickHealMp) out += `每回合回复: MP ${tickHealMp}\n`;
   if (attributeDebuff) out += `属性削减: ${attributeDebuff}\n`;
+  if (unsupported) out += `（领域辅助效果 ${unsupported} 不生效）\n`;
+  if (skillMod) out += `领域内加成: ${skillMod}\n`;
+  if (auxType) out += `领域内辅助: ${auxType} ${auxVal}\n`;
   return out;
 }
 
@@ -6375,27 +6595,40 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
   if (mpCost > 0 || sanCost > 0) out += '\n';
 
   // Execute each effect (type = spec category number: 1伤害 2护盾 3回复 4辅助 5召唤 6制造)
+  // 每个 effect 按自己的 客体 决定施加对象；本地模式只支持单体目标，
+  // 无法覆盖的群体部分会明确提示（不静默套用到错误对象）。
   let pendingReaction = false;
   for (const eff of spell.effects) {
-    switch (eff.type) {
-      case 1: {  // 伤害
-        const result = execDamageEffect(ctx, mctx, spell, eff, gid);
-        out += result.outText;
-        if (result.pendingReaction) pendingReaction = true;
-        break;
+    const { kinds, note } = jsEffectTargetKinds(eff, !!(mctx && mctx.player));
+    if (note && (kinds.length || eff.type <= 4)) out += `类别${eff.letter || ''}${
+      eff.type === 4 ? (eff['技能加减值'] || eff['其他辅助效果a'] || '') : ''}${note}\n`;
+    for (const kind of kinds) {
+      const effCtx = kind === 'self' ? ctx : mctx;
+      if (!effCtx) continue;
+      switch (eff.type) {
+        case 1: {  // 伤害
+          const result = execDamageEffect(ctx, effCtx, spell, eff, gid);
+          out += result.outText;
+          if (result.pendingReaction) pendingReaction = true;
+          break;
+        }
+        case 2: {  // 护盾
+          out += execShieldEffect(ctx, effCtx, spell, eff, gid);
+          break;
+        }
+        case 3: {  // 回复
+          out += execHealEffect(ctx, effCtx, spell, eff, gid);
+          break;
+        }
+        case 4: {  // 辅助
+          out += execBuffEffect(ctx, effCtx, spell, eff, gid);
+          break;
+        }
       }
-      case 2: {  // 护盾
-        out += execShieldEffect(ctx, mctx, spell, eff, gid);
-        break;
-      }
-      case 3: {  // 回复
-        out += execHealEffect(ctx, mctx, spell, eff, gid);
-        break;
-      }
-      case 4: {  // 辅助
-        out += execBuffEffect(ctx, mctx, spell, eff, gid);
-        break;
-      }
+    }
+    // 非目标型效果（召唤/制造/引发/领域）每次施法只执行一次
+    if (eff.type > 4 || eff.type === 0) {
+      switch (eff.type) {
       case 5: {  // 召唤
         const summonCount = eff['召唤个数'] || 1;
         const summonDur = eff['持续回合'] || 1;
@@ -6547,6 +6780,7 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
       default: {
         out += `类别${eff.letter}: 暂不支持的效果类型(${eff.type})。\n`;
         break;
+      }
       }
     }
   }
@@ -7001,10 +7235,6 @@ function makeSkillCmd(skillNum) {
       state.activeIndex = (state.activeIndex + 1) % initList.length;
       if (state.activeIndex === 0) {
         state.round++;
-        // Refresh actions for new round
-        const acts = getActions(gid);
-        for (const k in acts) { acts[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
-        setActions(gid, acts);
         output += `\n===== 第 ${state.round} 回合 =====\n`;
         // Show initiative table for the new round
         const hpStoreRoundStart2 = getCombatHP(gid);
@@ -7077,28 +7307,21 @@ function makeSkillCmd(skillNum) {
                     }
                     const cp = parseCoord(eff.center);
                     if (cp && md5.occupants) {
-                      const filter = eff.filter || 35;
-                      const hasObj1 = hasObject(String(filter), '1');  // self
-                      const hasObj2 = hasObject(String(filter), '2');  // ally
-                      const hasObj3 = hasObject(String(filter), '3');  // ally group
-                      const hasObj4 = hasObject(String(filter), '4');  // enemy
-                      const hasObj5 = hasObject(String(filter), '5');  // enemy group
-                      const sourceTeam = getCharFaction(gid, eff.sourceUserId) || 'Y';
                       for (const [coord, occId] of Object.entries(md5.occupants)) {
                         const tp = parseCoord(coord);
                         if (!tp) continue;
                         const dist = Math.max(Math.abs(tp.col - cp.col), Math.abs(tp.row - cp.row));  // Chebyshev
                         if (dist > eff.radius) continue;
-                        // Check faction filter
+                        // 隔离：不受领域效果影响
+                        if (hasPhysicalIsolation(effects, occId)) continue;
+                        // 客体筛选（完整 token，35/135 含自身，3 不含自身）
+                        if (!zoneIncludes(eff.filter === undefined ? 35 : eff.filter,
+                                          occId, eff.sourceUserId, gid)) continue;
                         const occTeam = getCharFaction(gid, occId);
-                        const isAlly = (occTeam === sourceTeam);
-                        const isSelf = (occId === eff.sourceUserId);
-                        if (isSelf && !hasObj1) continue;
-                        if (isAlly && !isSelf && !hasObj2 && !hasObj3) continue;
-                        if (!isAlly && !hasObj4 && !hasObj5) continue;
+                        const isAlly = (occTeam === (getCharFaction(gid, eff.sourceUserId) || 'Y'));
 
                         // Apply zone effects to this occupant
-                        if (eff.tickDmg) {
+                        if (eff.tickDmg && !(eff.ally_safe && isAlly)) {
                           const zDmg = rollDice({}, eff.tickDmg);
                           if (zDmg > 0) {
                             const zResult = absorbDamageWithShield(gid, occId, zDmg);
@@ -7214,6 +7437,11 @@ function makeSkillCmd(skillNum) {
           }
           ext.storageSet(chantKey, JSON.stringify(chantData));
         }
+        // Expiry is settled before the new round's action budget is allocated,
+        // so a zone that just disappeared no longer grants MOV-based actions.
+        const actsNew = getActions(gid);
+        for (const k in actsNew) { actsNew[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
+        setActions(gid, actsNew);
       }
       // --- HP threshold triggers ---
       const thresholdMsgs = checkHpThresholds(gid, getInitiative(gid));
@@ -8371,10 +8599,6 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
   state.activeIndex = (state.activeIndex + 1) % initList.length;
   if (state.activeIndex === 0) {
     state.round++;
-    // Refresh actions for new round
-    const acts = getActions(gid);
-    for (const k in acts) { acts[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
-    setActions(gid, acts);
     output += `\n===== 第 ${state.round} 回合 =====\n`;
     // Show initiative table for the new round
     const hpStoreRoundStart = getCombatHP(gid);
@@ -8436,25 +8660,19 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
                 }
                 const cp2 = parseCoord(eff.center);
                 if (cp2 && md6.occupants) {
-                  const filter = eff.filter || 35;
-                  const hasObj1 = hasObject(String(filter), '1');
-                  const hasObj2 = hasObject(String(filter), '2');
-                  const hasObj3 = hasObject(String(filter), '3');
-                  const hasObj4 = hasObject(String(filter), '4');
-                  const hasObj5 = hasObject(String(filter), '5');
-                  const sourceTeam = getCharFaction(gid, eff.sourceUserId) || 'Y';
                   for (const [coord, occId] of Object.entries(md6.occupants)) {
                     const tp = parseCoord(coord);
                     if (!tp) continue;
                     const dist = Math.max(Math.abs(tp.col - cp2.col), Math.abs(tp.row - cp2.row));
                     if (dist > eff.radius) continue;
+                    // 隔离：不受领域效果影响
+                    if (hasPhysicalIsolation(effects, occId)) continue;
+                    // 客体筛选（完整 token）
+                    if (!zoneIncludes(eff.filter === undefined ? 35 : eff.filter,
+                                      occId, eff.sourceUserId, gid)) continue;
                     const occTeam = getCharFaction(gid, occId);
-                    const isAlly = (occTeam === sourceTeam);
-                    const isSelf = (occId === eff.sourceUserId);
-                    if (isSelf && !hasObj1) continue;
-                    if (isAlly && !isSelf && !hasObj2 && !hasObj3) continue;
-                    if (!isAlly && !hasObj4 && !hasObj5) continue;
-                    if (eff.tickDmg) {
+                    const isAlly = (occTeam === (getCharFaction(gid, eff.sourceUserId) || 'Y'));
+                    if (eff.tickDmg && !(eff.ally_safe && isAlly)) {
                       let zDmg = rollDice({}, eff.tickDmg);
                       if (zDmg > 0) {
                         // AUX 1-4,19: apply damage multipliers from zone source
@@ -8564,6 +8782,11 @@ cmdI.solve = async (ctx, msg, cmdArgs) => {
         }
       } catch(e) {}
     }
+    // Expiry is settled before the new round's action budget is allocated,
+    // so a zone that just disappeared no longer grants MOV-based actions.
+    const actsNew2 = getActions(gid);
+    for (const k in actsNew2) { actsNew2[k] = { 附加: 3, 主动: calcMainActions(gid, k) }; }
+    setActions(gid, actsNew2);
   }
   // --- HP threshold triggers ---
   const thresholdMsgs2 = checkHpThresholds(gid, getInitiative(gid));

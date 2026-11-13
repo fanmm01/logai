@@ -1,0 +1,25 @@
+Starting supports_2026111360: 960 matches, workers=4
+supports_2026111360: 100/960, elapsed=5.8s, errors=0
+supports_2026111360: 200/960, elapsed=8.2s, errors=1
+supports_2026111360: 300/960, elapsed=11.0s, errors=1
+supports_2026111360: 400/960, elapsed=13.3s, errors=2
+supports_2026111360: 500/960, elapsed=16.2s, errors=2
+supports_2026111360: 600/960, elapsed=19.2s, errors=2
+supports_2026111360: 700/960, elapsed=23.2s, errors=2
+supports_2026111360: 800/960, elapsed=27.8s, errors=2
+supports_2026111360: 900/960, elapsed=30.9s, errors=2
+supports_2026111360: 960/960, elapsed=32.4s, errors=2
+support_control
+  Y10  10x10   214/240   89.2% timeout=  0.0%
+  Y12  10x10   201/240   83.8% timeout=  0.0%
+  Y2   10x10   459/668   68.7% timeout=  0.0%
+  Y4   10x10   249/400   62.3% timeout=  0.0%
+  Y9   10x10   235/400   58.8% timeout=  0.0%
+  Y11  10x10   215/399   53.9% timeout=  0.0%
+  Y1   10x10   201/399   50.4% timeout=  0.0%
+  Y5   10x10    33/160   20.6% timeout=  0.0%
+  Y8   10x10    31/192   16.1% timeout=  0.0%
+  Y3   10x10    25/158   15.8% timeout=  0.0%
+  Y6   10x10    24/192   12.5% timeout=  0.0%
+  Y7   10x10    23/192   12.0% timeout=  0.0%
+Saved supports_2026111360; hashes unchanged=True

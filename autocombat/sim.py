@@ -6,16 +6,21 @@ Usage:
   python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S] [--verbose]
   python sim.py --mode table --format 1v1 [-n N] [-s SEED] [--season S]
   python sim.py --mode table --format 2v2 --teams "A+B,C+D,..." [-n N] [--season S]
+  python sim.py --mode prelim [-n ROUNDS] [--workers W] [--format F] [-s SEED] [--season S]
 
 Options:
-  -n N         Battles per matchup (default 100 for single, 50 for table)
+  -n N         Battles per matchup (default 100 for single, 50 for table);
+               for prelim mode: number of full prelim rounds (default 10)
   -m WxH       Map size (default 10x10)
   -s SEED      Random seed
   --season S   Season average status 0-100 (default random). Higher = better AI.
+  --workers W  Prelim parallel workers (default 8; 1 = serial)
+  --format F   Prelim mode(s) to run: 1v1, 2v2, 3v3, comma/plus separated,
+               or 'all' (default). Also accepts repeated flags.
   --verbose    详细战斗回放模式：只模拟1场，输出每回合掷骰、技能、伤害等完整细节
-  --mode       'single' (default) or 'table' (NxN win-rate matrix)
-  --format     1v1 | 2v2 | 3v3
-  --teams      Comma-separated team list for 2v2/3v3 table mode
+  --mode       'single' (default), 'table' (NxN win-rate matrix), or 'prelim'
+               (multi-round prelim averages, same rankings as ai_battle.py)
+  --teams      Comma-separated team list for table mode
 
 Examples:
   python sim.py Y5+Y6+Y7+Y8 vs Y9+Y12 -n 100
@@ -23,13 +28,20 @@ Examples:
   python sim.py Y5 vs Y1 --verbose -s 12345             # 固定种子的详细回放
   python sim.py --mode table --format 1v1 -n 50
   python sim.py --mode table --format 2v2 --teams "Y5+Y6,Y7+Y8,Y1+Y2" -n 30
+  python sim.py --mode prelim -n 10 --workers 8          # 完整预赛10轮平均积分排名
+  python sim.py --mode prelim --format 1v1 -n 10         # 只跑1v1预赛
+  python sim.py --mode prelim --format 1v1,3v3 -n 5      # 只跑1v1和3v3预赛
 """
 
-import sys, os, random, time, json, csv, re, logging
+import sys, os, random, time, json, csv, re, logging, contextlib, io
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ai_battle import BattleEngine, Tournament, AIController, set_terminal_quiet, DisplayLevel
 from characters_data import ALL_CHARACTERS, load_character_to_engine
+
+PRELIM_RESULT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'prelim_avg_stats_results.txt')
+PRELIM_MODES = ('1v1', '2v2', '3v3')
 
 
 def parse_single_args(argv):
@@ -75,6 +87,194 @@ def parse_table_args(argv):
         else:
             i += 1
     return fmt, teams_list, num, map_size, seed, season_status
+
+
+def parse_prelim_modes(raw):
+    """Parse 'all' / '1v1' / '1v1,3v3' / '1v1+2v2' into a canonical mode list."""
+    parts = [p.strip().lower() for p in re.split(r'[,+;/\s]+', raw) if p.strip()]
+    if not parts:
+        print(f'错误: --format 需要至少一个赛制, 可用: 1v1, 2v2, 3v3, all', file=sys.stderr)
+        sys.exit(1)
+    if len(parts) == 1 and parts[0] in ('all', '*'):
+        return list(PRELIM_MODES)
+    unknown = [p for p in parts if p not in PRELIM_MODES]
+    if unknown:
+        print(f'错误: 不支持的赛制: {", ".join(unknown)}。'
+              f'可用: {", ".join(PRELIM_MODES)} (或 all)', file=sys.stderr)
+        sys.exit(1)
+    return [m for m in PRELIM_MODES if m in parts]
+
+
+def parse_prelim_args(argv):
+    """Parse prelim-mode args. Returns (rounds, workers, seed, season_status, modes)."""
+    rounds, workers, seed, season_status = 10, 8, None, None
+    modes = list(PRELIM_MODES)
+    seen_format = False
+    i = 2
+    while i < len(argv):
+        try:
+            if argv[i] == '-n' and i + 1 < len(argv):
+                rounds = int(argv[i + 1]); i += 2
+            elif argv[i] == '--workers' and i + 1 < len(argv):
+                workers = int(argv[i + 1]); i += 2
+            elif argv[i] == '-s' and i + 1 < len(argv):
+                seed = int(argv[i + 1]); i += 2
+            elif argv[i] == '--season' and i + 1 < len(argv):
+                season_status = int(argv[i + 1]); i += 2
+            elif argv[i] == '--format' and i + 1 < len(argv):
+                picked = parse_prelim_modes(argv[i + 1])
+                if seen_format:
+                    # Repeated flags accumulate, keeping canonical order.
+                    modes = [m for m in PRELIM_MODES if m in set(modes) | set(picked)]
+                else:
+                    modes = picked
+                    seen_format = True
+                i += 2
+            else:
+                i += 1
+        except ValueError:
+            print(f'错误: 参数 {argv[i]} 需要一个整数, 收到: {argv[i + 1]}', file=sys.stderr)
+            sys.exit(1)
+    if rounds <= 0:
+        print(f'错误: 轮数必须 > 0, 收到: {rounds}', file=sys.stderr)
+        sys.exit(1)
+    if workers <= 0:
+        print(f'错误: workers 必须 > 0, 收到: {workers}', file=sys.stderr)
+        sys.exit(1)
+    if season_status is not None and not 0 <= season_status <= 100:
+        print(f'错误: season 必须在 0-100 之间, 收到: {season_status}', file=sys.stderr)
+        sys.exit(1)
+    return rounds, workers, seed, season_status, modes
+
+
+@contextlib.contextmanager
+def prelim_runtime(workers, season_status):
+    """Temporarily apply prelim runtime settings; always restore them."""
+    import ai_battle
+
+    settings = {
+        'PRELIM_WORKERS': workers,
+        'SEASON_AVG_STATUS': season_status,
+        'DELAY_PRELIM_TURN': 0,
+        'DELAY_PRELIM_BETWEEN_BATTLES': 0,
+        'DELAY_STANDINGS_DISPLAY': 0,
+    }
+    saved = {name: getattr(ai_battle, name) for name in settings}
+    saved_level = ai_battle.logger.level
+    try:
+        for name, value in settings.items():
+            setattr(ai_battle, name, value)
+        ai_battle.logger.setLevel(logging.WARNING)
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(ai_battle, name, value)
+        ai_battle.logger.setLevel(saved_level)
+
+
+def new_prelim_totals(modes=PRELIM_MODES):
+    """Empty accumulator: mode -> key -> stats."""
+    return {mode: {} for mode in modes}
+
+
+def accumulate_prelim_rankings(totals, rankings_info):
+    """Add one round's formal prelim rankings into totals (in place)."""
+    for mode in totals:
+        for _rank, key, pts, wins, battles, display in rankings_info.get(mode, []):
+            entry = totals[mode].get(key)
+            if entry is None:
+                totals[mode][key] = {'key': key, 'display': display, 'pts': float(pts),
+                                     'wins': wins, 'battles': battles}
+            elif entry['display'] != display:
+                raise RuntimeError(f'{mode} 队伍 {key} 跨轮名称不一致: '
+                                   f'{entry["display"]!r} != {display!r}')
+            else:
+                entry['pts'] += pts
+                entry['wins'] += wins
+                entry['battles'] += battles
+
+
+def compute_prelim_averages(totals, rounds):
+    """Average per-round stats and rank like the formal prelim standings."""
+    serial_order = {c['serial']: i for i, c in enumerate(ALL_CHARACTERS)}
+    result = {}
+    for mode in totals:
+        rows = []
+        for entry in totals[mode].values():
+            avg_pts = entry['pts'] / rounds
+            avg_wins = entry['wins'] / rounds
+            avg_battles = entry['battles'] / rounds
+            win_rate = (entry['wins'] / entry['battles'] * 100) if entry['battles'] else 0.0
+            key = entry['key']
+            # Exact ties keep formal participation order (1v1: ALL_CHARACTERS order;
+            # teams: fixed team-table index).
+            order = key if isinstance(key, int) else serial_order.get(key, len(serial_order))
+            rows.append((entry['display'], avg_pts, avg_wins, avg_battles, win_rate,
+                         key, order))
+        rows.sort(key=lambda r: (-r[1], -r[2], r[6]))
+        result[mode] = rows
+    return result
+
+
+def render_prelim_report(rankings, rounds, total_matches, elapsed, workers, seed,
+                         season_status, modes=PRELIM_MODES):
+    """Render multi-round prelim averages with the formal prelim standings layout."""
+    season_str = '随机' if season_status is None else str(season_status)
+    name_map = {c['serial']: c['name'] for c in ALL_CHARACTERS}
+    lines = [
+        '=' * 60,
+        f'  预赛战绩预览 — {rounds} 轮平均 ({", ".join(modes)})',
+        '  积分 / 胜场 / 场次均为每轮平均，胜率按累计胜场/累计场次计算',
+        '=' * 60,
+        f'  总场次: {total_matches} ({total_matches / rounds:.1f}/轮)'
+        f'  耗时: {elapsed:.0f}s  workers: {workers}  seed: {seed}  赛季状态: {season_str}',
+    ]
+    for mode in modes:
+        rows = rankings.get(mode, [])
+        if not rows:
+            continue
+        lines += ['', '=' * 60, f'预赛结束 — {mode} 积分排名']
+        for rank, (display, avg_pts, avg_wins, avg_battles, win_rate, key, _order) in \
+                enumerate(rows, 1):
+            if mode == '1v1':
+                display = f'{key} {name_map.get(key, display)}'
+            lines.append(f'  {rank:2d}. {display}  {avg_pts:.1f}分  '
+                         f'{avg_wins:.1f}胜/{avg_battles:.1f}场  胜率{win_rate:.1f}%')
+    lines += ['', f'结果已保存到: {PRELIM_RESULT_FILE}', '']
+    return '\n'.join(lines)
+
+
+def mode_prelim(argv):
+    rounds, workers, seed, season_status, modes = parse_prelim_args(argv)
+    if seed is not None:
+        random.seed(seed)
+    else:
+        seed = random.randint(0, 99999)
+        random.seed(seed)
+    print(f'预赛平均战绩: {rounds}轮, 赛制={",".join(modes)}, '
+          f'{workers}并行线程, seed={seed}', file=sys.stderr, flush=True)
+
+    totals = new_prelim_totals(modes)
+    total_matches = 0
+    t0 = time.time()
+    with prelim_runtime(workers, season_status):
+        for run_idx in range(1, rounds + 1):
+            with contextlib.redirect_stdout(io.StringIO()):
+                t = Tournament(0, enabled_modes=list(modes))  # 仅预赛，跳过淘汰赛
+                t.init_characters()
+                t.run_phases(write_results_flag=False)
+            accumulate_prelim_rankings(totals, t._rankings_info)
+            total_matches += len(t.results)
+            print(f'  [{run_idx}/{rounds}] 完成: {len(t.results)} 场预赛, '
+                  f'耗时 {time.time() - t0:.0f}s', file=sys.stderr, flush=True)
+
+    rankings = compute_prelim_averages(totals, rounds)
+    report = render_prelim_report(rankings, rounds, total_matches, time.time() - t0,
+                                  workers, seed, season_status, modes)
+    with open(PRELIM_RESULT_FILE, 'w', encoding='utf-8') as f:
+        f.write(report)
+    sys.stdout.write(report)
+    sys.stdout.flush()
 
 
 def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=None):
@@ -428,12 +628,21 @@ def mode_table(argv):
 
 
 if __name__ == '__main__':
-    verbose = '--verbose' in sys.argv or '-v' in sys.argv
-    argv = [a for a in sys.argv if a not in ('--verbose', '-v')]
-    if len(argv) > 1 and argv[1] == '--mode':
-        if len(argv) > 2 and argv[2] == 'table':
-            mode_table(argv)
+    try:
+        verbose = '--verbose' in sys.argv or '-v' in sys.argv
+        argv = [a for a in sys.argv if a not in ('--verbose', '-v')]
+        if len(argv) > 1 and argv[1] == '--mode':
+            if len(argv) > 2 and argv[2] == 'table':
+                mode_table(argv)
+                time.sleep(120)
+            elif len(argv) > 2 and argv[2] == 'prelim':
+                mode_prelim(argv)
+                time.sleep(120)
+            else:
+                print('Usage: --mode table --format 1v1|2v2|3v3 [--teams "..."]\n'
+                    '       --mode prelim [-n ROUNDS] [--workers W] [--format 1v1|2v2|3v3|all]'
+                    ' [-s SEED] [--season S]')
         else:
-            print('Usage: --mode table --format 1v1|2v2|3v3 [--teams "..."]')
-    else:
-        mode_single(argv, verbose=verbose)
+            mode_single(argv, verbose=verbose)
+    except:
+        pass
