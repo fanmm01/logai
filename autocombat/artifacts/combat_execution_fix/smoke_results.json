@@ -1,0 +1,45 @@
+[
+  {
+    "seed": 12345,
+    "result": {
+      "winner": "Y",
+      "rounds": 6,
+      "mutual_death": false,
+      "y_overflow": 0,
+      "x_overflow": 0
+    },
+    "log_lines": 628
+  },
+  {
+    "seed": 12346,
+    "result": {
+      "winner": "X",
+      "rounds": 8,
+      "mutual_death": false,
+      "y_overflow": 0,
+      "x_overflow": 0
+    },
+    "log_lines": 955
+  },
+  {
+    "seed": 12347,
+    "result": {
+      "winner": "Y",
+      "rounds": 6,
+      "mutual_death": false,
+      "y_overflow": 0,
+      "x_overflow": 0
+    },
+    "log_lines": 735
+  },
+  {
+    "integrated_backend_seed": 12345,
+    "result": {
+      "winner": "X",
+      "rounds": 7,
+      "mutual_death": false,
+      "y_overflow": 0,
+      "x_overflow": 0
+    }
+  }
+]

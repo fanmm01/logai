@@ -74,6 +74,7 @@ from flask import Flask, request, jsonify
 
 # Now import from battle_engine — its lazy imports get characters_data_pvp
 from battle_engine import (
+    action_committed, ActionExecutionResult,
     FullBattleEngine, CombatEngine,
     roll_dice, parse_coord, format_coord,
     is_in_melee_range, has_timing, has_object,
@@ -521,7 +522,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
             if eff_atk <= 0:
-                lines.append(f"  {dname} 闪避成功！")
+                lines.append(f"  {dname} 闪避成功！" if react_rank > 0 else "  攻击未命中。")
                 return (def_uid, atk_uid, lines)
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
@@ -542,6 +543,9 @@ class PvPFullBattleEngine(FullBattleEngine):
 
             if eff_react > eff_atk and eff_react > 0:
                 # Defender wins
+                if self._is_untargetable(atk_uid):
+                    lines.append(f"  {dname} 反击成功！但 {aname} 不可选中，无法命中。")
+                    return (def_uid, atk_uid, lines)
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
                 loser_name, winner_name = aname, dname
                 winner_roll = rr
@@ -607,6 +611,10 @@ class PvPFullBattleEngine(FullBattleEngine):
                 lines.append(f"  {dname} HP: {achp}")
 
                 # Defender counter-hits attacker
+                if self._is_untargetable(atk_uid):
+                    lines.append(f"  {aname} 不可选中，{dname} 的反击无法命中。")
+                    lines.append(f"  仅 {aname} 的攻击命中。")
+                    return (atk_uid, def_uid, lines)
                 # 同上：互命中时防御方反击骰也按反击技能名解析
                 cdmg = self._get_damage_dice(def_uid, state['counter_skill'])
                 cpen = dchar.get_attr("伤害贯穿", 1)
@@ -1102,6 +1110,9 @@ def _is_override_action_available(engine, uid, action_str):
         spell = next((s for s in spells if s['index'] == sn), None)
         if not spell:
             return (False, f'技能 s{sn} 不存在')
+        reason = engine._revive_preflight(uid, spell)
+        if reason:
+            return (False, reason)
         timing = spell.get('时机', '2')
         if not has_timing(timing, '2'):
             return (False, f'技能 {spell.get("name", sn)} 不能作为主动作')
@@ -1357,6 +1368,8 @@ def _ai_decide_action(engine, uid: str, Q=None):
     action_key: full Q-table key (e.g. 'BASIC_ATTACK__T0'), or None if no Q-table used.
     Q should be dict: {'solo': Q_solo, 'team': Q_team, 'summon': Q_summon}
     """
+    if engine._get_my_actions(uid).get('主动', 0) <= 0:
+        return ('.i end', None)
     char = engine.get_char(uid)
     spells = char.spells or engine.load_spells(uid) if char else []
 
@@ -1382,9 +1395,10 @@ def _ai_decide_action(engine, uid: str, Q=None):
     # .sN for each spell with timing 2 (主动作)
     for s in spells:
         timing = s.get('时机', '2')
-        if has_timing(timing, '2'):
+        if has_timing(timing, '2') and not engine._revive_preflight(uid, s):
             available.append(f".s{s['index']}")
 
+    available = [cmd for cmd in available if cmd not in engine._ai_failed_commands]
     if not available:
         return ('.i end', None)
 
@@ -1393,7 +1407,26 @@ def _ai_decide_action(engine, uid: str, Q=None):
         try:
             from ai_trainer_pvp import encode_state, get_available_actions
             st = encode_state(engine, uid)
-            avail = get_available_actions(engine, uid)
+            from ai_trainer_pvp import affordable_actions
+            avail = affordable_actions(engine, uid, get_available_actions(engine, uid))
+            def candidate_command(key):
+                base = key.split('__')[0]
+                if base == 'BASIC_ATTACK':
+                    return '.s0'
+                if base == 'MOVE_TOWARD':
+                    return f'.a m {engine._next_move_coord(uid)}'
+                if base in ('EAT_CAKE', 'GIVE_CAKE'):
+                    return '.a eat' if base == 'EAT_CAKE' else '.a give'
+                if base.startswith('SKILL_'):
+                    number = int(base.split('_')[1])
+                    spell = next((s for s in spells if s['index'] == number), None)
+                    extra = spell and has_timing(spell.get('时机', '2'), '3') and (
+                        not has_timing(spell.get('时机', '2'), '2')
+                        or engine._get_my_actions(uid).get('附加', 0) > 0)
+                    return f'.a s{number}' if extra else f'.s{number}'
+                return '.i end'
+            avail = [(key, name) for key, name in avail
+                     if candidate_command(key) not in engine._ai_failed_commands]
             if avail:
                 # Route to solo or team table based on living allies
                 il = engine._get_initiative()
@@ -1426,7 +1459,11 @@ def _ai_decide_action(engine, uid: str, Q=None):
                         # Map action key to command
                         base_ak = ak.split('__')[0] if '__' in ak else ak
                         if base_ak == 'BASIC_ATTACK': return ('.s0', ak)
-                        if base_ak == 'MOVE_TOWARD': return ('.s0', ak)
+                        if base_ak == 'MOVE_TOWARD':
+                            coord = engine._next_move_coord(uid)
+                            if coord:
+                                return (f'.a m {coord}', ak)
+                            return ('.i end', ak)
                         if base_ak == 'EAT_CAKE':
                             # Any ready cake (HP/MP/buff) can be eaten.
                             if engine._has_ready_cake(uid):
@@ -1464,7 +1501,6 @@ def _format_zone_summary(engine) -> str:
     zones = [e for e in effects if e.get("type") == "zone" and e.get("radius", 0) > 0]
     if not zones:
         return "── 活跃领域 ──\n  （无活跃领域）"
-    tick_results = getattr(engine, '_zone_tick_results', [])
     lines = ["── 活跃领域 ──"]
     for z in zones:
         spell_name = z.get("spellName", "未知领域")
@@ -1481,24 +1517,6 @@ def _format_zone_summary(engine) -> str:
             parts.append(f"施放者: {src_name}")
         parts.append(f"中心: {center}  半径: {radius}  剩余: {remaining}回合")
         lines.append("  " + "  ".join(parts))
-        # Per-entity tick results for this zone
-        zone_results = [r for r in tick_results if r.get('spell_name') == spell_name]
-        if zone_results:
-            for r in zone_results:
-                tname = r['target_name']
-                if r['type'] == 'damage':
-                    alive_mark = '' if r['alive'] else ' → 阵亡'
-                    lines.append(f"    {tname}: {r['dice']}={r['roll']} → {r['amount']}点伤害 HP: {r['hp']}/{r['hp_max']}{alive_mark}")
-                elif r['type'] == 'heal_hp':
-                    lines.append(f"    {tname}: {r['dice']}={r['roll']} → +{r['amount']}HP HP: {r['hp']}/{r['hp_max']}")
-                elif r['type'] == 'heal_mp':
-                    lines.append(f"    {tname}: {r['dice']}={r['roll']} → +{r['amount']}MP")
-        elif z.get("tickDmg"):
-            lines.append(f"    每回合伤害: {z['tickDmg']}（范围内无目标）")
-        elif z.get("tickHealHp"):
-            lines.append(f"    每回合回复HP: {z['tickHealHp']}（范围内无友方）")
-        elif z.get("tickHealMp"):
-            lines.append(f"    每回合回复MP: {z['tickHealMp']}（范围内无友方）")
     lines.append("")
     return "\n".join(lines)
 
@@ -1812,7 +1830,10 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
     if player_uid:
         human_ids.add(player_uid)
 
+    failed_attempts = 0
+    previous_actor = None
     for _ in range(max_steps):
+        outputs.extend(engine._drain_battle_events())
         state = engine._get_state()
         if not state or state.get('phase') != 'active':
             _debug_log(f"_run_ai_turns: BREAK phase={state.get('phase') if state else 'None'}")
@@ -2052,6 +2073,12 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
             })
             continue
 
+        actor_marker = (state.get('round'), state.get('activeIndex'), uid)
+        if actor_marker != previous_actor:
+            failed_attempts = 0
+            engine._ai_failed_commands = set()
+            previous_actor = actor_marker
+        actions_before = dict(engine._get_my_actions(uid))
         # AI decides and executes
         try:
             cmd, action_key = _ai_decide_action(engine, base_uid, Q)
@@ -2079,14 +2106,16 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                         target_id = target_entry['userId']
                 result_text, success = engine._eat_cake(uid, target_id)
                 outputs.append(result_text)
-                engine._consume_action(uid, '附加')
+                if success:
+                    engine._consume_action(uid, '附加')
             elif sub.startswith('give'):
                 # Strategy-based teammate selection (Q-table) vs name-based (legacy)
                 if action_key and action_key.startswith('GIVE_CAKE'):
                     base_gc, target_strat_gc = parse_action(action_key)
                     my_team_g = entry.get('team', 'Y')
-                    teammates_give = [e for e in il if e.get('team') == my_team_g
-                                      and e['userId'] != uid
+                    teammates_give = [e for e in engine._battle_unit_entries() if e.get('team') == my_team_g
+                                      and engine._resolve_uid(e['userId']) != engine._resolve_uid(uid)
+                                      and not e.get('isSummon')
                                       and ((engine._get_combat_hp(e['userId']) or 0) > 0
                                            or engine._is_dying(e['userId']))]
                     if teammates_give:
@@ -2094,7 +2123,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                         if tm_id:
                             result_text, success = engine._eat_cake(uid, tm_id)
                             outputs.append(result_text)
-                            engine._consume_action(uid, '附加')
+                            if success:
+                                engine._consume_action(uid, '附加')
                         else:
                             outputs.append(f"{entry.get('name', uid)} 无可给予的队友目标。")
                     else:
@@ -2108,7 +2138,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                         if target_entry:
                             result_text, success = engine._eat_cake(uid, target_entry['userId'])
                             outputs.append(result_text)
-                            engine._consume_action(uid, '附加')
+                            if success:
+                                engine._consume_action(uid, '附加')
                         else:
                             outputs.append(f"{entry.get('name', uid)} 找不到给予目标: {target_name}")
                     else:
@@ -2120,33 +2151,18 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                 spell_add = next((s for s in spells_add if s['index'] == sn_add), None)
                 if not spell_add:
                     outputs.append(f"{entry.get('name', uid)} 未找到技能{sn_add}")
-                    engine._consume_action(uid, '附加')
                 elif not has_timing(spell_add.get('时机', '2'), '3'):
                     outputs.append(f"【{spell_add['name']}】不能在附加动作阶段使用")
-                    engine._consume_action(uid, '附加')
                 else:
                     out_add = engine._additional_action(uid, f's{sn_add}')
                     outputs.append(out_add if isinstance(out_add, str) else str(out_add))
-                    engine._consume_action(uid, '附加')
+                    if action_committed(out_add):
+                        engine._consume_action(uid, '附加')
             elif sub.startswith('m '):
-                coord = sub[2:].upper()
-                # Update map
-                mp = engine._get_map()
-                if mp:
-                    for c, occ in list(mp.get('occupants', {}).items()):
-                        if occ == uid:
-                            del mp['occupants'][c]
-                    mp['occupants'][coord] = uid
-                    engine._set_map(mp)
-                # Update coord on current entry
-                entry['coord'] = coord
-                # 同步同角色其他行动槽的坐标（多动角色共享位置）
-                base_uid = entry.get('baseUserId', uid)
-                for e in il:
-                    if e['userId'] != uid and e.get('baseUserId', e['userId']) == base_uid:
-                        e['coord'] = coord
-                outputs.append(f"{entry.get('name', uid)} 移动至 {coord}")
-                engine._consume_action(uid, '附加')
+                out_move = engine._move_explicit(uid, sub[2:])
+                outputs.append(str(out_move))
+                if action_committed(out_move):
+                    engine._consume_action(uid, '附加')
             elif sub == 'none':
                 # .setaiact override: consume 1 附加 action slot silently
                 if my_acts.get('附加', 0) <= 0:
@@ -2404,12 +2420,31 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0) 
                     if isinstance(out, str) and out:
                         outputs.append(out)
                     is_passive_only = has_timing(spell.get('时机', '2'), '1') and not has_timing(spell.get('时机', '2'), '2')
-                    if not is_passive_only:
+                    if not is_passive_only and action_committed(out):
                         engine._consume_action(uid, '主动')
         else:
             out = engine._end_turn(uid)
             if isinstance(out, str):
                 outputs.append(out)
+
+        outputs.extend(engine._drain_battle_events())
+        after_state = engine._get_state() or {}
+        after_il = engine._get_initiative()
+        still_actor = (after_state.get('phase') == 'active' and after_il
+                       and (after_state.get('round'), after_state.get('activeIndex'),
+                            after_il[after_state['activeIndex']]['userId']) == actor_marker)
+        if still_actor and engine._get_my_actions(uid) == actions_before:
+            failed_attempts += 1
+            engine._ai_failed_commands.add(cmd)
+            if failed_attempts >= 5:
+                outputs.append('无可执行动作，结束回合。')
+                engine._end_turn(uid)
+                continue
+        else:
+            failed_attempts = 0
+            engine._ai_failed_commands = set()
+        if not still_actor:
+            continue
 
         # After action, check if turn should end
         my_acts = engine._get_my_actions(uid)
@@ -3469,6 +3504,8 @@ def submit_action(battle_id):
         engine._restim_modes[effective_uid] = restim_mode
 
         my_acts = engine._get_my_actions(entry_uid)
+        if not is_prep and my_acts.get('主动', 0) <= 0 and action != '.i end':
+            return jsonify({'error': True, 'message': '主动作已用尽，请结束回合'}), 400
 
         # ── 状态限制：击晕只允许 eat/give/end ──
         if not engine._can_take_active_action(effective_uid):
@@ -3924,6 +3961,8 @@ def submit_action(battle_id):
                     try:
                         out = engine._execute_spell(effective_uid, tgt, spell)
                         all_sp_out.append(out if isinstance(out, str) else str(out))
+                        if not action_committed(out):
+                            break
                         if not is_passive:
                             my_acts = engine._consume_action(effective_uid, action_type)
                         actual_sp += 1
@@ -4079,17 +4118,10 @@ def submit_action(battle_id):
 
                 sub = action[3:]
                 if sub.startswith('m '):
-                    coord = sub[2:].upper()
-                    # Update map
-                    mp = engine._get_map()
-                    if mp:
-                        for c, occ in list(mp.get('occupants', {}).items()):
-                            if occ == effective_uid:
-                                del mp['occupants'][c]
-                        mp['occupants'][coord] = effective_uid
-                        engine._set_map(mp)
-                    output = f"{engine.get_char(effective_uid).name} 移动至 {coord}"
-                    engine._consume_action(effective_uid, '附加')
+                    out_move = engine._move_explicit(effective_uid, sub[2:])
+                    output = str(out_move)
+                    if action_committed(out_move):
+                        engine._consume_action(effective_uid, '附加')
                 elif sub.startswith('s'):
                     sn = int(sub[1:])
                     char = engine.get_char(effective_uid)
@@ -4123,7 +4155,8 @@ def submit_action(battle_id):
                     try:
                         out = engine._execute_spell(effective_uid, tgt, spell)
                         output = out if isinstance(out, str) else str(out)
-                        engine._consume_action(effective_uid, '附加')
+                        if action_committed(out):
+                            engine._consume_action(effective_uid, '附加')
                     except ReactionNeeded as e:
                         e.data['battle_id'] = battle_id
                         def_uid_as = e.data.get('def_uid', '')
@@ -4305,6 +4338,9 @@ def submit_action(battle_id):
                                     'penetration': pending['pen'],
                                 }
 
+        pending_events = engine._drain_battle_events()
+        if pending_events:
+            output += '\n' + '\n'.join(pending_events)
         # ── Build response ──
         refreshed = _serialize_battle_state(engine)
         result = {

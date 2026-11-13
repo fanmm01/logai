@@ -345,7 +345,7 @@ class ActionBudgetTests(unittest.TestCase):
         eng._set_actions({'cake': {'主动': 0, '附加': 1}})
         acts = [('SKILL_5__T0', '轻盈蛋糕'), ('BASIC_ATTACK__T0', '普攻')]
         kept = ai_trainer.affordable_actions(eng, 'cake', acts)
-        self.assertEqual([a for a, _ in kept], ['SKILL_5__T0'])
+        self.assertEqual(kept, [])  # Main actions exhausted: the turn ends immediately.
 
 
 

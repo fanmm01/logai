@@ -671,6 +671,20 @@ def _ensure_weight_cache():
 # ============================================================
 #  CombatEngine — base state management
 # ============================================================
+class ActionExecutionResult(str):
+    """String-compatible result; rejected commands never spend an action."""
+    def __new__(cls, text='', committed=True, reason='', slot='主动'):
+        result = super().__new__(cls, text)
+        result.committed = committed
+        result.reason = reason
+        result.slot = slot
+        return result
+
+
+def action_committed(result):
+    return getattr(result, 'committed', True)
+
+
 class CombatEngine:
     def __init__(self):
         self.characters = {}
@@ -686,10 +700,147 @@ class CombatEngine:
         self._last_death_overflow = {}  # team → overflow damage of last non-summon death (mutual-annihilation tiebreaker)
         self._last_death_max_hp = {}    # team → max HP of last non-summon death (for overflow % tiebreaker)
         self._battle_result = None  # Set by _check_battle_end when battle concludes
+        self._pending_battle_events = []
+        self._ai_failed_commands = set()
         # Summon group consolidation: same-type summons share one initiative slot
         self._summon_groups = {}   # {rep_base_uid: {members, template_name, ownerId}}
         self._summon_members = {}  # {sid: {userId, name, display_name, team, coord, skills, ...}}
         self._summon_total_spawned = {}  # {(owner_base, template_name): 本场累计成功创建数}
+
+    def _drain_battle_events(self):
+        events = self._pending_battle_events
+        self._pending_battle_events = []
+        return events
+
+    def _queue_zone_events(self, rows):
+        if getattr(self, 'fast_mode', False):
+            return
+        for row in rows:
+            amount = row.get('amount', 0)
+            if not amount and not row.get('absorbed_excess'):
+                continue
+            kind = row['type']
+            label = '伤害' if kind == 'damage' else ('回复HP' if kind == 'heal_hp' else '回复MP')
+            self._pending_battle_events.append(
+                f"【{row['spell_name']}】{row['target_name']} {label} {amount}"
+                + (f" (HP:{row['hp']})" if kind != 'heal_mp' else ''))
+
+    def _revive_preflight(self, uid, spell):
+        effects = [e for e in spell.get('effects', []) if e.get('type') == 19]
+        if effects and not any(self._revive_candidates(uid, e) for e in effects):
+            return '没有符合条件的复活目标！'
+        return ''
+
+    def _move_explicit(self, uid, coord):
+        """Validate before committing position, occupancy and movement cost together."""
+        reject = lambda message: ActionExecutionResult(message, False, 'invalid_move', '附加')
+        entry = self._unit_il_entry(uid, self._get_initiative())
+        md = self._get_map()
+        coord = str(coord).strip().upper()
+        point = parse_coord(coord)
+        if not entry or not md or not point:
+            return reject('无效的移动坐标或地图')
+        if not self._can_move(uid):
+            return reject('当前状态无法移动')
+        if not (0 <= point[0] < md['width'] and 0 <= point[1] < md['height']):
+            return reject('移动坐标超出地图边界')
+        old = entry.get('coord', '')
+        if not parse_coord(old) or coord == old:
+            return reject('移动目标与当前位置相同或起点无效')
+        occupant = md.get('occupants', {}).get(coord)
+        base = self._resolve_uid(uid)
+        if occupant and self._resolve_uid(occupant) != base:
+            return reject('移动目标已被占用')
+        if md.get('obstacles', {}).get(coord):
+            return reject('移动目标是障碍物')
+        distance = chebyshev_dist(old, coord)
+        used = entry.get('_move_used', 0)
+        if not entry.get('isSummon'):
+            used = max((e.get('_move_used', 0) for e in self._get_initiative()
+                        if self._resolve_uid(e['userId']) == base), default=used)
+        if distance > max(0, self._get_move_power(uid) - used):
+            return reject('剩余移动力不足')
+        if self._consume_move_power(uid, distance) != distance:
+            return reject('剩余移动力不足')
+        group = self._get_summon_group(uid)
+        map_uid = group.get('representative_uid', uid) if group else base
+        occupants = md.setdefault('occupants', {})
+        if occupants.get(old) in (uid, base, map_uid):
+            del occupants[old]
+        occupants[coord] = map_uid
+        self._set_map(md)
+        if entry.get('isSummon'):
+            self._set_summon_entry_fields(uid, coord=coord)
+        else:
+            il = self._get_initiative()
+            for slot in il:
+                if self._resolve_uid(slot['userId']) == base:
+                    slot['coord'] = coord
+            self._set_initiative(il)
+        return ActionExecutionResult(f'{self.get_char(uid).name} 移动至 {coord}', slot='附加')
+
+    def _next_move_coord(self, uid):
+        """Pick a legal one-step approach without mutating movement state."""
+        entry = self._unit_il_entry(uid, self._get_initiative())
+        md = self._get_map()
+        if not entry or not md or not self._can_move(uid):
+            return None
+        if self._get_move_power(uid) - entry.get('_move_used', 0) < 1:
+            return None
+        point = parse_coord(entry.get('coord', ''))
+        enemies = [e for e in self._enemy_target_entries(uid) if parse_coord(e.get('coord', ''))]
+        if not point or not enemies:
+            return None
+        target = min(enemies, key=lambda e: chebyshev_dist(entry['coord'], e['coord']))
+        tp = parse_coord(target['coord'])
+        dc = (tp[0] > point[0]) - (tp[0] < point[0])
+        dr = (tp[1] > point[1]) - (tp[1] < point[1])
+        for dx, dy in ((dc, 0), (0, dr), (dc, dr)):
+            col, row = point[0] + dx, point[1] + dy
+            coord = format_coord(col, row)
+            if (dx or dy) and 0 <= col < md['width'] and 0 <= row < md['height']:
+                if coord not in md.get('occupants', {}) and not md.get('obstacles', {}).get(coord):
+                    return coord
+        return None
+
+    def _execute_ai_command(self, uid, cmd):
+        """Execute without charging actions; callers charge only committed results."""
+        slot = '附加' if cmd.startswith('.a ') else '主动'
+        reject = lambda text, reason: ActionExecutionResult(text, False, reason, slot)
+        if self._get_my_actions(uid).get('主动', 0) <= 0:
+            return reject('主动作已用尽', 'no_main_actions')
+        if self._get_my_actions(uid).get(slot, 0) <= 0:
+            return reject(f'{slot}动作已用尽', 'no_actions')
+        if cmd.startswith('.a eat') or cmd.startswith('.a give'):
+            giving = cmd.startswith('.a give')
+            target = cmd.split(maxsplit=2)[2].strip() if len(cmd.split(maxsplit=2)) == 3 else uid
+            target = self._resolve_uid(target)
+            if giving and (target == self._resolve_uid(uid)
+                           or self._battle_team_of(target) != self._battle_team_of(uid)):
+                return reject('没有可给予的同队目标', 'invalid_target')
+            text, ok = self._eat_cake(uid, target)
+            return ActionExecutionResult(text, ok, '' if ok else 'no_cake', slot)
+        if cmd.startswith('.a m '):
+            return self._move_explicit(uid, cmd[5:])
+        match = re.fullmatch(r'\.(a )?s(\d+)', cmd)
+        if not match:
+            return reject(f'未知动作: {cmd}', 'unknown_command')
+        sn = int(match.group(2))
+        if sn == 0 and not match.group(1):
+            if not self._can_basic_attack(uid) or not self._enemy_target_entries(uid):
+                return reject('没有可执行的普通攻击', 'invalid_attack')
+            return ActionExecutionResult(self._basic_attack(uid), slot=slot)
+        spells = self.load_spells(uid) or []
+        spell = next((s for s in spells if s['index'] == sn), None)
+        if not spell or not has_timing(spell.get('时机', '2'), '3' if match.group(1) else '2'):
+            return reject('技能不存在或施放时机不符', 'invalid_skill')
+        if self._revive_preflight(uid, spell):
+            return reject(self._revive_preflight(uid, spell), 'no_revive_target')
+        if self._get_cooldown(uid, sn) > 0 or not self._can_cast_active_skill(uid):
+            return reject('技能冷却中或当前状态无法施法', 'invalid_skill')
+        result = (self._additional_action(uid, f's{sn}') if match.group(1)
+                  else self._use_skill(uid, sn, ''))
+        return ActionExecutionResult(result, action_committed(result), getattr(result, 'reason', ''), slot)
 
     def _get_block_skill(self, uid):
         """获取格挡技能名和值。优先：格挡 → 盾击。返回 (skill_name, skill_value)。"""
@@ -3084,7 +3235,9 @@ class CombatEngine:
             self._set_state(state)
             if wrapped:
                 self._reset_move_power()
-                self._tick_down()
+                tick_text = self._tick_down()
+                if tick_text and not getattr(self, 'fast_mode', False):
+                    self._pending_battle_events.extend(tick_text.splitlines())
                 self._apply_zone_effects()
                 self._reconcile_summon_groups()
                 self._sync_all_initiative_slots()
@@ -3882,9 +4035,9 @@ class CombatEngine:
             ledger = getattr(self, '_revive_use_ledger', set())
             consumed = getattr(char, '_once_consumed', set())
             if once_key in ledger or once_name in consumed:
-                return f'{char.name} 的【{once_name}】本场战斗已使用过，无法再次施放。\n'
+                return ActionExecutionResult(f'{char.name} 的【{once_name}】本场战斗已使用过，无法再次施放。\n', False, 'spell_rejected')
             if self._get_cooldown(caster_id, spell.get('index', 0)) > 0:
-                return f'{char.name} 的【{once_name}】冷却中（剩余 {self._get_cooldown(caster_id, spell.get('index', 0))} 回合）。\n'
+                return ActionExecutionResult(f'{char.name} 的【{once_name}】冷却中（剩余 {self._get_cooldown(caster_id, spell.get('index', 0))} 回合）。\n', False, 'spell_rejected')
 
         # ── 未指定目标→随机敌对目标 ──
         # hostile 判定需覆盖所有"应对敌方施放"的效果类型，否则 type=4 敌方减益 /
@@ -3917,7 +4070,7 @@ class CombatEngine:
         # 只拦截"需要对敌"的法术；自我增益/治疗/召唤传 None 时仍走原逻辑（_smart_target
         # 对它们始终返回 caster_id，None 只可能来自 .a sN 或外部调用）。
         if target_id is None and is_hostile_spell:
-            return f'{char.name} 没有可攻击的目标！\n'
+            return ActionExecutionResult(f'{char.name} 没有可攻击的目标！\n', False, 'spell_rejected')
 
         # ── 纯召唤技能：零名额时提前返回，不扣 MP/SAN、不消耗一次性标记 ──
         # 每个召唤效果的数量只掷一次，结果存入本次调用的局部计划，避免共享 spell
@@ -3950,7 +4103,7 @@ class CombatEngine:
                 if _granted < _roll and not _block_reason:
                     _block_reason = _reason or f'{_tmpl_name}名额不足'
             if not any(v for k, v in summon_plan.items() if isinstance(k, int)):
-                return f'{char.name} 无法召唤：{_block_reason or "召唤限制"}\n'
+                return ActionExecutionResult(f'{char.name} 无法召唤：{_block_reason or "召唤限制"}\n', False, 'spell_rejected')
 
         # Per-caster non-stackable zone limit, if configured by the effect.
         _zone_limit = next((e.get('领域同时上限') for e in spell.get('effects', [])
@@ -3961,11 +4114,11 @@ class CombatEngine:
                       and self._resolve_uid(e.get('sourceUserId', '')) == self._resolve_uid(caster_id)
                       and (e.get('remainingRounds', 0) > 0 or e.get('sourceBound'))]
             if len(active) >= int(_zone_limit):
-                return f'{char.name} 的【{spell["name"]}】已存在，无法重复施放。\n'
+                return ActionExecutionResult(f'{char.name} 的【{spell["name"]}】已存在，无法重复施放。\n', False, 'spell_rejected')
 
         revive_effects = [e for e in spell.get('effects', []) if e.get('type') == 19]
         if revive_effects and not any(self._revive_candidates(caster_id, e) for e in revive_effects):
-            return f'{char.name} 没有符合条件的复活目标！\n'
+            return ActionExecutionResult(f'{char.name} 没有符合条件的复活目标！\n', False, 'no_revive_target')
 
         # MP cost: support dice expressions and formulas
         mp_cost_raw = spell.get('消耗mp', 0)
@@ -4018,7 +4171,7 @@ class CombatEngine:
             atk_range = _get_attack_range(spell_effect=dmg_effs[0])
             can_atk, _orig_coord = self._move_to_attack_range(caster_id, target_id, atk_range)
             if not can_atk:
-                return f'{char.name} 无法接近目标！（射程={atk_range}）'
+                return ActionExecutionResult(f'{char.name} 无法接近目标！（射程={atk_range}）', False, 'spell_rejected')
 
         # ── consume_moon（月光王座）：伤害 = 月能×damage_moon_mult，消耗全部月能并销毁月亮 ──
         # 必须在 MP 扣除之前结算：无月亮时禁止施放且不消耗任何资源；
@@ -4029,11 +4182,11 @@ class CombatEngine:
                 caster_team_cm = caster_entry_cm.get('team', 'Y') if caster_entry_cm else 'Y'
                 moons_cm = self._find_summons_by_field(caster_team_cm, 'replenish_allies')
                 if not moons_cm:
-                    return f'{char.name} 无虚假之月，无法释放【{spell["name"]}】！\n'
+                    return ActionExecutionResult(f'{char.name} 无虚假之月，无法释放【{spell["name"]}】！\n', False, 'spell_rejected')
                 moon_char_cm = moons_cm[0][1]
                 moon_mp_cm = moon_char_cm.get_attr('魔力', 0) or 0
                 if moon_mp_cm <= 0:
-                    return f'{char.name} 月能为0，无法释放【{spell["name"]}】！\n'
+                    return ActionExecutionResult(f'{char.name} 月能为0，无法释放【{spell["name"]}】！\n', False, 'spell_rejected')
                 mult_cm = _cm_eff.get('damage_moon_mult', 5)
                 spell['_moon_dmg'] = max(1, int(moon_mp_cm * mult_cm))
                 # 消耗全部月能并销毁虚假之月
@@ -4048,7 +4201,7 @@ class CombatEngine:
         cost_ca = spell.get('cost_counter_amount', 0)
         if cost_ct and cost_ca:
             if not self._consume_counter(caster_id, cost_ct, cost_ca):
-                return f'{char.name} 资源不足！需要 {cost_ca} {cost_ct}。\n'
+                return ActionExecutionResult(f'{char.name} 资源不足！需要 {cost_ca} {cost_ct}。\n', False, 'spell_rejected')
             out += f'  消耗 {cost_ca} {cost_ct}\n'
 
         # Check counter requirement (e.g. 极限技·凶斩)
@@ -4056,7 +4209,7 @@ class CombatEngine:
         if cr:
             cr_type, cr_amount = cr
             if self._get_counter(caster_id, cr_type) < cr_amount:
-                return f'{char.name} {cr_type}不足！需要 {cr_amount}。\n'
+                return ActionExecutionResult(f'{char.name} {cr_type}不足！需要 {cr_amount}。\n', False, 'spell_rejected')
             self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
 
@@ -4091,7 +4244,7 @@ class CombatEngine:
                 hp_needed = max(1, (shortfall + hp_to_ml - 1) // hp_to_ml)  # ceil
                 cur_hp_b = self._get_combat_hp(caster_id) or 0
                 if cur_hp_b <= hp_needed:
-                    return f'{char.name} 血液不足且HP不足以献祭！需要 {blood_cost}ml 血液。\n'
+                    return ActionExecutionResult(f'{char.name} 血液不足且HP不足以献祭！需要 {blood_cost}ml 血液。\n', False, 'spell_rejected')
                 self._set_combat_hp(caster_id, cur_hp_b - hp_needed)
                 out += f'  血液不足，献祭 {hp_needed} HP 补足 {shortfall}ml 血液\n'
             else:
@@ -4136,7 +4289,7 @@ class CombatEngine:
 
         if mp_cost > 0:
             cur_mp = char.get_attr('魔力', 0) or 0
-            if cur_mp < mp_cost: return f'{char.name} 魔力不足！需要 {mp_cost} MP。'
+            if cur_mp < mp_cost: return ActionExecutionResult(f'{char.name} 魔力不足！需要 {mp_cost} MP。', False, 'spell_rejected')
             char.set_attr('魔力', cur_mp - mp_cost); out += f'  消耗 {mp_cost} MP\n'
         if san_cost > 0:
             cur_san = char.get_attr('理智', 50)
@@ -4252,6 +4405,7 @@ class CombatEngine:
                 new_max=self._calc_main_actions(_base, include_zone=False))
 
         return out
+
 
     def _execute_spell_plan(self, caster_id, target_id, spell, plan,
                             is_passive_spell, out=''):
@@ -4590,6 +4744,7 @@ class CombatEngine:
                                         pulse_id=f"cast{(self._get_state() or {}).get('round', 1)}")
                 self._set_effects(effects)
                 self._zone_tick_results = getattr(self, '_zone_tick_results', []) + result_rows
+                self._queue_zone_events(result_rows)
             dur_text = f' ({dur} rounds)' if dur < 99 else ''
             out += 'Zone created, radius=%s%s, center=%s' % (radius, dur_text, center) + chr(10)
             for item in unsupported:
@@ -4824,10 +4979,13 @@ class CombatEngine:
         if lifesteal_ratio > 0 and eff_dmg > 0:
             char = self.get_char(caster_id)
             heal = int(dmg_val * lifesteal_ratio)
-            chp = self._get_combat_hp(caster_id) or 10
+            chp = self._get_combat_hp(caster_id)
+            if chp is None:
+                chp = 10
             mhp = char.get_attr('体力上限', chp)
             self._set_combat_hp(caster_id, min(chp + heal, mhp))
-            out += f'  吸血回复 {heal} HP\n'
+            actual_heal = max(0, (self._get_combat_hp(caster_id) or 0) - chp)
+            out += f'  吸血回复 {actual_heal} HP\n'
 
         # 月相吸取（moon_phase）：目标实际受伤后等量治疗施法者（上限 体力上限）
         if moon_drain > 0 and eff_dmg > 0:
@@ -5904,6 +6062,8 @@ class CombatEngine:
         Returns (result_text, success)."""
         from characters_data import ITEM_TEMPLATES
         tid = target_id or eater_id
+        if not self.get_char(tid) or self._battle_team_of(tid) != self._battle_team_of(eater_id):
+            return ('只能给同队存活或濒死单位食用蛋糕', False)
         if (self._get_combat_hp(tid) or 0) <= 0 and not self._is_dying(tid):
             return ('目标已死亡，无法食用蛋糕', False)
 
@@ -5995,6 +6155,9 @@ class FullBattleEngine(CombatEngine):
         self._ai_react_block_w = val
 
     def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
+        self._pending_battle_events = []
+        self._zone_tick_results = []
+        self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"battle_{random.randint(1000,9999)}"
         # ── 新战斗重置召唤账本 / 分组 / unique 记录（必须在被动施放之前）──
@@ -6300,7 +6463,7 @@ class FullBattleEngine(CombatEngine):
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
             if eff_atk <= 0:
-                lines.append(f"  {dname} 闪避成功！")
+                lines.append(f"  {dname} 闪避成功！" if react_rank > 0 else "  攻击未命中。")
                 return (def_uid, atk_uid, lines)
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
             loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
@@ -6388,7 +6551,10 @@ class FullBattleEngine(CombatEngine):
                     else:
                         lines.append(f"  {aname} 不可选中，{dname} 的反击无法命中。")
 
-                    lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
+                    if not self._is_untargetable(atk_uid):
+                        lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
+                    else:
+                        lines.append(f"  仅 {aname} 的攻击命中。")
                     return (atk_uid, def_uid, lines)
                 else:
                     lines.append("  无人得手！")
@@ -6902,7 +7068,7 @@ class FullBattleEngine(CombatEngine):
         eff_atk = max(-2, min(4, eff_atk))
 
         if eff_atk <= 0:
-            lines.append(f"  {dchar.name} 闪避了法术！")
+            lines.append(f"  {dchar.name} 闪避了法术！" if react_rank > 0 else "  法术未命中。")
             return (True, False, lines)
         lines.append(f"  {achar.name} 的法术突破闪避！(有效等级:{rank_text(eff_atk)})")
         return (False, False, lines)
@@ -6991,7 +7157,10 @@ class FullBattleEngine(CombatEngine):
                 _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
             else:
                 lines.append(f"  {achar.name} 不可选中，{dchar.name} 的反击无法命中。")
-            lines.append(f"  互命中！{dchar.name} 的反击与 {achar.name} 的法术同时命中。")
+            if not self._is_untargetable(caster_id):
+                lines.append(f"  互命中！{dchar.name} 的反击与 {achar.name} 的法术同时命中。")
+            else:
+                lines.append(f"  仅 {achar.name} 的法术命中。")
             # countered=False so spell damage still applies to defender
             return (False, False, lines)
         else:
@@ -7095,8 +7264,7 @@ class FullBattleEngine(CombatEngine):
             if not self._can_move(uid):
                 statuses = [b.get('auxType','') for b in self._get_active_statuses(uid)]
                 return f"无法移动（{'/'.join(statuses)}中）"
-            coord = parts[1].upper()
-            return f"{char.name} 移动至 {coord}"
+            return self._move_explicit(uid, parts[1])
         elif re.match(r'^s\d+$', parts[0], re.IGNORECASE):
             # ── 状态检查：沉默/击晕禁止附加技能 ──
             if not self._can_cast_active_skill(uid):
@@ -7746,6 +7914,7 @@ class FullBattleEngine(CombatEngine):
         self._apply_zone_attr_penalties(il)
         self._set_initiative(il)
         self._zone_tick_results = tick_results
+        self._queue_zone_events(tick_results)
 
     def _process_zone_specials(self):
         """Generic zone-enter triggers. Reads on_enter_* fields from zone effects.
@@ -7896,6 +8065,9 @@ class FastBattleEngine(FullBattleEngine):
         # are all initialized by FullBattleEngine.__init__(fast_mode=True)
 
     def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
+        self._pending_battle_events = []
+        self._zone_tick_results = []
+        self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"fast_{random.randint(10000,99999)}"
         # ── 新战斗重置召唤账本 / 分组 / unique 记录 ──
@@ -8816,26 +8988,7 @@ class FastBattleEngine(FullBattleEngine):
         return ""
 
     def _fast_move(self, uid):
-        # ── 状态检查：禁锢/击晕禁止移动 ──
-        if not self._can_move(uid):
-            return ""
-        il = self._get_initiative(); me = next((e for e in il if e["userId"]==uid), None)
-        if not me: return ""
-        mt = me.get("team","Y"); mc = me.get("coord","")
-        enemies = [e for e in il if e["team"]!=mt and (self._get_combat_hp(e["userId"])or 0)>0 and not self._is_untargetable(e['userId'])]
-        if not enemies or not mc: return ""
-        ec = enemies[0].get("coord","")
-        if not ec: return ""
-        mp, tp = parse_coord(mc), parse_coord(ec)
-        if not mp or not tp: return ""
-        dc = 0 if tp[0]==mp[0] else (1 if tp[0]>mp[0] else -1)
-        dr = 0 if tp[1]==mp[1] else (1 if tp[1]>mp[1] else -1)
-        for dcol, drow in [(dc,0),(0,dr),(dc,dr)]:
-            nc, nr = mp[0]+dcol, mp[1]+drow
-            if 0<=nc<26 and 0<=nr<99:
-                newc = format_coord(nc,nr); md = self._get_map()
-                if md and newc not in md.get("occupants",{}):
-                    if mc in md.get("occupants",{}): del md["occupants"][mc]
-                    md["occupants"][newc] = uid; self._set_map(md); me["coord"] = newc
-                    return ""
-        return ""
+        coord = self._next_move_coord(uid)
+        if coord:
+            return self._move_explicit(uid, coord)
+        return ActionExecutionResult('没有可执行的移动', False, 'invalid_move', '附加')

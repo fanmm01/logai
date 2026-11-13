@@ -38,10 +38,10 @@ sys.stderr.reconfigure(line_buffering=True)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battle_engine import (CombatEngine, FullBattleEngine, roll_dice, parse_coord, format_coord,
     is_in_melee_range, has_timing, rank_text, avg_damage, success_rank, roll_d100, max_damage,
-    season_status_roll)
+    season_status_roll, action_committed)
 from characters_data import ALL_CHARACTERS, load_character_to_engine
 from ai_trainer import (load_q_table, encode_state, get_available_actions, execute_action,
-                            action_slot_for, affordable_actions)
+                            action_slot_for, affordable_actions, select_teammate_by_strategy)
 from ai_trainer import encode_summon_state, get_summon_actions, execute_summon_action
 from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
 
@@ -374,6 +374,19 @@ class AIController:
 
     def decide_action(self, engine, user_id):
         """Use Q-table if available, fall back to rule-based."""
+        if engine._get_my_actions(user_id).get('主动', 0) <= 0:
+            return '.i end'
+        cmd = self._decide_action(engine, user_id)
+        failed = getattr(engine, '_ai_failed_commands', set())
+        if cmd not in failed:
+            return cmd
+        for key, _ in affordable_actions(engine, user_id, get_available_actions(engine, user_id)):
+            alternative = self._command_for_action(engine, user_id, key)
+            if alternative and alternative not in failed:
+                return alternative
+        return '.i end'
+
+    def _decide_action(self, engine, user_id):
         if AIController.Q_SOLO is not None or AIController.Q_TEAM is not None:
             ck = self.char_data.get('serial', self.char_id)
             if (AIController.Q_SOLO and ck in AIController.Q_SOLO) or \
@@ -393,7 +406,7 @@ class AIController:
             return '.i end'
         actions = engine._get_actions()
         my_acts = engine._get_my_actions(user_id) if hasattr(engine, '_get_my_actions') else             actions.get(user_id, {'主动': 2, '附加': 3})
-        if my_acts['主动'] <= 0 and my_acts.get('附加', 0) <= 0: return '.i end'
+        if my_acts['主动'] <= 0: return '.i end'
 
         st = encode_state(engine, user_id)
         available = get_available_actions(engine, user_id)
@@ -452,13 +465,16 @@ class AIController:
         idx = random.choices(range(len(actions_pool)), weights=probs, k=1)[0]
         ak, an = actions_pool[idx]
 
+        return self._command_for_action(engine, user_id, ak)
+
+    def _command_for_action(self, engine, user_id, ak):
+        my_acts = engine._get_my_actions(user_id)
         # Parse action: may have __T suffix for target strategy
         base_ak = ak.split('__')[0] if '__' in ak else ak
         if base_ak == 'BASIC_ATTACK': return '.s0'
         if base_ak == 'MOVE_TOWARD': return self._move_cmd(engine, user_id) or '.s0'
         if base_ak == 'EAT_CAKE':
-            target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
-            return f'.a eat {target}' if target else '.i end'
+            return f'.a eat {user_id}'
         if base_ak == 'GIVE_CAKE':
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a give {target}' if target else '.i end'
@@ -506,19 +522,8 @@ class AIController:
         return support
 
     def _move_cmd(self, engine, user_id):
-        init_list = engine._get_initiative()
-        my_entry = next((e for e in init_list if e['userId'] == user_id), None)
-        if not my_entry: return None
-        my_coord = my_entry.get('coord', '')
-        my_team = my_entry.get('team', 'Y')
-        enemies = [e for e in init_list if e.get('team') != my_team and (engine._get_combat_hp(e['userId']) or 0) > 0]
-        if not enemies or not my_coord: return None
-        nearest = self._nearest(engine, user_id, enemies)
-        if nearest:
-            ec = nearest.get('coord', '')
-            if ec and not is_in_melee_range(my_coord, ec):
-                return self._move_toward(my_coord, ec, user_id)
-        return None
+        coord = engine._next_move_coord(user_id)
+        return f'.a m {coord}' if coord else None
 
     def _rule_decide(self, engine, user_id):
         state = engine._get_state()
@@ -532,7 +537,9 @@ class AIController:
 
         init_list = engine._get_initiative()
         actions = engine._get_actions()
-        my_acts = actions.get(user_id, {'主动': 2, '附加': 3})
+        my_acts = engine._get_my_actions(user_id)
+        if my_acts.get('主动', 0) <= 0:
+            return '.i end'
         char = engine.get_char(user_id)
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return '.i end'
@@ -557,6 +564,8 @@ class AIController:
             """True if spell has active same-name effect or a summon template is at its cap.
 
             同模板仍有名额时允许补召（如第二根藤蔓），只有满额/累计耗尽才禁选。"""
+            if engine._revive_preflight(user_id, sp):
+                return True
             if sp['name'] in active_spell_names:
                 return True
             for eff in sp.get('effects', []):
@@ -576,7 +585,7 @@ class AIController:
             deform_prob = (100 - zt) / 100.0 * 0.4
             if random.random() < deform_prob:
                 from ai_trainer import get_available_actions
-                avail = get_available_actions(engine, user_id)
+                avail = affordable_actions(engine, user_id, get_available_actions(engine, user_id))
                 if avail:
                     ak_deform, _ = random.choice(avail)
                     base_deform = ak_deform.split('__')[0] if '__' in ak_deform else ak_deform
@@ -586,7 +595,7 @@ class AIController:
                         sn = int(base_deform.split('_')[1])
                         return f'.s{sn}'
                     if base_deform == 'EAT_CAKE':
-                        target = self._select_cake_target(engine, user_id, 'T0')
+                        target = self._select_cake_target(engine, user_id, 'SELF')
                         return f'.a eat {target}' if target else '.i end'
 
             # Heal if HP < 40%
@@ -618,7 +627,7 @@ class AIController:
                 my_mp = char.get_attr('魔力', 0) or 0
                 max_mp = char.get_attr('魔力上限', my_mp) or my_mp
                 if my_hp < max_hp * 0.6 or my_mp < max_mp * 0.3:
-                    target = self._select_cake_target(engine, user_id, 'T0')
+                    target = self._select_cake_target(engine, user_id, 'SELF')
                     return f'.a eat {target}'
 
             # Move toward nearest enemy
@@ -654,18 +663,14 @@ class AIController:
 
     def _select_cake_target(self, engine, user_id, strategy):
         """Select cake target from allies based on strategy."""
-        il = engine._get_initiative()
-        my_entry = next((e for e in il if e['userId'] == user_id), None)
-        if not my_entry: return user_id
-        allies = [e for e in il if e.get('team') == my_entry.get('team') and (engine._get_combat_hp(e['userId']) or 0) > 0 and not e.get('isSummon')]
-        if not allies: return user_id
-        if strategy == 'T0':  # 最低HP ally
-            return min(allies, key=lambda e: engine._get_combat_hp(e['userId']) or 9999)['userId']
-        elif strategy == 'T1':  # 最近 ally
-            return allies[0]['userId']
-        elif strategy == 'T2':  # 最高HP ally (most needs)
-            return max(allies, key=lambda e: engine._get_combat_hp(e['userId']) or 0)['userId']
-        return user_id
+        if strategy == 'SELF':
+            return user_id
+        allies = [e for e in engine._battle_unit_entries()
+                  if e.get('team') == engine._battle_team_of(user_id)
+                  and engine._resolve_uid(e['userId']) != engine._resolve_uid(user_id)
+                  and not e.get('isSummon')
+                  and ((engine._get_combat_hp(e['userId']) or 0) > 0 or engine._is_dying(e['userId']))]
+        return select_teammate_by_strategy(engine, user_id, strategy, allies)
 
     def _nearest(self, engine, user_id, enemies):
         init_list = engine._get_initiative()
@@ -770,6 +775,52 @@ class BattleEngine(FullBattleEngine):
         return {'winner': winner, 'rounds': self.max_rounds, 'timeout': True,
                 'y_ratio': round(y_avg, 4), 'x_ratio': round(x_avg, 4)}
 
+    def _run_character_ai_turn(self, uid, ai, emit):
+        base = self._resolve_uid(uid)
+        self._ai_failed_commands = set()
+        failures = 0
+        try:
+            while True:
+                state = self._get_state()
+                il = self._get_initiative()
+                if not state or state.get('phase') != 'active' or not il:
+                    return
+                if il[state['activeIndex']]['userId'] != uid:
+                    return
+                if self._get_my_actions(base).get('主动', 0) <= 0 or self._is_dying(base):
+                    self._end_turn(uid)
+                    return
+                cmd = ai.decide_action(self, base)
+                if cmd == '.i end':
+                    emit('      -> 结束回合')
+                    self._end_turn(uid)
+                    return
+                result = self._execute_ai_command(base, cmd)
+                for line in str(result).splitlines():
+                    if line.strip():
+                        emit(f'        {line.strip()}')
+                for line in self._drain_battle_events():
+                    emit(f'        {line}')
+                if getattr(result, 'committed', True):
+                    self._consume_action(base, result.slot)
+                    self._ai_failed_commands.clear()
+                    failures = 0
+                    if cmd.startswith('.a m '):
+                        if not hasattr(self, '_moved_this_turn'):
+                            self._moved_this_turn = set()
+                        self._moved_this_turn.add(base)
+                else:
+                    failures += 1
+                    self._ai_failed_commands.add(cmd)
+                    if failures >= 5:
+                        emit('      -> 无可执行动作，结束回合')
+                        self._end_turn(uid)
+                        return
+        finally:
+            self._ai_failed_commands = set()
+            for line in self._drain_battle_events():
+                emit(f'        {line}')
+
     def run_battle(self, ai_map):
         """AI-driven tournament battle loop with display_level-controlled logging.
         display_level: 0=WINLOSS (result only), 1=ROUND (+round HP), 2=DEBUG (+all actions)."""
@@ -798,6 +849,8 @@ class BattleEngine(FullBattleEngine):
                         if end_result:
                             self._battle_result = end_result
                     break
+                for event in self._drain_battle_events():
+                    _bl('debug', f'        {event}')
                 rc = state.get('round', 1); step_count += 1
                 if rc != last_round:
                     last_round = rc; self._moved_this_turn = set()
@@ -989,59 +1042,8 @@ class BattleEngine(FullBattleEngine):
                 _base_uid = entry.get('baseUserId', uid)
                 ai = ai_map.get(_base_uid)
                 if ai:
-                    ai.team = entry['team']; acted = False
-                    is_dying = self._is_dying(_base_uid)
-                    for _ in range(5):
-                        cmd = ai.decide_action(self, _base_uid)
-                        # Dying characters can only end the turn; personal HP cakes already auto-rescue.
-                        if is_dying and cmd != '.i end':
-                            cmd = '.i end'
-                        if cmd == '.i end':
-                            if not acted:
-                                _bl('debug', f'      -> 结束回合')
-                                self._end_turn(uid)
-                            break
-                        acted = True; result_text = ''; spell_label = ''
-                        if cmd == '.s0':
-                            result_text = self._basic_attack(uid); spell_label = ' [普攻]'
-                        elif cmd.startswith('.s') and not cmd.startswith('.s0'):
-                            sn = int(cmd[2:])
-                            spells = self.load_spells(_base_uid) or []
-                            sp = next((s for s in spells if s['index']==sn), None)
-                            spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
-                            result_text = self._use_skill(uid, sn, '')
-                        elif cmd.startswith('.a eat'):
-                            target_id = cmd[6:].strip() or uid
-                            result_text, ok = self._eat_cake(_base_uid, target_id)
-                            spell_label = ' [食用蛋糕]'
-                        elif cmd.startswith('.a m'):
-                            result_text = self._additional_action(_base_uid, 'm ' + cmd[5:].strip())
-                            if not hasattr(self, '_moved_this_turn'): self._moved_this_turn = set()
-                            self._moved_this_turn.add(_base_uid)
-                        elif cmd.startswith('.a s'):
-                            sn = int(cmd[4:])
-                            spells = self.load_spells(_base_uid) or []
-                            sp = next((s for s in spells if s['index']==sn), None)
-                            spell_label = f' [{sp["name"]}]' if sp else f' [技能{sn}]'
-                            result_text = self._additional_action(uid, cmd[3:].strip())
-                        else: break
-                        for rline in (result_text.split('\n') if result_text else []):
-                            if rline.strip(): _bl('debug', f'        {rline.strip()}')
-                        # Action consumption: .s0/.sN consume main; .a commands consume extra.
-                        # Budgets are keyed by the stable summon-group key.
-                        is_skill = cmd.startswith('.s') and not cmd.startswith('.s0')
-                        is_bonus = cmd.startswith('.a ')
-                        if is_bonus:
-                            self._consume_action(_base_uid, '附加')
-                        elif cmd == '.s0' or is_skill:
-                            self._consume_action(_base_uid, '主动')
-                        # Check remaining actions — end turn when 主动 exhausted
-                        ma = self._get_my_actions(_base_uid)
-                        if ma.get('主动', 0) <= 0: self._end_turn(uid)
-                        s2 = self._get_state()
-                        if not s2 or s2.get('phase')!='active': break
-                        i2 = self._get_initiative()
-                        if i2 and i2[s2['activeIndex']]['userId'] != uid: break
+                    ai.team = entry['team']
+                    self._run_character_ai_turn(uid, ai, lambda line: _bl('debug', line))
                 else:
                     self._end_turn(uid)
             # Check if battle ended normally (phase='ended' set by _end_turn → _check_battle_end)
