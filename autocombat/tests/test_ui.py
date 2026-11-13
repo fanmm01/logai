@@ -286,6 +286,180 @@ class BrowserUITests(unittest.TestCase):
                     self.assertEqual(response.status_code,200,response.get_json())
                 self.assertEqual(self.state()['snapshot']['state']['phase'],'ended')
 
+    def auto(self, uid, op='start', **kwargs):
+        unit = next(u for u in self.state()['snapshot']['units'] if u['uid'] == uid)
+        data = dict(uid=uid, op=op, choice='dodge', count=3,
+                    revision=unit['auto_reaction']['revision'], request_id=str(random.random()))
+        data.update(kwargs)
+        return self.client.post(f'/api/ui/rooms/{self.code}/auto-reaction', json=data)
+
+    def test_auto_reaction_start_stop_and_remaining_batch_is_manual(self):
+        with self.ext['lock']:
+            self.create()
+            self.close_range()
+            with patch.object(self.srv, 'roll_d100', return_value=(10, '')):
+                self.assertEqual(self.submit(command='.s0').status_code, 200)
+            pending = self.srv._pending_reactions[self.bid]
+            first = copy.deepcopy(pending[0] if isinstance(pending, list) else pending)
+            first.update(dmg_dice='1', atk_rank=1, leth=0)
+            self.srv._pending_reactions[self.bid] = [first, copy.deepcopy(first)]
+            defender = first['def_uid']
+            self.eng._init_combat_hp(defender, 100)
+            self.assertEqual(self.auto(defender).status_code, 200)
+            room = self.ext['rooms'][self.code]
+            with self.app.app_context(), patch.object(self.srv, 'roll_d100', return_value=(99, '')):
+                self.assertTrue(self.ext['reactions'].step(room))
+            self.assertEqual(self.eng._get_combat_hp(defender), 99)
+            state = self.state()
+            self.assertTrue(state['snapshot']['reaction'])
+            unit = next(u for u in state['snapshot']['units'] if u['uid'] == defender)
+            self.assertEqual(unit['auto_reaction']['remaining'], 2)
+            self.assertEqual(self.auto(defender, 'stop', revision=-999).status_code, 200)
+            before = self.eng._get_combat_hp(defender)
+            self.assertFalse(self.ext['reactions'].step(room))
+            self.assertEqual(before, self.eng._get_combat_hp(defender))
+            self.assertIsNotNone(self.state()['snapshot']['reaction'])
+
+    def test_stop_prevents_stale_enable_and_mirrors_are_independent(self):
+        with self.ext['lock']:
+            room = self.create(team_b=['Y1'], local=False)
+            a, b = [u['uid'] for u in room['snapshot']['units']]
+            self.assertEqual(self.auto(a).status_code, 200)
+            self.assertFalse(next(u for u in self.state()['snapshot']['units'] if u['uid'] == b)['auto_reaction']['enabled'])
+            self.assertEqual(self.auto(a, 'stop').status_code, 200)
+            self.assertEqual(self.auto(a, revision=0).status_code, 409)
+            guest = self.app.test_client()
+            guest.post('/api/ui/session', json={})
+            guest.post(f'/api/ui/rooms/{self.code}/join', json={'spectator': True})
+            response = guest.post(f'/api/ui/rooms/{self.code}/auto-reaction', json={'op': 'stop', 'uid': a, 'request_id': 'forged'})
+            self.assertEqual(response.status_code, 403)
+
+    def test_summons_default_to_ai_and_can_be_assigned_as_a_group(self):
+        with self.ext['lock']:
+            self.create(team_a=['Y9'], team_b=['Y1'])
+            self.close_range()
+            owner = next(u['uid'] for u in self.state()['snapshot']['units'] if u['serial'] == 'Y9')
+            spell = next(s for s in self.eng.load_spells(owner) if any(e['type'] == 5 for e in s['effects']))
+            self.eng._execute_spell(owner, owner, spell)
+            summons = [u for u in self.state()['snapshot']['units'] if u['summon']]
+            self.assertTrue(summons)
+            self.assertTrue(all(u['controller'] == 'ai' for u in summons))
+            self.assertEqual(self.control(op='assign', uid=summons[0]['uid'], controller=self.me).status_code, 200)
+            members = [u for u in self.state()['snapshot']['units'] if u['representative'] == summons[0]['representative']]
+            self.assertTrue(all(u['controller'] == self.me for u in members))
+
+    def test_domain_snapshot_tracks_center_and_friendly_membership(self):
+        with self.ext['lock']:
+            self.create(team_a=['Y9', 'Y3'], team_b=['Y1'])
+            self.control(op='start')
+            self.control(op='pause')
+            units = self.state()['snapshot']['units']
+            caster = next(u['uid'] for u in units if u['serial'] == 'Y9')
+            spell = next(s for s in self.eng.load_spells(caster) if s['name'] == '领域·生')
+            self.eng.get_char(caster).set_attr('魔力', 99)
+            self.eng._execute_spell(caster, caster, spell)
+            il = self.eng._get_initiative()
+            entry = next(e for e in il if e['userId'] == caster)
+            entry['coord'] = 'H8'
+            self.eng._set_initiative(il)
+            zones = [e for e in self.state()['snapshot']['effects'] if e['type'] == 'zone']
+            self.assertTrue(zones)
+            self.assertTrue(all(z['center'] == 'H8' for z in zones))
+            enemy = next(u['uid'] for u in units if u['team'] == 'X')
+            self.assertTrue(all(enemy not in z['affected'] for z in zones))
+            ally = next(u['uid'] for u in units if u['serial'] == 'Y3')
+            self.eng._init_combat_hp(ally, 2)
+            self.eng._init_combat_hp(enemy, 2)
+            self.eng._apply_zone_effects()
+            self.assertGreater(self.eng._get_combat_hp(ally), 2)
+            self.assertEqual(self.eng._get_combat_hp(enemy), 2)
+
+    def test_summon_basic_attack_uses_selected_enemy(self):
+        with self.ext['lock']:
+            self.create(team_a=['Y9'], team_b=['Y1', 'Y2'])
+            self.control(op='start')
+            self.control(op='pause')
+            owner = next(uid for uid, ch in self.eng.characters.items() if ch.serial == 'Y9')
+            spell = next(s for s in self.eng.load_spells(owner) if any(e['type'] == 5 for e in s['effects']))
+            self.eng._execute_spell(owner, owner, spell)
+            group = next(iter(self.eng._summon_groups.values()))
+            rep = group['representative_uid']
+            self.control(op='assign', uid=rep, controller=self.me)
+            state = self.eng._get_state()
+            state['activeIndex'] = next(i for i, e in enumerate(self.eng._get_initiative()) if e['userId'] == rep)
+            self.eng._set_state(state)
+            self.eng._set_actions({**self.eng._get_actions(), self.eng._summon_group_key(rep): {'主动': 1, '附加': 3}})
+            enemies = self.eng._enemy_targets(rep)
+            target = enemies[-1]
+            with patch.object(self.eng, '_coc7_attack', return_value=(rep, target, ['selected target'])) as attack:
+                response = self.submit(command='.s0', target=target)
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertTrue(attack.called)
+            self.assertTrue(all(call.args[1] == target for call in attack.call_args_list))
+
+    def test_tournament_watch_reuses_room_and_commits_manual_result_once(self):
+        from ui_tournaments import bracket
+        with self.ext['lock']:
+            response = self.client.post('/api/ui/tournaments', json={'format': '1v1', 'seed': 77,
+                'teams': [['Y1'], ['Y2'], ['Y3'], ['Y4']]})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            t = response.get_json()
+            t.update(phase='playoffs', series=bracket(t), status='paused')
+            service = self.ext['tournaments']
+            service.save(t)
+            data = dict(series='SF1', revision=t['revision'])
+            response = self.client.post(f'/api/ui/tournaments/{t["id"]}/watch', json=data)
+            self.assertEqual(response.status_code, 200, response.get_json())
+            room = response.get_json()['room']
+            code = room['code']
+            repeat = self.client.post(f'/api/ui/tournaments/{t["id"]}/watch', json=data)
+            self.assertEqual(repeat.get_json()['room']['code'], code)
+            actor = room['snapshot']['units'][0]['uid']
+            self.assertEqual(self.client.post(f'/api/ui/rooms/{code}/control', json={'op': 'assign', 'uid': actor, 'controller': self.me}).status_code, 200)
+            internal = self.ext['rooms'][code]
+            eng = self.srv._battles[internal['battle_id']]
+            eng._battle_result = dict(winner='Y', rounds=1)
+            st = eng._get_state()
+            st['phase'] = 'ended'
+            eng._set_state(st)
+            service.room_event(internal, eng)
+            service.room_event(internal, eng)
+            saved = self.ext['store'].get('tournament', t['id'])
+            sf1 = next(s for s in saved['series'] if s['id'] == 'SF1')
+            self.assertEqual(sf1['score'], [1, 0])
+            self.assertTrue(sf1['games'][0]['manual'])
+            replay = self.client.get(f'/api/ui/tournaments/{t["id"]}/replays/{saved["last_replay"]["id"]}').get_json()
+            self.assertEqual(len(replay['lines']), 1)
+            self.assertIn('第1回合 Y:', replay['lines'][0])
+            next_url = f'/api/ui/tournaments/{t["id"]}/next'
+            response = self.client.post(next_url, json={'room': code})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            next_room = response.get_json()['room']
+            self.assertNotEqual(next_room['code'], code)
+            self.assertEqual(next_room['tournament']['series'], 'SF1')
+            self.assertEqual(self.client.post(next_url, json={'room': code}).get_json()['room']['code'], next_room['code'])
+            self.assertEqual(self.client.post(next_url, json={'room': next_room['code']}).status_code, 409)
+            outsider = self.app.test_client()
+            outsider.post('/api/ui/session', json={'name': '访客'})
+            self.assertEqual(outsider.post(next_url, json={'room': code}).status_code, 404)
+            # The deciding game ends SF1; Next must open SF2's first game.
+            saved = self.ext['store'].get('tournament', t['id'])
+            saved['series'][0]['score'] = [3, 0]
+            service.save(saved)
+            next_internal = self.ext['rooms'][next_room['code']]
+            next_eng = self.srv._battles[next_internal['battle_id']]
+            next_eng._battle_result = dict(winner='Y', rounds=1)
+            st = next_eng._get_state()
+            st['phase'] = 'ended'
+            next_eng._set_state(st)
+            service.room_event(next_internal, next_eng)
+            response = self.client.post(next_url, json={'room': next_room['code']})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            following = response.get_json()
+            self.assertEqual(following['room']['tournament']['series'], 'SF2')
+            self.assertEqual(following['tournament']['series'][0]['score'], [4, 0])
+            self.assertEqual(following['tournament']['series'][1]['games'], [])
+
 
 class DetachedConsoleTests(unittest.TestCase):
     """Console teardown must never turn successful gameplay into HTTP 500."""

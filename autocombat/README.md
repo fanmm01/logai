@@ -2,7 +2,7 @@
 
 SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支持。
 
-现已提供 **星序浏览器战术室**：明亮卡牌界面、本地对战、局域网房间、AI 观战、事件回顾与批量模拟。
+现已提供 **星序浏览器战术室**：明亮卡牌界面、本地对战、局域网房间、AI 观战、完整战报、自动反应开关、角色编辑与备份、训练、矩阵模拟及可暂停的锦标赛。
 运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；局域网使用 `python start_ui.py --lan`。
 首次构建需 Node.js 与 npm，详情见 [界面使用说明](frontend/README.md)。
 
@@ -255,7 +255,7 @@ v1.3.0 起，所有 setab=2 命令支持代骰：在命令后 `@另一玩家`，
 `.train` 命令触发一次 PVP AI 训练：
 - 使用 Q-Learning 算法训练 AI 策略
 - 训练在后台运行（预计需数分钟）
-- 训练完成后自动重载 Q 表（`ai_weights_pvp.json`）
+- 训练完成后自动重载统一 Q 表（`ai_weights.json`）
 - 可通过 `.jour` 验证训练效果
 
 ---
@@ -311,7 +311,7 @@ autocombat/
 
 ## 添加新角色
 
-在 `characters_data_pvp.py` 中添加新角色，需要按以下步骤操作。
+在 `characters_data.py` 中添加新角色，需要按以下步骤操作。
 
 ### 1. 角色数据定义
 
@@ -474,3 +474,6 @@ ITEM_TEMPLATES = {
 ### v1.1.0
 - 行动力/移动力/射程系统
 - zone 属性削减、雪人+蓝增强
+
+
+浏览器升级与数据统一说明见 [界面使用说明](frontend/README.md)；`characters_data_pvp.py` / `ai_trainer_pvp.py` 现在是基础版的兼容入口，不再维护第二套数值。

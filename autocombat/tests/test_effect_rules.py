@@ -108,6 +108,19 @@ class AttrTests(unittest.TestCase):
 
 
 class TargetResolutionTests(unittest.TestCase):
+    def test_card_loader_preserves_random_target_range_and_duration_without_rolling(self):
+        eng = be.FullBattleEngine()
+        data = dict(name='加载测试', serial='Z99', attrs={'体力': 10, '魔力': 10}, str_attrs={'伤害值': '1d6'},
+                    spells=[dict(name='随机攻击', category=1, timing='2', effects=[
+                        {'type': 1, '客体': 'RP', '射程': 7, '持续回合': '2d3', '伤害骰': '1d6', '成功率': 70}])])
+        cd.load_character_to_engine(eng, data, 'loader')
+        state = random.getstate()
+        effect = eng.load_spells('loader')[0]['effects'][0]
+        self.assertEqual(random.getstate(), state)
+        self.assertEqual(effect['客体'], 'RP')
+        self.assertEqual(effect['射程'], 7)
+        self.assertEqual(effect['持续回合'], '2d3')
+
     def setUp(self):
         self.eng = _setup([('LAN', 'Y11'), ('ALLY', 'Y3')], [('E1', 'Y1')])
 
@@ -171,13 +184,14 @@ class LanFogTests(unittest.TestCase):
         eng._execute_spell('LAN', 'E1', fog)
         lan = eng.get_char('LAN')
         e1 = eng.get_char('E1')
-        # LAN: 1 bonus die (AUX16) from fog; E1: 1 penalty die
+        # The authoritative base data grants LAN a bonus, but does not
+        # declare the old PvP enemy penalty effect (it is commented out).
         self.assertEqual(be._calc_net_bp(eng._get_active_buffs('LAN'), '', '挥动镰刀'), 'b')
-        self.assertEqual(be._calc_net_bp(eng._get_active_buffs('E1'), '', '闪避'), 'p')
+        self.assertEqual(be._calc_net_bp(eng._get_active_buffs('E1'), '', '闪避'), '')
         # zone 属性削减 applies to enemies only, by name
         eng._apply_zone_effects()
         self.assertEqual(eng._apply_buff_skill_mod('E1', e1.get_attr('闪避'), '闪避'),
-                         max(1, e1.get_attr('闪避') - 30))
+                         max(1, e1.get_attr('闪避') - 20))
         self.assertEqual(eng._apply_buff_skill_mod('E1', e1.get_attr('斗殴'), '斗殴'),
                          e1.get_attr('斗殴'))
         self.assertEqual(eng._apply_buff_skill_mod('ALLY', eng.get_char('ALLY').get_attr('闪避'), '闪避'),
@@ -449,8 +463,11 @@ class PvpPlanTests(unittest.TestCase):
         with self.assertRaises(srv.ReactionNeeded) as ctx:
             eng._execute_spell('LAN', 'E1', sc)
         state = copy.deepcopy(ctx.exception.data)
-        # fog p + scythe reaction p = p2
+        # Base fog has no enemy penalty; the scythe contributes exactly one.
+        self.assertEqual(eng._calc_spell_reaction_bp('E1', sc['effects'][0], '闪避'), 'p')
+        eng._manual_reaction_bp = 'p'
         self.assertEqual(eng._calc_spell_reaction_bp('E1', sc['effects'][0], '闪避'), 'p2')
+        eng._manual_reaction_bp = ''
         mp_before = eng.get_char('LAN').get_attr('魔力')
         eng.resolve_spell_reaction(state, 'dodge')
         self.assertEqual(eng.get_char('LAN').get_attr('魔力'), mp_before)

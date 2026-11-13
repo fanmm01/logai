@@ -553,13 +553,13 @@ def chebyshev_dist(a, b):
     if not ap or not bp: return 999
     return max(abs(ap[0]-bp[0]), abs(ap[1]-bp[1]))
 
-def _get_attack_range(spell_effect=None, skill_name=None):
+def _get_attack_range(spell_effect=None, skill_name=None, override=None):
     """获取攻击的射程。法术效果优先读取其'射程'字段；未声明默认2(近战)。
     普攻: MELEE_SKILLS中的技能=2, 其他=99。
     调试: 若 characters_data_pvp.GLOBAL_RANGE_OVERRIDE == 1，所有射程返回99。"""
     try:
         from characters_data import GLOBAL_RANGE_OVERRIDE
-        if GLOBAL_RANGE_OVERRIDE:
+        if GLOBAL_RANGE_OVERRIDE if override is None else override:
             return 99
     except ImportError:
         pass
@@ -630,7 +630,6 @@ def _ensure_weight_cache():
     _weight_loaded = True
     import os, json
     weight_paths = [
-        os.path.join(os.path.dirname(__file__), 'ai_weights_pvp.json'),
         os.path.join(os.path.dirname(__file__), 'ai_weights.json'),
     ]
     for wp in weight_paths:
@@ -686,6 +685,13 @@ def action_committed(result):
 
 
 class CombatEngine:
+    def _get_attack_range(self, spell_effect=None, skill_name=None):
+        return _get_attack_range(spell_effect, skill_name, getattr(self, '_range_override_snapshot', None))
+
+    def _get_summon_template(self, name):
+        registry = getattr(self, '_summon_templates_snapshot', None)
+        return registry.get(name) if registry is not None else _get_summon_template(name)
+
     def __init__(self):
         self.characters = {}
         self.storage = {}
@@ -777,6 +783,7 @@ class CombatEngine:
                 if self._resolve_uid(slot['userId']) == base:
                     slot['coord'] = coord
             self._set_initiative(il)
+        self._settle_zone_enters()
         return ActionExecutionResult(f'{self.get_char(uid).name} 移动至 {coord}', slot='附加')
 
     def _next_move_coord(self, uid):
@@ -963,7 +970,7 @@ class CombatEngine:
         """
         tmpl = template
         if tmpl is None:
-            tmpl = _get_summon_template(template_name) or {}
+            tmpl = self._get_summon_template(template_name) or {}
         max_sim = tmpl.get('max_simultaneous')
         max_total = tmpl.get('max_total_spawned')
         live = self._get_summon_live_count(owner_id, template_name)
@@ -994,7 +1001,7 @@ class CombatEngine:
             if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
             # entry['name'] is always the template name (display name lives in
             # displayName / Character.name) — resolve template fields from the registry.
-            tmpl = _get_summon_template(entry.get('name', ''))
+            tmpl = self._get_summon_template(entry.get('name', ''))
             if tmpl and tmpl.get(field_name):
                 results.append((entry['userId'], self.get_char(entry['userId'])))
         return results
@@ -1473,7 +1480,7 @@ class CombatEngine:
         if md:
             occupants = md.setdefault('occupants', {})
             footprint = {coord} if coord else set()
-            tmpl = _get_summon_template(slot.get('name', '')) or {}
+            tmpl = self._get_summon_template(slot.get('name', '')) or {}
             point = parse_coord(coord) if coord else None
             if point and tmpl.get('size_2x2'):
                 footprint = {format_coord(point[0] + dc, point[1] + dr)
@@ -1772,14 +1779,47 @@ class CombatEngine:
         Non-stackable zones leave a 'strongest' penalty; stackable zones sum.
         Values live on the initiative entry and are refreshed each round.
         """
-        target = _attr_group(attr_name)
-        entry = next((e for e in self._get_initiative()
-                      if self._resolve_uid(e['userId']) == self._resolve_uid(uid)), None)
-        if not entry:
+        target, strongest, stacked = _attr_group(attr_name), 0, 0
+        if self._has_status(uid, '隔离'):
             return 0
-        strongest = entry.get('_zone_penalty_' + target, 0)
-        stacked = entry.get('_zone_penalty_stack_' + target, 0)
+        for effect in self._get_effects():
+            if effect.get('type') != 'zone' or effect.get('remainingRounds', 0) == 0:
+                continue
+            if not self._zone_covers_uid(effect, uid):
+                continue
+            mods = _parse_attr_mods(effect.get('attributeDebuff', ''))
+            if self._resolve_uid(uid) in effect.get('_triggered_ids', []):
+                mods += _parse_attr_mods(effect.get('on_enter_attr_debuff', ''))
+            for name, delta in mods:
+                if _attr_group(name) != target or delta >= 0:
+                    continue
+                if effect.get('stackable'):
+                    stacked += abs(delta)
+                else:
+                    strongest = max(strongest, abs(delta))
         return -(strongest + stacked)
+
+    def _settle_zone_enters(self):
+        effects = self._get_effects()
+        for effect in effects:
+            if effect.get('type') != 'zone' or not (effect.get('on_enter_mp_drain_pct') or effect.get('on_enter_attr_debuff')):
+                continue
+            inside = {self._resolve_uid(e['userId']) for e in self._battle_unit_entries()
+                      if self._zone_covers_uid(effect, e['userId']) and not self._has_status(e['userId'], '隔离')}
+            previous = set(effect.get('_entered_ids', []))
+            triggered = set(effect.get('_triggered_ids', [])) & inside
+            for uid in sorted(inside - previous):
+                if random.random() > effect.get('on_enter_trigger_rate', 1):
+                    continue
+                triggered.add(uid)
+                char = self.get_char(uid)
+                amount = int(char.get_attr('魔力', 0) * effect.get('on_enter_mp_drain_pct', 0))
+                char.set_attr('魔力', char.get_attr('魔力', 0) - amount)
+                source = self.get_char(effect.get('sourceUserId', ''))
+                if source and amount:
+                    source.set_attr('魔力', min(source.get_attr('魔力上限', 0), source.get_attr('魔力', 0) + amount))
+            effect['_entered_ids'], effect['_triggered_ids'] = sorted(inside), sorted(triggered)
+        self._set_effects(effects)
 
     def _apply_attr_mods(self, uid, base, attr_name):
         """Apply buffs + live zone penalties to one named attribute group."""
@@ -2009,6 +2049,7 @@ class CombatEngine:
     def _has_healing_item(self, uid):
         """Check if a character has any item in inventory that restores HP."""
         from characters_data import ITEM_TEMPLATES
+        ITEM_TEMPLATES = getattr(self, '_item_templates_snapshot', ITEM_TEMPLATES)
         char = self.get_char(uid)
         for entry in char.inventory:
             item_name = entry['item']
@@ -2130,7 +2171,7 @@ class CombatEngine:
         name = old_entry.get('name') or old_member.get('name') or ''
         source_owner = self._resolve_uid(grave_entry.get('ownerId') or '') if grave_entry.get('ownerId') else ''
         new_owner = self._resolve_uid(caster_id) if is_summon else old_entry.get('ownerId')
-        template = _get_summon_template(name) or {} if is_summon else {}
+        template = self._get_summon_template(name) or {} if is_summon else {}
         attrs = grave_entry.get('attrs') or {}
         max_hp = int(attrs.get('体力上限', 1) or 1)
         revive_hp = max(1, min(max_hp, int(max_hp * ratio)))
@@ -2893,7 +2934,7 @@ class CombatEngine:
                     9 if char.get_attr(f"{pl}引发延迟回合") == 0 and char.get_attr(f"{pl}触发HP比例") else
                     char.get_attr(f"{pl}type") or 0))
                 eff = {'type': ct, 'letter': letter}
-                for k in ['客体','作用半径','可调节性','成功率','成功率奖惩骰','可闪避性','可反击性','可格挡性','可贯穿性',
+                for k in ['客体','作用半径','射程','可调节性','成功率','成功率奖惩骰','可闪避性','可反击性','可格挡性','可贯穿性',
                           '致死值','致死值优劣','附加效果时长','持续回合','引发目标法术','引发延迟回合',
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
@@ -2913,8 +2954,8 @@ class CombatEngine:
                           'damage_moon_mult','consume_moon',
                           'heal_limit_not_dying']:
                     v = char.get_attr(f"{pl}{k}");
-                    if v is not None: eff[k] = v
-                for k in ['伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
+                    if f"{pl}{k}" in char.attrs: eff[k] = v
+                for k in ['客体','伤害骰','附加效果','护盾值','回复hp','回复san','回复mp','技能加减值',
                           '辅助效果','辅助效果值','其他辅助效果a','辅助效果值a',
                           '召唤个数','制造个数','制造花费回合数','召唤物模板','制造物模板',
                           '每回合伤害骰','吸血比例','属性削减',
@@ -2929,8 +2970,7 @@ class CombatEngine:
                 for k in ['持续回合','吟唱回合']:
                     vs = char.get_str(f"{pl}{k}")
                     if vs:
-                        try: eff[k] = roll_dice(str(vs))
-                        except Exception: eff[k] = 0
+                        eff[k] = vs
                 # Parse JSON-serialized complex fields (hp_thresholds etc.)
                 for k in ['hp_thresholds', 'exclude', 'eject_phases', 'on_enter_zone_damage', 'hp_threshold_grant',
                           '分发给总数公式','分发人数覆盖','分发削减顺序']:
@@ -2955,6 +2995,15 @@ class CombatEngine:
                 eff.setdefault('可贯穿性', 1 if ct==1 else 0)
                 eff.setdefault('成功率',0)
                 spell['effects'].append(eff)
+            # Buffs belonging to a domain must follow live domain membership,
+            # rather than becoming detached buffs on whoever was present at cast.
+            zones = [e for e in spell['effects'] if e.get('type') == 8]
+            if spell.get('类别') == 8 and zones:
+                for effect in spell['effects']:
+                    if effect.get('type') == 4:
+                        effect.update(type=8)
+                        for key in ('作用半径', '领域中心跟随'):
+                            effect[key] = effect.get(key) or zones[0].get(key, 0)
             spells.append(spell)
         char.spells = spells
         return spells
@@ -3132,6 +3181,15 @@ class CombatEngine:
                and e.get('spellIndex') == spell_index and e.get('remainingRounds', 0) > 0:
                 return e['remainingRounds']
         return 0
+
+    def end_skill_effects(self, uid, spell_index):
+        if spell_index <= 0:
+            return '请选择技能编号'
+        effects = self._get_effects()
+        kept = [e for e in effects if not (self._resolve_uid(e.get('sourceUserId', '')) == self._resolve_uid(uid)
+                and e.get('spellIndex') == spell_index and not e.get('sourcePassive') and e.get('type') != 'cooldown')]
+        self._set_effects(kept)
+        return f'已结束技能 {spell_index} 的 {len(effects)-len(kept)} 个持续效果'
 
     def _use_skill(self, uid, skill_num, args):
         """Execute .sN command — used by tournament AI loop."""
@@ -3604,7 +3662,7 @@ class CombatEngine:
             mods = _parse_attr_mods(eff.get('attributeDebuff', ''))
             if not mods:
                 continue
-            cp = parse_coord(eff.get('center', 'A1'))
+            cp = parse_coord(self._zone_caster_coord(eff, il))
             if not cp:
                 continue
             stackable = eff.get('stackable', 0)
@@ -3794,7 +3852,7 @@ class CombatEngine:
 
         # Radius filter for group effects that declare 作用半径
         radius = int(eff.get('作用半径', 0) or 0)
-        if radius > 0 and len(picked) > 1:
+        if radius > 0:
             cpos = None
             c_entry = next((e for e in self._get_initiative()
                             if self._resolve_uid(e['userId']) == base_uid), None)
@@ -3803,7 +3861,7 @@ class CombatEngine:
             if cpos:
                 kept = []
                 for uid in picked:
-                    ent = next((e for e in self._get_initiative() if e['userId'] == uid), None)
+                    ent = self._unit_il_entry(uid, self._get_initiative())
                     pos = parse_coord(ent.get('coord', '')) if ent else None
                     if not pos or max(abs(pos[0]-cpos[0]), abs(pos[1]-cpos[1])) <= radius:
                         kept.append(uid)
@@ -3883,6 +3941,7 @@ class CombatEngine:
 
     def _find_personal_item(self, uid, item_kind=None, item_name=None):
         from characters_data import ITEM_TEMPLATES
+        ITEM_TEMPLATES = getattr(self, '_item_templates_snapshot', ITEM_TEMPLATES)
         char = self.get_char(uid)
         if not char:
             return None
@@ -4023,6 +4082,15 @@ class CombatEngine:
 
     # ---- Unified _execute_spell (all 8 categories, all fixes applied) ----
     def _execute_spell(self, caster_id, target_id, spell):
+        # Duration dice are rolled on cast, never when merely listing skills.
+        if any(isinstance(e.get('持续回合'), str) or isinstance(e.get('吟唱回合'), str) for e in spell.get('effects', [])):
+            spell = dict(spell, effects=[dict(e) for e in spell['effects']])
+            for effect in spell['effects']:
+                for key in ('持续回合', '吟唱回合'):
+                    if isinstance(effect.get(key), str):
+                        effect[key] = roll_dice(effect[key])
+        if getattr(self, '_manual_attack_bp', ''):
+            spell = dict(spell, _command_bp=self._manual_attack_bp)
         char = self.get_char(caster_id)
         tname = self.get_char(target_id).name if target_id and target_id != caster_id else '自身'
         out = f'{char.name} 释放【{spell["name"]}】→ {tname}\n'
@@ -4168,7 +4236,7 @@ class CombatEngine:
                     and str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')]
         _orig_coord = ''
         if dmg_effs:
-            atk_range = _get_attack_range(spell_effect=dmg_effs[0])
+            atk_range = self._get_attack_range(spell_effect=dmg_effs[0])
             can_atk, _orig_coord = self._move_to_attack_range(caster_id, target_id, atk_range)
             if not can_atk:
                 return ActionExecutionResult(f'{char.name} 无法接近目标！（射程={atk_range}）', False, 'spell_rejected')
@@ -4430,7 +4498,7 @@ class CombatEngine:
                 elif ct == 5:
                     self._spell_plan_output += self._execute_summon_effect(
                         caster_id, target_id, eff, spell, is_passive_spell)
-                elif ct in (6, 7, 8, 9, 10, 11, 13, 14, 17, 18, 19):
+                elif ct in (6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19):
                     self._spell_plan_output += self._execute_misc_effect(
                         caster_id, target_id, eff, spell, is_passive_spell, eff_idx)
                 idx += 1
@@ -4507,7 +4575,7 @@ class CombatEngine:
                 shared_roll=shared_s_roll, shared_rank=None)
             if sid:
                 # Set initial MP from spell cost for unlimited_mp summons
-                tmpls_c = _SUMMON_TEMPLATES
+                tmpls_c = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
                 if tmpls_c is None:
                     from characters_data import SUMMON_TEMPLATES as tmpls_c
                 tmpl_data_c = tmpls_c.get(tmpl, {}) if tmpls_c else {}
@@ -4729,13 +4797,15 @@ class CombatEngine:
                 'on_enter_trigger_rate':eff.get('on_enter_trigger_rate',1.0),
                 'sourceBound': int(bool(eff.get('来源存活绑定'))),
                 'dyingFirstAid': int(bool(eff.get('领域急救'))),
-                'roundPulsesRemaining': int(eff.get('领域轮首结算次数', dur) or 0),
+                'roundPulsesRemaining': int(eff.get('领域轮首结算次数') or dur),
                 'healedTargets': {'hp': {}, 'mp': {}},
                 'creationRound': int((self._get_state() or {}).get('round', 1))}
             if eff.get('来源存活绑定') and is_passive_spell:
                 zone_entry['sourcePassive'] = True
             effects.append(zone_entry)
             self._set_effects(effects)
+            if eff.get('on_enter_mp_drain_pct') or eff.get('on_enter_attr_debuff'):
+                self._settle_zone_enters()
             immediate = int(eff.get('领域立即结算', 0) or 0)
             if immediate and (tick_heal_hp or tick_heal_mp):
                 result_rows = []
@@ -4816,6 +4886,15 @@ class CombatEngine:
             effects.append(bs_entry)
             self._set_effects(effects)
             out += f'  战意值光环已激活\n'
+
+        elif ct == 12:  # Data-configured special damage modifier.
+            effects = self._get_effects()
+            effects.append(dict(type='damageModifier', sourceUserId=caster_id, targetUserId=caster_id,
+                                variant=eff.get('variant', ''), remainingRounds=eff.get('持续回合', 1),
+                                spellName=spell['name'], spellIndex=spell['index'],
+                                sourcePassive=bool(is_passive_spell)))
+            self._set_effects(effects)
+            out += f'  特殊防护已生效：{eff.get("variant", "")}\n'
 
         elif ct == 13:  # deathPrevention — 残机替身
             effects = self._get_effects()
@@ -5049,7 +5128,7 @@ class CombatEngine:
         caster_buffs = [] if ignore_global else self._get_active_buffs(caster_id)
         skill_name = (spell or {}).get('name', '') or eff.get('技能名', '')
         inherent = eff.get('成功率奖惩骰', 0) or 0
-        bp = _calc_net_bp(caster_buffs, '', skill_name, extra_tokens=[inherent])
+        bp = _calc_net_bp(caster_buffs, '', skill_name, extra_tokens=[inherent, (spell or {}).get('_command_bp', '')])
         return roll_d100(bp)
 
     def _handle_spell_damage_effect(self, caster_id, target_id, eff, spell):
@@ -5805,7 +5884,7 @@ class CombatEngine:
         for entry in init_list:
             if not entry.get('isSummon'): continue
             if (self._get_combat_hp(entry['userId']) or 0) <= 0: continue
-            tmpl_data = _get_summon_template(entry.get('name', '')) or {}
+            tmpl_data = self._get_summon_template(entry.get('name', '')) or {}
             if not tmpl_data.get('replenish_allies'): continue
             moon_uid = entry['userId']
             moon_char = self.get_char(moon_uid)
@@ -5896,7 +5975,7 @@ class CombatEngine:
         pass  # Override
 
     def _process_zone_specials(self):
-        pass  # Override
+        return self._settle_zone_enters()
 
     def _check_trinity_merge(self):
         pass  # Override
@@ -5996,6 +6075,7 @@ class CombatEngine:
     def _apply_item_heal(self, item_name, target_id, metadata=None):
         """Apply an item's healing effect through the shared HP-heal path."""
         from characters_data import ITEM_TEMPLATES
+        ITEM_TEMPLATES = getattr(self, '_item_templates_snapshot', ITEM_TEMPLATES)
         item = ITEM_TEMPLATES[item_name]
         tchar = self.get_char(target_id)
         tname = tchar.name if tchar else target_id
@@ -6061,6 +6141,7 @@ class CombatEngine:
         """Consume a usable cake from inventory, or a same-team crafted pool.
         Returns (result_text, success)."""
         from characters_data import ITEM_TEMPLATES
+        ITEM_TEMPLATES = getattr(self, '_item_templates_snapshot', ITEM_TEMPLATES)
         tid = target_id or eater_id
         if not self.get_char(tid) or self._battle_team_of(tid) != self._battle_team_of(eater_id):
             return ('只能给同队存活或濒死单位食用蛋糕', False)
@@ -6096,6 +6177,7 @@ class CombatEngine:
     def _has_ready_cake(self, uid=None, target_id=None, item_kind=None):
         """Check usable cakes for a team (or personal inventory for uid)."""
         from characters_data import ITEM_TEMPLATES
+        ITEM_TEMPLATES = getattr(self, '_item_templates_snapshot', ITEM_TEMPLATES)
         if uid is None:
             for char in self.characters.values():
                 for entry in char.inventory:
@@ -6293,20 +6375,20 @@ class FullBattleEngine(CombatEngine):
         # ── protect_allies_on_hit: summon's allies gain immunity when it is attacked ──
         def_entry = self._unit_il_entry(def_uid, self._get_initiative())
         if def_entry and def_entry.get('isSummon'):
-            def_tmpl = _get_summon_template(def_entry.get('name', '')) or {}
+            def_tmpl = self._get_summon_template(def_entry.get('name', '')) or {}
             if def_tmpl.get('protect_allies_on_hit'):
                 owner_id = def_entry.get('ownerId')
                 def_name = def_entry.get('name', '')
                 il_clone = self._get_initiative()
                 for e_clone in il_clone:
                     if e_clone['userId'] != def_uid:
-                        is_same_type = e_clone.get('isSummon') and (_get_summon_template(e_clone.get('name', '')) or {}).get('protect_allies_on_hit')
+                        is_same_type = e_clone.get('isSummon') and (self._get_summon_template(e_clone.get('name', '')) or {}).get('protect_allies_on_hit')
                         is_owner_of = e_clone.get('baseUserId', e_clone['userId']) == owner_id or e_clone['userId'] == owner_id
                         if is_same_type or is_owner_of:
                             self._apply_immunity_buff(e_clone['userId'], def_uid)
                             lines.append(f'  {def_name}被攻击 → {e_clone.get("displayName", e_clone.get("name", "?"))} 获得免疫一次伤害！')
         # ── 射程移动 ──
-        atk_range = _get_attack_range(skill_name=skill_name)
+        atk_range = self._get_attack_range(skill_name=skill_name)
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
         if not can_atk:
             lines.append(f'{aname} 无法接近目标！（射程={atk_range}）')
@@ -7043,7 +7125,7 @@ class FullBattleEngine(CombatEngine):
         """Net reaction dice for a spell attack's defender (per-reaction skill)."""
         def_buffs = self._get_active_buffs(target_id)
         return _calc_net_bp(def_buffs, '', skill_name,
-                            extra_tokens=self._spell_reaction_extra(eff))
+                            extra_tokens=self._spell_reaction_extra(eff) + [getattr(self, '_manual_reaction_bp', '')])
 
     def _resolve_spell_dodge(self, caster_id, target_id, eff, spell, dmg_dice,
                               dodge_val, atk_rank=4):
@@ -7325,7 +7407,7 @@ class FullBattleEngine(CombatEngine):
         return "\n".join(lines)
 
     def _create_summon(self, caster_id, template_name, summon_group=None, shared_roll=None, shared_rank=None):
-        tmpls = _SUMMON_TEMPLATES
+        tmpls = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
         if tmpls is None:
             from characters_data import SUMMON_TEMPLATES as tmpls
         if tmpls is None:
@@ -7648,7 +7730,7 @@ class FullBattleEngine(CombatEngine):
         rep = group.get('representative_uid', key)
         rep_entry = next((e for e in il if e['userId'] == rep), None)
         saved = group.get('initiative_entry', {})
-        tmpl = _get_summon_template(data.get('name', '')) or {}
+        tmpl = self._get_summon_template(data.get('name', '')) or {}
         skills = data.get('skills', [])
         first = (skills or [{}])[0]
         view = dict(data)
@@ -7853,7 +7935,7 @@ class FullBattleEngine(CombatEngine):
             if eff.get("tickDmg"):
                 src_uid = eff.get('sourceUserId')
                 base_tick_dice = eff["tickDmg"]
-                for entry in il:
+                for entry in self._battle_unit_entries():
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
@@ -7867,7 +7949,7 @@ class FullBattleEngine(CombatEngine):
                     if eff.get('ally_safe') and entry.get('team') == zone_team:
                         continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
-                    pos_key = (ec, spell_name)
+                    pos_key = (self._resolve_uid(entry['userId']), spell_name, eff.get('effectKey', 'a'))
                     if not stackable and pos_key in processed_zone_positions:
                         continue
                     processed_zone_positions.add(pos_key)
@@ -7917,53 +7999,11 @@ class FullBattleEngine(CombatEngine):
         self._queue_zone_events(tick_results)
 
     def _process_zone_specials(self):
-        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects.
-
-        Only the one-time MP drain is settled here. Attribute penalties
-        (on_enter_attr_debuff) are versioned like 属性削减 and applied live by
-        _apply_zone_attr_penalties, so leaving the zone restores the value.
-        """
-        effects = self._get_effects(); il = self._get_initiative()
-        for eff in effects:
-            if eff.get("type") != "zone": continue
-            mp_drain_pct = eff.get("on_enter_mp_drain_pct", 0)
-            if not (mp_drain_pct > 0):
-                continue
-            cp = parse_coord(eff.get("center", "A1"))
-            if not cp:
-                continue
-            trigger_rate = eff.get("on_enter_trigger_rate", 1.0)
-            caster_uid = eff.get("sourceUserId", "")
-            entered = set(eff.get("_entered_ids", []))
-            for entry in il:
-                uid = entry["userId"]
-                if uid in entered: continue
-                ep = parse_coord(entry.get("coord", "")) if entry.get("coord") else None
-                if not ep: continue
-                if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > (eff.get("radius", 0) or 0):
-                    continue
-                if self._has_status(uid, '隔离'):
-                    continue
-                if not self._zone_includes(eff.get('filter', 35), uid, caster_uid, il):
-                    continue
-                if random.randint(1, 100) / 100.0 > trigger_rate: continue
-                entered.add(uid)
-                char = self.get_char(uid)
-                cmp = char.get_attr("魔力", 0) or 0
-                absorbed = int(cmp * mp_drain_pct)
-                char.set_attr("魔力", cmp - absorbed)
-                # Transfer drained MP to zone caster
-                if caster_uid:
-                    bc = self.get_char(caster_uid)
-                    bm = bc.get_attr("魔力", 0) or 0
-                    bmx = bc.get_attr("魔力上限", bm) or bm
-                    bc.set_attr("魔力", min(bm + absorbed, bmx))
-            eff["_entered_ids"] = list(entered)
-        self._set_effects(effects)
+        return self._settle_zone_enters()
 
     def _check_trinity_merge(self):
         """Generic summon merge: summons with same merge_group merge when only one survives."""
-        tmpls = _SUMMON_TEMPLATES
+        tmpls = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
         if tmpls is None:
             from characters_data import SUMMON_TEMPLATES as tmpls
         if tmpls is None:
@@ -8129,7 +8169,7 @@ class FastBattleEngine(FullBattleEngine):
 
     # ---- Summon system (same as FullBattleEngine) ----
     def _create_summon(self, caster_id, template_name, summon_group=None, shared_roll=None, shared_rank=None):
-        tmpls = _SUMMON_TEMPLATES
+        tmpls = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
         if tmpls is None:
             from characters_data import SUMMON_TEMPLATES as tmpls
         if tmpls is None:
@@ -8449,7 +8489,7 @@ class FastBattleEngine(FullBattleEngine):
             if eff.get("tickDmg"):
                 src_uid = eff.get('sourceUserId')
                 base_tick_dice = eff["tickDmg"]
-                for entry in il:
+                for entry in self._battle_unit_entries():
                     ec = entry.get("coord",""); ep = parse_coord(ec) if ec else None
                     if not ep: continue
                     if max(abs(ep[0]-cp[0]),abs(ep[1]-cp[1])) > eff["radius"]: continue
@@ -8463,7 +8503,7 @@ class FastBattleEngine(FullBattleEngine):
                     if eff.get('ally_safe') and entry.get('team') == zone_team:
                         continue
                     # Dedup: skip if this (coord, spellName) already processed by another non-stackable zone
-                    pos_key = (ec, spell_name)
+                    pos_key = (self._resolve_uid(entry['userId']), spell_name, eff.get('effectKey', 'a'))
                     if not stackable and pos_key in processed_zone_positions:
                         continue
                     processed_zone_positions.add(pos_key)
@@ -8512,53 +8552,11 @@ class FastBattleEngine(FullBattleEngine):
 
     # ---- Zone enter triggers (generalized) + 三合一 (generalized) ----
     def _process_zone_specials(self):
-        """Generic zone-enter triggers. Reads on_enter_* fields from zone effects.
-
-        Only the one-time MP drain is settled here. Attribute penalties
-        (on_enter_attr_debuff) are versioned like 属性削减 and applied live by
-        _apply_zone_attr_penalties, so leaving the zone restores the value.
-        """
-        effects = self._get_effects(); il = self._get_initiative()
-        for eff in effects:
-            if eff.get("type") != "zone": continue
-            mp_drain_pct = eff.get("on_enter_mp_drain_pct", 0)
-            if not (mp_drain_pct > 0):
-                continue
-            cp = parse_coord(eff.get("center", "A1"))
-            if not cp:
-                continue
-            trigger_rate = eff.get("on_enter_trigger_rate", 1.0)
-            caster_uid = eff.get("sourceUserId", "")
-            entered = set(eff.get("_entered_ids", []))
-            for entry in il:
-                uid = entry["userId"]
-                if uid in entered: continue
-                ep = parse_coord(entry.get("coord", "")) if entry.get("coord") else None
-                if not ep: continue
-                if max(abs(ep[0] - cp[0]), abs(ep[1] - cp[1])) > (eff.get("radius", 0) or 0):
-                    continue
-                if self._has_status(uid, '隔离'):
-                    continue
-                if not self._zone_includes(eff.get('filter', 35), uid, caster_uid, il):
-                    continue
-                if random.randint(1, 100) / 100.0 > trigger_rate: continue
-                entered.add(uid)
-                char = self.get_char(uid)
-                cmp = char.get_attr("魔力", 0) or 0
-                absorbed = int(cmp * mp_drain_pct)
-                char.set_attr("魔力", cmp - absorbed)
-                # Transfer drained MP to zone caster
-                if caster_uid:
-                    bc = self.get_char(caster_uid)
-                    bm = bc.get_attr("魔力", 0) or 0
-                    bmx = bc.get_attr("魔力上限", bm) or bm
-                    bc.set_attr("魔力", min(bm + absorbed, bmx))
-            eff["_entered_ids"] = list(entered)
-        self._set_effects(effects)
+        return self._settle_zone_enters()
 
     def _check_trinity_merge(self):
         """Generic summon merge: summons with same merge_group merge when only one survives."""
-        tmpls = _SUMMON_TEMPLATES
+        tmpls = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
         if tmpls is None:
             from characters_data import SUMMON_TEMPLATES as tmpls
         if tmpls is None:
@@ -8681,7 +8679,7 @@ class FastBattleEngine(FullBattleEngine):
         # 注意与 pen（伤害贯穿）区分——两者含义完全不同。
         bp_suffix = ''
         # ── 射程移动 ──
-        atk_range = _get_attack_range(skill_name=skill_name)
+        atk_range = self._get_attack_range(skill_name=skill_name)
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
         if not can_atk:
             return (def_uid, atk_uid, 0, f"射程不足 (range={atk_range})")
@@ -8908,7 +8906,7 @@ class FastBattleEngine(FullBattleEngine):
         if not enemies: return ""
         # ── 射程过滤 + 移动 ──
         bn_tmp, bv_tmp = char.get_best_melee()
-        atk_range = _get_attack_range(skill_name=bn_tmp)
+        atk_range = self._get_attack_range(skill_name=bn_tmp)
         reachable = []
         for e in enemies:
             # _can_melee 返回 (can_melee, fly_penalty) 元组，必须解包——

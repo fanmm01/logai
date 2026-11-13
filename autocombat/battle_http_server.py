@@ -76,8 +76,7 @@ def _debug_log(msg: str):
 # must happen BEFORE importing from battle_engine
 # WARNING: 此hack依赖 battle_engine.py 在函数内部使用延迟导入 characters_data。
 # 如果 battle_engine.py 改为顶层导入，此hack将失效，届时需考虑让引擎支持数据模块注入。
-import characters_data_pvp
-sys.modules['characters_data'] = characters_data_pvp
+import characters_data as characters_data_pvp
 
 from flask import Flask, request, jsonify
 
@@ -215,7 +214,7 @@ def _load_spells_from_chdata(engine, uid: str, ch_data: dict):
 
             # Effect type (>8 stored as attribute since spell loading only checks
             # int keys for type; types 9/10/11 are special triggers)
-            if 'type' in eff and eff['type'] > 8:
+            if 'type' in eff and eff['type'] > 0:
                 char.set_attr(f"{prefix_l}type", eff['type'])
 
             for k, v in eff.items():
@@ -1014,15 +1013,15 @@ class PvPFullBattleEngine(FullBattleEngine):
 
 _Q_TABLE_PVP_CACHE = None  # module-level cache to avoid re-parsing JSON every action
 
-def _load_q_table_pvp():
+def _load_q_table_pvp(path=None):
     """Try to load PvP Q-learning weights for AI opponents.
     Returns dict: {'solo': Q_solo, 'team': Q_team, 'summon': Q_summon}
     Result is cached — server restart needed to pick up weight file changes."""
     global _Q_TABLE_PVP_CACHE
-    if _Q_TABLE_PVP_CACHE is not None:
+    if path is None and _Q_TABLE_PVP_CACHE is not None:
         return _Q_TABLE_PVP_CACHE
     try:
-        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights_pvp.json')
+        weight_path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_weights.json')
         if not os.path.exists(weight_path):
             _Q_TABLE_PVP_CACHE = None  # cache the negative result too
             return None
@@ -1055,7 +1054,8 @@ def _load_q_table_pvp():
             result = {'solo': Q, 'team': Q, 'summon': defaultdict(lambda: defaultdict(float))}
         else:
             result = None
-        _Q_TABLE_PVP_CACHE = result
+        if path is None:
+            _Q_TABLE_PVP_CACHE = result
         return result
     except Exception:
         _Q_TABLE_PVP_CACHE = None
@@ -3598,6 +3598,8 @@ def submit_action(battle_id):
                     return jsonify({'error': True, 'message': '战斗尚未正式开始，请使用 .pr 开始战斗。准备阶段可用 .a m 移动位置。'}), 400
                 else:
                     output = ''  # no-op for unknown prep actions
+            elif re.fullmatch(r'\.s\d+ end', action):
+                output = engine.end_skill_effects(effective_uid, int(action[2:].split()[0]))
             elif action == '.i end':
                 # ── End turn ──
                 remaining_main = my_acts.get('主动', 0)
@@ -3627,7 +3629,8 @@ def submit_action(battle_id):
                     enemies_s = engine._enemy_target_entries(batch_summons[0]['userId'])
                     if not enemies_s:
                         return jsonify({'error': True, 'message': '没有可攻击的敌人'}), 400
-                    common_tid = enemies_s[0]['userId']
+                    requested = data.get('_ui_target') or target
+                    common_tid = requested if any(e['userId'] == requested for e in enemies_s) else enemies_s[0]['userId']
                     tgt_entry_common = engine._unit_il_entry(common_tid, il)
                     tgt_name = (tgt_entry_common or {}).get('name', common_tid)
 
@@ -3671,7 +3674,7 @@ def submit_action(battle_id):
                             header_s = f"斗殴→{tgt_name}"
                             lines_s = []
                             try:
-                                _, _, lines_s = engine._coc7_attack(sum_uid, common_tid, sum_bn, sum_bv, dd_s, p_s, l_s)
+                                _, _, lines_s = engine._coc7_attack(sum_uid, common_tid, sum_bn, sum_bv, dd_s, p_s, l_s, bp_suffix=data.get('bp_suffix', ''))
                             except ReactionNeeded as e_s:
                                 e_s.data['battle_id'] = battle_id
                                 if not is_human_defender:
@@ -4429,6 +4432,21 @@ def submit_reaction(battle_id):
     player_id = data.get('player_id', '')
     choice = data.get('choice', 'dodge')
 
+    if data.get('stop_auto'):
+        # Cancellation is visible to the next reaction even while a legacy
+        # action holds _lock for an AI batch. An in-flight single reaction finishes.
+        engine = _battles.get(battle_id)
+        if not engine:
+            return jsonify(error=True, message='战斗不存在'), 404
+        serial = str(data.get('serial', '')).upper()
+        controlled = [uid for uid, owners in getattr(engine, '_player_controllers', {}).items()
+                      if player_id in owners and (not serial or getattr(engine.get_char(uid), 'serial', '').upper() == serial)]
+        if not controlled:
+            return jsonify(error=True, message='只能停止自己控制单位的自动反应'), 403
+        for uid in controlled:
+            getattr(engine, '_auto_react', {}).pop(engine._resolve_uid(uid), None)
+        return jsonify(ok=True, message='已停止自动反应，后续反应请手动选择')
+
     if choice not in ('dodge', 'counter', 'block'):
         return jsonify({'error': True, 'message': '选择无效，请使用 dodge、counter 或 block'}), 400
 
@@ -4669,6 +4687,16 @@ def submit_reaction(battle_id):
             opts_str = '  '.join(valid_opts)
             return jsonify({'error': True, 'message': f'请指定反应类型：\n{opts_str}'}), 400
 
+        def_uid_check = pending.get('def_uid', '')
+        controllers_check = getattr(engine, '_player_controllers', {}).get(engine._resolve_uid(def_uid_check), [])
+        if def_uid_check != player_id and player_id not in controllers_check:
+            return jsonify(error=True, message='这个反应不是你的'), 403
+        suffix = data.get('bp_suffix', '')
+        if suffix not in ('', 'b', 'b2', 'b3', 'p', 'p2', 'p3'):
+            return jsonify(error=True, message='无效的反应奖惩骰'), 400
+        for key in ('def_bp_dodge', 'def_bp_counter', 'def_bp_block'):
+            pending[key] = _calc_net_bp([], '', None, [pending.get(key, pending.get('def_bp', '')), suffix])
+        engine._manual_reaction_bp = suffix
         # ── Now consume the pending reaction (validation passed) ──
         _pending_reactions.pop(battle_id, None)
 
@@ -4875,6 +4903,8 @@ def submit_reaction(battle_id):
 
         except Exception as e:
             return jsonify({'error': True, 'message': f'反应处理错误: {str(e)}'}), 500
+        finally:
+            engine._manual_reaction_bp = ''
 
 
 @app.route('/api/pvp/<battle_id>/hs', methods=['POST'])
@@ -6051,7 +6081,7 @@ def reload_char_data():
     try:
         importlib.invalidate_caches()
         importlib.reload(characters_data_pvp)
-        sys.modules['characters_data'] = characters_data_pvp
+        # Unified data source; no module redirection.
         # 同步 battle_engine 假模块的 SUMMON_TEMPLATES 引用
         _bem_mod = sys.modules.get('battle_engine')
         if _bem_mod:
@@ -6376,7 +6406,7 @@ if __name__ == '__main__':
     try:
         importlib.invalidate_caches()
         importlib.reload(characters_data_pvp)
-        sys.modules['characters_data'] = characters_data_pvp
+        # Unified data source; no module redirection.
         _bem_mod_init = sys.modules.get('battle_engine')
         if _bem_mod_init:
             _bem_mod_init._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES
@@ -6393,7 +6423,7 @@ if __name__ == '__main__':
             try:
                 importlib.invalidate_caches()
                 importlib.reload(characters_data_pvp)
-                sys.modules['characters_data'] = characters_data_pvp
+                # Unified data source; no module redirection.
                 _bem_mod = sys.modules.get('battle_engine')
                 if _bem_mod:
                     _bem_mod._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES

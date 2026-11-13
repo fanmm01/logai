@@ -6,7 +6,7 @@ import re, os
 BASE = os.path.dirname(os.path.abspath(__file__))  # = autocombat/
 
 FILES_IN_ORDER = [
-    'characters_data_pvp.py',
+    'characters_data.py',
     'battle_engine.py',
     'ai_trainer.py',
     'team_tables.py',
@@ -92,7 +92,7 @@ def main():
     # 将 sys.modules['characters_data'] 直接指向 characters_data_pvp 模块
     # （而非假模块拷贝）。这样 importlib.reload(characters_data_pvp) 后，
     # battle_engine 的 lazy import "from characters_data import ..." 会自动获得重载后的数据。
-    output_lines.append('sys.modules[\'characters_data\'] = characters_data_pvp\n')
+    output_lines.append('# Unified character data; canonical module is never redirected.\n')
     output_lines.append('_SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES  # backward compat\n')
     output_lines.append('_bem = _types.ModuleType(\'battle_engine\')\n')
     output_lines.append('_bem._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES\n')
@@ -104,7 +104,7 @@ def main():
     # Utility functions needed by ai_trainer.py, ai_battle.py, battle_http_server.py
     for _sym in ['roll_dice','roll_d100','is_in_melee_range','has_timing','has_object',
                  'parse_coord','format_coord','avg_damage','success_rank','rank_text',
-                 'max_damage','_get_attack_range','chebyshev_dist','_resolve_db',
+                 'max_damage','AUX_NAME_TO_CODE','_get_attack_range','chebyshev_dist','_resolve_db',
                  '_get_db_str','_calc_net_bp','season_status_roll','_parse_bp_token',
                  '_format_bp','_parse_attr_mods','ActionExecutionResult','action_committed']:
         output_lines.append(f'if \"{_sym}\" in dir():_bem.{_sym} = {_sym}\n')
@@ -131,7 +131,7 @@ def main():
     try:
         importlib.invalidate_caches()
         importlib.reload(characters_data_pvp)
-        sys.modules['characters_data'] = characters_data_pvp
+        # Canonical data module is shared by all entrypoints.
         if hasattr(characters_data_pvp, 'SUMMON_TEMPLATES'):
             _bem._SUMMON_TEMPLATES = characters_data_pvp.SUMMON_TEMPLATES
         char_count = len(characters_data_pvp.ALL_CHARACTERS) if hasattr(characters_data_pvp, 'ALL_CHARACTERS') else 0

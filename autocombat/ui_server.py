@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 from collections import OrderedDict
+from contextlib import contextmanager
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, send_from_directory
@@ -36,6 +37,12 @@ def register_ui(app, ns):
     bp = Blueprint('combat_ui', __name__)
     rooms, jobs, identities = {}, {}, {}
     guard = threading.RLock()
+    instance = os.environ.get('AUTOCOMBAT_UI_INSTANCE', '')
+    if not instance and '--port' in sys.argv:
+        index = sys.argv.index('--port')
+        instance = sys.argv[index + 1] if index + 1 < len(sys.argv) else ''
+    instance = instance if instance.isdigit() else '8889'
+    cookie_name = 'combat_ui_session' + ('' if instance == '8889' else '_' + instance)
     try:
         lan_ips = sorted({r[4][0] for r in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
                           if not r[4][0].startswith(('127.', '169.254.'))})
@@ -48,7 +55,9 @@ def register_ui(app, ns):
         return json.loads(json.dumps(value, ensure_ascii=False, default=lambda v: list(v) if isinstance(v, set) else str(v)))
 
     def session_id():
-        return identities.get(request.cookies.get('combat_ui_session', ''), '')
+        token = request.cookies.get(cookie_name, '')
+        saved = store.get('identity', token) if token else None
+        return identities.get(token, saved['player'] if saved else '')
 
     @app.before_request
     def isolate_ui_battles():
@@ -70,10 +79,11 @@ def register_ui(app, ns):
     def catalog():
         return [dict(serial=c['serial'], name=c['name'], attrs=c.get('attrs', {}),
                      spells=c.get('spells', []), color=COLORS[i % len(COLORS)],
-                     emblem=EMBLEMS[i % len(EMBLEMS)], role=ROLES[i % len(ROLES)],
+                     emblem=EMBLEMS[i % len(EMBLEMS)], role=c.get('role', ROLES[i] if i < len(ROLES) else '自定义 · 魔法'),
                      portrait=f"/ui/portraits/{c['serial']}.webp",
                      avatar=f"/ui/portraits/{c['serial']}-avatar.webp")
-                for i, c in enumerate(ns['characters_data_pvp'].ALL_CHARACTERS)]
+                for pos, c in enumerate(ns['characters_data_pvp'].ALL_CHARACTERS)
+                for i in [int(c['serial'][1:])-1 if re.fullmatch(r'Y\d+', c['serial']) else pos]]
 
     def room_for(code, host=False):
         room = rooms.get(code.upper())
@@ -91,6 +101,22 @@ def register_ui(app, ns):
             raise NotFound('对局已失效，请创建新房间')
         return eng
 
+    def clone_engine(eng):
+        # Immutable pinned weights are large. Share them in dry-run clones;
+        # clone mutable combat state only (especially for every movement cell).
+        q = getattr(eng, '_ui_q_table', None)
+        return copy.deepcopy(eng, {id(q): q} if q is not None else {})
+
+    @contextmanager
+    def room_random(room):
+        original = random.getstate()
+        random.setstate(room.get('rng', original))
+        try:
+            yield
+        finally:
+            room['rng'] = random.getstate()
+            random.setstate(original)
+
     def active(eng):
         il, st = eng._get_initiative(), eng._get_state() or {}
         idx = st.get('activeIndex', 0)
@@ -104,9 +130,7 @@ def register_ui(app, ns):
         base = eng._resolve_uid(uid)
         if base in room['controls']:
             return room['controls'][base]
-        entry = eng._unit_il_entry(base, eng._get_initiative()) or {}
-        owner = entry.get('ownerId') or eng._summon_members.get(base, {}).get('ownerId')
-        return room['controls'].get(eng._resolve_uid(owner), 'ai') if owner else 'ai'
+        return room['controls'].get(eng._summon_group_key(base), 'ai')
 
     def sync_controls(room, eng):
         eng._player_controllers = {}
@@ -184,6 +208,8 @@ def register_ui(app, ns):
                 spirit=group.get('battle_spirit', group.get('battleSpirit')),
                 statuses=eng._get_active_statuses(uid), buffs=eng._get_active_buffs(uid),
                 inventory=getattr(ch, 'inventory', []), controller=controller(room, eng, uid),
+                auto_reaction=reactions.state(room, eng, uid),
+                reaction_choices=['dodge', 'counter'] + (['block'] if ch.get_attr('可格挡', 0) else []),
                 move_remaining=max(0, eng._get_move_power(uid) - entry.get('_move_used', 0)),
                 actions=eng._get_my_actions(uid), phase=getattr(ch, 'phase', 1),
             ))
@@ -203,18 +229,26 @@ def register_ui(app, ns):
             defender = p.get('def_uid', p.get('target_uid', ''))
             reaction = dict(defender=eng._resolve_uid(defender), attacker=p.get('atk_name', ''),
                             defender_name=p.get('def_name', ''), skill=p.get('skill_name', ''),
-                            damage=p.get('dmg_dice', ''), roll=p.get('atk_result', p.get('atk_roll')),
+                            damage=p.get('dmg_dice', ''), roll=None if p.get('restim_mode') == 1 else p.get('atk_result', p.get('atk_roll')),
                             controller=controller(room, eng, defender),
                             choices=[k for k in ('dodge', 'counter', 'block') if p.get('can_' + k, k != 'block')])
         grave = list(getattr(eng, '_graveyard', {}).values())
+        effects = copy.deepcopy(eng._get_effects())
+        for effect in effects:
+            if effect.get('type') == 'zone':
+                effect['center'] = eng._zone_caster_coord(effect, il)
+                effect['affected'] = [u['uid'] for u in units if eng._zone_covers_uid(effect, u['uid'], il)]
         return clean(dict(state=st, map=eng._get_map(), initiative=il, units=units, turn=turn,
-                          effects=eng._get_effects(), graveyard=grave, reaction=reaction,
+                          effects=effects, graveyard=grave, reaction=reaction,
                           result=getattr(eng, '_battle_result', None), revision=room['revision']))
 
     def emit(room, kind, output=''):
         room['revision'] += 1
         eng = engine_for(room)
         sync_controls(room, eng)
+        reactions.clean(room, eng)
+        if 'tournaments' in app.extensions['combat_ui']:
+            app.extensions['combat_ui']['tournaments'].room_event(room, eng)
         extra = eng._drain_battle_events()
         if extra:
             output += '\n' + '\n'.join(extra)
@@ -230,7 +264,8 @@ def register_ui(app, ns):
         return dict(code=room['code'], name=room['name'], local=room['local'], host=room['host'],
                     me=session_id(), members=list(room['members'].values()), revision=room['revision'],
                     running=room['running'], speed=room['speed'], controls=room['controls'],
-                    snapshot=snapshot(room), history=room['history'] if history else [], invite_urls=invite_urls)
+                    snapshot=snapshot(room), history=room['history'] if history else [], invite_urls=invite_urls,
+                    tournament=tournaments.room_context(room))
 
     def valid_teams(data):
         valid = {c['serial'] for c in catalog()}
@@ -254,9 +289,16 @@ def register_ui(app, ns):
         entry = active(eng)
         if not entry or controller(room, eng, entry['userId']) != 'ai':
             return False
-        with ns['_lock']:
-            lines = ns['_run_ai_turns'](eng, Q=ns['_load_q_table_pvp'](), max_steps=1, ui_step=True)
+        with ns['_lock'], room_random(room):
+            lines = ns['_run_ai_turns'](eng, Q=eng._ui_q_table, max_steps=1, ui_step=True)
             eng._check_and_mark_end(eng._get_state())
+            if room.get('tournament_id') and eng._get_state().get('phase') == 'active' and eng._get_state().get('round', 0) > eng.max_rounds:
+                from ai_battle import BattleEngine
+                eng._battle_result = BattleEngine._timeout_verdict(eng)
+                st = eng._get_state()
+                st['phase'] = 'ended'
+                eng._set_state(st)
+                lines.append('达到季后赛回合上限，已按原规则完成超时判定')
             emit(room, 'ai', '\n'.join(lines))
         return True
 
@@ -273,12 +315,15 @@ def register_ui(app, ns):
                     rooms.pop(code, None)
                     return
                 delay = .85 / room['speed']
-                if room['running']:
+                if room['running'] or pending_for(room):
                     try:
-                        ai_step(room)
+                        if not reactions.step(room) and room['running']:
+                            ai_step(room)
                     except Exception:
                         app.logger.exception('UI AI step failed')
                         room['running'] = False
+                        for key in list(room.get('auto_reactions', {})):
+                            reactions.stop(room, key)
                         emit(room, 'error', 'AI 推进失败，已暂停。可以重试单步或由房主接管角色。')
             time.sleep(delay)
 
@@ -303,18 +348,26 @@ def register_ui(app, ns):
     def get_catalog():
         return jsonify(characters=clean(catalog()))
 
+    @bp.get('/api/ui/presets')
+    def get_presets():
+        from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
+        valid = {c['serial'] for c in catalog()}
+        return jsonify(presets=[dict(format=f, index=i, team=t, valid=all(s in valid for s in t))
+            for f, teams in [('2v2', TEAM_TABLES_2V2), ('3v3', TEAM_TABLES_3V3)] for i, t in enumerate(teams)])
+
     @bp.post('/api/ui/session')
     def get_session():
         data = body()
-        token = request.cookies.get('combat_ui_session', '')
-        sid = identities.get(token)
+        token = request.cookies.get(cookie_name, '')
+        sid = session_id()
         if not sid:
             token = secrets.token_urlsafe(32)
             sid = 'player_' + secrets.token_hex(8)
             identities[token] = sid
+            store.put('identity', dict(id=token, player=sid))
         name = str(data.get('name', '指挥官')).strip()[:20] or '指挥官'
         response = jsonify(id=sid, name=name)
-        response.set_cookie('combat_ui_session', token, httponly=True, samesite='Strict', max_age=86400 * 7)
+        response.set_cookie(cookie_name, token, httponly=True, samesite='Strict', max_age=86400 * 7)
         return response
 
     @bp.post('/api/ui/rooms')
@@ -333,6 +386,10 @@ def register_ui(app, ns):
                                               team_b=b, map_size=data.get('map_size', '10x10')))
             eng = ns['_battles'][battle_id]
             eng._ui_deferred_ai = True
+            eng._range_override_snapshot = getattr(ns['characters_data_pvp'], 'GLOBAL_RANGE_OVERRIDE', 0)
+            eng._summon_templates_snapshot = copy.deepcopy(ns['characters_data_pvp'].SUMMON_TEMPLATES)
+            eng._item_templates_snapshot = copy.deepcopy(ns['characters_data_pvp'].ITEM_TEMPLATES)
+            eng._ui_q_table = ns['_load_q_table_pvp']()
             local = data.get('local', True) is True
             ai_slots = data.get('ai_slots', [])
             if not isinstance(ai_slots, list) or any(not isinstance(s, str) for s in ai_slots):
@@ -347,6 +404,7 @@ def register_ui(app, ns):
                         host=sid, local=local, controls=controls, revision=0,
                         members={sid: dict(id=sid, name=str(data.get('player_name', '指挥官'))[:20], ready=True, spectator=False)},
                         history=[], requests=OrderedDict(), running=False, speed=1, updated=threading.Event(), touched=time.time())
+            room['rng'] = random.Random(data.get('seed', secrets.randbits(31))).getstate()
             rooms[code] = room
             emit(room, 'created', '战术室已就绪。调整角色控制权与站位后，开始本次演习。')
             threading.Thread(target=runner, args=(code,), daemon=True).start()
@@ -402,7 +460,7 @@ def register_ui(app, ns):
                         yield 'event: reset\ndata: {}\n\n'
                         return
                     events = [e for e in history if e['id'] > after]
-                    meta = dict(running=room['running'], speed=room['speed'], members=list(room['members'].values()), controls=room['controls'])
+                    meta = dict(running=room['running'], speed=room['speed'], members=list(room['members'].values()), controls=room['controls'], tournament=tournaments.room_context(room))
                     room['updated'].clear()
                 for event in events:
                     after = event['id']
@@ -433,11 +491,14 @@ def register_ui(app, ns):
                 room_for(code, True)
                 if op == 'assign':
                     uid, who = data.get('uid'), data.get('controller')
-                    if uid not in room['controls'] or (who != 'ai' and (who not in room['members'] or room['members'][who]['spectator'])):
+                    valid_units = {eng._resolve_uid(e['userId']) for e in eng._battle_unit_entries()}
+                    if uid not in valid_units or (who != 'ai' and (who not in room['members'] or room['members'][who]['spectator'])):
                         raise BadRequest('请选择有效角色和控制者')
                     if pending_for(room):
                         raise Conflict('请先处理当前防御反应')
-                    room['controls'][uid] = who
+                    room['controls'][eng._summon_group_key(uid)] = who
+                    if room.get('tournament_id') and who != 'ai':
+                        room['manual'] = True
                     sync_controls(room, eng)
                 elif op == 'start':
                     if not all(m['ready'] for m in room['members'].values() if not m['spectator']):
@@ -479,6 +540,9 @@ def register_ui(app, ns):
             raise BadRequest('行动和目标必须为字符串')
         physical_ids = {eng._resolve_uid(e['userId']) for e in eng._battle_unit_entries()}
         grave_ids = set(getattr(eng, '_graveyard', {}))
+        target_mode = target if target in ('R', 'RP') else ''
+        if target_mode:
+            target = ''
         if target and target not in physical_ids | grave_ids:
             raise BadRequest('目标单位不存在')
         if not re.fullmatch(r'\.s\d+|\.a s\d+|\.a m [A-P](?:[1-9]|1[0-6])|\.a eat|\.a give|\.i end', cmd):
@@ -486,7 +550,11 @@ def register_ui(app, ns):
         if pending_for(room):
             raise Conflict('请先处理当前防御反应')
         slot_uid = entry['userId']
-        payload = dict(player_id=who, action=cmd, target=target, args='', _ui_target=target or None)
+        payload = dict(player_id=who, action=cmd, target=target, args=target_mode, _ui_target=target or None)
+        for key in ('skill_name', 'skill_value', 'damage_dice', 'penetration', 'lethality',
+                    'count', 'bp_suffix', 'restim_mode', 'allow_failed_reaction'):
+            if key in data:
+                payload[key] = data[key]
         if cmd == '.a give':
             if not target or eng._battle_team_of(target) != eng._battle_team_of(uid) or eng._resolve_uid(target) == eng._resolve_uid(uid):
                 raise BadRequest('请选择其他同队角色')
@@ -531,7 +599,11 @@ def register_ui(app, ns):
                     e.update(coord=coord, _anchor_coord=coord)
             eng._set_initiative(il)
             return {'output': f'{eng.get_char(uid).name} 调整站位至 {coord}'}
-        return invoke('submit_action', bid, payload)
+        eng._manual_attack_bp = data.get('bp_suffix', '')
+        try:
+            return invoke('submit_action', bid, payload)
+        finally:
+            eng._manual_attack_bp = ''
 
     @bp.post('/api/ui/rooms/<code>/preview')
     def preview_action(code):
@@ -543,10 +615,11 @@ def register_ui(app, ns):
                 raise Conflict('战况已更新，请重新选择行动')
             # Run the actual handler on an isolated engine and restore random state.
             # Thus previews cannot charge resources, reveal future dice, or drift rules.
-            clone = copy.deepcopy(eng)
+            clone = clone_engine(eng)
             temp = 'preview_' + secrets.token_hex(8)
             ns['_battles'][temp] = clone
             rng = random.getstate()
+            random.setstate(room.get('rng', rng))
             before = clean((clone._get_actions(), clone.storage, clone.characters))
             try:
                 result = execute(room, clone, data, temp)
@@ -587,8 +660,12 @@ def register_ui(app, ns):
                         if prep:
                             valid = coord not in md['occupants'] and not md.get('obstacles', {}).get(coord)
                         else:
-                            clone = copy.deepcopy(eng)
-                            valid = clone._get_my_actions(uid).get('附加', 0) > 0 and clone._get_my_actions(uid).get('主动', 0) > 0 and ns['action_committed'](clone._move_explicit(uid, coord))
+                            clone = clone_engine(eng)
+                            rng = random.getstate()
+                            try:
+                                valid = clone._get_my_actions(uid).get('附加', 0) > 0 and clone._get_my_actions(uid).get('主动', 0) > 0 and ns['action_committed'](clone._move_explicit(uid, coord))
+                            finally:
+                                random.setstate(rng)
                         if valid:
                             cells.append(coord)
                 return jsonify(cells=cells, targets=[], revision=room['revision'])
@@ -626,21 +703,22 @@ def register_ui(app, ns):
             if data.get('revision') != room['revision']:
                 raise Conflict('战况已更新，请重新选择行动')
             eng = engine_for(room)
-            if data.get('choice'):
-                p = pending_for(room)
-                if not p:
-                    raise Conflict('当前没有待处理的反应')
-                if controller(room, eng, p.get('def_uid', '')) != session_id():
-                    raise Forbidden('此防御反应需要由对应角色的玩家处理')
-                choice = data['choice']
-                if choice not in ('dodge', 'counter', 'block') or not p.get('can_' + choice, choice != 'block'):
-                    raise BadRequest('该反应方式不可用')
-                result = invoke('submit_reaction', room['battle_id'], dict(player_id=session_id(), choice=choice))
-                kind = 'reaction'
-            else:
-                result = execute(room, eng, data, room['battle_id'])
-                kind = 'action'
-            eng._check_and_mark_end(eng._get_state())
+            with room_random(room):
+                if data.get('choice'):
+                    p = pending_for(room)
+                    if not p:
+                        raise Conflict('当前没有待处理的反应')
+                    if controller(room, eng, p.get('def_uid', '')) != session_id():
+                        raise Forbidden('此防御反应需要由对应角色的玩家处理')
+                    choice = data['choice']
+                    if choice not in ('dodge', 'counter', 'block') or not p.get('can_' + choice, choice != 'block'):
+                        raise BadRequest('该反应方式不可用')
+                    result = {'output': reactions.resolve(room, choice, data.get('bp_suffix', ''))}
+                    kind = 'reaction'
+                else:
+                    result = execute(room, eng, data, room['battle_id'])
+                    kind = 'action'
+                eng._check_and_mark_end(eng._get_state())
             emit(room, kind, result.get('output', ''))
             response = public(room)
             room['requests'][key] = True
@@ -649,75 +727,19 @@ def register_ui(app, ns):
             room['touched'] = time.time()
             return jsonify(response)
 
-    @bp.post('/api/ui/simulations')
-    def start_simulation():
-        data = body()
-        if not session_id():
-            raise Forbidden('请先建立玩家会话')
-        valid_teams(data)
-        try:
-            n, seed, season = int(data.get('n', 100)), int(data.get('seed', 2026)), int(data.get('season', 50))
-        except (ValueError, TypeError):
-            raise BadRequest('场数、种子和赛季状态必须为整数')
-        if not 1 <= n <= 1000 or not 0 <= season <= 100 or not 0 <= seed <= 2**31 - 1:
-            raise BadRequest('场数为 1–1000，赛季状态为 0–100，种子为非负 32 位整数')
-        with guard:
-            if any(j['status'] == 'running' for j in jobs.values()):
-                raise Conflict('已有批量模拟正在运行，请等待完成')
-            jid = secrets.token_hex(8)
-            params = dict(team_a=data['team_a'], team_b=data['team_b'], map_size=data.get('map_size', '10x10'), n=n, seed=seed, season=season)
-            jobs[jid] = dict(id=jid, owner=session_id(), status='running', completed=0, params=params, result=None)
-
-        def work():
-            try:
-                proc = subprocess.Popen([sys.executable, '-u', str(ROOT / 'ui_sim_worker.py')], stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8',
-                                        cwd=ROOT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-                proc.stdin.write(json.dumps(params) + '\n')
-                proc.stdin.close()
-                for line in proc.stdout:
-                    row = json.loads(line)
-                    with guard:
-                        jobs[jid].update(row)
-                error = proc.stderr.read()
-                code = proc.wait()
-                proc.stdout.close()
-                proc.stderr.close()
-                if code != 0:
-                    raise RuntimeError(error[-600:] or '模拟进程失败')
-                with guard:
-                    if jobs[jid]['result'] is None:
-                        raise RuntimeError('模拟没有返回结果')
-                    jobs[jid]['status'] = 'completed'
-            except Exception as exc:
-                with guard:
-                    jobs[jid].update(status='failed', message=str(exc))
-        threading.Thread(target=work, daemon=True).start()
-        return jsonify(jobs[jid])
-
-    @bp.get('/api/ui/simulations/<jid>')
-    def get_simulation(jid):
-        with guard:
-            job = jobs.get(jid)
-            if not job or job['owner'] != session_id():
-                raise NotFound('模拟任务不存在')
-            return jsonify(job)
-
-    @bp.get('/api/ui/simulations/<jid>/export')
-    def export_simulation(jid):
-        with guard:
-            job = jobs.get(jid)
-            if not job or job['owner'] != session_id():
-                raise NotFound('模拟任务不存在')
-            if job['status'] != 'completed':
-                raise Conflict('请等待模拟完成')
-            if request.args.get('format') == 'csv':
-                buf = io.StringIO()
-                row = dict(**job['params'], **job['result'])
-                writer = csv.DictWriter(buf, fieldnames=list(row))
-                writer.writeheader()
-                writer.writerow(row)
-                return Response('\ufeff' + buf.getvalue(), mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename=simulation-{jid}.csv'})
-            return Response(json.dumps(job, ensure_ascii=False, indent=2), mimetype='application/json', headers={'Content-Disposition': f'attachment; filename=simulation-{jid}.json'})
-
+    from ui_reactions import Reactions
+    reactions = Reactions(bp, locals())
+    app.extensions['combat_ui']['reactions'] = reactions
+    from ui_management import Management
+    from ui_store import Store
+    from ui_tasks import Tasks
+    management = Management(bp, locals())
+    store = Store(management.runtime / ('browser.sqlite3' if instance == '8889' else f'browser-{instance}.sqlite3'))
+    tasks = Tasks(bp, locals(), management, store)
+    app.extensions['combat_ui'].update(management=management, store=store, tasks=tasks)
+    from ui_tournaments import Tournaments
+    tournaments = Tournaments(bp, locals(), management, store)
+    app.extensions['combat_ui']['tournaments'] = tournaments
+    from ui_utilities import register_utilities
+    register_utilities(bp, locals())
     app.register_blueprint(bp)

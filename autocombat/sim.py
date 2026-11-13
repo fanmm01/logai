@@ -320,9 +320,10 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     wins_a = wins_b = timeouts = total_rds = 0
     t0 = time.time()
     for bi in range(N):
-        eng = BattleEngine(delay=0, quiet=True)
-        _setup(eng)
-        r = eng.run_battle(t.ai_map)
+        t.char_season_status = ({s: season_status.get(s, 50) for s in t.char_map} if isinstance(season_status, dict)
+                               else {s: season_status if season_status is not None else random.randint(0, 100) for s in t.char_map})
+        t._parallel_prelim = True
+        _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.WINLOSS, delay=0)
         if r['winner'] == 'Y': wins_a += 1
         else: wins_b += 1
         total_rds += r.get('rounds', 0)
@@ -339,6 +340,20 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     return wins_a, wins_b, total_rds / N, timeouts, elapsed
 
 
+def compute_matrix(t, teams, count, map_size, season_status=None, progress=None):
+    """Shared CLI/browser matrix; each unordered matchup is simulated once."""
+    matrix = [[0.5 if i == j else None for j in range(len(teams))] for i in range(len(teams))]
+    done = 0
+    for i in range(len(teams)):
+        for j in range(i + 1, len(teams)):
+            a, b, _, _, _ = run_battle_pair(t, teams[i], teams[j], map_size, count, season_status=season_status)
+            matrix[i][j], matrix[j][i] = a / count, b / count
+            done += 1
+            if progress:
+                progress(done, matrix)
+    return matrix
+
+
 def compute_contribution_from_matrix(matrix, teams, nm):
     """Compute 3 contribution algorithms from win-rate matrix.
     Algorithm 1: within-format in/out rate diff
@@ -348,7 +363,8 @@ def compute_contribution_from_matrix(matrix, teams, nm):
     for t in teams:
         for s in t: all_serials.add(s)
 
-    # Algorithm 1: avg win rate when in team vs overall avg
+    all_serials = sorted(all_serials)
+    # Algorithm 1: avg win rate when in team vs overall avg (exclude self cells).
     char_rates = {}
     for s in all_serials:
         rates = []
@@ -359,7 +375,7 @@ def compute_contribution_from_matrix(matrix, teams, nm):
                 rates.append(matrix[i][j])
         char_rates[s] = sum(rates) / len(rates) if rates else 0
 
-    overall_avg = sum(sum(row) for row in matrix) / max(1, len(matrix) ** 2 - len(matrix))
+    overall_avg = sum(matrix[i][j] for i in range(len(matrix)) for j in range(len(matrix)) if i != j) / max(1, len(matrix) ** 2 - len(matrix))
     algo1 = [(s, nm.get(s, s), round(char_rates.get(s, 0) - overall_avg, 4)) for s in all_serials]
     algo1.sort(key=lambda x: -x[2])
 
@@ -452,40 +468,12 @@ def mode_single(argv, verbose=False):
             _tmp_handler.setFormatter(logging.Formatter('%(message)s'))
             ai_logger.addHandler(_tmp_handler)
 
-        # Setup fighting characters (same logic as run_battle_pair)
-        a_uids = [t.char_map[s] for s in team_a]
-        b_uids = [t.char_map[s] for s in team_b]
-        fighting_serials = set(team_a + team_b)
-        eng = BattleEngine(display_level=DisplayLevel.DEBUG, delay=0.4, quiet=False)
-        for c in ALL_CHARACTERS:
-            if c['serial'] not in fighting_serials:
-                continue
-            uid = t.char_map[c['serial']]
-            load_character_to_engine(eng, c, uid)
-            if not c.get('pre_transformed'):
-                eng.process_command(uid, '.hs')
-        for uid in a_uids: t.ai_map[uid].team = 'Y'
-        for uid in b_uids: t.ai_map[uid].team = 'X'
-        eng._ai_react_dodge_w = {}; eng._ai_react_counter_w = {}; eng._ai_react_block_w = {}
-        for uid in a_uids + b_uids:
-            ai = t.ai_map.get(uid)
-            if ai:
-                eng._ai_react_dodge_w[uid] = ai.react_dodge_w
-                eng._ai_react_counter_w[uid] = ai.react_counter_w
-                eng._ai_react_block_w[uid] = getattr(ai, 'react_block_w', 0)
-        # Build per-uid season status mapping
-        if isinstance(char_season, dict):
-            uid_season = {}
-            for serial, uid in zip(team_a + team_b, a_uids + b_uids):
-                uid_season[uid] = char_season.get(serial, 50)
-        else:
-            uid_season = char_season
-        eng.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
+        t.char_season_status = char_season
 
         print(f'\n{"="*60}')
         print(f'  详细战斗回放: {a_disp} v.s. {b_disp}')
         print(f'{"="*60}\n')
-        r = eng.run_battle(t.ai_map)
+        _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.DEBUG, delay=0.4)
         print(f'\n{"="*60}')
         print(f'  结果: {"Y队" if r["winner"]=="Y" else "X队"} 胜 ({r["rounds"]}回合)')
         if r.get('timeout'):
@@ -561,18 +549,7 @@ def mode_table(argv):
     done = 0
     t0 = time.time()
 
-    for i in range(n):
-        for j in range(n):
-            if i == j: matrix[i][j] = 0.5; continue
-            wins_a, wins_b, _, _, _ = run_battle_pair(t, teams[i], teams[j], map_size, N, quiet=True, season_status=char_season)
-            matrix[i][j] = wins_a / N
-            matrix[j][i] = wins_b / N  # symmetric, already computed
-            done += 1
-            elapsed = time.time() - t0
-            remain = total - done
-            eta = remain / max(1, done) * elapsed
-            print(f'  [{done}/{total}] {team_names[i]} vs {team_names[j]}: '
-                  f'{wins_a/N*100:.0f}%-{wins_b/N*100:.0f}%  ETA {eta:.0f}s', flush=True)
+    matrix = compute_matrix(t, teams, N, map_size, char_season)
 
     elapsed = time.time() - t0
 
@@ -634,15 +611,14 @@ if __name__ == '__main__':
         if len(argv) > 1 and argv[1] == '--mode':
             if len(argv) > 2 and argv[2] == 'table':
                 mode_table(argv)
-                time.sleep(120)
             elif len(argv) > 2 and argv[2] == 'prelim':
                 mode_prelim(argv)
-                time.sleep(120)
             else:
                 print('Usage: --mode table --format 1v1|2v2|3v3 [--teams "..."]\n'
                     '       --mode prelim [-n ROUNDS] [--workers W] [--format 1v1|2v2|3v3|all]'
                     ' [-s SEED] [--season S]')
         else:
             mode_single(argv, verbose=verbose)
-    except:
-        pass
+    except KeyboardInterrupt:
+        print('模拟已取消', file=sys.stderr)
+        sys.exit(130)

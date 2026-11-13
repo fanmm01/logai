@@ -35,8 +35,9 @@ def battle_classes():
     """Load the actual tournament classes without executing module logger setup."""
     import ai_trainer as trainer
     tree = ast.parse((ROOT / 'ai_battle.py').read_text(encoding='utf-8'))
-    classes = [n for n in tree.body if isinstance(n, ast.ClassDef)
-               and n.name in ('DisplayLevel', 'AIController', 'BattleEngine')]
+    classes = [n for n in tree.body if
+               (isinstance(n, ast.ClassDef) and n.name in ('DisplayLevel', 'AIController', 'BattleEngine'))
+               or (isinstance(n, ast.FunctionDef) and n.name == 'round_hp_line')]
     logs = []
     ns = dict(FullBattleEngine=be.FullBattleEngine, random=random, math=math, re=re,
               time=time, MAX_ROUNDS_PRELIM=35, battle_log=lambda level, msg: logs.append((level, msg)),

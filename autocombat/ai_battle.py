@@ -705,6 +705,64 @@ class AIController:
 #  Battle Engine
 # ============================================================
 
+def round_hp_line(engine, round_number, initiative=None):
+    """The canonical ai_battle round-start HP display, also used by browser replays."""
+    il = initiative if initiative is not None else engine._get_initiative()
+    # Collect summon HP by owner (living summons only)
+    summon_total = {}       # ownerId → total summon HP
+    summon_detail = {}       # ownerId → {summon_name: hp} for 斯瑞提卡
+    for e in engine._battle_unit_entries():
+        if not e.get('isSummon'): continue
+        if e.get('_suppressed', False): continue  # 跳过被抑制的召唤物槽
+        owner = engine._resolve_uid(e.get('ownerId', ''))
+        if not owner: continue
+        shp = engine._get_combat_hp(e['userId']) or 0
+        if shp <= 0: continue
+        summon_total[owner] = summon_total.get(owner, 0) + shp
+        sname = re.sub(r'\s*\(行动\d+\)\s*', '', e.get('name', '?'))
+        d = summon_detail.setdefault(owner, {})
+        d[sname] = d.get(sname, 0) + shp
+
+    y_hp_parts = []
+    x_hp_parts = []
+    seen_y_uids = set()
+    seen_x_uids = set()
+    for e in il:
+        if e.get('isSummon'): continue
+        if e.get('_suppressed', False): continue  # 不显示被抑制条目
+        base = e.get('baseUserId', e['userId'])
+        uid = e['userId']
+        if e.get('team') == 'Y':
+            if base in seen_y_uids:
+                continue
+            seen_y_uids.add(base)
+        else:
+            if base in seen_x_uids:
+                continue
+            seen_x_uids.add(base)
+        hp = engine._get_combat_hp(uid) or 0
+        name = e.get('name', uid)
+        # Strip " (行动N)" suffix from multi-action slot names
+        name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
+        # Append summon HP suffix
+        shp = summon_total.get(engine._resolve_uid(uid), 0)
+        if shp > 0:
+            char = engine.get_char(uid)
+            if char and char.get_attr('召唤物HP单独显示', 0) == 1:
+                details = summon_detail.get(uid, {})
+                parts = ''.join(f'{sn}{sh}' for sn, sh in details.items())
+                hp_str = f'{name}(HP:{hp}|{parts})'
+            else:
+                hp_str = f'{name}(HP:{hp}|召{shp})'
+        else:
+            hp_str = f'{name}(HP:{hp})'
+        if e.get('team') == 'Y':
+            y_hp_parts.append(hp_str)
+        else:
+            x_hp_parts.append(hp_str)
+    return f'    第{round_number}回合 Y: {", ".join(y_hp_parts)} | X: {", ".join(x_hp_parts)}'
+
+
 class BattleEngine(FullBattleEngine):
     def __init__(self, display_level=DisplayLevel.WINLOSS, delay=0.4, quiet=False, max_rounds=None):
         super().__init__()
@@ -877,59 +935,7 @@ class BattleEngine(FullBattleEngine):
                         x_display = '+'.join(x_header) if x_header else '?'
                         _bl('info', f'  ---- Y队：{y_display} v.s. X队：{x_display} ----')
                     if self.display_level >= DisplayLevel.ROUND:
-                        # Collect summon HP by owner (living summons only)
-                        summon_total = {}       # ownerId → total summon HP
-                        summon_detail = {}       # ownerId → {summon_name: hp} for 斯瑞提卡
-                        for e in self._battle_unit_entries():
-                            if not e.get('isSummon'): continue
-                            if e.get('_suppressed', False): continue  # 跳过被抑制的召唤物槽
-                            owner = self._resolve_uid(e.get('ownerId', ''))
-                            if not owner: continue
-                            shp = self._get_combat_hp(e['userId']) or 0
-                            if shp <= 0: continue
-                            summon_total[owner] = summon_total.get(owner, 0) + shp
-                            sname = re.sub(r'\s*\(行动\d+\)\s*', '', e.get('name', '?'))
-                            d = summon_detail.setdefault(owner, {})
-                            d[sname] = d.get(sname, 0) + shp
-
-                        y_hp_parts = []
-                        x_hp_parts = []
-                        seen_y_uids = set()
-                        seen_x_uids = set()
-                        for e in il:
-                            if e.get('isSummon'): continue
-                            if e.get('_suppressed', False): continue  # 不显示被抑制条目
-                            base = e.get('baseUserId', e['userId'])
-                            uid = e['userId']
-                            if e.get('team') == 'Y':
-                                if base in seen_y_uids:
-                                    continue
-                                seen_y_uids.add(base)
-                            else:
-                                if base in seen_x_uids:
-                                    continue
-                                seen_x_uids.add(base)
-                            hp = self._get_combat_hp(uid) or 0
-                            name = e.get('name', uid)
-                            # Strip " (行动N)" suffix from multi-action slot names
-                            name = re.sub(r'\s*\(行动\d+\)\s*', '', name)
-                            # Append summon HP suffix
-                            shp = summon_total.get(self._resolve_uid(uid), 0)
-                            if shp > 0:
-                                char = self.get_char(uid)
-                                if char and char.get_attr('召唤物HP单独显示', 0) == 1:
-                                    details = summon_detail.get(uid, {})
-                                    parts = ''.join(f'{sn}{sh}' for sn, sh in details.items())
-                                    hp_str = f'{name}(HP:{hp}|{parts})'
-                                else:
-                                    hp_str = f'{name}(HP:{hp}|召{shp})'
-                            else:
-                                hp_str = f'{name}(HP:{hp})'
-                            if e.get('team') == 'Y':
-                                y_hp_parts.append(hp_str)
-                            else:
-                                x_hp_parts.append(hp_str)
-                        _bl('info', f'    第{rc}回合 Y: {", ".join(y_hp_parts)} | X: {", ".join(x_hp_parts)}')
+                        _bl('info', round_hp_line(self, rc, il))
                 dead_owners = {e['userId'] for e in il
                                if not e.get('isSummon') and self._is_final_dead(e['userId'])}
                 # Also track resolved base UIDs so we can clean up summons whose ownerId

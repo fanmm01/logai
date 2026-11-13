@@ -1907,6 +1907,23 @@ function makeECmd(baseName) {
         return seal.ext.newCmdExecuteResult(true);
       }
       const reactType3 = args3[0].toLowerCase();
+      if (reactType3 === 'stop' || reactType3 === '停止') {
+        let stopSerial = args3[1] ? args3[1].toUpperCase() : '';
+        if (!stopSerial) {
+          const binding = ext.storageGet(`bta_bind_${gid}_${_eActingId}`);
+          if (binding) { try { stopSerial = JSON.parse(binding).serial || ''; } catch (_) {} }
+        }
+        const result = await pvpFetch(`/api/pvp/${_battleId}/react`, { player_id: _eActingId, stop_auto: true, serial: stopSerial });
+        if (!result.error) {
+          if (stopSerial) ext.storageSet(`bta_react_count_${gid}_${stopSerial}`, '');
+          else for (let i = 1; i <= 30; i++) {
+            const raw = ext.storageGet(`bta_serial_${gid}_Y${i}`);
+            if (raw) { try { if (JSON.parse(raw).includes(_eActingId)) ext.storageSet(`bta_react_count_${gid}_Y${i}`, ''); } catch (_) {} }
+          }
+        }
+        seal.replyToSender(ctx, msg, result.message || '已停止自动反应');
+        return seal.ext.newCmdExecuteResult(true);
+      }
       const isDodge3 = reactType3 === '闪避' || reactType3 === 'd' || reactType3 === '闪' || reactType3 === 'dodge';
       const isBlock3 = reactType3 === '格挡' || reactType3 === 'block' || reactType3 === 'b' || reactType3 === '盾';
       const isCounter3 = reactType3 === '反击' || reactType3 === 'c' || reactType3 === 'counter' || reactType3 === '反';
@@ -2044,6 +2061,7 @@ function makeECmd(baseName) {
       const _reactPayload = {
         player_id: _eActingId,
         choice: choice3,
+        bp_suffix: baseName.slice(1),
         auto_react_retry: seal.ext.getIntConfig(ext, '自动反应不适用时重试'),
       };
       if (reactCount3 > 1) {

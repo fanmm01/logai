@@ -1754,12 +1754,14 @@ class QTrainer:
         q_team = serialize_q(self.Q_team)
         q_summon = serialize_q(self.Q_summon)
         weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
-        with open(weight_path, 'w', encoding='utf-8') as f:
+        pending_path = weight_path + '.tmp'
+        with open(pending_path, 'w', encoding='utf-8') as f:
             json.dump({'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon,
                        'stats': stats_log, 'params': {
                 'generations': GENERATIONS, 'battles_per_gen': BATTLES_PER_GEN,
                 'alpha': ALPHA, 'gamma': GAMMA, 'temperature': 1.0
             }}, f, ensure_ascii=False, indent=2)
+        os.replace(pending_path, weight_path)
         log(f'Saved Q-tables to {weight_path}')
         return {'solo': self.Q_solo, 'team': self.Q_team, 'summon': self.Q_summon}
 
@@ -1783,7 +1785,7 @@ def load_q_table(path=None):
                 parts = key.split('__')
                 if len(parts) < 2:
                     skipped += 1; continue
-                state_str, action = parts[0], parts[1]
+                state_str, action = parts[0], '__'.join(parts[1:])
                 try:
                     state = tuple(int(v) for v in state_str.split('|'))
                 except ValueError:
