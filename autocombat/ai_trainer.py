@@ -706,7 +706,7 @@ def get_available_actions(engine, uid):
             my_summons.add(e.get('name', ''))
 
     filtered = []
-    has_y14_target = not (engine._is_y14(uid) or engine._is_y16(uid)) or bool(engine._enemy_target_entries(uid))
+    has_y14_target = not (engine._is_y14(uid) or engine._is_y16(uid) or engine._is_y17(uid)) or bool(engine._enemy_target_entries(uid))
     for ak, an in _ACTION_CACHE[phase_key]:
         if ak.startswith('BASIC_ATTACK') and not has_y14_target:
             continue
@@ -750,7 +750,7 @@ def get_available_actions(engine, uid):
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
                     if engine._is_y17(uid):
-                        if not (engine._y17_chant(uid) and engine._y17_chant(uid)['spellIndex'] == idx):
+                        if engine._y17_spell_kind(uid, sp) != 'blade' and not (engine._y17_chant(uid) and engine._y17_chant(uid)['spellIndex'] == idx):
                             continue
                     elif engine._is_y16(uid):
                         own = [e for e in effects if e.get('spellName') == sp['name']
@@ -1187,6 +1187,14 @@ def execute_action(engine, uid, action_key):
         if spell:
             if base == 'SKILL_12_THROW':
                 return engine._execute_spell(uid, tid, dict(spell, _blood_options={'mode': 'throw'}))
+            if engine._is_y17(uid):
+                options = engine._y17_ai_options(uid, spell)
+                timing = spell.get('时机', '2')
+                acts = engine._get_my_actions(uid)
+                if has_timing(timing, '3') and (not has_timing(timing, '2') or acts.get('附加', 0) > 0):
+                    args = ' '.join(f'{key}={value}' for key, value in options.items())
+                    return engine._additional_action(uid, f's{skill_num} {args}'.strip())
+                return engine._execute_spell(uid, options.get('target', tid), dict(spell, _blood_options=options))
             reason = engine._revive_preflight(uid, spell)
             if reason:
                 return ActionExecutionResult(reason, False, 'no_revive_target')

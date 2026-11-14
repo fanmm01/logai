@@ -1,0 +1,67 @@
+{
+  "baseline": {
+    "characters_data.py": "507dfda1a061dfa481437bd4903f5c916954edcfce2c4d65bf52b64411b44679",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "1810bb5635726ed83ab5c6464b043f68b87a3122e78c38ebd72e27342e930141",
+    "ai_trainer.py": "4ae8110a8b699c373c4ce79e31062679e3169cc75809c57ddcd01ebf47268aee",
+    "ai_battle.py": "0d1274a31442d3aba20286ee60194924a23f9ae033008dab05d117bbbe507369",
+    "battle_http_server.py": "543d65b2acf0bff26d6d21fae9826cae5efe7c9989b4a8cf1f12aec244fe19a4",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  },
+  "final": {
+    "characters_data.py": "6f0a457db752cf45044050442030e97dbe4f0681c8da7f3aecb5dc05a58db981",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "4e56e9514e0363d8dab5fe205a1b73ca0001dc6a5b35cbb4f5d47047d1291ce2",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "60f1159bab251613e296207fbd3f6973e7f1ec5c99b19b8d1281bd7ccce2b387",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  },
+  "final_audited": {
+    "characters_data.py": "6f0a457db752cf45044050442030e97dbe4f0681c8da7f3aecb5dc05a58db981",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "33f6cc1fda6490e63ebfc3d232789752f63b467128175c2769e44ad9acaa1900",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "60f1159bab251613e296207fbd3f6973e7f1ec5c99b19b8d1281bd7ccce2b387",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  },
+  "final_hp20": {
+    "characters_data.py": "986c6a95b40b4de7e97247bcfccb26c00c65f16bd74e38708b817bcf3d6d32b8",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "33f6cc1fda6490e63ebfc3d232789752f63b467128175c2769e44ad9acaa1900",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "60f1159bab251613e296207fbd3f6973e7f1ec5c99b19b8d1281bd7ccce2b387",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  },
+  "final_hp19": {
+    "characters_data.py": "3328e9b14d4993780490934d5e8ea9f33bf9388fa7b7599b613feb478f16dcf6",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "33f6cc1fda6490e63ebfc3d232789752f63b467128175c2769e44ad9acaa1900",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "60f1159bab251613e296207fbd3f6973e7f1ec5c99b19b8d1281bd7ccce2b387",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  }
+}

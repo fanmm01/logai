@@ -425,6 +425,12 @@ class AIController:
             spell = next((s for s in spells if s['index'] == skill_num), None)
             if spell:
                 timing = spell.get('时机', '2')
+                if engine._is_y17(user_id):
+                    options = engine._y17_ai_options(user_id, spell)
+                    args = ' '.join(f'{key}={value}' for key, value in options.items())
+                    additional = has_timing(timing, '3') and (not has_timing(timing, '2')
+                        or my_acts.get('附加', 0) > 0)
+                    return f'.a s{skill_num} {args}'.strip() if additional else f'.s{skill_num} {args}'.strip()
                 # Dual-timing skills use the additional slot while available,
                 # preserving main actions; timing-3-only must use it.
                 if has_timing(timing, '3') and (not has_timing(timing, '2')

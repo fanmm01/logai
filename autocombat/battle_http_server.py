@@ -158,6 +158,23 @@ def _load_spells_from_chdata(engine, uid: str, ch_data: dict):
     in characters_data_pvp.py."""
     char = engine.get_char(uid)
 
+    if ch_data.get('serial') == 'Y17':
+        # Keep extended blood fields identical to canonical loading while
+        # preserving the player's actual COC attributes supplied by JS.
+        temporary = CombatEngine()
+        characters_data_pvp.load_character_to_engine(temporary, ch_data, uid)
+        loaded = temporary.get_char(uid)
+        for key, value in loaded.attrs.items():
+            if key.startswith('技能') or key == '_blood_initial_ml':
+                char.set_attr(key, value)
+        for key, value in loaded.str_attrs.items():
+            if key.startswith('技能') or key == '_blood_rules':
+                char.set_str(key, value)
+        if char.get_attr('储血ml', None) is None:
+            char.set_attr('储血ml', loaded.get_attr('储血ml'))
+        engine.load_spells(uid)
+        return
+
     # Load summon templates referenced by this character's spells
     summon_names = set()
     for spell in ch_data.get('spells', []):
@@ -264,7 +281,7 @@ def merge_character(engine, uid: str, js_data: dict) -> object:
             char.set_attr(k, js_data['attrs'][k])
 
     # Combat skills from JS (player's actual skill values)
-    for sk in ALL_COMBAT_SKILLS:
+    for sk in ALL_COMBAT_SKILLS + (['弓术'] if char.serial == 'Y17' else []):
         if sk in js_data.get('attrs', {}):
             char.set_attr(sk, js_data['attrs'][sk])
 
@@ -443,7 +460,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 can_atk, _ = self._move_to_attack_range(atk_uid, def_uid, profile[1])
                 if not can_atk:
                     return (def_uid, atk_uid, [f'{aname} 无法接近目标！'])
-                if not (self._is_y14(atk_uid) and getattr(achar, 'phase', 2) == 1):
+                if not (self._y17_ranged(atk_uid) or (self._is_y14(atk_uid) and getattr(achar, 'phase', 2) == 1)):
                     can_melee, penalty = self._can_melee(atk_uid, def_uid)
                     if not can_melee:
                         return (def_uid, atk_uid, [f'{aname} 无法近战飞行目标！'])
@@ -579,7 +596,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 winner_roll = rr
                 # 反击骰按防御方的反击技能名解析（原实现直接读 伤害值 且不解析 db，
                 # 只声明 伤害值a/b 的角色会退化成 1d4）
-                cdmg = self._get_damage_dice(def_uid, state['counter_skill'])
+                cdmg = self._counter_damage_dice(def_uid, state['counter_skill'])
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 cleth = dchar.get_attr("致死骰", 1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
@@ -644,7 +661,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                     lines.append(f"  仅 {aname} 的攻击命中。")
                     return (atk_uid, def_uid, lines)
                 # 同上：互命中时防御方反击骰也按反击技能名解析
-                cdmg = self._get_damage_dice(def_uid, state['counter_skill'])
+                cdmg = self._counter_damage_dice(def_uid, state['counter_skill'])
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 cleth = dchar.get_attr("致死骰", 1) or 0
                 dmx = max_damage(cdmg)
@@ -706,6 +723,7 @@ class PvPFullBattleEngine(FullBattleEngine):
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
             if eff_atk <= 0:
+                self._y17_weapon_used(atk_uid, blocked=True)
                 # 格挡成功：盾牌承受伤害
                 lines.append(f"  {dname} 格挡成功！盾牌承受攻击。")
                 mx = max_damage(dmg_dice); blk_dmg = 0
@@ -1351,7 +1369,7 @@ def _override_action_to_cmd(engine, uid, action_str):
     return ('.i end', None)
 
 
-def _resolve_ai_reaction_choice(engine, def_uid, can_dodge=True, can_counter=True, can_block=False):
+def _resolve_ai_reaction_choice(engine, def_uid, can_dodge=True, can_counter=True, can_block=False, attack_rank=None):
     """Select an AI reaction choice (dodge/counter/block) respecting .setaiact react override.
     Returns the choice string: 'dodge', 'counter', or 'block'.
     """
@@ -1393,6 +1411,12 @@ def _resolve_ai_reaction_choice(engine, def_uid, can_dodge=True, can_counter=Tru
     if can_dodge: opts.append('dodge')
     if can_counter: opts.append('counter')
     if can_block: opts.append('block')
+    if engine._is_y17(def_uid) and opts:
+        dodge = engine._apply_buff_skill_mod(def_uid, def_char.get_attr('闪避', 25), '闪避')
+        skill, counter = def_char.get_best_melee()
+        counter = engine._apply_buff_skill_mod(def_uid, counter, skill)
+        dw, cw = engine._y17_reaction_weights(def_uid, 1, 1, dodge, counter, attack_rank)
+        return _random_rc.choices(opts, weights=[{'dodge': dw, 'counter': cw, 'block': 1}[o] for o in opts], k=1)[0]
     return _random_rc.choice(opts) if opts else 'dodge'
 
 
@@ -2098,7 +2122,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                     _flush_summons()
                     return outputs
                 else:
-                    choice_rn = _resolve_ai_reaction_choice(engine, def_uid_rn, can_dodge=True, can_counter=True)
+                    choice_rn = _resolve_ai_reaction_choice(engine, def_uid_rn, can_dodge=True, can_counter=True, attack_rank=e.data.get('atk_rank'))
                     _, _, summon_lines = engine.resolve_reaction(e.data, choice_rn)
             _end_summon_turn(engine, uid)
             summon_buf.append({
@@ -2314,7 +2338,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                                 return outputs  # stop and let caller handle the pending reaction
                         else:
                             # ── AI defender → auto-resolve reaction (with .setaiact react override) ──
-                            choice = _resolve_ai_reaction_choice(engine, e.data.get('def_uid', ''), can_dodge=True, can_counter=True)
+                            choice = _resolve_ai_reaction_choice(engine, e.data.get('def_uid', ''), can_dodge=True, can_counter=True, attack_rank=e.data.get('atk_rank'))
                             _, _, lines = engine.resolve_reaction(e.data, choice)
                             outputs.append("\n".join(lines))
                     # Decrement main action after basic attack (only if attack was made)
@@ -2451,7 +2475,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                             can_dodge_rn = e.data.get('can_dodge', True)
                             can_counter_rn = e.data.get('can_counter', True)
                             can_block_rn = e.data.get('can_block', False)
-                            choice_rn = _resolve_ai_reaction_choice(engine, def_uid_rn, can_dodge_rn, can_counter_rn, can_block_rn)
+                            choice_rn = _resolve_ai_reaction_choice(engine, def_uid_rn, can_dodge_rn, can_counter_rn, can_block_rn, attack_rank=e.data.get('atk_rank'))
                             dodged_rn, countered_rn, lines_rn = engine.resolve_spell_reaction(e.data, choice_rn)
                             outputs.append('\n'.join(lines_rn))
                         out = ''
@@ -3857,7 +3881,7 @@ def submit_action(battle_id):
                             def_uid = e.data.get('def_uid', '')
                             if not _is_human_controlled(engine, def_uid):
                                 # AI defender → auto-resolve (with .setaiact react override)
-                                choice = _resolve_ai_reaction_choice(engine, def_uid, can_dodge=True, can_counter=True)
+                                choice = _resolve_ai_reaction_choice(engine, def_uid, can_dodge=True, can_counter=True, attack_rank=e.data.get('atk_rank'))
                                 _, _, lines = engine.resolve_reaction(e.data, choice)
                                 all_s0_lines.extend(lines)
                                 my_acts = engine._consume_action(effective_uid, '主动')
@@ -4016,7 +4040,7 @@ def submit_action(battle_id):
                             can_dodge_sp_ai = e.data.get('can_dodge', True)
                             can_counter_sp_ai = e.data.get('can_counter', True)
                             can_block_sp_ai = e.data.get('can_block', False)
-                            choice_sp = _resolve_ai_reaction_choice(engine, def_uid_sp, can_dodge_sp_ai, can_counter_sp_ai, can_block_sp_ai)
+                            choice_sp = _resolve_ai_reaction_choice(engine, def_uid_sp, can_dodge_sp_ai, can_counter_sp_ai, can_block_sp_ai, attack_rank=e.data.get('atk_rank'))
                             dodged_sp, countered_sp, lines_sp = engine.resolve_spell_reaction(e.data, choice_sp)
                             all_sp_out.extend(lines_sp)
                             if not is_passive:
@@ -4206,7 +4230,7 @@ def submit_action(battle_id):
                             can_dodge_as_ai = e.data.get('can_dodge', True)
                             can_counter_as_ai = e.data.get('can_counter', True)
                             can_block_as_ai = e.data.get('can_block', False)
-                            choice_as = _resolve_ai_reaction_choice(engine, def_uid_as, can_dodge_as_ai, can_counter_as_ai, can_block_as_ai)
+                            choice_as = _resolve_ai_reaction_choice(engine, def_uid_as, can_dodge_as_ai, can_counter_as_ai, can_block_as_ai, attack_rank=e.data.get('atk_rank'))
                             dodged_as, countered_as, lines_as = engine.resolve_spell_reaction(e.data, choice_as)
                             output = '\n'.join(lines_as)
                             engine._consume_action(effective_uid, '附加')

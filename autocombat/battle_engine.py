@@ -1423,17 +1423,63 @@ class CombatEngine:
         rules = self._y17_rules(uid)
         if self._y17_spears(uid):
             return rules['spear_melee'], 2
-        if self._y17_blade(uid):
+        blade = self._y17_blade(uid)
+        if blade and blade.get('bloodForm') == 'bow':
+            return rules['bow_damage'], rules['bow_range']
+        if blade:
             return rules['blade_damage'], 2
         return None
 
-    def _y17_weapon_used(self, uid):
+    def _y17_ranged(self, uid):
+        blade = self._y17_blade(uid) if self._is_y17(uid) else None
+        return bool(blade and blade.get('bloodForm') == 'bow' and not self._y17_spears(uid))
+
+    def _y17_reaction_weights(self, uid, dodge_weight, counter_weight, dodge, counter, attack_rank=None):
+        """Prefer the more reliable defensive skill without disabling either."""
+        if not self._is_y17(uid):
+            return dodge_weight, counter_weight
+        if attack_rank is not None and attack_rank <= 0 and counter_weight > 0:
+            # A failed attack cannot hurt us; use the free counter opportunity.
+            return dodge_weight * .1, counter_weight * 3
+        dodge_factor = min(4.0, max(1.0, dodge / max(1, counter)) ** 2)
+        counter_factor = min(4.0, max(1.0, counter / max(1, dodge)) ** 2)
+        return dodge_weight * dodge_factor, counter_weight * counter_factor
+
+    def _y17_note(self, uid, key, amount=1):
+        """Small serializable counters, also retained by battle persistence."""
+        if not self._is_y17(uid):
+            return
+        char = self.get_char(uid)
+        counters = json.loads(char.get_str('_blood_audit') or '{}')
+        counters[key] = counters.get(key, 0) + amount
+        char.set_str('_blood_audit', json.dumps(counters, ensure_ascii=False))
+
+    def _y17_weapon_used(self, uid, blocked=False):
         if not self._is_y17(uid):
             return
         spears = self._y17_spears(uid)
+        char = self.get_char(uid)
+        if blocked:
+            expected = char.get_str('_blood_spear_blockable')
+            char.set_str('_blood_spear_blockable', '')
+            if not expected or expected != json.dumps(spears):
+                return
+        else:
+            char.set_str('_blood_spear_blockable', '')
         if spears:
+            # A successful block damages the held spear as well as normal use.
             spears[0] -= 1
-            self.get_char(uid).set_str('_blood_spears', json.dumps([n for n in spears if n > 0]))
+            remaining = [n for n in spears if n > 0]
+            char.set_str('_blood_spears', json.dumps(remaining))
+            if not blocked and spears[0] > 0:
+                char.set_str('_blood_spear_blockable', json.dumps(remaining))
+            self._y17_note(uid, 'spear_block_damage' if blocked else 'spear_uses')
+
+    def _counter_damage_dice(self, uid, skill):
+        # Capture the last usable spear's damage before wearing it out.
+        damage = self._get_damage_dice(uid, skill)
+        self._y17_weapon_used(uid)
+        return damage
 
     def _reset_blood_battle_state(self, uids):
         """Reset battle-local blood ledgers and Y17's carried weapons."""
@@ -1447,6 +1493,8 @@ class CombatEngine:
             char.set_str('_blood_death_target', '')
             if self._is_y17(uid):
                 char.set_str('_blood_spears', '[]')
+                char.set_str('_blood_spear_blockable', '')
+                char.set_str('_blood_audit', '{}')
                 char.set_attr('储血ml', char.get_attr('_blood_initial_ml', 2000))
 
     def _y17_options(self, args):
@@ -1455,15 +1503,19 @@ class CombatEngine:
             if '=' not in token:
                 raise ValueError('参数使用 blood=毫升、units=份数、extra_mp=魔力、mode=create/throw、target=用户ID')
             key, value = token.split('=', 1)
-            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target'):
+            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target', 'form'):
                 raise ValueError('未知或重复的血液技能参数')
             if key == 'target':
                 if not value:
                     raise ValueError('target 需要有效用户ID')
                 options[key] = value
+            elif key == 'form':
+                if value not in ('sword', 'bow'):
+                    raise ValueError('form 只能为 sword 或 bow')
+                options[key] = value
             elif key == 'mode':
-                if value not in ('create', 'throw'):
-                    raise ValueError('mode 只能为 create 或 throw')
+                if value not in ('create', 'throw', 'cancel'):
+                    raise ValueError('mode 只能为 create、throw 或 cancel')
                 options[key] = value
             else:
                 if not value.isdecimal() or len(value) > 8:
@@ -1523,7 +1575,8 @@ class CombatEngine:
         rules = self._y17_rules(uid)
         kind = self._y17_spell_kind(uid, spell)
         options = spell.get('_blood_options', {})
-        allowed = {'guard': {'blood'}, 'store': {'units', 'target'}, 'cape': {'units'},
+        allowed = {'guard': {'blood'}, 'blade': {'form'}, 'store': {'units', 'target'}, 'cape': {'units'},
+            'arcana': {'mode'}, 'sacrifice': {'mode'},
             'slash': {'blood'}, 'war': {'extra_mp'}, 'spear': {'mode'}}.get(kind, set())
         if set(options) - allowed:
             raise ValueError('该技能不接受此投入参数')
@@ -1532,6 +1585,12 @@ class CombatEngine:
         if self._y17_disabled(uid) or self._is_dying(uid) or not self._can_cast_active_skill(uid):
             raise ValueError('昏迷、濒死或控制状态下无法操纵血液')
         chant = self._y17_chant(uid)
+        if options.get('mode') == 'cancel':
+            if chant and chant['spellIndex'] == spell['index']:
+                return {'cancel': chant}
+            raise ValueError('没有可以取消的同名吟唱')
+        if kind in ('arcana', 'sacrifice') and options:
+            raise ValueError('吟唱技能仅接受 mode=cancel')
         if chant:
             if chant['spellIndex'] == spell['index'] and not options:
                 return {'continue': chant}
@@ -1548,7 +1607,13 @@ class CombatEngine:
                 raise ValueError('治疗目标不是有效的同队角色')
             target = target_option
         if kind in ('arcana', 'sacrifice', 'slash') or (kind == 'spear' and options.get('mode') == 'throw'):
-            target = target if target in self._enemy_targets(uid) else next(iter(self._enemy_targets(uid)), None)
+            if ai and kind == 'arcana' and target is None and self._allies_in_battle(uid, include_self=False):
+                # Preflight the same direction the live command will select.
+                target = self._smart_target(uid, spell)
+            enemies = self._enemy_targets(uid)
+            if target is not None and target not in enemies:
+                raise ValueError('攻击目标已失效，未消耗资源')
+            target = target if target is not None else next(iter(enemies), None)
             if not target:
                 raise ValueError('没有合法攻击目标')
             ent = self._unit_il_entry(uid, self._get_initiative()) or {}
@@ -1588,19 +1653,24 @@ class CombatEngine:
                    for e in self._get_effects()):
                 raise ValueError('凝血护甲仍在持续')
             bc = options.get('blood', rules['armor_ml'])
-            if bc < rules['armor_ml'] or bc % rules['armor_ml'] or bc > rules['armor_cap'] * rules['armor_ml']:
-                raise ValueError('护甲投入必须为300ml的整数倍，最多3600ml')
+            limit = math.ceil(rules['armor_cap'] / rules.get('armor_per_unit', 1)) * rules['armor_ml']
+            if bc < rules['armor_ml'] or bc % rules['armor_ml'] or bc > limit:
+                raise ValueError(f'护甲投入必须为{rules["armor_ml"]}ml的整数倍，最多{limit}ml')
             if blood < rules['armor_ml'] and 'blood' not in options:
                 bc, hc = 0, max(1, hp // 2)
                 armor = min(rules['armor_cap'], hc * 2)
                 if ai:
                     raise ValueError('AI不献血防御')
             else:
-                armor = bc // rules['armor_ml']
+                armor = min(rules['armor_cap'], bc // rules['armor_ml'] * rules.get('armor_per_unit', 1))
             prepared['_blood_armor'] = armor
         elif kind == 'blade':
-            if self._y17_blade(uid):
-                raise ValueError('血刃仍在持续')
+            form = options.get('form', 'sword')
+            if form not in ('sword', 'bow'):
+                raise ValueError('未知血武器形态')
+            blade = self._y17_blade(uid)
+            if blade and blade.get('bloodForm', 'sword') == form:
+                raise ValueError('同形态血武器仍在持续')
             bc = rules['blade_ml']
             if blood < bc:
                 hc = math.ceil((bc - blood) / rules['hp_to_ml'])
@@ -1609,14 +1679,17 @@ class CombatEngine:
                     raise ValueError('献血不能超过当前生命的一半')
         elif kind == 'store':
             target = self._y17_heal_target(uid, target_option or target)
+            if target_option and target != target_option:
+                raise ValueError('指定目标无法使用血球治疗')
             if not target:
                 raise ValueError('范围内没有可以治疗的轻伤目标')
             units = options.get('units', 1)
             if not 1 <= units <= rules['heal_max_units']:
                 raise ValueError('治疗一次使用1至4份血球')
             bc, mc, sc = units * rules['ball_ml'], 2, 1
-            effects[0]['回复hp'] = str(units)
-            if units > self.get_char(target).get_attr('体力上限') - self._hp_safe(target):
+            healing = units * rules.get('ball_heal', 1)
+            effects[0]['回复hp'] = str(healing)
+            if (units - 1) * rules.get('ball_heal', 1) >= self.get_char(target).get_attr('体力上限') - self._hp_safe(target):
                 raise ValueError('投入超过目标缺失生命')
         elif kind == 'cape':
             units = options.get('units', 1)
@@ -1625,7 +1698,8 @@ class CombatEngine:
             bc = units * rules['cape_ml']
             effects[0]['回复mp'] = str(units * rules['cape_mp'])
         elif kind == 'slash':
-            if not self._y17_blade(uid):
+            blade = self._y17_blade(uid)
+            if not blade or blade.get('bloodForm', 'sword') != 'sword':
                 raise ValueError('血月斩击需要持有血刃')
             bc = options.get('blood', rules['slash_base_ml'])
             extra = (bc - rules['slash_base_ml']) // rules['slash_extra_ml']
@@ -1682,6 +1756,8 @@ class CombatEngine:
         if not self._is_y17(uid):
             return ''
         try:
+            if ai and '_blood_options' not in spell:
+                spell = dict(spell, _blood_options=self._y17_ai_options(uid, spell))
             self._y17_plan(uid, None, spell, ai=ai)
             return ''
         except (ValueError, KeyError) as exc:
@@ -1696,9 +1772,14 @@ class CombatEngine:
             return ActionExecutionResult(str(exc), False, 'spell_rejected')
         if 'continue' in p:
             return self._y17_continue_chant(uid, p['continue'])
+        if 'cancel' in p:
+            return self.end_skill_effects(uid, spell['index']) + '（已付费用不返还）\n'
         spell, target = p['spell'], p['target']
         kind = spell['blood_kind']
         char = self.get_char(uid)
+        self._y17_note(uid, kind + '_casts')
+        for resource in ('blood', 'hp', 'mp', 'san'):
+            self._y17_note(uid, kind + '_spent_' + resource, p[resource])
         # All rejection paths above are pure. From here on this action is committed.
         self._consume_blood(uid, p['blood'])
         char.set_attr('魔力', char.get_attr('魔力', 0) - p['mp'])
@@ -1708,9 +1789,11 @@ class CombatEngine:
         out = f'{char.name} 释放【{spell["name"]}】：血液-{p["blood"]}ml MP-{p["mp"]} HP-{p["hp"]} SAN-{p["san"]}\n'
         if p['hp']:
             self._set_combat_hp(uid, self._hp_safe(uid, 0) - p['hp'])
+            if self._hp_safe(uid, 0) <= 0:
+                self._y17_note(uid, kind + '_cost_downed')
         if kind in ('arcana', 'sacrifice'):
             if kind == 'arcana' and p['hp']:
-                spell['effects'][0]['_blood_origin'] = self._unit_il_entry(uid, self._get_initiative())['coord']
+                # Origin was captured by the pure plan, before lethal backlash.
                 spell['effects'][0]['_blood_direction'] = random.choice(
                     [(1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1)])
             if kind == 'arcana' and self._hp_safe(uid, 0) <= 0:
@@ -1727,6 +1810,7 @@ class CombatEngine:
                 spellName=spell['name'], spellIndex=spell['index'], stored_spell=copy.deepcopy(spell),
                 stored_target=target, interruptible=kind == 'sacrifice', persistent=0))
             self._set_effects(effects)
+            self._y17_note(uid, kind + '_chant_started')
             return out + f'开始吟唱，还需{spell["吟唱回合"]-1}次主动作。\n'
         if kind == 'guard':
             self._set_effects(self._get_effects() + [dict(type='buff', bloodGuard=True,
@@ -1735,10 +1819,12 @@ class CombatEngine:
                 auxType='受到伤害加值', auxVal=str(-spell['_blood_armor']), persistent=0)])
             return out + f'获得{spell["_blood_armor"]}点凝血护甲。\n'
         if kind == 'blade':
-            self._set_effects(self._get_effects() + [dict(type='buff', bloodBlade=True,
+            form = spell.get('_blood_options', {}).get('form', 'sword')
+            self._set_effects([e for e in self._get_effects() if not (e.get('bloodBlade')
+                and e.get('targetUserId') == uid)] + [dict(type='buff', bloodBlade=True, bloodForm=form,
                 sourceUserId=uid, targetUserId=uid, spellName=spell['name'], spellIndex=spell['index'],
                 remainingRounds=self._y17_rules(uid)['duration'], persistent=0)])
-            return out + '凝聚血刃（魔法武器）。\n'
+            return out + ('凝聚血弓' if form == 'bow' else '凝聚血刃') + '（魔法武器）。\n'
         if kind == 'spear':
             spears = self._y17_spears(uid)
             if spell.get('_blood_options', {}).get('mode') == 'throw':
@@ -1748,14 +1834,18 @@ class CombatEngine:
             char.set_str('_blood_spears', json.dumps(spears))
             if spell.get('_blood_options', {}).get('mode', 'create') == 'create':
                 return out + '凝聚血枪（魔法武器，无独立行动）。\n'
-        return self._y17_release(uid, target, spell, out)
+        before_hp = self._hp_safe(target, 0) if kind == 'store' else 0
+        result = self._y17_release(uid, target, spell, out)
+        if kind == 'store':
+            self._y17_note(uid, 'store_healing', max(0, self._hp_safe(target, 0) - before_hp))
+        return result
 
     def _y17_continue_chant(self, uid, chant):
         uid = self._resolve_uid(uid)
         effects = self._get_effects()
         chant_id = chant.get('bloodChantId')
         current = next((e for e in effects if e.get('bloodChant') and
-            ((chant_id is not None and e.get('bloodChantId') == chant_id) or
+            e.get('targetUserId') == uid and ((chant_id is not None and e.get('bloodChantId') == chant_id) or
              (chant_id is None and e.get('targetUserId') == uid and
               e.get('spellIndex') == chant.get('spellIndex')))), None)
         if current is None:
@@ -1772,12 +1862,17 @@ class CombatEngine:
         if not spell or target is None:
             return ActionExecutionResult('吟唱数据缺失，未发动法术。', False, 'chant_data_missing')
         if spell.get('blood_kind') == 'sacrifice':
-            if self._hp_safe(target, 0) <= 0:
+            ent = self._unit_il_entry(uid, self._get_initiative()) or {}
+            other = self._unit_il_entry(target, self._get_initiative()) or {}
+            if self._hp_safe(target, 0) <= 0 or not other or chebyshev_dist(
+                    ent.get('coord', ''), other.get('coord', '')) > spell['effects'][0].get('射程', 6):
+                self._y17_note(uid, 'sacrifice_chant_fizzled')
                 return '原目标已倒下，祭炼消散。\n'
             self.get_char(uid).set_str('_blood_death_target', target)
             self._set_effects(self._get_effects() + [dict(type='dying', targetUserId=uid,
                 remainingRounds=999, dyingRounds=0, excessDamage=0)])
             self._set_combat_hp(uid, 0)
+        self._y17_note(uid, spell['blood_kind'] + '_chant_completed')
         return self._y17_release(uid, target, spell, f'吟唱完成【{spell["name"]}】\n')
 
     def _y17_release(self, uid, target, spell, out=''):
@@ -1790,6 +1885,15 @@ class CombatEngine:
         if not spell or not self._is_y17(caster) or hp_loss <= 0:
             return ''
         kind = spell.get('blood_kind')
+        if kind == 'slash':
+            rules = self._y17_rules(caster)
+            recovered = spell.get('_blood_slash_recovered', 0)
+            requested = min(hp_loss * rules.get('slash_harvest_ml_per_hp', 0),
+                            max(0, rules.get('slash_harvest_cap', 0) - recovered))
+            before = self._get_blood(caster)
+            out = self._y17_harvest(caster, target, requested)
+            spell['_blood_slash_recovered'] = recovered + self._get_blood(caster) - before
+            return out
         if kind != 'arcana':
             return ''
         return self._y17_harvest(caster, target, spell['_actual_mp_cost'] * 50)
@@ -1805,6 +1909,7 @@ class CombatEngine:
         amount = min(requested, max(0, self._y17_rules(caster)['source_cap'] - extracted))
         char.set_attr('_blood_extracted', extracted + amount)
         self._add_blood(caster, amount)
+        self._y17_note(caster, 'harvested_ml', amount)
         return f'  汲取血液 +{amount}ml\n' if amount else ''
 
     def _y17_war_kill(self, caster, target, spell):
@@ -1830,6 +1935,7 @@ class CombatEngine:
     def _y17_death(self, uid):
         if not self._is_y17(uid):
             return
+        self._y17_note(uid, 'deaths')
         char = self.get_char(uid)
         target = char.get_str('_blood_death_target')
         char.set_str('_blood_death_target', '')
@@ -1838,63 +1944,115 @@ class CombatEngine:
             text = self._apply_spell_damage(uid, target, str(dmg), 0, 0, spell_name='祭炼·死亡追加')
             self._pending_battle_events.append(text)
 
+    def _y17_ai_options(self, uid, spell):
+        """Shared, read-only investment plan for training and live commands."""
+        kind = self._y17_spell_kind(uid, spell)
+        rules = self._y17_rules(uid)
+        blood = self._get_blood(uid)
+        char = self.get_char(uid)
+        me = self._unit_il_entry(uid, self._get_initiative()) or {}
+        enemies = self._enemy_target_entries(uid)
+        distance = min((chebyshev_dist(me.get('coord', ''), e.get('coord', ''))
+                        for e in enemies), default=99)
+        chant = self._y17_chant(uid)
+        if chant and kind in ('arcana', 'sacrifice'):
+            if kind == 'arcana' and any(self._battle_team_of(t) == self._battle_team_of(uid)
+                    for t in self._y17_geometry(uid, chant['stored_spell']['effects'][0])):
+                return {'mode': 'cancel'}
+            return {}
+        if kind == 'blade':
+            return {'form': 'bow' if distance > 3 else 'sword'}
+        if kind == 'guard':
+            reserve = 500 + (0 if self._y17_blade(uid) else rules['blade_ml'])
+            affordable = max(0, blood - reserve) // rules['armor_ml']
+            threat = 3 if distance <= 6 or len(enemies) > 1 else 2
+            return {'blood': max(1, min(threat, affordable)) * rules['armor_ml']}
+        if kind == 'store':
+            target = self._y17_heal_target(uid)
+            if target:
+                missing = self.get_char(target).get_attr('体力上限') - self._hp_safe(target)
+                emergency = self._hp_safe(target) <= self.get_char(target).get_attr('体力上限') * .65
+                available = max(0, blood - (0 if emergency else 500)) // rules['ball_ml']
+                units = max(1, min(rules['heal_max_units'], available,
+                    max(1, missing // rules.get('ball_heal', 1))))
+                return {'target': target, 'units': units}
+        if kind == 'slash':
+            target_hp = max((self._hp_safe(e['userId']) for e in enemies), default=0)
+            extra = min(2, max(0, (blood - rules['slash_base_ml'] - 500) // rules['slash_extra_ml']))
+            extra = min(extra, max(0, int(target_hp // 20)))
+            return {'blood': rules['slash_base_ml'] + extra * rules['slash_extra_ml']}
+        return {}
+
     def _y17_ai_priority(self, uid, actions):
         if not self._is_y17(uid):
             return actions
-
-        def choose(index):
-            return [a for a in actions if a[0].split('__')[0] == f'SKILL_{index}']
-
         chant = self._y17_chant(uid)
         if chant:
-            continuation = choose(chant['spellIndex'])
+            continuation = [a for a in actions if a[0].split('__')[0] == f'SKILL_{chant["spellIndex"]}']
             if continuation:
                 return continuation
-
         char = self.get_char(uid)
         hp = self._hp_safe(uid, 0)
         max_hp = max(1, char.get_attr('体力上限', hp))
         mp = char.get_attr('魔力', 0)
-        max_mp = max(1, char.get_attr('魔力上限', mp))
         blood = self._get_blood(uid)
-        team = self._battle_team_of(uid)
-        wounded = any(self._battle_team_of(ally) == team and
-            self._hp_safe(ally, 0) < self.get_char(ally).get_attr('体力上限', 0) and
-            self._hp_safe(ally, 0) > 0 and not self._is_dying(ally) and
-            not self.get_char(ally).get_attr('_blood_severe', 0)
-            for ally in self._allies_in_battle(uid, include_self=True))
-        if wounded and choose(7):
-            return choose(7)
-        if mp <= max_mp - self._y17_rules(uid)['cape_mp'] and blood >= self._y17_rules(uid)['cape_ml'] and choose(10):
-            return choose(10)
-        if not self._y17_blade(uid) and choose(5):
-            return choose(5)
-
-        enemy_entries = self._enemy_target_entries(uid)
-        my_entry = self._unit_il_entry(uid, self._get_initiative()) or {}
-        enemy_distances = [chebyshev_dist(my_entry.get('coord', ''), e.get('coord', ''))
-                           for e in enemy_entries]
-        if self._y17_spears(uid) and any(2 < d <= self._y17_rules(uid)['spear_range']
-                                         for d in enemy_distances):
-            throwing = [a for a in actions if a[0].startswith('SKILL_12_THROW')]
-            if throwing:
-                return throwing
-        if self._y17_blade(uid) and choose(11) and any(d <= 3 for d in enemy_distances):
-            return choose(11)
-        if not self._y17_spears(uid) and blood >= self._y17_rules(uid)['spear_ml'] \
-                and any(2 < d <= self._y17_rules(uid)['spear_range'] for d in enemy_distances) and choose(12):
-            return choose(12)
-        if choose(6) and len(enemy_entries) >= 2 and hp > max_hp * .3:
-            return choose(6)
-        if choose(3):
-            return choose(3)
-        if choose(2):
-            return choose(2)
-        if choose(11):
-            return choose(11)
-        if choose(6):
-            return choose(6)
-        return actions
+        rules = self._y17_rules(uid)
+        acts = self._get_my_actions(uid)
+        enemies = self._enemy_target_entries(uid)
+        me = self._unit_il_entry(uid, self._get_initiative()) or {}
+        distance = min((chebyshev_dist(me.get('coord', ''), e.get('coord', ''))
+                        for e in enemies), default=99)
+        target_hp = max((self._hp_safe(e['userId']) for e in enemies), default=0)
+        spells = {s['index']: s for s in (char.spells or self.load_spells(uid))}
+        scores = []
+        for action in actions:
+            base = action[0].split('__')[0]
+            score = -1.0
+            if base == 'BASIC_ATTACK':
+                skill, accuracy = self._get_attack_skill(uid)
+                score = avg_damage(self._get_damage_dice(uid, skill)) * accuracy / 100
+            elif base == 'MOVE_TOWARD':
+                score = 1.0
+            elif base.startswith('SKILL_'):
+                index = int(base.split('_')[1])
+                spell = spells.get(index)
+                if not spell:
+                    continue
+                options = self._y17_ai_options(uid, spell)
+                if index == 3 and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
+                    score = 65 if distance <= 10 else 8
+                elif index == 5 and acts.get('附加', 0) > 0:
+                    score = 60 if not self._y17_blade(uid) else 12
+                elif index == 7 and options.get('target'):
+                    target = options['target']
+                    cap = self.get_char(target).get_attr('体力上限')
+                    missing = cap - self._hp_safe(target)
+                    if acts.get('附加', 0) > 0 and missing >= rules.get('ball_heal', 1) and self._hp_safe(target) <= cap * .8:
+                        score = 75 if self._hp_safe(target) <= cap * .65 else 35
+                elif index == 10 and mp < 8 and blood >= rules['cape_ml'] + 500 and acts.get('附加', 0) > 0:
+                    score = 70
+                elif base == 'SKILL_12_THROW':
+                    spears = self._y17_spears(uid)
+                    if spears and (spears[0] <= 1 or target_hp <= 16 or distance > 2):
+                        score = avg_damage(rules['spear_throw']) * char.get_attr('弓术', 0) / 100
+                elif index == 12 and not self._y17_spears(uid) and acts.get('附加', 0) > 0 and distance <= 2 and blood >= rules['spear_ml'] + 500:
+                    score = 40
+                elif index == 11:
+                    segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
+                    score = 12 * .8 * segments
+                elif index == 6 and hp > max(8, max_hp * .3):
+                    score = 13 * min(3, len(enemies))
+                elif index == 2 and hp >= max_hp * .45:
+                    # Three actions, paid once; compare against immediate attacks.
+                    plan = self._y17_plan(uid, None, dict(spell, _blood_options=options), ai=True)
+                    score = min(plan['spell']['_actual_mp_cost'] * 4, target_hp) * .8 / 3 - plan['hp'] * .25
+                elif index == 4 and hp <= max_hp * .3:
+                    score = max_hp * .9 / 2
+            scores.append((score, action))
+        if not scores:
+            return []
+        best = max(s for s, _ in scores)
+        return [a for s, a in scores if s == best and s >= 0] or actions
 
 
     def _get_blood(self, uid):
@@ -1937,6 +2095,7 @@ class CombatEngine:
                 e['remainingRounds'] = 0
                 if e.get('bloodChant'):
                     char.set_attr('_blood_severe', 1)
+                    self._y17_note(uid, 'sacrifice_chant_interrupted')
                 if hp_pct > 0:
                     cur_hp = self._get_combat_hp(uid) or 0
                     hp_loss = max(1, math.ceil(cur_hp * hp_pct / 100))
@@ -3153,7 +3312,13 @@ class CombatEngine:
 
         # All validation passed; now restore the saved unit and transfer ownership.
         char = self.get_char(uid)
+        # Post-mortem harvesting may have advanced this body's saved quota.
+        blood_ledger = {key: max(char.get_attr(key, 0), attrs.get(key, 0))
+                        for key in ('_blood_extracted', '_blood_war_rewarded')}
         char.attrs = copy.deepcopy(attrs)
+        for key, amount in blood_ledger.items():
+            if amount:
+                char.set_attr(key, amount)
         char.str_attrs = copy.deepcopy(grave_entry.get('str_attrs') or {})
         char.spells = copy.deepcopy(grave_entry.get('spells') or [])
         char.inventory = copy.deepcopy(grave_entry.get('inventory') or [])
@@ -4067,6 +4232,9 @@ class CombatEngine:
         """Simple command interface for compatibility."""
         if cmd == '.hs':
             char = self.get_char(uid)
+            # Y17's card uses the custom archery name instead of 射击:弓.
+            # Include that skill in the same +20 / cap-80 transform and reversal.
+            combat_skills = ALL_COMBAT_SKILLS + (['弓术'] if self._is_y17(uid) else [])
             # Save original stats for .unh reversal
             char.hs_orig = {
                 '体力上限': char.get_attr('体力上限', 10),
@@ -4076,7 +4244,7 @@ class CombatEngine:
                 '闪避': char.get_attr('闪避', 25),
                 '体格': char.get_attr('体格', 0),
                 '行动力': char.get_attr('行动力', 8),
-                'skills': {sk: char.get_attr(sk) for sk in ALL_COMBAT_SKILLS if char.get_attr(sk) > 0},
+                'skills': {sk: char.get_attr(sk) for sk in combat_skills if char.get_attr(sk) > 0},
             }
             char.hs_transformed = True
             level = char.get_attr('等级', 1) or 1
@@ -4088,7 +4256,7 @@ class CombatEngine:
             char.set_attr('闪避', min(char.get_attr('闪避',25)+20, 80))
             char.set_attr('体格', char.get_attr('体格',0)+1)
             char.set_attr('行动力', char.get_attr('行动力',8)+2)
-            for sk in ALL_COMBAT_SKILLS:
+            for sk in combat_skills:
                 v = char.get_attr(sk)
                 if v > 0: char.set_attr(sk, min(v+20, 80))
             # Recalculate db from updated 体格
@@ -4129,6 +4297,9 @@ class CombatEngine:
         if spell_index <= 0:
             return '请选择技能编号'
         effects = self._get_effects()
+        for e in effects:
+            if e.get('bloodChant') and e.get('sourceUserId') == self._resolve_uid(uid) and e.get('spellIndex') == spell_index:
+                self._y17_note(uid, 'chant_cancelled')
         kept = [e for e in effects if not (self._resolve_uid(e.get('sourceUserId', '')) == self._resolve_uid(uid)
                 and e.get('spellIndex') == spell_index and not e.get('sourcePassive') and e.get('type') != 'cooldown')]
         self._set_effects(kept)
@@ -4547,6 +4718,10 @@ class CombatEngine:
         otherwise fall back to get_best_melee(). Returns (skill_name, skill_value)."""
         char = char or self.get_char(uid)
         if self._y17_attack_profile(uid):
+            if self._y17_ranged(uid):
+                return '弓术', char.get_attr('弓术', 0)
+            if not self._y17_spears(uid) and char.get_attr('剑', 0):
+                return '剑', char.get_attr('剑', 0)
             return '斗殴', char.get_attr('斗殴', 0)
         weapon = char.get_str('_weapon_name') or ''
         if weapon == 'sword' and char.get_attr('剑', 0):
@@ -5546,49 +5721,52 @@ class CombatEngine:
         already-resolved effects or re-charging costs.
         """
         self._spell_plan_output = out
-        idx = 0
-        try:
-            while idx < len(plan):
-                eff_idx, tid = plan[idx]
-                eff = spell['effects'][eff_idx]
-                ct = eff['type']
-                if ct == 1 and self._hp_safe(tid, 0) <= 0:
+        while True:
+            idx = 0
+            try:
+                while idx < len(plan):
+                    eff_idx, tid = plan[idx]
+                    eff = spell['effects'][eff_idx]
+                    ct = eff['type']
+                    if ct == 1 and self._hp_safe(tid, 0) <= 0:
+                        idx += 1
+                        continue
+                    if ct in (1, 2, 3, 4):
+                        self._spell_plan_output += self._apply_target_effect(
+                            caster_id, tid, eff, spell, is_passive_spell, eff_idx)
+                        if ct == 4:
+                            self._finish_buff_charge(caster_id, spell)
+                    elif ct == 5:
+                        self._spell_plan_output += self._execute_summon_effect(
+                            caster_id, target_id, eff, spell, is_passive_spell)
+                    elif ct in (6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19):
+                        self._spell_plan_output += self._execute_misc_effect(
+                            caster_id, target_id, eff, spell, is_passive_spell, eff_idx)
                     idx += 1
-                    continue
-                if ct in (1, 2, 3, 4):
-                    self._spell_plan_output += self._apply_target_effect(
-                        caster_id, tid, eff, spell, is_passive_spell, eff_idx)
-                    if ct == 4:
-                        self._finish_buff_charge(caster_id, spell)
-                elif ct == 5:
-                    self._spell_plan_output += self._execute_summon_effect(
-                        caster_id, target_id, eff, spell, is_passive_spell)
-                elif ct in (6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19):
-                    self._spell_plan_output += self._execute_misc_effect(
-                        caster_id, target_id, eff, spell, is_passive_spell, eff_idx)
-                idx += 1
-        except SpellInterrupted as e:
-            # 附带剩余计划；调用方（PvP）在反应结算后调用 resume
-            e.data['spell_plan'] = [list(p) for p in plan[idx + 1:]]
-            e.data['spell_plan_caster'] = caster_id
-            e.data['spell_plan_passive'] = is_passive_spell
-            # 已结算效果/头部输出 + 本 effect 的前置检定行，合并给调用方展示
-            prior = (self._spell_plan_output or '').rstrip('\n')
-            own = list(e.data.get('prefix_lines') or [])
-            merged = (prior.split('\n') if prior else []) + own
-            e.data['prefix_lines'] = merged
-            raise
-        if spell.get('_blood_chain') and self._hp_safe(caster_id, 0) > 0:
-            chain_cost = self._y17_rules(caster_id)['chain_ml']
-            if self._get_blood(caster_id) >= chain_cost:
-                wave = [(i, t) for i, e in enumerate(spell['effects'])
-                        for t in self._resolve_effect_targets(caster_id, target_id, e)]
-                if wave:
-                    self._consume_blood(caster_id, chain_cost)
-                    spell['_chains'] = spell.get('_chains', 0) + 1
-                    return self._execute_spell_plan(caster_id, target_id, spell, wave, False,
-                        self._spell_plan_output + f'  消耗{chain_cost}ml血液，污血冲击再次发动！\\n')
-        return self._spell_plan_output
+            except SpellInterrupted as e:
+                # 附带剩余计划；调用方（PvP）在反应结算后调用 resume
+                e.data['spell_plan'] = [list(p) for p in plan[idx + 1:]]
+                e.data['spell_plan_caster'] = caster_id
+                e.data['spell_plan_passive'] = is_passive_spell
+                # 已结算效果/头部输出 + 本 effect 的前置检定行，合并给调用方展示
+                prior = (self._spell_plan_output or '').rstrip('\n')
+                own = list(e.data.get('prefix_lines') or [])
+                merged = (prior.split('\n') if prior else []) + own
+                e.data['prefix_lines'] = merged
+                raise
+            if spell.get('_blood_chain') and self._hp_safe(caster_id, 0) > 0:
+                chain_cost = self._y17_rules(caster_id)['chain_ml']
+                if self._get_blood(caster_id) >= chain_cost:
+                    wave = [(i, t) for i, e in enumerate(spell['effects'])
+                            for t in self._resolve_effect_targets(caster_id, target_id, e)]
+                    if wave:
+                        self._consume_blood(caster_id, chain_cost)
+                        spell['_chains'] = spell.get('_chains', 0) + 1
+                        self._y17_note(caster_id, 'war_chain_spent_blood', chain_cost)
+                        self._spell_plan_output += f'  消耗{chain_cost}ml血液，污血冲击再次发动！\n'
+                        plan = wave
+                        continue
+            return self._spell_plan_output
 
     def resume_spell_plan(self, state):
         """Continue a paused spell plan after a PvP reaction (or no reaction).
@@ -6129,8 +6307,19 @@ class CombatEngine:
                 cur_hp = cur_hp - eff_dmg
                 out += f'  致死骰: 1d{leth_die_size}={lr} > {leth} 失败\n'
         else: cur_hp = cur_hp - eff_dmg
+        blood_friendly_hit = False
+        if spell and spell.get('blood_kind'):
+            target_entry = self._unit_il_entry(target_id, self._get_initiative()) or {}
+            source_entry = self._unit_il_entry(caster_id, self._get_initiative()) or (
+                getattr(self, '_graveyard', {}).get(self._resolve_uid(caster_id), {}).get('entry') or {})
+            blood_friendly_hit = bool(source_entry.get('team') and source_entry.get('team') == target_entry.get('team'))
         self._set_combat_hp(target_id, cur_hp, source_dmg=eff_dmg, damage_source=caster_id)
         out += f'  伤害: {dmg_detail} → {eff_dmg}点 (HP:{cur_hp})\n'
+        if spell and spell.get('blood_kind'):
+            actual_loss = max(0, min(old_target_hp, old_target_hp - self._hp_safe(target_id, 0)))
+            self._y17_note(caster_id, spell['blood_kind'] + '_damage', actual_loss)
+            if blood_friendly_hit:
+                self._y17_note(caster_id, 'friendly_damage', actual_loss)
         out += self._y17_collect_hit(caster_id, target_id,
                                     max(0, old_target_hp - self._hp_safe(target_id, 0)), spell)
 
@@ -6144,6 +6333,8 @@ class CombatEngine:
             mhp = char.get_attr('体力上限', chp)
             self._set_combat_hp(caster_id, min(chp + heal, mhp))
             actual_heal = max(0, (self._get_combat_hp(caster_id) or 0) - chp)
+            if spell and spell.get('blood_kind') == 'slash':
+                self._y17_note(caster_id, 'slash_healing', actual_heal)
             self._charge_heal_overflow(caster_id, heal - actual_heal)
             out += f'  吸血回复 {actual_heal} HP\n'
 
@@ -7460,8 +7651,8 @@ class FullBattleEngine(CombatEngine):
         if not can_atk:
             lines.append(f'{aname} 无法接近目标！（射程={atk_range}）')
             return (def_uid, atk_uid, lines)
-        can_melee, fly_penalty = ((True, False) if self._is_y14(atk_uid) and
-                                 getattr(achar, 'phase', 2) == 1 else self._can_melee(atk_uid, def_uid))
+        can_melee, fly_penalty = ((True, False) if self._y17_ranged(atk_uid) or (self._is_y14(atk_uid) and
+                                 getattr(achar, 'phase', 2) == 1) else self._can_melee(atk_uid, def_uid))
         if not can_melee:
             lines.append(f'{aname} 无法近战飞行目标 {dname}！')
             return (def_uid, atk_uid, lines)
@@ -7595,6 +7786,7 @@ class FullBattleEngine(CombatEngine):
             defender = self._unit_il_entry(def_uid, self._get_initiative()) or {}
             ai_dw = self._ai_react_dodge_w.get(def_uid, defender.get('react_dodge_w', 50))
             ai_cw = self._ai_react_counter_w.get(def_uid, defender.get('react_counter_w', 50))
+            ai_dw, ai_cw = self._y17_reaction_weights(def_uid, ai_dw, ai_cw, dodge_val, bmv, atk_rank)
             ai_bw = self._ai_react_block_w.get(def_uid, defender.get('react_block_w', 0)) if can_block else 0
             total_w = ai_dw + ai_cw + ai_bw
             if total_w > 0:
@@ -7640,7 +7832,7 @@ class FullBattleEngine(CombatEngine):
                 loser_name, winner_name = aname, dname; winner_roll = rr
                 # 反击骰按防御方的反击技能名解析（支持 伤害值a/b + damage_suffix_map），
                 # 不能直接读 伤害值——只声明了 伤害值a/b 的角色会退化成 1d4。
-                cdmg = self._get_damage_dice(def_uid, bmn)
+                cdmg = self._counter_damage_dice(def_uid, bmn)
                 cpen = dchar.get_attr("伤害贯穿",1)
                 cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
@@ -7679,7 +7871,7 @@ class FullBattleEngine(CombatEngine):
 
                     # ---- Defender counter-hits attacker ----
                     if not self._is_untargetable(atk_uid):
-                        cdmg = self._get_damage_dice(def_uid, bmn)
+                        cdmg = self._counter_damage_dice(def_uid, bmn)
                         cpen = dchar.get_attr("伤害贯穿",1)
                         cleth = dchar.get_attr("致死骰",1) or 0
                         dmx = max_damage(cdmg); ddmg = 0; ddetail = ""
@@ -7728,6 +7920,7 @@ class FullBattleEngine(CombatEngine):
             eff_atk = max(-2, min(4, eff_atk))
 
             if eff_atk <= 0:
+                self._y17_weapon_used(atk_uid, blocked=True)
                 # ═══ 格挡成功：盾牌承受伤害 ═══
                 lines.append(f"  {dname} 格挡成功！盾牌承受攻击。")
                 # 按攻击方原始等级计算伤害
@@ -8109,6 +8302,7 @@ class FullBattleEngine(CombatEngine):
         defender = self._unit_il_entry(target_id, self._get_initiative()) or {}
         ai_dw = self._ai_react_dodge_w.get(target_id, defender.get('react_dodge_w', 50))
         ai_cw = self._ai_react_counter_w.get(target_id, defender.get('react_counter_w', 50))
+        ai_dw, ai_cw = self._y17_reaction_weights(target_id, ai_dw, ai_cw, dodge_val, bmv, atk_rank)
         ai_bw = self._ai_react_block_w.get(target_id, defender.get('react_block_w', 0)) if can_block else 0
         if not can_dodge:
             ai_dw = 0
@@ -8251,7 +8445,7 @@ class FullBattleEngine(CombatEngine):
                 return (False, True, lines)
             # 反击骰按防御方的反击技能名解析（原实现直接用 体格 解析 db，会忽略
             # str_attrs['db'] 与 伤害值a/b，只声明 a/b 的角色会退化成 1d4）
-            cdmg = self._get_damage_dice(target_id, counter_skill)
+            cdmg = self._counter_damage_dice(target_id, counter_skill)
             cpen = dchar.get_attr("伤害贯穿", 1)
             cleth = dchar.get_attr("致死骰", 1) or 0
             _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
@@ -8266,7 +8460,7 @@ class FullBattleEngine(CombatEngine):
         elif eff_react == eff_atk and eff_react > 0:
             # Mutual hit — both take damage
             if not self._is_untargetable(caster_id):
-                cdmg = self._get_damage_dice(target_id, counter_skill)
+                cdmg = self._counter_damage_dice(target_id, counter_skill)
                 cpen = dchar.get_attr("伤害贯穿", 1)
                 _apply_counter_dmg(react_rank, rr, cdmg, cpen, caster_id, "反击")
             else:
@@ -9742,8 +9936,8 @@ class FastBattleEngine(FullBattleEngine):
         can_atk, _orig_coord = self._move_to_attack_range(atk_uid, def_uid, atk_range)
         if not can_atk:
             return (def_uid, atk_uid, 0, f"射程不足 (range={atk_range})")
-        can_melee, fly_penalty = ((True, False) if self._is_y14(atk_uid) and
-                                 getattr(achar, 'phase', 2) == 1 else self._can_melee(atk_uid, def_uid))
+        can_melee, fly_penalty = ((True, False) if self._y17_ranged(atk_uid) or (self._is_y14(atk_uid) and
+                                 getattr(achar, 'phase', 2) == 1) else self._can_melee(atk_uid, def_uid))
         if not can_melee:
             return (def_uid, atk_uid, 0, f"无法近战飞行目标")
         self._y17_weapon_used(atk_uid)
@@ -9816,6 +10010,7 @@ class FastBattleEngine(FullBattleEngine):
         defender = self._unit_il_entry(def_uid, self._get_initiative()) or {}
         dw = self._react_dw.get(def_uid, defender.get('react_dodge_w', 50))
         cw = self._react_cw.get(def_uid, defender.get('react_counter_w', 50))
+        dw, cw = self._y17_reaction_weights(def_uid, dw, cw, dodge_val, bmv, atk_rank)
         bw = self._react_bw.get(def_uid, defender.get('react_block_w', 0)) if can_block else 0
         total_w = dw + cw + bw
         if total_w > 0:
@@ -9846,7 +10041,7 @@ class FastBattleEngine(FullBattleEngine):
             eff_atk, eff_react = max(-2, min(4, eff_atk)), max(-2, min(4, eff_react))
             if eff_react > eff_atk and eff_react > 0:
                 winner_rank, winner_uid, loser_uid = eff_react, def_uid, atk_uid
-                cdmg = self._get_damage_dice(def_uid, bmn)
+                cdmg = self._counter_damage_dice(def_uid, bmn)
                 cpen = dchar.get_attr("伤害贯穿",1); cleth = dchar.get_attr("致死骰",1) or 0
                 dmg_dice, pen, leth, is_counter = cdmg, cpen, cleth, True
             elif eff_atk > eff_react and eff_atk > 0:
@@ -9861,6 +10056,7 @@ class FastBattleEngine(FullBattleEngine):
             if react_rank == -2: eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
             if eff_atk <= 0:
+                self._y17_weapon_used(atk_uid, blocked=True)
                 # 格挡成功：盾牌承受伤害，不触发致死
                 blk_mx = max_damage(dmg_dice)
                 if atk_rank == 2: blk_dmg = max(roll_dice(dmg_dice), roll_dice(dmg_dice))

@@ -1,0 +1,47 @@
+{
+  "checks": [
+    {
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "tests.test_y17_balance",
+        "tests.test_y16_balance",
+        "tests.test_y14_balance",
+        "tests.test_summon_groups",
+        "tests.test_support_balance",
+        "-q"
+      ],
+      "returncode": 0,
+      "output": "----------------------------------------------------------------------\nRan 117 tests in 3.230s\n\nOK\n"
+    },
+    {
+      "command": [
+        "python",
+        "merge_backend.py"
+      ],
+      "returncode": 0,
+      "output": "Written 23921 lines to D:\\Datastruct\\logai\\autocombat\\autocombat_backend.py\n"
+    },
+    {
+      "command": [
+        "python",
+        "artifacts/balance_y17/verify_integrated.py"
+      ],
+      "returncode": 0,
+      "output": ".....................................\n----------------------------------------------------------------------\nRan 37 tests in 0.932s\n\nOK\n"
+    }
+  ],
+  "installed_matches_frozen": {
+    "characters_data.py": true,
+    "characters_data_pvp.py": true,
+    "battle_engine.py": true,
+    "ai_trainer.py": true,
+    "ai_battle.py": true,
+    "battle_http_server.py": true,
+    "combat_settings.py": true,
+    "combat_defaults.py": true,
+    "team_tables.py": true,
+    "ai_weights.json": true
+  }
+}

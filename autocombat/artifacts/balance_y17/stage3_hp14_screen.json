@@ -1,0 +1,5124 @@
+{
+  "mode": "screen",
+  "seed": 2026111500,
+  "candidate": {
+    "rules": {},
+    "hp": 14
+  },
+  "fingerprints": {
+    "characters_data.py": "771108c92cfa419187c4dbe73495372600c7fb0d99bbb368a6a54cca00f11230",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "ed195adc0a11bf847ee1e1a2a15ccb8f3bb9f9243ed1de281b62b0ae1306ee08",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "df1cfe99715dc83dc122daf233f1377dd144099b1782255fae2fbab4392ace92",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "weights_used": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c"
+  },
+  "settings": {
+    "DELAY_PRELIM_TURN": 0,
+    "DELAY_KNOCKOUT_TURN": 0,
+    "DELAY_CUSTOM_TURN": 0,
+    "DELAY_PRELIM_BETWEEN_BATTLES": 0,
+    "DELAY_KNOCKOUT_BETWEEN_GAMES": 0,
+    "DELAY_DRAW_DISPLAY": 0,
+    "DELAY_STANDINGS_DISPLAY": 0,
+    "DISPLAY_PRELIM": 0,
+    "DISPLAY_KNOCKOUT": 1,
+    "DISPLAY_CUSTOM": 1,
+    "CONSOLE_LOG_LEVEL": 20,
+    "FILE_LOG_LEVEL": 10,
+    "WEB_LOG_LEVEL": 20,
+    "CUSTOM_PREVIEW_BATTLES": 20,
+    "RR_ROUNDS_1V1": 7,
+    "RR_ROUNDS_2V2": 5,
+    "RR_ROUNDS_3V3": 6,
+    "TARGET_1V1_MATCHES": 82,
+    "RANDOM_BONUS_1V1": 0,
+    "RANDOM_BONUS_2V2": 56,
+    "RANDOM_BONUS_3V3": 65,
+    "MAP_SIZES_2V2": [
+      "10x10"
+    ],
+    "MAP_SIZES_3V3": [
+      "10x10"
+    ],
+    "PRELIM_WORKERS": 1,
+    "SEASON_AVG_STATUS": null,
+    "MAX_ROUNDS_PRELIM": 24,
+    "MAX_ROUNDS_KNOCKOUT": 35,
+    "MAX_ROUNDS_PRELIM_BY_FORMAT": {
+      "1v1": 20,
+      "2v2": 30,
+      "3v3": 45
+    },
+    "KNOCKOUT_DRAW_WEIGHTS": [
+      [
+        5,
+        5,
+        6,
+        8
+      ],
+      [
+        6,
+        7,
+        8,
+        7
+      ],
+      [
+        7,
+        8,
+        7,
+        6
+      ],
+      [
+        8,
+        6,
+        5,
+        5
+      ],
+      [
+        5,
+        6,
+        7,
+        8
+      ],
+      [
+        6,
+        5,
+        8,
+        7
+      ],
+      [
+        7,
+        8,
+        6,
+        5
+      ],
+      [
+        8,
+        7,
+        5,
+        6
+      ]
+    ],
+    "BO_N_PLAYIN": 5,
+    "BO_N_QF": 7,
+    "BO_N_SF": 7,
+    "BO_N_BRONZE": 7,
+    "BO_N_FINAL": 7,
+    "TEAM_TABLES_2V2": [
+      [
+        "Y9",
+        "Y2"
+      ],
+      [
+        "Y3",
+        "Y1"
+      ],
+      [
+        "Y12",
+        "Y11"
+      ],
+      [
+        "Y2",
+        "Y11"
+      ],
+      [
+        "Y10",
+        "Y4"
+      ],
+      [
+        "Y2",
+        "Y4"
+      ],
+      [
+        "Y1",
+        "Y4"
+      ],
+      [
+        "Y9",
+        "Y6"
+      ],
+      [
+        "Y5",
+        "Y7"
+      ],
+      [
+        "Y10",
+        "Y6"
+      ],
+      [
+        "Y1",
+        "Y7"
+      ],
+      [
+        "Y3",
+        "Y8"
+      ],
+      [
+        "Y11",
+        "Y7"
+      ],
+      [
+        "Y12",
+        "Y8"
+      ],
+      [
+        "Y5",
+        "Y8"
+      ],
+      [
+        "Y6",
+        "Y7"
+      ]
+    ],
+    "TEAM_TABLES_3V3": [
+      [
+        "Y1",
+        "Y10",
+        "Y11"
+      ],
+      [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      [
+        "Y9",
+        "Y12"
+      ],
+      [
+        "Y2",
+        "Y5",
+        "Y10"
+      ],
+      [
+        "Y2",
+        "Y11",
+        "Y4"
+      ],
+      [
+        "Y8",
+        "Y1",
+        "Y2"
+      ],
+      [
+        "Y3",
+        "Y4",
+        "Y10"
+      ],
+      [
+        "Y11",
+        "Y5",
+        "Y6"
+      ],
+      [
+        "Y7",
+        "Y8",
+        "Y1"
+      ],
+      [
+        "Y12",
+        "Y3",
+        "Y4"
+      ],
+      [
+        "Y9",
+        "Y3"
+      ],
+      [
+        "Y6",
+        "Y2",
+        "Y12"
+      ],
+      [
+        "Y7",
+        "Y9",
+        "Y4"
+      ]
+    ],
+    "TOURNAMENT_EVENT_DELAY": 0,
+    "DEFAULT_MAP_SIZE": "10x10",
+    "KNOCKOUT_MAP_SIZE": "10x10",
+    "BONUS_MAP_SIZE": "10x10",
+    "DEFAULT_BATTLE_DELAY": 0.4,
+    "DEFAULT_DISPLAY_LEVEL": 0,
+    "DEFAULT_TOURNAMENT_TYPE": 1,
+    "DEFAULT_RUN_TIMES": 1,
+    "DEFAULT_ENABLED_MODES": [
+      "1v1",
+      "2v2",
+      "3v3"
+    ],
+    "AI_SERVER_PORT": 8888,
+    "AI_SERVER_HOST": "0.0.0.0",
+    "LOG_FILE": "ai_battle.log",
+    "RESULT_FILE": "result.txt",
+    "BRACKET_FILE": "bracket_info.txt",
+    "LOG_BUFFER_LIMIT": 500,
+    "WEB_LOG_LINE_LIMIT": 800,
+    "LOG_STREAM_INTERVAL": 1.0,
+    "AUTO_START_DELAY": 1.0,
+    "CUSTOM_DEFAULT_GAMES": 1,
+    "CUSTOM_MAX_GAMES": 99,
+    "AI_TEMPERATURE": 1.0,
+    "AI_STATE_NOISE": 0.4,
+    "AI_DEFAULT_STATUS": 60,
+    "SEASON_FALLBACK_STATUS": 50,
+    "AI_DODGE_WEIGHT": 50.0,
+    "AI_COUNTER_WEIGHT": 50.0,
+    "AI_REACTION_REWARD": 0.5,
+    "AI_REACTION_PENALTY": 0.1,
+    "AI_REACTION_MIN_WEIGHT": 1.0,
+    "AI_SUPPORT_HP_THRESHOLD": 0.4,
+    "AI_SUPPORT_MP_THRESHOLD": 0.25,
+    "AI_HEAL_HP_THRESHOLD": 0.4,
+    "AI_ITEM_HP_THRESHOLD": 0.6,
+    "AI_ITEM_MP_THRESHOLD": 0.3,
+    "AI_MAX_FAILURES": 5,
+    "BATTLE_MAX_STEPS": 2000,
+    "PRELIM_PROGRESS_INTERVAL": 50,
+    "RESULT_NAME_WIDTH": 18,
+    "TOURNAMENT_PAUSE_POLL": 0.1,
+    "SIM_SINGLE_COUNT": 100,
+    "SIM_TABLE_COUNT": 50,
+    "SIM_PRELIM_COUNT": 10,
+    "SIM_DEFAULT_MODE": "prelim",
+    "SIM_DEFAULT_FORMAT": "1v1",
+    "ROOM_DEFAULT_SPEED": 1,
+    "ROOM_AI_DELAY": 0.85,
+    "ROOM_HISTORY_LIMIT": 1500,
+    "ROOM_IDLE_HOURS": 12,
+    "DEFAULT_RESTIM_MODE": 0,
+    "ALLOW_FAILED_REACTION": true,
+    "AUTO_REACTION_CHOICE": "dodge",
+    "AUTO_REACTION_COUNT": 99,
+    "AI_SUMMON_STATUS_MIN": 40,
+    "AI_SUMMON_STATUS_MAX": 80,
+    "AI_HP_FALLBACK": 10,
+    "CONTRIBUTION_MIN_SAMPLES": 3
+  },
+  "runs": [
+    {
+      "seed": 2026111500,
+      "wins": 34,
+      "battles": 82,
+      "rank": null,
+      "points": 102.0,
+      "seconds": 16.45,
+      "counts": {
+        "casts": 807,
+        "spell_3": 77,
+        "commands": 953,
+        "spell_5": 87,
+        "spell_2": 515,
+        "spell_12": 16,
+        "spell_7": 58,
+        "audit:guard_casts": 77,
+        "audit:guard_spent_blood": 48300,
+        "audit:guard_spent_hp": 0,
+        "audit:guard_spent_mp": 0,
+        "audit:guard_spent_san": 0,
+        "audit:blade_casts": 87,
+        "audit:blade_spent_blood": 7800,
+        "audit:blade_spent_hp": 9,
+        "audit:blade_spent_mp": 0,
+        "audit:blade_spent_san": 0,
+        "audit:arcana_casts": 175,
+        "audit:arcana_spent_blood": 24800,
+        "audit:arcana_spent_hp": 741,
+        "audit:arcana_spent_mp": 8464,
+        "audit:arcana_spent_san": 0,
+        "audit:arcana_chant_started": 175,
+        "audit:arcana_chant_completed": 167,
+        "audit:arcana_damage": 5097,
+        "audit:harvested_ml": 34200,
+        "audit:spear_casts": 16,
+        "audit:spear_spent_blood": 16000,
+        "audit:spear_spent_hp": 0,
+        "audit:spear_spent_mp": 0,
+        "audit:spear_spent_san": 0,
+        "audit:store_casts": 58,
+        "audit:store_spent_blood": 48000,
+        "audit:store_spent_hp": 0,
+        "audit:store_spent_mp": 116,
+        "audit:store_spent_san": 58,
+        "audit:store_healing": 381,
+        "blood_remaining": 40300,
+        "audit:deaths": 37,
+        "spell_10": 12,
+        "audit:cape_casts": 12,
+        "audit:cape_spent_blood": 12000,
+        "audit:cape_spent_hp": 0,
+        "audit:cape_spent_mp": 0,
+        "audit:cape_spent_san": 0,
+        "spell_6": 40,
+        "audit:war_casts": 40,
+        "audit:war_spent_blood": 0,
+        "audit:war_spent_hp": 198,
+        "audit:war_spent_mp": 1160,
+        "audit:war_spent_san": 190,
+        "audit:war_damage": 721,
+        "spell_11": 2,
+        "audit:slash_casts": 2,
+        "audit:slash_spent_blood": 1000,
+        "audit:slash_spent_hp": 0,
+        "audit:slash_spent_mp": 16,
+        "audit:slash_spent_san": 0,
+        "audit:slash_damage": 41
+      },
+      "season_status": {
+        "Y2": 33,
+        "Y3": 96,
+        "Y4": 76,
+        "Y5": 62,
+        "Y6": 80,
+        "Y7": 6,
+        "Y8": 28,
+        "Y9": 64,
+        "Y10": 3,
+        "Y11": 56,
+        "Y12": 23,
+        "Y13": 8,
+        "Y1": 35,
+        "Y14": 94,
+        "Y16": 72,
+        "Y15": 9,
+        "Y17": 25
+      },
+      "standings": [
+        [
+          1,
+          "Y17",
+          102.0,
+          34,
+          82,
+          "夜诏明(Y17)"
+        ],
+        [
+          2,
+          "Y2",
+          12.0,
+          4,
+          6,
+          "达尼厄斯(Y2)"
+        ],
+        [
+          3,
+          "Y3",
+          12.0,
+          4,
+          5,
+          "灵牛(Y3)"
+        ],
+        [
+          4,
+          "Y5",
+          12.0,
+          4,
+          5,
+          "血天使(Y5)"
+        ],
+        [
+          5,
+          "Y9",
+          12.0,
+          4,
+          5,
+          "木落(Y9)"
+        ],
+        [
+          6,
+          "Y11",
+          12.0,
+          4,
+          5,
+          "蓝(Y11)"
+        ],
+        [
+          7,
+          "Y13",
+          12.0,
+          4,
+          5,
+          "“巨人”(Y13)"
+        ],
+        [
+          8,
+          "Y14",
+          12.0,
+          4,
+          5,
+          "余烬(Y14)"
+        ],
+        [
+          9,
+          "Y15",
+          12.0,
+          4,
+          6,
+          "葬火(Y15)"
+        ],
+        [
+          10,
+          "Y10",
+          9.0,
+          3,
+          5,
+          "春晌(Y10)"
+        ],
+        [
+          11,
+          "Y12",
+          9.0,
+          3,
+          5,
+          "斯瑞提卡(Y12)"
+        ],
+        [
+          12,
+          "Y1",
+          9.0,
+          3,
+          5,
+          "炎焱(Y1)"
+        ],
+        [
+          13,
+          "Y16",
+          9.0,
+          3,
+          5,
+          "罗杰(Y16)"
+        ],
+        [
+          14,
+          "Y4",
+          6.0,
+          2,
+          5,
+          "星闪(Y4)"
+        ],
+        [
+          15,
+          "Y6",
+          3.0,
+          1,
+          5,
+          "雪人(Y6)"
+        ],
+        [
+          16,
+          "Y8",
+          3.0,
+          1,
+          5,
+          "比哈米(Y8)"
+        ],
+        [
+          17,
+          "Y7",
+          0.0,
+          0,
+          5,
+          "环花暖(Y7)"
+        ]
+      ],
+      "games": [
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          1,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          1,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          5,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          17,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y17",
+          "Y2",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          18,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y6",
+          15,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y8",
+          19,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ]
+      ]
+    },
+    {
+      "seed": 2026111501,
+      "wins": 41,
+      "battles": 82,
+      "rank": null,
+      "points": 124.28999999999999,
+      "seconds": 16.31,
+      "counts": {
+        "casts": 792,
+        "spell_3": 81,
+        "commands": 927,
+        "spell_5": 87,
+        "spell_2": 506,
+        "audit:guard_casts": 81,
+        "audit:guard_spent_blood": 51600,
+        "audit:guard_spent_hp": 0,
+        "audit:guard_spent_mp": 0,
+        "audit:guard_spent_san": 0,
+        "audit:blade_casts": 87,
+        "audit:blade_spent_blood": 8100,
+        "audit:blade_spent_hp": 6,
+        "audit:blade_spent_mp": 0,
+        "audit:blade_spent_san": 0,
+        "audit:arcana_casts": 172,
+        "audit:arcana_spent_blood": 31800,
+        "audit:arcana_spent_hp": 726,
+        "audit:arcana_spent_mp": 8255,
+        "audit:arcana_spent_san": 0,
+        "audit:arcana_chant_started": 172,
+        "audit:arcana_chant_completed": 165,
+        "blood_remaining": 51000,
+        "audit:deaths": 31,
+        "spell_7": 54,
+        "audit:store_casts": 54,
+        "audit:store_spent_blood": 46500,
+        "audit:store_spent_hp": 0,
+        "audit:store_spent_mp": 108,
+        "audit:store_spent_san": 54,
+        "audit:store_healing": 372,
+        "audit:arcana_damage": 5730,
+        "audit:harvested_ml": 44000,
+        "spell_12": 8,
+        "audit:spear_casts": 8,
+        "audit:spear_spent_blood": 8000,
+        "audit:spear_spent_hp": 0,
+        "audit:spear_spent_mp": 0,
+        "audit:spear_spent_san": 0,
+        "spell_6": 45,
+        "audit:war_casts": 45,
+        "audit:war_spent_blood": 0,
+        "audit:war_spent_hp": 185,
+        "audit:war_spent_mp": 1305,
+        "audit:war_spent_san": 223,
+        "audit:war_damage": 898,
+        "spell_10": 11,
+        "audit:cape_casts": 11,
+        "audit:cape_spent_blood": 11000,
+        "audit:cape_spent_hp": 0,
+        "audit:cape_spent_mp": 0,
+        "audit:cape_spent_san": 0
+      },
+      "season_status": {
+        "Y2": 85,
+        "Y3": 35,
+        "Y4": 24,
+        "Y5": 73,
+        "Y6": 78,
+        "Y7": 87,
+        "Y8": 83,
+        "Y9": 73,
+        "Y10": 36,
+        "Y11": 33,
+        "Y12": 62,
+        "Y13": 32,
+        "Y1": 86,
+        "Y14": 30,
+        "Y16": 82,
+        "Y15": 29,
+        "Y17": 91
+      },
+      "standings": [
+        [
+          1,
+          "Y17",
+          124.28999999999999,
+          41,
+          82,
+          "夜诏明(Y17)"
+        ],
+        [
+          2,
+          "Y3",
+          12.0,
+          4,
+          5,
+          "灵牛(Y3)"
+        ],
+        [
+          3,
+          "Y5",
+          12.0,
+          4,
+          5,
+          "血天使(Y5)"
+        ],
+        [
+          4,
+          "Y13",
+          12.0,
+          4,
+          5,
+          "“巨人”(Y13)"
+        ],
+        [
+          5,
+          "Y14",
+          12.0,
+          4,
+          5,
+          "余烬(Y14)"
+        ],
+        [
+          6,
+          "Y2",
+          9.0,
+          3,
+          6,
+          "达尼厄斯(Y2)"
+        ],
+        [
+          7,
+          "Y4",
+          9.0,
+          3,
+          5,
+          "星闪(Y4)"
+        ],
+        [
+          8,
+          "Y9",
+          9.0,
+          3,
+          5,
+          "木落(Y9)"
+        ],
+        [
+          9,
+          "Y11",
+          9.0,
+          3,
+          5,
+          "蓝(Y11)"
+        ],
+        [
+          10,
+          "Y1",
+          9.0,
+          3,
+          5,
+          "炎焱(Y1)"
+        ],
+        [
+          11,
+          "Y10",
+          6.0,
+          2,
+          5,
+          "春晌(Y10)"
+        ],
+        [
+          12,
+          "Y12",
+          6.0,
+          2,
+          5,
+          "斯瑞提卡(Y12)"
+        ],
+        [
+          13,
+          "Y16",
+          6.0,
+          2,
+          5,
+          "罗杰(Y16)"
+        ],
+        [
+          14,
+          "Y8",
+          4.71,
+          2,
+          5,
+          "比哈米(Y8)"
+        ],
+        [
+          15,
+          "Y6",
+          3.0,
+          1,
+          5,
+          "雪人(Y6)"
+        ],
+        [
+          16,
+          "Y15",
+          3.0,
+          1,
+          6,
+          "葬火(Y15)"
+        ],
+        [
+          17,
+          "Y7",
+          0.0,
+          0,
+          5,
+          "环花暖(Y7)"
+        ]
+      ],
+      "games": [
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y17",
+          "Y2",
+          "Y2",
+          5,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y8",
+          19,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y8",
+          20,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y6",
+          12,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          4,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          10,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ]
+      ]
+    },
+    {
+      "seed": 2026111502,
+      "wins": 46,
+      "battles": 82,
+      "rank": null,
+      "points": 138.0,
+      "seconds": 12.3,
+      "counts": {
+        "casts": 728,
+        "spell_3": 77,
+        "commands": 809,
+        "spell_5": 84,
+        "spell_2": 446,
+        "spell_10": 19,
+        "audit:guard_casts": 77,
+        "audit:guard_spent_blood": 48000,
+        "audit:guard_spent_hp": 0,
+        "audit:guard_spent_mp": 0,
+        "audit:guard_spent_san": 0,
+        "audit:blade_casts": 84,
+        "audit:blade_spent_blood": 7600,
+        "audit:blade_spent_hp": 8,
+        "audit:blade_spent_mp": 0,
+        "audit:blade_spent_san": 0,
+        "audit:arcana_casts": 152,
+        "audit:arcana_spent_blood": 26900,
+        "audit:arcana_spent_hp": 607,
+        "audit:arcana_spent_mp": 7794,
+        "audit:arcana_spent_san": 0,
+        "audit:arcana_chant_started": 152,
+        "audit:arcana_chant_completed": 144,
+        "audit:arcana_damage": 6827,
+        "audit:harvested_ml": 45000,
+        "audit:cape_casts": 19,
+        "audit:cape_spent_blood": 19000,
+        "audit:cape_spent_hp": 0,
+        "audit:cape_spent_mp": 0,
+        "audit:cape_spent_san": 0,
+        "blood_remaining": 38000,
+        "spell_7": 64,
+        "audit:store_casts": 64,
+        "audit:store_spent_blood": 62000,
+        "audit:store_spent_hp": 0,
+        "audit:store_spent_mp": 128,
+        "audit:store_spent_san": 64,
+        "audit:store_healing": 495,
+        "spell_6": 30,
+        "audit:war_casts": 30,
+        "audit:war_spent_blood": 0,
+        "audit:war_spent_hp": 135,
+        "audit:war_spent_mp": 870,
+        "audit:war_spent_san": 139,
+        "audit:war_damage": 476,
+        "spell_12": 7,
+        "audit:spear_casts": 7,
+        "audit:spear_spent_blood": 7000,
+        "audit:spear_spent_hp": 0,
+        "audit:spear_spent_mp": 0,
+        "audit:spear_spent_san": 0,
+        "audit:deaths": 19,
+        "spell_11": 1,
+        "audit:slash_casts": 1,
+        "audit:slash_spent_blood": 500,
+        "audit:slash_spent_hp": 0,
+        "audit:slash_spent_mp": 4,
+        "audit:slash_spent_san": 0,
+        "audit:friendly_damage": 96
+      },
+      "season_status": {
+        "Y2": 4,
+        "Y3": 94,
+        "Y4": 26,
+        "Y5": 66,
+        "Y6": 91,
+        "Y7": 5,
+        "Y8": 68,
+        "Y9": 17,
+        "Y10": 16,
+        "Y11": 81,
+        "Y12": 25,
+        "Y13": 71,
+        "Y1": 92,
+        "Y14": 96,
+        "Y16": 31,
+        "Y15": 90,
+        "Y17": 54
+      },
+      "standings": [
+        [
+          1,
+          "Y17",
+          138.0,
+          46,
+          82,
+          "夜诏明(Y17)"
+        ],
+        [
+          2,
+          "Y10",
+          15.0,
+          5,
+          5,
+          "春晌(Y10)"
+        ],
+        [
+          3,
+          "Y11",
+          12.0,
+          4,
+          5,
+          "蓝(Y11)"
+        ],
+        [
+          4,
+          "Y14",
+          12.0,
+          4,
+          5,
+          "余烬(Y14)"
+        ],
+        [
+          5,
+          "Y9",
+          9.0,
+          3,
+          5,
+          "木落(Y9)"
+        ],
+        [
+          6,
+          "Y13",
+          9.0,
+          3,
+          5,
+          "“巨人”(Y13)"
+        ],
+        [
+          7,
+          "Y1",
+          9.0,
+          3,
+          5,
+          "炎焱(Y1)"
+        ],
+        [
+          8,
+          "Y16",
+          9.0,
+          3,
+          5,
+          "罗杰(Y16)"
+        ],
+        [
+          9,
+          "Y2",
+          6.0,
+          2,
+          6,
+          "达尼厄斯(Y2)"
+        ],
+        [
+          10,
+          "Y4",
+          6.0,
+          2,
+          5,
+          "星闪(Y4)"
+        ],
+        [
+          11,
+          "Y5",
+          6.0,
+          2,
+          5,
+          "血天使(Y5)"
+        ],
+        [
+          12,
+          "Y15",
+          6.0,
+          2,
+          6,
+          "葬火(Y15)"
+        ],
+        [
+          13,
+          "Y3",
+          3.0,
+          1,
+          5,
+          "灵牛(Y3)"
+        ],
+        [
+          14,
+          "Y6",
+          3.0,
+          1,
+          5,
+          "雪人(Y6)"
+        ],
+        [
+          15,
+          "Y7",
+          3.0,
+          1,
+          5,
+          "环花暖(Y7)"
+        ],
+        [
+          16,
+          "Y8",
+          0.0,
+          0,
+          5,
+          "比哈米(Y8)"
+        ],
+        [
+          17,
+          "Y12",
+          0.0,
+          0,
+          5,
+          "斯瑞提卡(Y12)"
+        ]
+      ],
+      "games": [
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y7",
+          18,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          1,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y17",
+          "Y2",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y6",
+          12,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ]
+      ]
+    },
+    {
+      "seed": 2026111503,
+      "wins": 46,
+      "battles": 82,
+      "rank": null,
+      "points": 138.0,
+      "seconds": 12.04,
+      "counts": {
+        "casts": 763,
+        "spell_3": 77,
+        "commands": 847,
+        "spell_5": 85,
+        "spell_2": 473,
+        "audit:guard_casts": 77,
+        "audit:guard_spent_blood": 47400,
+        "audit:guard_spent_hp": 0,
+        "audit:guard_spent_mp": 0,
+        "audit:guard_spent_san": 0,
+        "audit:blade_casts": 85,
+        "audit:blade_spent_blood": 7800,
+        "audit:blade_spent_hp": 7,
+        "audit:blade_spent_mp": 0,
+        "audit:blade_spent_san": 0,
+        "audit:arcana_casts": 162,
+        "audit:arcana_spent_blood": 29500,
+        "audit:arcana_spent_hp": 612,
+        "audit:arcana_spent_mp": 8055,
+        "audit:arcana_spent_san": 0,
+        "audit:arcana_chant_started": 162,
+        "audit:arcana_chant_completed": 154,
+        "blood_remaining": 44300,
+        "spell_12": 21,
+        "spell_7": 59,
+        "audit:arcana_damage": 7200,
+        "audit:harvested_ml": 48000,
+        "audit:spear_casts": 20,
+        "audit:spear_spent_blood": 20000,
+        "audit:spear_spent_hp": 0,
+        "audit:spear_spent_mp": 0,
+        "audit:spear_spent_san": 0,
+        "audit:store_casts": 59,
+        "audit:store_spent_blood": 54000,
+        "audit:store_spent_hp": 0,
+        "audit:store_spent_mp": 118,
+        "audit:store_spent_san": 59,
+        "audit:store_healing": 430,
+        "audit:deaths": 28,
+        "spell_6": 39,
+        "audit:war_casts": 39,
+        "audit:war_spent_blood": 0,
+        "audit:war_spent_hp": 163,
+        "audit:war_spent_mp": 1131,
+        "audit:war_spent_san": 204,
+        "audit:war_damage": 577,
+        "spell_10": 9,
+        "audit:cape_casts": 9,
+        "audit:cape_spent_blood": 9000,
+        "audit:cape_spent_hp": 0,
+        "audit:cape_spent_mp": 0,
+        "audit:cape_spent_san": 0,
+        "spell_rejects": 1,
+        "command_rejects": 1,
+        "reject:.s12 mode=throw:攻击目标已失效，未消耗资源": 1
+      },
+      "season_status": {
+        "Y2": 96,
+        "Y3": 39,
+        "Y4": 70,
+        "Y5": 72,
+        "Y6": 33,
+        "Y7": 25,
+        "Y8": 34,
+        "Y9": 9,
+        "Y10": 66,
+        "Y11": 32,
+        "Y12": 36,
+        "Y13": 7,
+        "Y1": 38,
+        "Y14": 10,
+        "Y16": 45,
+        "Y15": 0,
+        "Y17": 42
+      },
+      "standings": [
+        [
+          1,
+          "Y17",
+          138.0,
+          46,
+          82,
+          "夜诏明(Y17)"
+        ],
+        [
+          2,
+          "Y13",
+          15.0,
+          5,
+          5,
+          "“巨人”(Y13)"
+        ],
+        [
+          3,
+          "Y15",
+          12.0,
+          4,
+          6,
+          "葬火(Y15)"
+        ],
+        [
+          4,
+          "Y2",
+          9.0,
+          3,
+          6,
+          "达尼厄斯(Y2)"
+        ],
+        [
+          5,
+          "Y4",
+          9.0,
+          3,
+          5,
+          "星闪(Y4)"
+        ],
+        [
+          6,
+          "Y9",
+          9.0,
+          3,
+          5,
+          "木落(Y9)"
+        ],
+        [
+          7,
+          "Y11",
+          9.0,
+          3,
+          5,
+          "蓝(Y11)"
+        ],
+        [
+          8,
+          "Y16",
+          9.0,
+          3,
+          5,
+          "罗杰(Y16)"
+        ],
+        [
+          9,
+          "Y5",
+          6.0,
+          2,
+          5,
+          "血天使(Y5)"
+        ],
+        [
+          10,
+          "Y6",
+          6.0,
+          2,
+          5,
+          "雪人(Y6)"
+        ],
+        [
+          11,
+          "Y12",
+          6.0,
+          2,
+          5,
+          "斯瑞提卡(Y12)"
+        ],
+        [
+          12,
+          "Y1",
+          6.0,
+          2,
+          5,
+          "炎焱(Y1)"
+        ],
+        [
+          13,
+          "Y14",
+          6.0,
+          2,
+          5,
+          "余烬(Y14)"
+        ],
+        [
+          14,
+          "Y3",
+          3.0,
+          1,
+          5,
+          "灵牛(Y3)"
+        ],
+        [
+          15,
+          "Y10",
+          3.0,
+          1,
+          5,
+          "春晌(Y10)"
+        ],
+        [
+          16,
+          "Y7",
+          0.0,
+          0,
+          5,
+          "环花暖(Y7)"
+        ],
+        [
+          17,
+          "Y8",
+          0.0,
+          0,
+          5,
+          "比哈米(Y8)"
+        ]
+      ],
+      "games": [
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          1,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y17",
+          "Y2",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y6",
+          10,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          11,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          14,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y6",
+          12,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          6,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ]
+      ]
+    },
+    {
+      "seed": 2026111504,
+      "wins": 40,
+      "battles": 82,
+      "rank": null,
+      "points": 120.78999999999999,
+      "seconds": 12.14,
+      "counts": {
+        "casts": 796,
+        "spell_3": 78,
+        "commands": 921,
+        "spell_5": 86,
+        "spell_2": 509,
+        "spell_12": 14,
+        "spell_10": 10,
+        "audit:guard_casts": 78,
+        "audit:guard_spent_blood": 48300,
+        "audit:guard_spent_hp": 0,
+        "audit:guard_spent_mp": 0,
+        "audit:guard_spent_san": 0,
+        "audit:blade_casts": 86,
+        "audit:blade_spent_blood": 7800,
+        "audit:blade_spent_hp": 8,
+        "audit:blade_spent_mp": 0,
+        "audit:blade_spent_san": 0,
+        "audit:arcana_casts": 172,
+        "audit:arcana_spent_blood": 31500,
+        "audit:arcana_spent_hp": 846,
+        "audit:arcana_spent_mp": 8042,
+        "audit:arcana_spent_san": 0,
+        "audit:arcana_chant_started": 172,
+        "audit:arcana_chant_completed": 167,
+        "audit:arcana_damage": 5893,
+        "audit:harvested_ml": 37000,
+        "audit:spear_casts": 14,
+        "audit:spear_spent_blood": 14000,
+        "audit:spear_spent_hp": 0,
+        "audit:spear_spent_mp": 0,
+        "audit:spear_spent_san": 0,
+        "audit:cape_casts": 10,
+        "audit:cape_spent_blood": 10000,
+        "audit:cape_spent_hp": 0,
+        "audit:cape_spent_mp": 0,
+        "audit:cape_spent_san": 0,
+        "blood_remaining": 37400,
+        "spell_7": 59,
+        "audit:store_casts": 59,
+        "audit:store_spent_blood": 52000,
+        "audit:store_spent_hp": 0,
+        "audit:store_spent_mp": 118,
+        "audit:store_spent_san": 59,
+        "audit:store_healing": 416,
+        "spell_6": 40,
+        "audit:war_casts": 40,
+        "audit:war_spent_blood": 0,
+        "audit:war_spent_hp": 175,
+        "audit:war_spent_mp": 1160,
+        "audit:war_spent_san": 170,
+        "audit:war_damage": 765,
+        "audit:deaths": 32
+      },
+      "season_status": {
+        "Y2": 84,
+        "Y3": 48,
+        "Y4": 63,
+        "Y5": 36,
+        "Y6": 55,
+        "Y7": 15,
+        "Y8": 79,
+        "Y9": 44,
+        "Y10": 92,
+        "Y11": 17,
+        "Y12": 45,
+        "Y13": 55,
+        "Y1": 35,
+        "Y14": 50,
+        "Y16": 73,
+        "Y15": 16,
+        "Y17": 35
+      },
+      "standings": [
+        [
+          1,
+          "Y17",
+          120.78999999999999,
+          40,
+          82,
+          "夜诏明(Y17)"
+        ],
+        [
+          2,
+          "Y5",
+          15.0,
+          5,
+          5,
+          "血天使(Y5)"
+        ],
+        [
+          3,
+          "Y10",
+          12.0,
+          4,
+          5,
+          "春晌(Y10)"
+        ],
+        [
+          4,
+          "Y11",
+          12.0,
+          4,
+          5,
+          "蓝(Y11)"
+        ],
+        [
+          5,
+          "Y1",
+          12.0,
+          4,
+          5,
+          "炎焱(Y1)"
+        ],
+        [
+          6,
+          "Y2",
+          9.0,
+          3,
+          6,
+          "达尼厄斯(Y2)"
+        ],
+        [
+          7,
+          "Y12",
+          9.0,
+          3,
+          5,
+          "斯瑞提卡(Y12)"
+        ],
+        [
+          8,
+          "Y13",
+          9.0,
+          3,
+          5,
+          "“巨人”(Y13)"
+        ],
+        [
+          9,
+          "Y14",
+          9.0,
+          3,
+          5,
+          "余烬(Y14)"
+        ],
+        [
+          10,
+          "Y15",
+          9.0,
+          3,
+          6,
+          "葬火(Y15)"
+        ],
+        [
+          11,
+          "Y3",
+          6.0,
+          2,
+          5,
+          "灵牛(Y3)"
+        ],
+        [
+          12,
+          "Y4",
+          6.0,
+          2,
+          5,
+          "星闪(Y4)"
+        ],
+        [
+          13,
+          "Y7",
+          6.0,
+          2,
+          5,
+          "环花暖(Y7)"
+        ],
+        [
+          14,
+          "Y9",
+          6.0,
+          2,
+          5,
+          "木落(Y9)"
+        ],
+        [
+          15,
+          "Y16",
+          3.0,
+          1,
+          5,
+          "罗杰(Y16)"
+        ],
+        [
+          16,
+          "Y8",
+          2.21,
+          1,
+          5,
+          "比哈米(Y8)"
+        ],
+        [
+          17,
+          "Y6",
+          0.0,
+          0,
+          5,
+          "雪人(Y6)"
+        ]
+      ],
+      "games": [
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          9,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          7,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y16",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y17",
+          "Y2",
+          "Y2",
+          4,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y7",
+          16,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          11,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y8",
+          20,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y17",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y2",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y7",
+          17,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y5",
+          "Y17",
+          "Y5",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          10,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y8",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y16",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y6",
+          "Y17",
+          "Y17",
+          3,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y2",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y1",
+          "Y17",
+          "Y1",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y12",
+          8,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y11",
+          "Y17",
+          "Y11",
+          5,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y13",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y14",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y13",
+          "Y17",
+          "Y17",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y12",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y7",
+          "Y17",
+          "Y17",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y9",
+          "Y17",
+          "Y9",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y15",
+          "Y17",
+          "Y15",
+          5,
+          "10x10",
+          "1v1 Alloc",
+          false
+        ],
+        [
+          "Y14",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y10",
+          "Y17",
+          "Y10",
+          6,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y17",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y4",
+          "Y17",
+          "Y4",
+          4,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ],
+        [
+          "Y3",
+          "Y17",
+          "Y3",
+          2,
+          "10x10",
+          "1v1 RR 10x10",
+          false
+        ]
+      ]
+    }
+  ],
+  "errors": [],
+  "mean_wins": 41.4,
+  "target_met": false,
+  "inputs_unchanged": true
+}
