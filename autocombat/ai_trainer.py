@@ -203,7 +203,7 @@ def targeting_reward_modifier(engine, uid, ak):
 
 
 def encode_state(engine, uid):
-    """Encode combat state for a character into a 22-dim hashable key."""
+    """Encode the shared 22 dimensions, plus Y16's weapon/moon dimensions."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
@@ -341,10 +341,11 @@ def encode_state(engine, uid):
     has_root = int(engine._has_status(uid, '禁锢'))
     is_flying = int(engine._is_flying(uid))
 
-    return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
+    state_key = (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
             skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
             has_cake, phase, is_dying, has_ally_effect,
             has_silence, has_disarm, has_stun, has_root, is_flying)
+    return state_key + engine._y16_resource_state(uid) if engine._is_y16(uid) else state_key
 
 
 def encode_summon_state(engine, uid):
@@ -664,6 +665,8 @@ def get_available_actions(engine, uid):
     ck = char.serial or uid
     current_phase = getattr(char, 'phase', 1)
     phase_key = f"{ck}_p{current_phase}"
+    if engine._is_y16(uid):
+        phase_key += '_' + (char.get_str('_weapon_name') or 'staff')
     spells = char.spells or engine.load_spells(uid)
 
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
@@ -703,14 +706,23 @@ def get_available_actions(engine, uid):
             my_summons.add(e.get('name', ''))
 
     filtered = []
-    has_y14_target = not engine._is_y14(uid) or bool(engine._enemy_target_entries(uid))
+    has_y14_target = not (engine._is_y14(uid) or engine._is_y16(uid)) or bool(engine._enemy_target_entries(uid))
     for ak, an in _ACTION_CACHE[phase_key]:
         if ak.startswith('BASIC_ATTACK') and not has_y14_target:
             continue
         if ak.startswith('SKILL_'):
             idx = int(ak.split('_')[1])
             sp = next((s for s in spells if s['index'] == idx), None)
+            if not sp:
+                continue
             if sp:
+                if engine._is_y16(uid):
+                    if engine._y16_preflight(uid, sp, check_cost=True):
+                        continue
+                    if any(e.get('type') == 1 for e in sp.get('effects', [])) and not has_y14_target:
+                        continue
+                    if not any(e.get('type') == 1 for e in sp.get('effects', [])) and not ak.endswith('__T0'):
+                        continue
                 if engine._is_y14(uid):
                     if engine._y14_preflight(uid, sp):
                         continue
@@ -732,7 +744,17 @@ def get_available_actions(engine, uid):
                     continue
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
-                    continue
+                    if engine._is_y16(uid):
+                        own = [e for e in effects if e.get('spellName') == sp['name']
+                               and e.get('remainingRounds', 0) > 0
+                               and engine._resolve_uid(e.get('sourceUserId', '')) == engine._resolve_uid(uid)]
+                        if any(e.get('turn_mp_refund') for e in sp.get('effects', [])):
+                            if len([e for e in own if engine._resolve_uid(e.get('targetUserId', '')) == engine._resolve_uid(uid)]) >= 2:
+                                continue
+                        elif own:
+                            continue
+                    else:
+                        continue
                 # 召唤数量上限：满额/累计耗尽才禁选；有名额时允许补召第二只
                 summon_blocked = False
                 for eff in sp.get('effects', []):
@@ -1616,9 +1638,10 @@ class QTrainer:
             q_vals = []
             for aak, aan in av:
                 q = (engine._y14_action_q(qt, st, aak) if engine._is_y14(uid)
+                     else engine._y16_action_q(qt, st, aak) if engine._is_y16(uid)
                      else qt.get((st, aak), 0.0))
                 # P1: Optimism bias for strategic actions — encourage AI to explore them
-                if q == 0.0 and not engine._is_y14(uid):
+                if q == 0.0 and not engine._is_y14(uid) and not engine._is_y16(uid):
                     an_str = str(aan)
                     if '卡带切换' in an_str:
                         q = 4.0  # High bias: cartridge switching unlocks new abilities

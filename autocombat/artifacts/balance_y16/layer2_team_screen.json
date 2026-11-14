@@ -1,0 +1,683 @@
+{
+  "source": {
+    "battle_engine.py": "02bff48498346a52bdd36b915aa65001ba2128c2e6edd681c2901a1c8ae89b3e",
+    "characters_data.py": "8c950f7085295d8f1d468b8359f47d349aa93da744c4ad00b3d2ed5b4f1299c5",
+    "ai_trainer.py": "fe57dc43267b63ffa7b394ecd7a35f0bb993ddeae7b003b5ff09bb38db2c6a6c",
+    "ai_battle.py": "93863eefe636f4bddf5cec7ac711c0ce4c8abbaed08d85e1f49514c14e665551"
+  },
+  "weights": "fcea158e03a2e44e1e94309acadbcfd1ff6cec641bc5d5c9a744a4f39841f7d3",
+  "seed": 2026111600,
+  "seeds": 10,
+  "format": "team",
+  "total": {
+    "games": 160,
+    "wins": 81,
+    "rounds": 895,
+    "timeouts": 0
+  },
+  "nonsupport": {
+    "games": 160,
+    "wins": 81,
+    "rounds": 895,
+    "timeouts": 0
+  },
+  "rows": [
+    {
+      "left": [
+        "Y16",
+        "Y2"
+      ],
+      "right": [
+        "Y3",
+        "Y4"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 5,
+        "rounds": 76,
+        "timeouts": 0
+      },
+      "casts": {
+        "幻造兵武·即兴短句": 57,
+        "虚假之月": 9,
+        "切换·弓": 15,
+        "灵感大爆发": 8,
+        "月中的倒影": 14,
+        "已然遥远的理想城": 2,
+        "切换·剑": 2,
+        "万众瞩目的乌托邦": 9,
+        "切换·法杖": 2
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 9,
+        "rounds": 152,
+        "timeouts": 0
+      },
+      "casts": {
+        "虚假之月": 19,
+        "切换·弓": 19,
+        "幻造兵武·即兴短句": 131,
+        "切换·剑": 12,
+        "月光王座全额率输出": 10,
+        "万众瞩目的乌托邦": 11,
+        "月中的倒影": 29,
+        "灵感大爆发": 12,
+        "已然遥远的理想城": 3,
+        "切换·法杖": 1
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y11"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 15,
+        "rounds": 94,
+        "timeouts": 0
+      },
+      "casts": {
+        "月中的倒影": 19,
+        "切换·弓": 14,
+        "幻造兵武·即兴短句": 54,
+        "虚假之月": 14,
+        "灵感大爆发": 6,
+        "已然遥远的理想城": 1,
+        "万众瞩目的乌托邦": 9,
+        "切换·剑": 3,
+        "月光王座全额率输出": 2,
+        "切换·法杖": 1
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y9"
+      ],
+      "right": [
+        "Y3",
+        "Y12"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 93,
+        "timeouts": 0
+      },
+      "casts": {
+        "虚假之月": 15,
+        "幻造兵武·即兴短句": 60,
+        "切换·弓": 12,
+        "万众瞩目的乌托邦": 6,
+        "已然遥远的理想城": 4,
+        "月中的倒影": 13,
+        "切换·剑": 2,
+        "月光王座全额率输出": 2,
+        "灵感大爆发": 5
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y2",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y3",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 12,
+        "rounds": 117,
+        "timeouts": 0
+      },
+      "casts": {
+        "虚假之月": 16,
+        "幻造兵武·即兴短句": 86,
+        "切换·剑": 14,
+        "月光王座全额率输出": 12,
+        "切换·弓": 16,
+        "万众瞩目的乌托邦": 7,
+        "灵感大爆发": 16,
+        "月中的倒影": 20,
+        "已然遥远的理想城": 2
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y3",
+        "Y8"
+      ],
+      "right": [
+        "Y2",
+        "Y11",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 12,
+        "rounds": 106,
+        "timeouts": 0
+      },
+      "casts": {
+        "虚假之月": 17,
+        "幻造兵武·即兴短句": 83,
+        "切换·弓": 13,
+        "万众瞩目的乌托邦": 10,
+        "灵感大爆发": 16,
+        "月中的倒影": 17,
+        "切换·剑": 3,
+        "切换·法杖": 1,
+        "已然遥远的理想城": 2,
+        "月光王座全额率输出": 1
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y9",
+        "Y6"
+      ],
+      "right": [
+        "Y1",
+        "Y12",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 135,
+        "timeouts": 0
+      },
+      "casts": {
+        "月中的倒影": 32,
+        "虚假之月": 19,
+        "切换·剑": 11,
+        "月光王座全额率输出": 8,
+        "幻造兵武·即兴短句": 109,
+        "切换·弓": 23,
+        "万众瞩目的乌托邦": 11,
+        "灵感大爆发": 13,
+        "已然遥远的理想城": 1
+      }
+    },
+    {
+      "left": [
+        "Y16",
+        "Y1",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y4",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 122,
+        "timeouts": 0
+      },
+      "casts": {
+        "月中的倒影": 12,
+        "幻造兵武·即兴短句": 48,
+        "切换·弓": 10,
+        "万众瞩目的乌托邦": 4,
+        "虚假之月": 13,
+        "已然遥远的理想城": 5,
+        "灵感大爆发": 3
+      }
+    },
+    {
+      "left": [
+        "Y1",
+        "Y2"
+      ],
+      "right": [
+        "Y3",
+        "Y4"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 8,
+        "rounds": 90,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 2,
+        "rounds": 170,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y11"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 12,
+        "rounds": 98,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y9"
+      ],
+      "right": [
+        "Y3",
+        "Y12"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 10,
+        "rounds": 135,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y2",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y3",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 114,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y3",
+        "Y8"
+      ],
+      "right": [
+        "Y2",
+        "Y11",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 120,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y9",
+        "Y6"
+      ],
+      "right": [
+        "Y1",
+        "Y12",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 2,
+        "rounds": 132,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y1",
+        "Y1",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y4",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 121,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y2"
+      ],
+      "right": [
+        "Y3",
+        "Y4"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 15,
+        "rounds": 68,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 3,
+        "rounds": 121,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y11"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 12,
+        "rounds": 87,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y9"
+      ],
+      "right": [
+        "Y3",
+        "Y12"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 14,
+        "rounds": 106,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y2",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y3",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 9,
+        "rounds": 116,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y3",
+        "Y8"
+      ],
+      "right": [
+        "Y2",
+        "Y11",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 9,
+        "rounds": 112,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y9",
+        "Y6"
+      ],
+      "right": [
+        "Y1",
+        "Y12",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 124,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y4",
+        "Y1",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y4",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 15,
+        "rounds": 110,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y2"
+      ],
+      "right": [
+        "Y3",
+        "Y4"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 81,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 0,
+        "rounds": 145,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y11"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 12,
+        "rounds": 91,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y9"
+      ],
+      "right": [
+        "Y3",
+        "Y12"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 111,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y2",
+        "Y7"
+      ],
+      "right": [
+        "Y1",
+        "Y3",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 8,
+        "rounds": 109,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y3",
+        "Y8"
+      ],
+      "right": [
+        "Y2",
+        "Y11",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 118,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y9",
+        "Y6"
+      ],
+      "right": [
+        "Y1",
+        "Y12",
+        "Y10"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 2,
+        "rounds": 138,
+        "timeouts": 0
+      },
+      "casts": {}
+    },
+    {
+      "left": [
+        "Y11",
+        "Y1",
+        "Y10"
+      ],
+      "right": [
+        "Y2",
+        "Y4",
+        "Y7"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 10,
+        "rounds": 115,
+        "timeouts": 0
+      },
+      "casts": {}
+    }
+  ]
+}

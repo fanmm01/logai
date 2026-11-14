@@ -1,0 +1,9 @@
+{
+  "characters_data.py": "a353367076d6b3fe000bc0b2a17f937fb359d73875af7f2a9e39008b84c78bd6",
+  "battle_engine.py": "41985c5724830a9cfb0077d6ca7c6b5cea0aea15b65a8078ff1b7ac40497121d",
+  "ai_trainer.py": "b917a9fcd3a31b1938903a81bdd67b71c6f293ddf922eb2f3315d7ee9cf2f102",
+  "ai_battle.py": "3029d73e560c91b5c8454d27bbd8b4bb69bc7376fb2006186422142e95e6aa2e",
+  "ai_weights.json": "fcea158e03a2e44e1e94309acadbcfd1ff6cec641bc5d5c9a744a4f39841f7d3",
+  "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+  "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03"
+}

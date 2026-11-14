@@ -1526,7 +1526,9 @@ SUMMON_TEMPLATES['虚假之月'] = {'APP': 1,
  'SIZ': 10,
  'STR': 1,
  'flying': True,
- 'maintenance_mp': 5,
+ 'maintenance_mp': 1,
+ 'receives_round_mp_regen': False,
+ 'keep_on_empty': True,
  'max_simultaneous': 1,
  'max_total_spawned': 1,
  'replenish_allies': True,
@@ -1923,6 +1925,7 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
            '体质': 55,
            '写作': 70,
            '剑': 55,
+           '弓术': 55,
            '力量': 50,
            '可反击': 1,
            '外貌': 60,
@@ -1945,8 +1948,7 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
  'name': '罗杰',
  'serial': 'Y16',
  'spells': [{'category': 4,
-             'charge_moon': '2d3',
-             'effects': [{'type': 4, '可叠加': 2, '客体': 3, '持续回合': '2d3', '辅助效果': 'mp回复加值', '辅助效果值': '2d3'}],
+             'effects': [{'type': 4, '可叠加': 2, '客体': 13, '持续回合': '2d3', 'turn_mp_refund': '2d3'}],
              'name': '灵感大爆发',
              'timing': '2',
              '消耗mp': '3d3'},
@@ -1955,9 +1957,9 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '虚假之月', '客体': 1, '持续回合': 99},
                          {'linked_summon': '虚假之月',
                           'type': 4,
-                          '客体': 3,
+                          '客体': 13,
                           '持续回合': 99,
-                          '辅助效果': '伤害成功率奖励惩罚',
+                          '辅助效果': '全D100检定奖励骰',
                           '辅助效果值': 'b'}],
              'name': '虚假之月',
              'timing': '2',
@@ -1971,7 +1973,7 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'hp_threshold_grant': {'aux_code': 30, 'cost_moon': 5, 'ratio': 0.5},
                           'type': 4,
-                          '客体': 1,
+                          '客体': 13,
                           '持续回合': 99,
                           '辅助效果': '免疫一次伤害',
                           '辅助效果值': '1'}],
@@ -1984,6 +1986,8 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'timing': '1'},
             {'category': 1,
              'effects': [{'charge_moon': 2,
+                          'staff_charge_bonus': 1,
+                          'bow_volley': 3,
                           'type': 1,
                           '伤害骰': '1d2',
                           '可反击性': 0,
@@ -2013,6 +2017,7 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '2d12',
+                          '幻造': True,
                           '可反击性': 0,
                           '可贯穿性': 1,
                           '可闪避性': 0,
@@ -2022,14 +2027,14 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'name': '万众瞩目的乌托邦',
              'timing': '2',
              'weapon_required': 'bow',
-             '吟唱回合': 3,
+             '吟唱回合': 1,
              '消耗mp': 10},
             {'category': 2,
-             'effects': [{'type': 2, '作用半径': 20, '客体': 3, '护盾值': '2d4', '持续回合': 3}],
+             'effects': [{'type': 2, '作用半径': 20, '客体': 13, '护盾值': '2d6', '持续回合': 3, 'shield_absorb_moon_ratio': 1}],
              'name': '已然遥远的理想城',
              'timing': '2',
              'weapon_required': 'staff',
-             '消耗mp': 12},
+             '消耗mp': 6},
             {'category': 1,
              'effects': [{'consume_moon': True,
                           'damage_moon_mult': 5,
@@ -3181,6 +3186,218 @@ class CombatEngine:
     def _get_summon_template(self, name):
         registry = getattr(self, '_summon_templates_snapshot', None)
         return registry.get(name) if registry is not None else _get_summon_template(name)
+
+    def _is_y16(self, uid):
+        return self.get_char(uid).serial == 'Y16'
+
+    def _y16_resource_state(self, uid):
+        weapon = self.get_char(uid).get_str('_weapon_name') or 'staff'
+        moons = self._find_summons_by_field(self._battle_team_of(uid), 'replenish_allies')
+        energy = moons[0][1].get_attr('魔力', 0) if moons else 0
+        return ({'staff': 0, 'bow': 1, 'sword': 2}.get(weapon, 0),
+                int(bool(moons)), 0 if energy <= 0 else (1 if energy <= 20 else 2))
+
+    def _y16_preflight(self, uid, spell, *, check_cost=False):
+        if not self._is_y16(uid):
+            return ''
+        char = self.get_char(uid)
+        weapon = char.get_str('_weapon_name') or 'staff'
+        if spell.get('weapon_required') and spell['weapon_required'] != weapon:
+            return '当前武器无法使用该技能'
+        for eff in spell.get('effects', []):
+            if eff.get('weapon_state') == weapon:
+                return '已经装备该武器'
+            if eff.get('consume_moon') and self._y16_resource_state(uid)[2] != 2:
+                return '需要存活的虚假之月且月能超过20'
+            if eff.get('召唤物模板'):
+                remain, reason = self._get_summon_quota(uid, eff['召唤物模板'])
+                if remain == 0:
+                    return reason
+        if check_cost:
+            cost = spell.get('_mp_formula_transformed') if char.hs_transformed else None
+            cost = cost or spell.get('消耗mp', 0)
+            cost = max_damage(str(cost)) if isinstance(cost, str) else cost
+            if weapon == 'bow' and any(e.get('bow_volley') for e in spell.get('effects', [])):
+                cost += 1
+            if cost > 0:
+                cost = max(1, int(cost * self._get_buff_mp_cost_pct(uid))
+                           + self._get_buff_mp_cost_flat(uid))
+            if char.get_attr('魔力', 0) < cost:
+                return '魔力不足'
+        return ''
+
+    def _y16_prepare_spell(self, uid, spell):
+        if not self._is_y16(uid):
+            return spell
+        spell = dict(spell, effects=[dict(e) for e in spell.get('effects', [])])
+        for key in ('_shared_phantom', '_moon_charge_done', '_moon_dmg'):
+            spell.pop(key, None)
+        if (self.get_char(uid).get_str('_weapon_name') or 'staff') == 'bow':
+            effects = []
+            for eff in spell['effects']:
+                count = eff.get('bow_volley', 0)
+                if count:
+                    spell['消耗mp'] = int(spell.get('消耗mp', 0)) + 1
+                    spell['_share_writing'] = True
+                    bow_dice = self._get_damage_dice(uid, '弓术')
+                    for hit in range(count):
+                        item = dict(eff, 伤害骰=f"{eff['伤害骰']}+{bow_dice}", letter=f'volley{hit}')
+                        if hit:
+                            item.pop('charge_moon', None)
+                        effects.append(item)
+                else:
+                    effects.append(eff)
+            spell['effects'] = effects
+        return spell
+
+    def _note_inspiration_event(self, uid):
+        if not any(b.get('turn_mp_refund') for b in self._get_active_buffs(uid)):
+            return
+        pending = getattr(self, '_inspiration_pending', set())
+        pending.add(self._resolve_uid(uid))
+        self._inspiration_pending = pending
+
+    def _settle_inspiration(self, uid):
+        uid = self._resolve_uid(uid)
+        pending = getattr(self, '_inspiration_pending', set())
+        if uid not in pending:
+            return
+        pending.discard(uid)
+        state = self._get_state() or {}
+        marker = (state.get('round'), uid)
+        settled = getattr(self, '_inspiration_settled', set())
+        if marker in settled or (self._get_combat_hp(uid) or 0) <= 0:
+            return
+        settled.add(marker)
+        self._inspiration_settled = settled
+        buffs = [b for b in self._get_active_buffs(uid) if b.get('turn_mp_refund')][:2]
+        amount = sum(roll_dice(b['turn_mp_refund']) for b in buffs)
+        if amount:
+            self._restore_resource(uid, amount)
+            self._pending_battle_events.append(f'{self.get_char(uid).name} 灵感返蓝 +{amount} MP')
+
+    def _phantom_spell_adjustment(self, uid, eff, spell, dice):
+        """One shared writing result per volley, with one charge per committed cast."""
+        if spell.get('_share_writing') and '_shared_phantom' in spell:
+            bonus, output = spell['_shared_phantom']
+            output = ''
+        else:
+            bonus, output = self._roll_phantom_bonus(uid)
+            if spell.get('_share_writing'):
+                spell['_shared_phantom'] = (bonus, output)
+        if bonus:
+            dice += f'{bonus:+d}'
+        charge = eff.get('charge_moon', 0)
+        if charge and not spell.get('_moon_charge_done'):
+            amount = roll_dice(charge) if isinstance(charge, str) else int(charge)
+            amount += bonus
+            if (self.get_char(uid).get_str('_weapon_name') or 'staff') == 'staff':
+                amount += eff.get('staff_charge_bonus', 0)
+            charged = self._charge_moon_energy(self._battle_team_of(uid), max(0, amount))
+            spell['_moon_charge_done'] = True
+            if charged:
+                output += f'  月能充能 ({spell.get("name", "")}): +{charged}\n'
+        return dice, output
+
+    def _roll_phantom_bonus(self, uid):
+        owner = uid
+        buffs = self._get_active_buffs(uid)
+        if not any(b.get('spellName') == '幻造兵武' for b in buffs):
+            entry = self._unit_il_entry(uid, self._get_initiative()) or {}
+            owner = entry.get('ownerId', uid)
+            buffs = self._get_active_buffs(owner)
+        if not any(b.get('spellName') == '幻造兵武' for b in buffs):
+            return 0, ''
+        char = self.get_char(owner)
+        writing = char.get_attr('写作', 0)
+        if writing <= 0:
+            return 0, ''
+        self._note_inspiration_event(uid)
+        roll, detail = roll_d100(_calc_net_bp(buffs, '', '写作'))
+        rank = success_rank(roll, self._apply_buff_skill_mod(owner, writing, '写作'))
+        if rank >= 4:
+            bonus = roll_dice('2d6')
+        elif rank == 3:
+            bonus = 6 + roll_dice('1d6')
+        elif rank == 2:
+            bonus = roll_dice('1d6')
+        elif rank == 1:
+            bonus = roll_dice('1d3')
+        elif rank == -2:
+            bonus = -roll_dice('1d2')
+        else:
+            bonus = 0
+        return bonus, f'  幻造兵武·写作检定: D100={roll}/{writing} {rank_text(rank)} 伤害{bonus:+d}\n'
+
+    def _y16_action_q(self, table, state, action):
+        # Old weights remain usable until the Y16-only training run replaces them.
+        value = table.get((state, action), table.get((state[:22], action), 0.0))
+        if not action.startswith('SKILL_'):
+            return value
+        index = int(action.split('_')[1])
+        weapon, alive, energy = state[-3:]
+        prior = 0.0
+        if index == 2 and not alive:
+            prior = 1.5
+        elif index == 3:
+            prior = 1.0
+        elif index == 6:
+            prior = 0.5
+        elif index in (7, 8, 9):
+            prior = 2.0 if index == 9 and energy == 2 else -1.5
+        elif index == 12:
+            prior = 3.0
+        elif index == 11:
+            prior = 0.5 if state[0] < 6 else -1.0
+        return value + prior
+
+    def _charge_heal_overflow(self, uid, amount):
+        """Route actual healing excess once, only through a live matching link."""
+        amount = max(0, int(amount or 0))
+        if not amount or (self._get_combat_hp(uid) or 0) <= 0:
+            return 0
+        entry = self._unit_il_entry(uid, self._get_initiative())
+        if not entry:
+            return 0
+        tmpl = (self._get_summon_template(entry.get('name', '')) or {}) if entry.get('isSummon') else {}
+        if tmpl.get('replenish_allies'):
+            return 0
+        for eff in self._get_effects():
+            name = eff.get('linked_summon')
+            if (eff.get('type') != 'buff' or not name or eff.get('remainingRounds', 0) <= 0
+                    or self._resolve_uid(eff.get('targetUserId', '')) != self._resolve_uid(uid)):
+                continue
+            if self._has_status(uid, '隔离'):
+                return 0
+            for _sid, moon in self._find_summons_by_field(entry.get('team', 'Y'), 'replenish_allies'):
+                if (self._get_summon_template(name) or {}).get('replenish_allies'):
+                    linked = self._get_summon_entry(_sid)
+                    if linked and linked.get('name') == name:
+                        moon.set_attr('魔力', moon.get_attr('魔力', 0) + amount)
+                        return amount
+        return 0
+
+    def _restore_resource(self, uid, amount, kind='mp'):
+        amount = max(0, int(amount or 0))
+        char = self.get_char(uid)
+        key, cap = ('魔力', '魔力上限') if kind == 'mp' else ('理智', None)
+        current = char.get_attr(key, 0)
+        maximum = char.get_attr(cap, current) if cap else 99
+        applied = min(amount, max(0, maximum - current))
+        char.set_attr(key, current + applied)
+        self._charge_heal_overflow(uid, amount - applied)
+        return applied
+
+    def _round_mp_regeneration(self, entries):
+        seen = set()
+        for entry in entries:
+            uid = self._resolve_uid(entry['userId'])
+            if uid in seen or (self._get_combat_hp(uid) or 0) <= 0:
+                continue
+            seen.add(uid)
+            template = (self._get_summon_template(entry.get('name', '')) or {}) if entry.get('isSummon') else {}
+            if template.get('receives_round_mp_regen', True):
+                self._restore_resource(uid, roll_dice('2d6'))
 
     def __init__(self):
         self.characters = {}
@@ -5647,6 +5864,11 @@ class CombatEngine:
             sv = e.get('value',0)
             if sv <= 0: continue
             a = min(remaining, sv); remaining -= a; absorbed += a; e['value'] = sv - a
+            ratio = e.get('shield_absorb_moon_ratio', 0)
+            if ratio and a:
+                charged = self._charge_moon_energy(self._battle_team_of(e.get('sourceUserId', uid)), int(a * ratio))
+                if charged:
+                    msgs.append(f'理想城护盾转化月能 +{charged}')
             if e['value'] <= 0: e['remainingRounds'] = 0; msgs.append(f"护盾【{e.get('spellName','')}】被击破！")
             else: msgs.append(f"护盾【{e.get('spellName','')}】吸收 {a} 点伤害（剩余 {e['value']}）")
             if remaining <= 0: break
@@ -5790,6 +6012,7 @@ class CombatEngine:
                           '分发自留','分发队友每人','分发给总数上限',
                           '幻造','once_per_transform','persist_through_battle',
                           'charge_moon',
+                          'staff_charge_bonus','bow_volley','shield_absorb_moon_ratio',
                           'damage_pct_caster_max_hp','damage_pct_target_max_hp',
                           'damage_pct_caster_cur_hp','damage_mp_multiplier','damage_fixed',
                           'damage_moon_mult','consume_moon',
@@ -5802,7 +6025,7 @@ class CombatEngine:
                           '每回合伤害骰','吸血比例','属性削减',
                           '友方行为','友方伤害骰','友方延迟回复骰','友方延迟回复公式',
                           '敌方回复','敌方回复骰','ignite_dmg_dice','on_enter_attr_debuff',
-                          'variant','weapon_state','counter_type','linked_summon',
+                          'variant','weapon_state','counter_type','linked_summon','turn_mp_refund',
                           'damage_table','mp_cost_formula','制造分发','复活召唤物主人政策','消费追加回复hp','tasteBonusOwnerSerial']:
                     v = char.get_str(f"{pl}{k}");
                     if v: eff[k] = v
@@ -6093,6 +6316,11 @@ class CombatEngine:
 
     def _end_turn(self, uid):
         """Advance normally even when the active summon group has just died."""
+        state = self._get_state() or {}
+        il = self._get_initiative()
+        active = il[state.get('activeIndex', 0) % len(il)]['userId'] if il else None
+        if active and self._resolve_uid(active) == self._resolve_uid(uid):
+            self._settle_inspiration(uid)
         previous = getattr(self, '_advancing_turn', False)
         self._advancing_turn = True
         try:
@@ -6757,6 +6985,7 @@ class CombatEngine:
                 self._set_combat_hp(target_id, new_hp)
                 effects = [e for e in self._get_effects() if e is not dying]
                 self._set_effects(effects)
+                self._charge_heal_overflow(target_id, remaining - new_hp)
                 return {'applied': new_hp, 'absorbed_excess': absorbed,
                         'rescued': True, 'dead': False}
             self._set_effects(self._get_effects())
@@ -6764,6 +6993,7 @@ class CombatEngine:
                     'rescued': False, 'dead': False}
         new_hp = min(max_hp, current + amount)
         self._set_combat_hp(target_id, new_hp)
+        self._charge_heal_overflow(target_id, amount - (new_hp - current))
         return {'applied': new_hp - current, 'absorbed_excess': 0,
                 'rescued': False, 'dead': False}
 
@@ -6834,6 +7064,8 @@ class CombatEngine:
                             'sourceUserId': caster_id, 'targetUserId': tid or caster_id,
                             'spellName': spell['name'], 'spellIndex': spell['index'],
                             'persistent': spell.get('默认延续性', 0)}
+            if eff.get('shield_absorb_moon_ratio'):
+                shield_entry['shield_absorb_moon_ratio'] = eff['shield_absorb_moon_ratio']
             if is_passive_spell:
                 shield_entry['sourcePassive'] = True
             effects.append(shield_entry)
@@ -6862,18 +7094,11 @@ class CombatEngine:
                 else:
                     out += f'  {tname} 回复 HP +{outcome["applied"]} ({eff.get("回复hp","0")})\n'
             if san_heal > 0:
-                cs = tchar.get_attr('理智', 50) if tchar else 50
-                tchar.set_attr('理智', min(cs + san_heal, 99)); out += f'  {tname} 回复 SAN +{san_heal}\n'
+                self._restore_resource(tid, san_heal, 'san')
+                out += f'  {tname} 回复 SAN +{san_heal}\n'
             if mp_heal > 0:
-                cm = tchar.get_attr('魔力', 0) if tchar else 0
-                mx = tchar.get_attr('魔力上限', cm) if tchar else cm
-                actual_mp = min(cm + mp_heal, mx); overflow_mp = max(0, (cm + mp_heal) - mx)
-                tchar.set_attr('魔力', actual_mp); out += f'  {tname} 回复 MP +{mp_heal}\n'
-                if overflow_mp > 0 and self._has_moon_buff(tid):
-                    entry = next((e for e in self._get_initiative() if e['userId'] == tid), None)
-                    if entry:
-                        charged = self._charge_moon_energy(entry.get('team', 'Y'), overflow_mp)
-                        if charged > 0: out += f'  月能充能 (MP溢出): +{charged}\n'
+                self._restore_resource(tid, mp_heal)
+                out += f'  {tname} 回复 MP +{mp_heal}\n'
             return out
         if ct == 4:  # Buff (with auxCode)
             # load_spells 会把缺失的 持续回合 写成 0；0 视为未声明，取默认 1
@@ -6886,6 +7111,15 @@ class CombatEngine:
             # with the same auxType must NOT collapse into one refresh.
             eff_key = str(eff.get('letter', eff_idx))
             effects = self._get_effects()
+            if eff.get('turn_mp_refund'):
+                stacks = [e for e in effects if e.get('type') == 'buff'
+                          and self._resolve_uid(e.get('targetUserId', '')) == self._resolve_uid(tid)
+                          and e.get('turn_mp_refund') and e.get('remainingRounds', 0) > 0]
+                if len(stacks) >= int(stackable or 1):
+                    oldest = min(stacks, key=lambda e: e['remainingRounds'])
+                    oldest['remainingRounds'] = max(oldest['remainingRounds'], dur)
+                    self._set_effects(effects)
+                    return f'  灵感层数已满，刷新持续回合至{oldest["remainingRounds"]}\n'
             existing = None
             if not stackable:
                 for e in effects:
@@ -6922,6 +7156,11 @@ class CombatEngine:
                     buff_entry['linked_summon'] = eff['linked_summon']
                 if eff.get('hp_threshold_grant'):
                     buff_entry['hp_threshold_grant'] = eff['hp_threshold_grant']
+                    # This is a trigger registration, not an already granted immunity.
+                    buff_entry['auxCode'] = 0
+                    buff_entry['auxType'] = ''
+                if eff.get('turn_mp_refund'):
+                    buff_entry['turn_mp_refund'] = eff['turn_mp_refund']
                 effects.append(buff_entry)
                 bonus_note = f' (伤害骰+{bonus_dmg})' if bonus_dmg else ''
                 label = aux_type or buff_entry.get('skillMod') or 'buff'
@@ -6932,6 +7171,10 @@ class CombatEngine:
 
     # ---- Unified _execute_spell (all 8 categories, all fixes applied) ----
     def _execute_spell(self, caster_id, target_id, spell):
+        reason = self._y16_preflight(caster_id, spell)
+        if reason:
+            return ActionExecutionResult(reason, False, 'spell_rejected')
+        spell = self._y16_prepare_spell(caster_id, spell)
         if self._is_y17(caster_id):
             reason = self._y17_preflight(caster_id, spell)
             if reason:
@@ -7067,7 +7310,9 @@ class CombatEngine:
         # MP cost: support dice expressions and formulas
         mp_cost_raw = spell.get('消耗mp', 0)
         mp_formula = spell.get('_mp_formula', '')
-        if isinstance(mp_cost_raw, str) and ('d' in str(mp_cost_raw).lower()):
+        if spell.get('_mp_formula_transformed') and getattr(char, 'hs_transformed', False):
+            mp_cost = roll_dice(str(spell['_mp_formula_transformed']))
+        elif isinstance(mp_cost_raw, str) and ('d' in str(mp_cost_raw).lower()):
             mp_cost = max(1, (roll_dice(str(mp_cost_raw)) + 1) // 2) if 'ceil' in str(mp_cost_raw) else roll_dice(str(mp_cost_raw))
         elif mp_formula == 'ceil_2d6_div_2':
             mp_cost = max(1, (roll_dice('2d6') + 1) // 2)
@@ -7088,8 +7333,6 @@ class CombatEngine:
                 mp_cost = max(1, (pre_count + 1) // 2) if pre_count else 0
             else:
                 mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
-        elif spell.get('_mp_formula_transformed') and getattr(char, 'hs_transformed', False):
-            mp_cost = roll_dice(str(spell['_mp_formula_transformed']))
         elif spell.get('mp_cost_formula') == 'max_25pct_cur_50pct':
             # 夜诏明 s2: max(25% maxMP, 50% curMP)
             max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
@@ -7120,6 +7363,7 @@ class CombatEngine:
         # ── consume_moon（月光王座）：伤害 = 月能×damage_moon_mult，消耗全部月能并销毁月亮 ──
         # 必须在 MP 扣除之前结算：无月亮时禁止施放且不消耗任何资源；
         # 有月亮时一次性消耗（多个伤害效果/满值穿透都不会重复扣）。
+        moon_payment = None
         for _cm_eff in spell.get('effects', []):
             if _cm_eff.get('consume_moon'):
                 caster_entry_cm = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
@@ -7133,11 +7377,7 @@ class CombatEngine:
                     return ActionExecutionResult(f'{char.name} 月能为0，无法释放【{spell["name"]}】！\n', False, 'spell_rejected')
                 mult_cm = _cm_eff.get('damage_moon_mult', 5)
                 spell['_moon_dmg'] = max(1, int(moon_mp_cm * mult_cm))
-                # 消耗全部月能并销毁虚假之月
-                moon_uid_cm = moons_cm[0][0]
-                moon_char_cm.set_attr('魔力', 0)
-                self._set_combat_hp(moon_uid_cm, 0)
-                out += f'  消耗全部月能 {moon_mp_cm} → 月光王座伤害 {spell["_moon_dmg"]}！虚假之月消逝...\n'
+                moon_payment = (moons_cm[0][0], moon_char_cm, moon_mp_cm)
                 break
 
         # Check counter cost (rings, etc.)
@@ -7258,6 +7498,13 @@ class CombatEngine:
             cur_mp = char.get_attr('魔力', 0) or 0
             if cur_mp < mp_cost: return ActionExecutionResult(f'{char.name} 魔力不足！需要 {mp_cost} MP。', False, 'spell_rejected')
             char.set_attr('魔力', cur_mp - mp_cost); out += f'  消耗 {mp_cost} MP\n'
+        if moon_payment:
+            moon_uid_cm, moon_char_cm, moon_mp_cm = moon_payment
+            moon_char_cm.set_attr('魔力', 0)
+            self._set_combat_hp(moon_uid_cm, 0)
+            out += f'  消耗全部月能 {moon_mp_cm} → 月光王座伤害 {spell["_moon_dmg"]}！虚假之月消逝...\n'
+        if mp_cost > 0:
+            self._note_inspiration_event(caster_id)
         if san_cost > 0:
             cur_san = char.get_attr('理智', 50)
             char.set_attr('理智', max(0, cur_san - san_cost)); out += f'  消耗 {san_cost} SAN\n'
@@ -7359,6 +7606,8 @@ class CombatEngine:
                 e.get('sourceUserId') == self._resolve_uid(caster_id) and e.get('spellIndex') in (11, 12))])
             self.get_char(caster_id)._y14_mode = 'swift' if spell['index'] == 11 else 'brave'
         self._execute_spell_plan(caster_id, target_id, spell, plan, is_passive_spell, out)
+        if mp_cost > 0:
+            self._note_inspiration_event(caster_id)
         # 计划执行完毕后重新读取输出（_execute_spell_plan 内部维护累积输出）
         out = self._spell_plan_output
         if self._is_y14(caster_id):
@@ -7877,6 +8126,7 @@ class CombatEngine:
             if weapon_state:
                 char.set_attr('_weapon_state', {'staff': 0, 'bow': 1, 'sword': 2}.get(weapon_state, 0))
                 char.set_str('_weapon_name', weapon_state)
+                self.load_spells(caster_id)
                 out += f'  切换武器为 {weapon_state}\n'
 
         elif ct == 18:  # allyTeleport — 传送至友方身边
@@ -7999,6 +8249,7 @@ class CombatEngine:
             mhp = char.get_attr('体力上限', chp)
             self._set_combat_hp(caster_id, min(chp + heal, mhp))
             actual_heal = max(0, (self._get_combat_hp(caster_id) or 0) - chp)
+            self._charge_heal_overflow(caster_id, heal - actual_heal)
             out += f'  吸血回复 {actual_heal} HP\n'
 
         # 月相吸取（moon_phase）：目标实际受伤后等量治疗施法者（上限 体力上限）
@@ -8011,6 +8262,7 @@ class CombatEngine:
                 if heal_md > 0:
                     self._set_combat_hp(caster_id, chp_md + heal_md)
                     out += f'  月相吸取: {c_char_md.name} 回复 {heal_md} HP\n'
+                self._charge_heal_overflow(caster_id, min(moon_drain, eff_dmg, old_target_hp) - heal_md)
 
         # On-kill effects: trigger if target died
         target_dead = old_target_hp > 0 and self._is_final_dead(target_id)
@@ -8024,10 +8276,10 @@ class CombatEngine:
                     chp_k = self._get_combat_hp(caster_id) or 10
                     mhp_k = caster_char.get_attr('体力上限', chp_k)
                     self._set_combat_hp(caster_id, min(chp_k + ok_hp, mhp_k))
+                    self._charge_heal_overflow(caster_id, max(0, chp_k + ok_hp - mhp_k))
                     out += f'  击杀回复 {ok_hp} HP\n'
                 if ok_san > 0 and caster_char:
-                    cur_s = caster_char.get_attr('理智', 50)
-                    caster_char.set_attr('理智', min(cur_s + ok_san, 99))
+                    self._restore_resource(caster_id, ok_san, 'san')
                     out += f'  击杀回复 {ok_san} SAN\n'
                 if ok_blood > 0:
                     self._add_blood(caster_id, ok_blood)
@@ -8114,62 +8366,10 @@ class CombatEngine:
         dot_dice = eff.get('每回合伤害骰', '')
         ls = float(eff.get('吸血比例', '0') or '0')
 
-        # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
         if eff.get('幻造'):
-            # Look for 幻造兵武 passive effect on caster (or owner if summon)
-            caster_effects = self._get_effects()
-            phantom_val = 0
-            phantom_ce_hz = None
-            phantom_owner_hz = None
-            for ce in caster_effects:
-                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武':
-                    if ce.get('targetUserId') == caster_id:
-                        phantom_ce_hz = ce
-                        break
-                    # If caster is a summon, check owner
-                    c_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-                    if c_entry and c_entry.get('isSummon'):
-                        oid = c_entry.get('ownerId', '')
-                        if ce.get('targetUserId') == oid:
-                            phantom_ce_hz = ce
-                            phantom_owner_hz = oid
-            if phantom_ce_hz:
-                writing_char_hz = self.get_char(phantom_owner_hz) if phantom_owner_hz else char
-                if writing_char_hz:
-                    writing_val = int(writing_char_hz.get_attr('写作', 0) or 0)
-                    if writing_val > 0:
-                        w_uid_hz = phantom_owner_hz or caster_id
-                        caster_buffs = self._get_active_buffs(w_uid_hz)
-                        bp_str = _calc_net_bp(caster_buffs, '', '写作')
-                        roll, bp_detail = roll_d100(bp_str)
-                        w_rank = success_rank(
-                            roll, self._apply_buff_skill_mod(w_uid_hz, writing_val, '写作'))
-                        if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
-                        elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
-                        elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
-                        elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
-                        elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
-                        else:                phantom_val = 0;                  w_label = '失败'
-                        bp_note = f', {bp_detail}' if bp_detail else ''
-                        if phantom_val != 0:
-                            sign = '+' if phantom_val > 0 else ''
-                            dmg_dice = f"{dmg_dice}{sign}{phantom_val}"
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}！伤害{sign}{phantom_val}\n'
-                        else:
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}\n'
-            # charge_moon: effect-level moon energy charging
-            charge_moon_eff = eff.get('charge_moon', 0)
-            if charge_moon_eff:
-                caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-                if caster_entry:
-                    charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
-                    if phantom_val:
-                        try: charge_amt += int(phantom_val)
-                        except: pass
-                    charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
-                    if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
+            dmg_dice, phantom_output = self._phantom_spell_adjustment(caster_id, eff, spell, dmg_dice)
+            out += phantom_output
 
-        # Friend/foe behavior
         friend_behavior = eff.get('友方行为', '')
         is_friendly = False
         if friend_behavior:
@@ -8688,15 +8888,10 @@ class CombatEngine:
                             mp_heal = roll_dice(seff.get('回复mp', '0'))
                             tchar = self.get_char(tid_h)
                             if hp_heal > 0:
-                                chp = self._get_combat_hp(tid_h) or 10
-                                mhp = tchar.get_attr('体力上限', chp) if tchar else chp
-                                actual_hp = min(chp + hp_heal, mhp)
-                                self._set_combat_hp(tid_h, actual_hp)
+                                self._apply_hp_heal_amount(tid_h, hp_heal)
                                 chant_out += f'  回复 HP +{hp_heal}\n'
                             if mp_heal > 0:
-                                cm = tchar.get_attr('魔力', 0) if tchar else 0
-                                mx = tchar.get_attr('魔力上限', cm) if tchar else cm
-                                tchar.set_attr('魔力', min(cm + mp_heal, mx))
+                                self._restore_resource(tid_h, mp_heal)
                                 chant_out += f'  回复 MP +{mp_heal}\n'
                         elif ct == 5:
                             # Summon on chant completion
@@ -8804,9 +8999,15 @@ class CombatEngine:
 
         self._set_effects(new_effects)
 
+        # Natural restoration precedes paid top-ups; the moon explicitly opts out.
+        has_moon = any(self._find_summons_by_field(team, 'replenish_allies') for team in ('Y', 'X'))
+        if has_moon:
+            self._round_mp_regeneration(init_list)
+        effects = self._get_effects()
+
         # ── hp_threshold_grant: spend summon MP to grant AUX when ally HP is low ──
         # 必须在 replenish_allies 之前执行：补满会把 HP 拉回上限，使 <50% 条件永远不成立。
-        for eff in effects:
+        for eff in list(effects):
             hpt = eff.get('hp_threshold_grant')
             if not hpt or not isinstance(hpt, dict): continue
             tid = eff.get('targetUserId', '')
@@ -8875,9 +9076,12 @@ class CombatEngine:
                 moon_mp = moon_char.get_attr('魔力', 0) or 0
                 moon_mp -= maint
                 if moon_mp <= 0:
-                    self._set_combat_hp(moon_uid, 0)
                     moon_char.set_attr('魔力', 0)
-                    msgs.append(f'{template_name} 月能耗尽，消逝...')
+                    if not tmpl_data.get('keep_on_empty'):
+                        self._set_combat_hp(moon_uid, 0)
+                        msgs.append(f'{template_name} 月能耗尽，消逝...')
+                    else:
+                        msgs.append(f'{template_name} 月能归零，等待充能')
                 else:
                     moon_char.set_attr('魔力', moon_mp)
                     msgs.append(f'{template_name} 维持消耗 {maint} MP (剩余:{moon_mp})')
@@ -8901,18 +9105,8 @@ class CombatEngine:
             if char and hasattr(char, '_round_consumed'):
                 char._round_consumed = set()
 
-        # MP regen per round — deduplicate by base uid for multi-action characters
-        seen_uids = set()
-        for entry in init_list:
-            uid = entry.get('baseUserId', entry['userId'])
-            if uid in seen_uids: continue
-            seen_uids.add(uid)
-            hp = self._get_combat_hp(uid)
-            if hp is not None and hp > 0:
-                char = self.get_char(uid); cm = char.get_attr('魔力',0) or 0
-                mx = char.get_attr('魔力上限',cm) or cm
-                regen = roll_dice('2d6')
-                if regen > 0: char.set_attr('魔力', min(cm+regen, mx))
+        if not has_moon:
+            self._round_mp_regeneration(init_list)
         self._reconcile_summon_groups()
         return '\n'.join(msgs) if msgs else ''
 
@@ -8999,11 +9193,7 @@ class CombatEngine:
                 else:
                     amount = int(amount * self._get_buff_heal_pct(uid, 'mp'))
                     amount += self._get_buff_heal_flat(uid, 'mp')
-                    ch = self.get_char(uid)
-                    cm = ch.get_attr('魔力', 0) or 0
-                    mx = ch.get_attr('魔力上限', cm) or cm
-                    actual = max(0, min(cm + amount, mx) - cm)
-                    ch.set_attr('魔力', cm + actual)
+                    actual = self._restore_resource(uid, amount)
                     absorbed = 0
                 done[uid] = pulse_id
                 tname = entry.get('displayName', entry.get('name', uid))
@@ -9051,13 +9241,10 @@ class CombatEngine:
             elif outcome['applied']:
                 parts.append(f"{outcome['applied']} HP")
         if mp_heal > 0:
-            cmp = tchar.get_attr('魔力', 0) if tchar else 0
-            mx = tchar.get_attr('魔力上限', cmp) if tchar else cmp
-            tchar.set_attr('魔力', min(cmp + mp_heal, mx))
+            self._restore_resource(target_id, mp_heal)
             parts.append(f'{mp_heal} MP')
         if san_heal > 0:
-            cs = tchar.get_attr('理智', 50) if tchar else 50
-            tchar.set_attr('理智', min(cs + san_heal, 99))
+            self._restore_resource(target_id, san_heal, 'san')
             parts.append(f'{san_heal} SAN')
         # Apply buff if item template specifies one (e.g. 闪避+10 from cake).
         buff_msg = ''
@@ -9194,6 +9381,8 @@ class FullBattleEngine(CombatEngine):
             map_size = battle_setting("DEFAULT_MAP_SIZE")
         self._pending_battle_events = []
         self._zone_tick_results = []
+        self._inspiration_pending = set()
+        self._inspiration_settled = set()
         self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"battle_{random.randint(1000,9999)}"
@@ -9384,6 +9573,7 @@ class FullBattleEngine(CombatEngine):
             writing_char = self.get_char(phantom_owner_uid) if phantom_owner_uid else achar
             writing_val = int(writing_char.get_attr('写作', 0) or 0) if writing_char else 0
             if writing_val > 0:
+                self._note_inspiration_event(atk_uid)
                 w_uid = phantom_owner_uid or atk_uid
                 atk_buffs_hz = self._get_active_buffs(w_uid)
                 bp_str_hz = _calc_net_bp(atk_buffs_hz, '', '写作')
@@ -9821,62 +10011,10 @@ class FullBattleEngine(CombatEngine):
         dot_dice = eff.get('每回合伤害骰', '')
         ls = float(eff.get('吸血比例', '0') or '0')
 
-        # 幻造 (phantom creation): check for 幻造兵武 passive and roll 写作 skill
         if eff.get('幻造'):
-            # Look for 幻造兵武 passive effect on caster (or owner if summon)
-            caster_effects = self._get_effects()
-            phantom_val = 0
-            phantom_ce_hz2 = None
-            phantom_owner_hz2 = None
-            for ce in caster_effects:
-                if ce.get('type') == 'buff' and ce.get('spellName') == '幻造兵武':
-                    if ce.get('targetUserId') == caster_id:
-                        phantom_ce_hz2 = ce
-                        break
-                    c_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-                    if c_entry and c_entry.get('isSummon'):
-                        oid = c_entry.get('ownerId', '')
-                        if ce.get('targetUserId') == oid:
-                            phantom_ce_hz2 = ce
-                            phantom_owner_hz2 = oid
-            if phantom_ce_hz2:
-                writing_char_hz2 = self.get_char(phantom_owner_hz2) if phantom_owner_hz2 else char
-                if writing_char_hz2:
-                    writing_val = writing_char_hz2.get_attr('写作', 0) or 0
-                    if writing_val > 0:
-                        w_uid_hz2 = phantom_owner_hz2 or caster_id
-                        caster_buffs_hz = self._get_active_buffs(w_uid_hz2)
-                        bp_str_hz = _calc_net_bp(caster_buffs_hz, '', '写作')
-                        roll, bp_detail = roll_d100(bp_str_hz)
-                        w_rank = success_rank(
-                            roll, self._apply_buff_skill_mod(w_uid_hz2, writing_val, '写作'))
-                        if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
-                        elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
-                        elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
-                        elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
-                        elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
-                        else:                phantom_val = 0;                  w_label = '失败'
-                        bp_note = f', {bp_detail}' if bp_detail else ''
-                        if phantom_val != 0:
-                            sign = '+' if phantom_val > 0 else ''
-                            dmg_dice = f"{dmg_dice}{sign}{phantom_val}"
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}！伤害{sign}{phantom_val}\n'
-                        else:
-                            out += f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}\n'
+            dmg_dice, phantom_output = self._phantom_spell_adjustment(caster_id, eff, spell, dmg_dice)
+            out += phantom_output
 
-            # charge_moon: effect-level moon energy charging
-            charge_moon_eff = eff.get('charge_moon', 0)
-            if charge_moon_eff:
-                caster_entry = next((e for e in self._get_initiative() if e['userId'] == caster_id), None)
-                if caster_entry:
-                    charge_amt = int(charge_moon_eff) if not isinstance(charge_moon_eff, str) else roll_dice(str(charge_moon_eff))
-                    if phantom_val:
-                        try: charge_amt += int(phantom_val)
-                        except: pass
-                    charged = self._charge_moon_energy(caster_entry.get('team', 'Y'), charge_amt)
-                    if charged > 0: out += f'  月能充能 ({spell.get("name","") if spell else ""}): +{charged}\n'
-
-        # Friend/foe behavior (same as base)
         friend_behavior = eff.get('友方行为', '')
         is_friendly = False
         if friend_behavior:
@@ -11082,6 +11220,8 @@ class FastBattleEngine(FullBattleEngine):
             map_size = battle_setting("DEFAULT_MAP_SIZE")
         self._pending_battle_events = []
         self._zone_tick_results = []
+        self._inspiration_pending = set()
+        self._inspiration_settled = set()
         self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"fast_{random.randint(10000,99999)}"
@@ -11680,6 +11820,7 @@ class FastBattleEngine(FullBattleEngine):
                and ce.get('targetUserId') == atk_uid:
                 writing_val2 = int(achar.get_attr('写作', 0) or 0)
                 if writing_val2 > 0:
+                    self._note_inspiration_event(atk_uid)
                     atk_buffs_hz2 = self._get_active_buffs(atk_uid)
                     bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', '写作')
                     roll2, _ = roll_d100(bp_str_hz2)
@@ -11972,7 +12113,7 @@ class FastBattleEngine(FullBattleEngine):
                 ls = float(str(e.get("吸血比例","0") or "0"))
                 if ls > 0 and eff_dmg > 0:
                     heal = int(dmg_val * ls); mhp = char.get_attr("体力上限", self._get_combat_hp(uid) or 10)
-                    self._set_combat_hp(uid, min((self._get_combat_hp(uid) or 10) + heal, mhp))
+                    self._apply_hp_heal_amount(uid, heal)
         return ""
 
     def _fast_move(self, uid):
@@ -12191,7 +12332,7 @@ def targeting_reward_modifier(engine, uid, ak):
 
 
 def encode_state(engine, uid):
-    """Encode combat state for a character into a 22-dim hashable key."""
+    """Encode the shared 22 dimensions, plus Y16's weapon/moon dimensions."""
     char = engine.get_char(uid)
     init_list = engine._get_initiative()
     my_entry = next((e for e in init_list if e['userId'] == uid), None)
@@ -12329,10 +12470,11 @@ def encode_state(engine, uid):
     has_root = int(engine._has_status(uid, '禁锢'))
     is_flying = int(engine._is_flying(uid))
 
-    return (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
+    state_key = (my_b, tb, eb, dist, mp_b, n_enemies, n_allies, n_skills,
             skill_power, has_ur, int(has_heal), int(has_buff), int(buffs_active),
             has_cake, phase, is_dying, has_ally_effect,
             has_silence, has_disarm, has_stun, has_root, is_flying)
+    return state_key + engine._y16_resource_state(uid) if engine._is_y16(uid) else state_key
 
 
 def encode_summon_state(engine, uid):
@@ -12652,6 +12794,8 @@ def get_available_actions(engine, uid):
     ck = char.serial or uid
     current_phase = getattr(char, 'phase', 1)
     phase_key = f"{ck}_p{current_phase}"
+    if engine._is_y16(uid):
+        phase_key += '_' + (char.get_str('_weapon_name') or 'staff')
     spells = char.spells or engine.load_spells(uid)
 
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
@@ -12691,14 +12835,23 @@ def get_available_actions(engine, uid):
             my_summons.add(e.get('name', ''))
 
     filtered = []
-    has_y14_target = not engine._is_y14(uid) or bool(engine._enemy_target_entries(uid))
+    has_y14_target = not (engine._is_y14(uid) or engine._is_y16(uid)) or bool(engine._enemy_target_entries(uid))
     for ak, an in _ACTION_CACHE[phase_key]:
         if ak.startswith('BASIC_ATTACK') and not has_y14_target:
             continue
         if ak.startswith('SKILL_'):
             idx = int(ak.split('_')[1])
             sp = next((s for s in spells if s['index'] == idx), None)
+            if not sp:
+                continue
             if sp:
+                if engine._is_y16(uid):
+                    if engine._y16_preflight(uid, sp, check_cost=True):
+                        continue
+                    if any(e.get('type') == 1 for e in sp.get('effects', [])) and not has_y14_target:
+                        continue
+                    if not any(e.get('type') == 1 for e in sp.get('effects', [])) and not ak.endswith('__T0'):
+                        continue
                 if engine._is_y14(uid):
                     if engine._y14_preflight(uid, sp):
                         continue
@@ -12720,7 +12873,17 @@ def get_available_actions(engine, uid):
                     continue
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
-                    continue
+                    if engine._is_y16(uid):
+                        own = [e for e in effects if e.get('spellName') == sp['name']
+                               and e.get('remainingRounds', 0) > 0
+                               and engine._resolve_uid(e.get('sourceUserId', '')) == engine._resolve_uid(uid)]
+                        if any(e.get('turn_mp_refund') for e in sp.get('effects', [])):
+                            if len([e for e in own if engine._resolve_uid(e.get('targetUserId', '')) == engine._resolve_uid(uid)]) >= 2:
+                                continue
+                        elif own:
+                            continue
+                    else:
+                        continue
                 # 召唤数量上限：满额/累计耗尽才禁选；有名额时允许补召第二只
                 summon_blocked = False
                 for eff in sp.get('effects', []):
@@ -13604,9 +13767,10 @@ class QTrainer:
             q_vals = []
             for aak, aan in av:
                 q = (engine._y14_action_q(qt, st, aak) if engine._is_y14(uid)
+                     else engine._y16_action_q(qt, st, aak) if engine._is_y16(uid)
                      else qt.get((st, aak), 0.0))
                 # P1: Optimism bias for strategic actions — encourage AI to explore them
-                if q == 0.0 and not engine._is_y14(uid):
+                if q == 0.0 and not engine._is_y14(uid) and not engine._is_y16(uid):
                     an_str = str(aan)
                     if '卡带切换' in an_str:
                         q = 4.0  # High bias: cartridge switching unlocks new abilities
@@ -14297,6 +14461,7 @@ class AIController:
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
         TEMPERATURE = battle_setting('AI_TEMPERATURE')
         q_vals = [(engine._y14_action_q(qdict, st, ak) if engine._is_y14(user_id)
+                   else engine._y16_action_q(qdict, st, ak) if engine._is_y16(user_id)
                    else qdict.get((st, ak), 0.0)) for ak, an in actions_pool]
 
         # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
@@ -17537,6 +17702,10 @@ class PvPFullBattleEngine(FullBattleEngine):
         try:
             return super()._execute_spell(caster_id, target_id, spell)
         except ReactionNeeded as e:
+            if self._is_y16(caster_id) and e.data.get('spell_plan') is not None:
+                # The resumable plan already includes the actual transformed/volley
+                # price. Rebuilding it from the original card would display 1 MP.
+                raise
             # Build spell header that was already computed in parent before
             # the ReactionNeeded was raised (spell name, MP cost, etc.)
             char = self.get_char(caster_id)

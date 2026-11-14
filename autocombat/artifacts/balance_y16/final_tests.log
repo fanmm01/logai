@@ -1,0 +1,25 @@
+.............[2026-11-14 23:56:21.327] _run_ai_turns: BREAK human turn — 斯瑞提卡 team=X
+.[2026-11-14 23:56:21.331] _run_ai_turns: BREAK human turn — 血天使 team=Y
+.............................................................错误: 不支持的赛制: 4v4。可用: 1v1, 2v2, 3v3 (或 all)
+错误: 不支持的赛制: foo。可用: 1v1, 2v2, 3v3 (或 all)
+错误: --format 需要至少一个赛制, 可用: 1v1, 2v2, 3v3, all
+.错误: 轮数必须 > 0, 收到: 0
+错误: workers 必须 > 0, 收到: 0
+错误: season 必须在 0-100 之间, 收到: 101
+错误: season 必须在 0-100 之间, 收到: -1
+.错误: 参数 -n 需要一个整数, 收到: abc
+.....预赛平均战绩: 1轮, 赛制=1v1,2v2,3v3, 8并行线程, seed=84066
+...............................................................................F.........................................................
+======================================================================
+FAIL: test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved (test_ui_management.ManagementTests.test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Datastruct\logai\autocombat\tests\test_ui_management.py", line 129, in test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved
+    self.assertEqual(rejected.status_code, 400)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 200 != 400
+
+----------------------------------------------------------------------
+Ran 219 tests in 54.887s
+
+FAILED (failures=1)

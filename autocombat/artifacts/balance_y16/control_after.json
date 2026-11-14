@@ -1,0 +1,64 @@
+{
+  "source": {
+    "battle_engine.py": "02bff48498346a52bdd36b915aa65001ba2128c2e6edd681c2901a1c8ae89b3e",
+    "characters_data.py": "8c950f7085295d8f1d468b8359f47d349aa93da744c4ad00b3d2ed5b4f1299c5",
+    "ai_trainer.py": "fe57dc43267b63ffa7b394ecd7a35f0bb993ddeae7b003b5ff09bb38db2c6a6c",
+    "ai_battle.py": "93863eefe636f4bddf5cec7ac711c0ce4c8abbaed08d85e1f49514c14e665551"
+  },
+  "weights": "617d786a0106f829d241e41e585b7c5de479ae96c0106c0bd43ff267beef9a43",
+  "seed": 2026111600,
+  "seeds": 10,
+  "format": "control",
+  "total": {},
+  "nonsupport": {},
+  "rows": [
+    {
+      "left": [
+        "Y2"
+      ],
+      "right": [
+        "Y3"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 9,
+        "rounds": 54,
+        "timeouts": 0
+      },
+      "casts": {},
+      "result_hash": "3cff08b6d55633a5ee81c3c47a08bcadb15319c85cd05148c8840977f0d3ac87"
+    },
+    {
+      "left": [
+        "Y1"
+      ],
+      "right": [
+        "Y11"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 11,
+        "rounds": 96,
+        "timeouts": 0
+      },
+      "casts": {},
+      "result_hash": "c8f14ef46571caf2c1690a2f6c44a9962a166fae48b3b89eb185b4a423ac691b"
+    },
+    {
+      "left": [
+        "Y4"
+      ],
+      "right": [
+        "Y12"
+      ],
+      "stats": {
+        "games": 20,
+        "wins": 6,
+        "rounds": 117,
+        "timeouts": 0
+      },
+      "casts": {},
+      "result_hash": "25bdeb278a6f27c8bd67f018c933206a53085b2af3dd665536d24ec7911a31f0"
+    }
+  ]
+}

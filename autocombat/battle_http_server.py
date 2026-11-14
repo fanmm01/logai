@@ -971,6 +971,10 @@ class PvPFullBattleEngine(FullBattleEngine):
         try:
             return super()._execute_spell(caster_id, target_id, spell)
         except ReactionNeeded as e:
+            if self._is_y16(caster_id) and e.data.get('spell_plan') is not None:
+                # The resumable plan already includes the actual transformed/volley
+                # price. Rebuilding it from the original card would display 1 MP.
+                raise
             # Build spell header that was already computed in parent before
             # the ReactionNeeded was raised (spell name, MP cost, etc.)
             char = self.get_char(caster_id)

@@ -1,0 +1,9 @@
+{
+  "run": 219,
+  "failures": [
+    "test_ui_management.ManagementTests.test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved"
+  ],
+  "errors": [],
+  "unexpected_failures": [],
+  "known_baseline_failure": "test_ui_management.ManagementTests.test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved"
+}

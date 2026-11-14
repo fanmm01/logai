@@ -1,0 +1,10 @@
+{
+  "battle_engine.py": "02bff48498346a52bdd36b915aa65001ba2128c2e6edd681c2901a1c8ae89b3e",
+  "characters_data.py": "8c950f7085295d8f1d468b8359f47d349aa93da744c4ad00b3d2ed5b4f1299c5",
+  "ai_trainer.py": "389885413eeb1b041963a68942a37ebd7ef9ae9ce87b4b3a1009bcf8de17012c",
+  "ai_battle.py": "93863eefe636f4bddf5cec7ac711c0ce4c8abbaed08d85e1f49514c14e665551",
+  "battle_http_server.py": "f15f05155eb9a95a27594630a3c8af25a29d071c31af70ffb4b6cab8353d5d91",
+  "autocombat_backend.py": "c5cc1c6b6b19691c010f6ebb9c2cea222a0cce6ac81fac320df11a5b46d02907",
+  "ai_weights.json": "2d4342ea174f469d3ed3dfece73220b31f11eb2238dec5fcb2633bcfc0408670",
+  "tests/test_y16_balance.py": "1f2742c1b8005aa759da319a672935d6e17ff20c51f01569ccf296cd010ad93c"
+}

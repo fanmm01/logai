@@ -381,6 +381,7 @@ class AIController:
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
         TEMPERATURE = battle_setting('AI_TEMPERATURE')
         q_vals = [(engine._y14_action_q(qdict, st, ak) if engine._is_y14(user_id)
+                   else engine._y16_action_q(qdict, st, ak) if engine._is_y16(user_id)
                    else qdict.get((st, ak), 0.0)) for ak, an in actions_pool]
 
         # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
