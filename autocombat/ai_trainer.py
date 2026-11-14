@@ -437,6 +437,9 @@ def _mp_run_battle(args):
             char.spells = None  # force reload of Phase2 spells
     engine.setup_battle(a_uids, b_uids, map_size)
     engine._set_actions({uid: {'主动': 2, '附加': 3} for uid in a_uids + b_uids})
+    for uid in a_uids + b_uids:
+        if engine._is_y14(uid):
+            engine._get_actions()[uid]['主动'] = engine._calc_main_actions(uid)
     engine._react_dw = {uid: 50 for uid in a_uids + b_uids}
     engine._react_cw = {uid: 50 for uid in a_uids + b_uids}
     engine._react_bw = {uid: 0 for uid in a_uids + b_uids}
@@ -700,11 +703,19 @@ def get_available_actions(engine, uid):
             my_summons.add(e.get('name', ''))
 
     filtered = []
+    has_y14_target = not engine._is_y14(uid) or bool(engine._enemy_target_entries(uid))
     for ak, an in _ACTION_CACHE[phase_key]:
+        if ak.startswith('BASIC_ATTACK') and not has_y14_target:
+            continue
         if ak.startswith('SKILL_'):
             idx = int(ak.split('_')[1])
             sp = next((s for s in spells if s['index'] == idx), None)
             if sp:
+                if engine._is_y14(uid):
+                    if engine._y14_preflight(uid, sp):
+                        continue
+                    if all(str(e.get('客体', '')) == '1' for e in sp.get('effects', [])) and not ak.endswith('__T0'):
+                        continue
                 if engine._revive_preflight(uid, sp):
                     continue
                 # MP check (including formula-based costs)
@@ -768,7 +779,8 @@ def get_available_actions(engine, uid):
                         atk_range = _get_attack_range(spell_effect=dmg_eff)
             elif ak.startswith('BASIC_ATTACK'):
                 need_range_check = True
-                atk_range = _get_attack_range(skill_name=engine._get_attack_skill(uid, char)[0])
+                profile = engine._y14_attack_profile(uid)
+                atk_range = profile[1] if profile else _get_attack_range(skill_name=engine._get_attack_skill(uid, char)[0])
             if need_range_check and my_ep:
                 max_dist = atk_range + mv
                 reachable = any(
@@ -1469,6 +1481,9 @@ class QTrainer:
             if not c.get('pre_transformed'): engine.process_command(uid, '.hs')
         engine.setup_battle(a_uids, b_uids, map_size)
         engine._set_actions({uid: {'主动':2,'附加':3} for uid in a_uids+b_uids})
+        for uid in a_uids + b_uids:
+            if engine._is_y14(uid):
+                engine._get_actions()[uid]['主动'] = engine._calc_main_actions(uid)
         # Inject trainable reaction weights
         engine._react_dw = {uid: self._react_dw[uid] for uid in a_uids+b_uids}
         engine._react_cw = {uid: self._react_cw[uid] for uid in a_uids+b_uids}
@@ -1600,9 +1615,10 @@ class QTrainer:
             TEMPERATURE = 1.0
             q_vals = []
             for aak, aan in av:
-                q = qt.get((st, aak), 0.0)
+                q = (engine._y14_action_q(qt, st, aak) if engine._is_y14(uid)
+                     else qt.get((st, aak), 0.0))
                 # P1: Optimism bias for strategic actions — encourage AI to explore them
-                if q == 0.0:
+                if q == 0.0 and not engine._is_y14(uid):
                     an_str = str(aan)
                     if '卡带切换' in an_str:
                         q = 4.0  # High bias: cartridge switching unlocks new abilities

@@ -1,0 +1,4562 @@
+[
+  {
+    "pair": [
+      "Y1",
+      "Y2"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1ad6c847fff4523473e9260984df14105bb828859fd96af33f7faa0b5f35df0c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7339a97bc98cd2c65bc44f39a9d9028927087d63a406d0e072e022e51dbf944c"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y3"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 3
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8983a8987adcaf078881925ed886a80fd54a3ae845fcf3734d122ef69eedb883"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "998b1a6dfb0ee16536df1dff734b9f63957ba194ef2e17f85d1d232b0be69069"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y4"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8fdab52af4a8e39aa66bf13065812ac98c3d571f038d689f553ff2b280a16643"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4d0935f92bdf6d1cc0cbcbbe567497efe4915d272227f23dc269f1bc5cd0facf"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y5"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0a519fd12dbc9d60008a489b6e85bae43abb5d8dcd4503c23429fdf7d8c7b4a4"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5fb6995a6856c95652c898a9118bc3766c6358d36b8792b65d09688b513a2df5"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y6"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1076737ec232d568759d041b67ebc9ca7f60e89b7db61e11e1883d4a2d20e4b8"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d55334bce0a99cc3d78b43355f8298d8281e5d3f00f0e8008847581933c2005a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8f9a0936349323b909ed564db22eee113e05153bc7f207fa6a84611346e41fb4"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7067dc7e75ed6683e160710462d80fb4e6674fc6e9ca4872389ef43d009a2b02"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "105068b3be311a4d5c3c53f368e2e1cbf3f4fbcdba6fc1a61615f5c45ccd6125"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8c27554226e0d60ea458574c10df9619009e191b09c2b3da95ccf8ff071f9030"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 10
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0687453cf9ffe653520c0fc6f52ada0691b588c6398b585dfbde68e537890688"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "15c6cd7c250474907d3e02e28dc660de3851effdef0a89b36065e267cc42f010"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 19
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "16cebbd91efb70c8c3608cecb8aefb4ee181f5a899803ccce86f6a17146833bd"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 11,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6b2692e1930a3a614d7aac0271931d30731072a8d4a1d639cd09d3f1cee9f8d4"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 10
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "daeebcec6c7922ef1c3993d027ffadebc81bc25c66c4b077d6157cf0c69170d1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b30062c49460bbb7ba1225c12e1b25b6b9a10be6cb10987cbab746a65ca1b751"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "04c43818105e4ea351a3299c4d8ec67abcea1f8440106b96e6ddd682889b2e29"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "523878e4901df75aa23f1a413d5d766f6333b4a86b0ab0e5ac99ea20589a9daf"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0ab13f00f8d7dfb26f22d8c8eb327f5cdca4d34290a94b93330881b8ca217029"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "522812f64969347c7b18ae1b596ee3660ee5c4f020b2c36efeede8f13a7fcffb"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2e75e95b4635dd8447e45310b9b77500218221ee84adb6b877731f7b9aef498e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0a073b63caea1c8968b7969d690fda6cd0e12e20b0b6ade6fe2b10af08ba5fcf"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 15
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3bdc5a8dbe921791165e3e70c28c696f36912fb8b132e658ef1bd7e49036f6f9"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3db1f45ea1a5400cc2a1e1b521f8e82dd31a14f4d9c596252e4602e0684eb644"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y1",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "86b8761fe52ebeee1d462a6464bfc129f7b912b2e4ae93c113c7d5f891c5f189"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b9a251798716e3e5b5ab915516e9a523adbac3ad747299073cd2cff90bfff852"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y3"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "511e58c3a47a33a3f2be57f71edb03fbf3065fe0751cc0f7e8c121e2990ef886"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e4ac512023b4c1d52b8e197ebf4bb03373e5f669d148c68ba7c289c6426a0e0b"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y4"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "964d5a8c487c79bc706a003b5e2655c383d95e565c38d26c2a067b289f7f5417"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3e31080308c27c085981fdc54cc879825d720299b633bdd871d3f636cadbe8ef"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y5"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dd451bd8ee0c359ed180df5c7e31a337cc7a898abc7b50685e035c27e31c0c6d"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5515ada1554000d78dd46e42cb72afb35797c891863e7abd9fef4fcd1e8ca6bc"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y6"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dda65d69e0eb149bf6105cee12363238c3e4761b5a90140796128eb6a923e41b"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "df97a11ac01fb29a158ee6386f06a561b0eb2520d6b5eeda52a525e413672e01"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "cb59ffa5cdc121665e5f3d8b118b95b43a47bcc56e64a044c366d15747063339"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "493dd82b19572f3852fd4ec073d14f825e2f4bcda4dfe45eb5eeb3b420cc67df"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "adb6ac1b6a2a2a0875b46994ca1b2d4039a8f7664f89aeead3a24c4d2f35a53b"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3742d76b1ad59428c2263a20e362608e7327a0e1f00c742f3a1cd2a0ab9aa31e"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0046de91d8a1d323486cb6d85ac3647807797f2f56af749885f75c5240a833ba"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4e5a6dfbd48294511455249763800cbec507f5e4234ce0d12862d9e899751afb"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7831bbf77ea354eec7629ffee1abedce5e70dbc4ca8db51344ff7ed14b51eeaa"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d8d030465b1f0b712cdbe4f09fd80764eb378a7193b9bd2e664bad31ad5485cf"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "52581955d5b58c531b7bca4096557edd934443c1a9046d9828d1b38beacc739c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a6c9652ad28624cd7a16a0098c71bccdce1568706249bd386c76dadd55a905fd"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "40f011446d3a122151f8a35974336451f8d0f1b323f47fa0e479a47236ec02b2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7ef8f4291866cf4fe218ce22d575f705036e068ef8eb5da1e5cafe81cbab356d"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b3475016702761f58f31d59ff3c82421a37f14e4737871b33300ae41189807a5"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "05db34d784280ed275879b2030f4113e4ca568010e620318c8636b0cab4c37f7"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "07342101504e075179f851e423d114f78ed663bee8ab90570b960748ba3e6048"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1bb32d3e1d601bd93109bae58bce8a4bcbc6d11ad888d767e00ee7a5096b8de4"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 3
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3d52610a8b99d8e9649cf9a9663c8d29f167ef95cadc4629820bdb52006458e9"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3ad77f9ca440de307c27a08bcf4207d8fc09025b95ce5df3ce9b1b2a3a791f06"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y2",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "39df0a6ac3f79e068917190c43569fb041868bde343852b11348d01d3aa5901f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a640cf442f5c8f717c12dd7ce0d8ffaa1c4659428d996bc0f2ce64f036b9f4ae"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y4"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "ad1f6a4322a6c0f258a2fba5a168eb012f07adda3d5dbba645cc74defe7bcce6"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "740ecbdaab419f4d1eeea36c05cbce144cd88e60fbf20ab2bcde0c677ae47bc5"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y5"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 2
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "599dd4a3e354df4bdb622d17df54487d064b34f2c6961d75a46324ac645688ac"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b5cb09b33f3e7e591f8445000680018d2a158b1dc8e7d76074af814e5c791f82"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y6"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "eaf441a58835123f2e86741975df8610b2d011c1f3c03dac06af75dd5c0abf78"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2cffd023083cbea134afd3e55569eaa02372d755d4085ed986260220298a25fe"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 10
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "cfb57d12a8221960f4256efed168e1d3baaa829f38da742ec51c25339215784e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4c3f82d954b3ecae5a7fb580bfdaa12dc5a911fed4b1854a3219a4b7cf91e08a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "18f9df16336ef9ec6d48577bc9458e867a391e0ca330c19874c6fa6c827bbeac"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "aac881bde6063c900d4f937a5d4ae05442f8923bdb06bb06df80dccf514451ee"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "59386cd85d523e419bce84453baaf2f396f35635d9e588d59066cf5d556c8b0e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2e9e6145c4b850db0dd4f92ad6710deb3523e9022d04ea94855921b562b23d83"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 19
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 11,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b0eb738e55ac7698dff57569360e894bd72ea61c26359d336aaeb17aa8292e54"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "76d86f824e2be40567e7e8a03444b13ebd3531efed68e59edf5902c30afd00be"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9129102699c1b26caf3465d479f12ed8f4fe09e75de93de9672bac69a7e2bdb3"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c01495ba05a92123ec043cf9ff668086a8568e7e3a6161c2084c2d6a7e1957f6"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 16
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6982a1dca2c1a0100a5ec8602b65fa277fdba05cbc086446aa23d317f101911c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d4cec5921bf7f528c2355fdad5a0c85f06556a7c3ac2cb3e5f64bd9074b8782a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6aae4a5b7679445cf695ec27fda38d1a9ea4b2be80631c153efee91176a2beff"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8abc741355efb93844b7cbf382062e244c309d6e825bad71d2f2963cbd05b927"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5ce6c274833eecc862dc0c69e6b2ae075177b3680b64f8d87e6c2d3868bd0f26"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e3aedf718a9f82fabe939e3cf9ce146891887da1c10bd27a87d8b611e17a21f8"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0574359a602a986135d7fa49b630ba7c11f273d289f20366a50043155b32f8a8"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "461547639f1c7d5457c979379b2c9a4a94a2bad924f1475684989bd41b4602b0"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y3",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "28de93a5919ba3b6380ac9002d5e42c4e93b5e2f695a09b68ad180cd61226473"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "928fdf2604d8c11dd8a9efc7de9bfbb600d169c4e90df060c4b8fa793ed054ca"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y5"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3fe5a8334dafc4a2a7778e87ce68315a362a4650ad5c20f413a4f087828a3962"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "02a4daddb3ccb2893082667ea3494c003ede5e51a6646f69377ec702f85c0d68"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y6"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5f988f80b5bb06520762c9f10673c7182c493e7ea288545850e75f694150e298"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "46517b83e774e0fc43242d0a6f147165e7e8cadb1165a757f10be664e943aa32"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "05dbe0a42d968dc5bb3d2c44348cb335d8dcfe247bf9966c793606147a15a81f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b25254dfeccfb32991114af23bdb059e8bfa39a2be3057ea609d698621e0b525"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4dcdff7136371337500e52b88f5bb11ad4d5dd9105ae263c35c2f96d22b72fa1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4ad42b551adfa07b6c671cade5211da3833d2aa60957cb7447538171fc7bd194"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7fb73c6a58a95ce0036100a70103413ca2dd750fe3e4b868a0b9d7c713043809"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2404307bd276ea07194c17dc3c048e26dc47c649550e972ee397f518a5907a90"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a12f6dac0f10ddc666c6dd33f1a11c728e213bd22bedc5fdd89ef370878a21b2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "493192f308340506be6615c8e56f614076b870fdec991468ba05ce4a93ebe5f2"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2c6b03795fa335525ed6c748e1c2f7a4869e6702cb3240bd00b31e25c0ffaf83"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "84374558c0307296c35793305a55fe7d7c4f6330cd49da16e2ab45da507ecdbe"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 14
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2f7ebb5ed130016efabd69167f887b7d08d5123bff059fe0e8b68c255bf2daa2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5486f16c1cb29709d61a0fa82c461388d8cefd2755ed63985299dec234cc5d31"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "82de5ade1a5dbcc1681c9937f51bc28622d4cf542d411b9741381ab1f506a9e0"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e70d16ac557afebf77804866a90d5c63bd043a29481907a83fee90567603d887"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3f459f82986da4cbbf5815868f562480ae0a4c3f2e0127141844ad5bc89f66c2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "41eaef15e06cd1aa92a52d5d3fb9cbb3135a0d408a9a172b6dc9d19293a46acd"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2e2632fcf0623c4809444a962da392bf7df4b295cd83b506977349bbda9ecdb5"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "cc4df4c865ae7d1c71d54ff2e0ab3b1d1fd1d21abcc4e70e35c3886231e9a86f"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y4",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 2
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2f4f0b473d90a52c1dab59278df4f59c4fa9182cd9a688a38f92265d8b46ae1f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c28224380aef958028a3969044c08beb468b85ec2d4a9d202ef3a60f67aa6e10"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y6"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "63abb9411b8da89667f27bf48b4c3af71772aa45e5dc970b1ebedf4a8e7b9ef3"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8c8d81fb87cc8821d77af58838950ff7b037831a37bed8660f092b06b1fc8e35"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "378d62d7c1c07d520f73d6a9e6c41079dce2a952dab95d25c5db1e7b6457670c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9ecd552777c004fa2337ebc05f7aeb66c85195132271db2a4bc23610b9662a5b"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2448aad319868e8027ba6a79f491023f8d4219ea1f76d7399aed4e91285181d1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4661a821cad9756d3afc791324f9fbfba5a63bce5e3692e20cad2eb49b3bb209"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f4954420b7bb870cec835663c4cd33dfe667e3799e64de3457f2a533e1eca348"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a4b6348a58e03b91c1b307fa056ffbaf3cff3fdd57f007394893167cb14018e4"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5e80df8c8218ab5403dd4f4ac44c3294b99a66ddb0435d937ced4eec39684a8f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e55ff01e7285b480c15d532599eb3768f6cabade2b5a3c837c2deca329014680"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f64ef5fc74af0a469ad76a465aaf7210a138319cb0d3f06ff610be126513fa26"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e434d18bc99d25bb5e6aa477add8e7b7bd355484afde250a2a40107ca8228353"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "958bf0b019bcd558bb04903c5d139683cfc390ff6bf715d61a457cfb39ad1dde"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dc6efaed9034ec09676e86c7d29bf08e314ba1603d4c5647306d563a823b54e1"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7f47f398f2662a25f7b59d264314dc82639e62e8c7de9fa9a2f08f0277931696"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2f27d236f162d8347a2f8e1e9032c0f6bc3efdcb2048e0f0ba218b66b7eb3518"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "bab686e91136a83efed0a3dc4945e0d3a3a71c68f5f5518744528284d84f3633"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "936787bc5c2767bc44c9513584d1393174c530163de88e15555ceba9900e3cfb"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6a20f19c70b483a6cc42edc8203a3ce0be08f0cdd822cd21ecd9737af0cbcf25"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9ab3fb287dba84167f9b7b5c25e4a1718837fd39287d877cf1f7f41dd6230cbe"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y5",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8d3732c93b58b748d1da221d3b0af7243b8ca310b354c078b8d71442d9295242"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5602dd2089037ecbc55aad79f20ed53b669023e99d68b9092308526250796e93"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y7"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 13
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 11,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "97dedc63ba8b2d3048632051c87382d7fa2eb004707b5ee26243d0a7e7332376"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c32295eed997282e9697a35d003af0773a017b9a8c2f6e8aaba9d185d21d39c5"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 32
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 13,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "cfa13536e20eeb1dd58d744990c820b4340424dc6e053fa5985c9a41cf6887a5"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 19,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2f98ecf7e7af48df9403dd6c59b29e4f2da60a65b3804d191cfdc3856973f7de"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9fbb11f40f8dbc39ac9e90e3c9336fbe1c144f486cbbd32b5fa0717fdab44ace"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "fb270056770bd703a2dd315f136c552455bfc7d2ad7769098e79a3f5b288396f"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f1b862e6bdb9897b527373da2dc3d0216baaa14cd619cb03b4cb362ad5fea006"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "632897c579a1bc23687bdb58c700325dbc047a757039681349c6009fb7895dc0"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7d9792db654c671ad42ab99a14ded0c0cbd9529ec8ad5db2121da6609dbd1ac5"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "119a9a8d1c52556763055fc22eb7adc403ebc1bd6e9730bc9556680a5631ba6d"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "da2b24898c7d666e44fb26f9694808ff41260366a9887a742797fe1ee6c26cb2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dab704515156ea2044f99793fe594bb9c2816b02c9607aecf010f5012dd2df7d"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "11e4852687de501053ea8db9a3842e89c8ca1d0bf67d6eb4a6a58b265aac28b1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3c3bebcbff4643899721e28698cdf13a4cb335ad1121e983ead64fa966cd2b09"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b113efae9e4fc673de7503819e77f4c21338e7337e957fdb526a7d4849e10d24"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b3d3fc52c21f8d21d36386257f402bb560c0927d5cac4aa4d6fd71b8c5e20910"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 13
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "45b1566501c0f70c97d276cbfd736971ed319eb37d275318666d0b4b5dcebd14"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b12d821ed5219b4e3dc36bcbf9a05f15944dab111d82a310cc30125d43fbe481"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y6",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 16
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "aafd5d851b40cfc923ff9f62d7d7caf526d517df5f23a8eb40726a1b073d8fee"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f5405fa07ca12c9c0f3ad1543b1f2c50df891b1688b4756ff765d16393092b25"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y8"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 40
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 20,
+          "timeout": true,
+          "y_ratio": 0.9818,
+          "x_ratio": 0.55
+        },
+        "590607e43a2809207bfad8a575255af3402ced9032ef3b4eaa9563f46f07ac59"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 20,
+          "timeout": true,
+          "y_ratio": 0.2375,
+          "x_ratio": 0.9091
+        },
+        "5f0372da57a4c52f8b116da18c0de25fc913f6e4fbb3523a655b2d5b419c2835"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a1dba94b187906c1e4aa7e44f8298bf5a71f885b4507473f0dba1179e705ac22"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6728677892ccb7b96ec828c72d84c9d7f91fdd2eb917a7e887c67964de807e1c"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 13
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f303bcacaac80302e36703fb28ce4ce2fece6ce6a1ee244364dc411172f28bbb"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2de7ba459b6108ab64fe39434eb235edd409c0fa9dcb168f2b93857d6aa78a2a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "48f0e2368e65fad12c2d8ebc2a993261044cbc4aa6f557afe8ead5200952db01"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1101eb6f4aa3dfd8003a58289b1bb214ba5c689bebddc0f5d14aade042ed49b4"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "03da2ff9ffbe122a2aaa55afe1a23a4d9d51c7b64d93da3b4082e4b66da0d260"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d140793744d6517108cdf24ab63bde2209cb0355fdf41f887518fd3061c4b35e"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9537f2cbc8a396f9e07a41c144bf5e3dcd84bb6d8f79bdbfa74e8c778d26ef49"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a3d6eea8ce7f3f43f22e5cd84fe5039a2babe3a852c3bdf7e0c402953bc6e87b"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dd9d4cde4c31c67af2ed4836c9dbc024f1a8244f24edb99db7ccce2f17092b2e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b3da4d196826546e2ecff3a8f5e0686006ecd1acaa49ea5bd2ba8b7058f1322a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 14
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "544a7630e883690db9e5dcfc8641eb0d662e920f251a411e2be0696cc7838f9e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "f38502321532146d13714141346c19695cfa6e5dd9763cc00b2baa078ac1ab5b"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y7",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 20
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 10,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e6d701795728e58ec221f791dd66ecbd55c311bcf50d6c93cfa60b1ce47cdb4f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 10,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "454dab15b9da045be72d127feede2736db7dc8694576a811442ff85d7fa049f4"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y9"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "70f602d0fc5bc3a5db82d5f9725c951abdd5b9c6be1e945c9041af739cf87503"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "fd2e16d0217d59373d68c6668d84cfcb0dca54662ad38e2f60859a5db50e13f2"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c31f2ff92d89d1f963a952546ab6363cddecc63de28a6530e1423d3f0decf857"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "480f258be2aaebe34ea2c8071b16123878d62703496faf4224b1cab5e6949d46"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dced3e4a12a4f4da881b42c4c411306e4abe5cc7eba116644f20ef0c506273a1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "ad041a1ebdd27de4613fd1b4ff4dcd1c06a273288dd659560a5dfd18f31fbc63"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5510131b988b3468ec6260bc6dd36d6391ae3074b760ad2f1419fedfa0c92c2c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9a61d1f11b682390acd1936b378f27ba84eaad33ebf9ad4ebd7652df467d2f98"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b029579a2e07e00f99adccfa76b8214ab474346c22e35fe12a427e601d56e87d"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "6e5ae9dc93620b1da6416a3e3a1e1f153dde8d70ee3ee5f2c88750b3ffdb6d3b"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1100bc14f756b47f00719ca9a27ef4fab07b69e68d541bf68e031424b33a762a"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4b1d5b6f0d36485016724fc2998c9bbee2e4d4d8b232a37be0d16fdb2d17f072"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3eddef4b924aa7cea07f65c63a4d94f5268c0f085629fdf5fa126deb6395aaa2"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9143a6094b02dc3be30f891f158f1bd22d922639494b1ee994b919e9719d3c60"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y8",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 37
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 20,
+          "timeout": true,
+          "y_ratio": 0.7375,
+          "x_ratio": 0.0536
+        },
+        "1dcc9278d86475813e28d87d8670b9c46509a4c93e1dbebae44117b0a2a9f333"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 17,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9bc7076ea547eff118a06d0864fcbc01094edc4a45e4b3b8c4412e2598d1e3f0"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y10"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3bec170f104190de4a6336b8046965c17eae3f4109e3898f3537b29ab40f2bda"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "04a0b08c38b3905a27d1cef82424ea67d88670e0f28e3cad3eaf48790134a864"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "2e334c8abbcaddef22a7494d971c1878f642bad8b82da8593e119615316ed2b4"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "227ac8dbd6083b59bb08535e9f159a19b8dcc3c897298a0c9f26585e0dac1592"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 17
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d7796fd6851bbe60d2f8c1a7aa7e9f949ae36c06c8e20f770662c7a891adb5d1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 9,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "97dfcd1bebe28d47fa17f6bdeccbf912730de07c97df4326202fa5fc5f283414"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "58186432ca70e26d5de392bf31e4878a0cb160c0e767d4e0e5d6e153d1bacb5d"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "ccd35ea16a2d11027874fc7a6f02529f5114b0a54dade84b6b9929212c85f1fd"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0c3ed8a82516a233f58e5a41d2071dc110be3648a54252ab4c905c60cfc7cf9c"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 1,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "54f5d8c687d4e12ddc1706c696bdbcc45d956f924a801af76624ed82c4fb7661"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "53216ffafb807f31c45e7cc097665b4f339b4deed4e4bcbee2e2e8af65d45566"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "dec16e7bb346a4ec13baa1fab74e30ff2cf3542db5d4180cb57d6465eb8f8307"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y9",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 5
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9091b8ee195296c955ce28c4bc9720e3f8139f3cabec4ba376dbd400c71443da"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d65ddb684a93a11e0197e96d72db478fa9b60129c6af47481ea6f3a4d91d9402"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y11"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 14
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e99b8fc19e6ed13bb0ae13846a578b60d83d61c225bb18f1ffe80d02ee772c9b"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5d344f6b34688ec0560df49b1596c44e5ee68a59f1cf0bc5583b0ddb8e9a0155"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a0878d4c2b29d19ce2085b1a83ebf6234ac4d7c18a7f1dd5ea2b9a10162a87ab"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c5f7fc2dcb62fbb4b2e46d70649d5463d69b8cb052bb713938abfc19a07e0811"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 27
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 16,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c03154bdf8306122ea1b27397e802a2416c7c54a376255fc5517ffff8421c8bf"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 11,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b11408f9574b9569b76841b623b0be932714a10676a46cda737a50d69ad36999"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 13
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "8945b550d746129ded2afaa39a6d433c404533c1370735885ecc04c19e2ee3ed"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a977c3e4e254c1e85d4404ce3c7ab1aa0abc1133e65a605ad817c77177c0f17e"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "83dc8f522276e794abb327fdd543f5fff9a603017b1feaa80076258859b7870f"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "904b5190c98bbaa6d4410ed928d644c75881b4e93aa0cc3a02668cb6c826e92c"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y10",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 4
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "da1e1454fdde81242df9a6de1e6bce00df8bfd5bb5f3c8979a3ac13cb3f0c3b3"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 2,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4a37d1f13e019e5dc7f099a96ec1dbdccd0a1b96ea48daf1902119766f1741d7"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y11",
+      "Y12"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 13
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "acf814583435a196f343461d8c29d78fe860284d5d09a6778a7183fd887ff950"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "0161451a626bd997a6028a13028c5fc7f0d640f3bad7ddd60ead69f73172b562"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y11",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e7a71fde59c110d3bfcf1b7455eb7453cd9df02d39f3f4362c1d52ade9c532cb"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "fa0c34e7cea5ff8d4936f0bb9b5059907ea54cb8ac310e2715732a808cbbef2c"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y11",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "fa61f76948aedff9103dd530ee19a1587bbc06da60321e6757eeb832b909289e"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b4acdcd232f282e0442260379a3f8c6489950a67e2e8341c8de573287d568c4e"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y11",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 9
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "83011b85ba7c1c1827b0885fbd4b8e076d07a9efb30b5554430337cc2fe2a34d"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "308397998c1786a7eeeb8bee09342fb9fc2f92c6e2dfad84ed888480e7bbf2b8"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y11",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "7c845e53e38a850970c728a6beab552be04c17ffe3aa304966e4d445c74f3fb1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "9e92df3736d56ddb6369c911c5052e29f24dcdccf153c809b375796488bfb92a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y12",
+      "Y13"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 1,
+      "rounds": 24
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 12,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "75dd208d83ed624444396d3bc663c40f78f0791adb0f20c68a671f141a658083"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 12,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a65ebd9e8bca9925dd44a4656a77c8b9f9e2f6e63c1919abda73cfce84be1e71"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y12",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 11
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "32a3f21acd45c13f530fbf2f52af4560d190989d5f87476f9d12b0872668bb37"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "41fd07cedae867c7cb398b62faef28012b26e4e88f78362a3f5403fcdadfed68"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y12",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 15
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 7,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "84e50717782b0b38fbd3d45a898dd2aee413179116099e6e8fc41e6a1579bcbc"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 8,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "5991976ce03e51869013cde716b4646eea1aabf9596a6504698c16b6076d278d"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y12",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 8
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c8c5b325a6277f0b90912abc7ad57486a58c83752003e48b2dd58998c87b8afc"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "e083d1da439216a9a9f7829f40f34185be39379f03b35204ae2ab8366a6dc879"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y13",
+      "Y15"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 0,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "X",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "b51aa9bc9d1077f6917a318cc95832f9ec353f827462ce60d48c43b4ad03a90a"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "92a1e76943fb03d83ecc84ecedef6923aa13e6184e51cbe6390f0f3c0859e791"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y13",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 12
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d8102e7187f11066962950a2ca49e7ebc977dc8190d9e642e1b5487318c8ffc1"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 6,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "ce8d70b5009c846eec4f5b333e6abea180bd107671dab32f9535aebd63e55c40"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y13",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 10
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1ee694ee90013a439a6088e1cee47068ca1387ffe20b93e812e99dbeb998eec9"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 5,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "4e66e8b1488cedfcba685f356afa2944c0ad309dcd7b1e61d84ab80f570ffe2a"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y15",
+      "Y16"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 7
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 4,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "3dc62e942a855988761e0e1e46e408c88ae36389291b2774078184ecdc0a3119"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "a10e5ceb6750a3ea3c2ba69657ce6a3666ffc5a880dd2b383fbc6132eac463c9"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y15",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "c96c61cb07572004fc0bc48cb5594c9dde0a0a6a9a29429f4a0707da2fa3b059"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "1ca318b632f3a51a1ac1bb9969442b69dda0cc0df4abfb5c7cb64c9e9ceb1313"
+      ]
+    ]
+  },
+  {
+    "pair": [
+      "Y16",
+      "Y17"
+    ],
+    "stats": {
+      "games": 2,
+      "wins": 2,
+      "rounds": 6
+    },
+    "rejections": {},
+    "fingerprints": [
+      [
+        2026111400,
+        0,
+        {
+          "winner": "Y",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "cb82cdae898eced4a203a6c68faca8ba28a9059872afb6a350723239bde0fa2a"
+      ],
+      [
+        2026111400,
+        1,
+        {
+          "winner": "X",
+          "rounds": 3,
+          "mutual_death": false,
+          "y_overflow": 0,
+          "x_overflow": 0
+        },
+        "d4f4de096983e2298b2bfa1314d959e7c07feedb0358a1109201effdf895c0c6"
+      ]
+    ]
+  }
+]

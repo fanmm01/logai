@@ -437,6 +437,19 @@ class PvPFullBattleEngine(FullBattleEngine):
         dname = dchar.name
         lines = []
 
+        if self._is_y14(atk_uid):
+            profile = self._y14_attack_profile(atk_uid)
+            if profile:
+                can_atk, _ = self._move_to_attack_range(atk_uid, def_uid, profile[1])
+                if not can_atk:
+                    return (def_uid, atk_uid, [f'{aname} 无法接近目标！'])
+                if getattr(achar, 'phase', 2) != 1:
+                    can_melee, penalty = self._can_melee(atk_uid, def_uid)
+                    if not can_melee:
+                        return (def_uid, atk_uid, [f'{aname} 无法近战飞行目标！'])
+                    if penalty:
+                        bp_suffix = 'p'
+
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
@@ -534,6 +547,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                 eff_atk += (2 if eff_atk == -1 else 1)
             eff_atk = max(-2, min(4, eff_atk))
             if eff_atk <= 0:
+                if react_rank > 0 and atk_rank > 0:
+                    self._y14_event(def_uid, 'dodge')
                 lines.append(f"  {dname} 闪避成功！" if react_rank > 0 else "  攻击未命中。")
                 return (def_uid, atk_uid, lines)
             winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
@@ -618,7 +633,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                     lines.append(f"  护盾吸收(atk): {asr[1]}点")
                 achp = self._get_combat_hp(def_uid) or 10
                 achp = max(0, achp - aeff)
-                self._set_combat_hp(def_uid, achp, source_dmg=aeff)
+                self._set_combat_hp(def_uid, achp, source_dmg=aeff, damage_source=atk_uid)
                 lines.append(f"  {aname} 造成伤害: {adetail} → {aeff}点")
                 lines.append(f"  {dname} HP: {achp}")
 
@@ -666,7 +681,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                     lines.append(f"  护盾吸收(def): {dsr[1]}点")
                 dchp = self._get_combat_hp(atk_uid) or 10
                 dchp = max(0, dchp - deff)
-                self._set_combat_hp(atk_uid, dchp, source_dmg=deff)
+                self._set_combat_hp(atk_uid, dchp, source_dmg=deff, damage_source=def_uid, is_counter=True)
                 lines.append(f"  {dname} 反击伤害: {ddetail} → {deff}点")
                 lines.append(f"  {aname} HP: {dchp}")
 
@@ -712,7 +727,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                                                       shield_block_hp=rt_block_hp - absorbed)
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
-                    cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff)
+                    cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
                     lines.append(f"  {rt_name} HP: {cur_hp}")
                     lines.append(f"  {dname} HP: {self._get_combat_hp(def_uid)}")
                     return (def_uid, atk_uid, lines)
@@ -723,7 +738,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                     self._set_summon_entry_fields(def_uid, shield_block_hp=block_hp - absorbed)
                     lines.append(f"  盾牌吸收: {absorbed}点")
                 cur_hp = self._get_combat_hp(def_uid) or 10
-                cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff)
+                cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
                 lines.append(f"  {dname} HP: {cur_hp}")
                 return (def_uid, atk_uid, lines)
             else:
@@ -792,7 +807,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         else:
             cur_hp = max(0, cur_hp - eff_dmg)
         lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点")
-        self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg)
+        self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg, damage_source=winner_uid, is_counter=is_counter)
         lines.append(f"  {loser_name} HP: {cur_hp}")
         return (winner_uid, loser_uid, lines)
 

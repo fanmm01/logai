@@ -6,6 +6,20 @@ SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支�
 运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；WebUI HTTP 服务监听 `0.0.0.0:8889`，另有 `0.0.0.0:8892` TCP 字节流转发端口，供 TCP 隧道映射到本机。启动器可用 `--tcp-port` 更改转发端口。
 首次构建需 Node.js 与 npm，详情见 [界面使用说明](frontend/README.md)。
 
+## Windows 一键重启
+
+双击项目根目录的 `restart_services.bat`，自动构建前端、重新生成集成后端，随后重启 8889 战斗服务、8890 集成服务及 8892 → 8890 TCP 隧道，并检查两个网页及服务接口。服务在后台运行，关闭脚本窗口不会停止服务；日志保存在 `.ui-runtime/restart-端口-时间戳.*.log`。
+
+也可在 PowerShell 中执行：
+
+```powershell
+.\restart_services.ps1
+# 复用已有前端构建，仍会重新生成后端：
+.\restart_services.ps1 -SkipBuild
+```
+
+脚本使用项目自身目录，不依赖当前工作目录；只停止上述端口上符合预期入口的 Python 服务，端口被其他程序占用时中止。普通内存对局会清空；角色、权重、设置、备份及持久化任务／赛事记录保留，赛事重启后暂停。构建失败时不会停止运行中的服务。此脚本用于现有双实例部署；单实例启动继续使用 `python start_ui.py`。
+
 ## 环境要求
 
 - **SealDice** 1.4.0+

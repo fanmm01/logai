@@ -380,7 +380,8 @@ class AIController:
 
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
         TEMPERATURE = battle_setting('AI_TEMPERATURE')
-        q_vals = [qdict.get((st, ak), 0.0) for ak, an in actions_pool]
+        q_vals = [(engine._y14_action_q(qdict, st, ak) if engine._is_y14(user_id)
+                   else qdict.get((st, ak), 0.0)) for ak, an in actions_pool]
 
         # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
         char = engine.get_char(user_id)
@@ -503,6 +504,8 @@ class AIController:
             """True if spell has active same-name effect or a summon template is at its cap.
 
             同模板仍有名额时允许补召（如第二根藤蔓），只有满额/累计耗尽才禁选。"""
+            if engine._y14_preflight(user_id, sp):
+                return True
             if engine._revive_preflight(user_id, sp):
                 return True
             if sp['name'] in active_spell_names:
