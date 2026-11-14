@@ -2,17 +2,14 @@
 """
 Step 7: AI战斗模拟 HTTP服务器 + 实时日志系统
 ===============================================
-启动后监听 localhost:8888，手动 POST /start 开始锦标赛。
+启动后按配置监听，手动 POST /start 开始锦标赛。
 GET /       → 查看当前状态
 POST /start → 开始全部战斗（手动触发）
 GET /log    → 查看实时日志
 
 战斗顺序:
-  Phase 1: 1v1 (6x6, 8x8, 10x10)
-  Phase 2: 2v2 (8x8, 10x10)
-  Phase 3: 3v3 (10x10, 20x20) — 包含固定战队
-  Phase 4: Y9+Y12 联合对抗 (2人/3人/4人组)
-  Phase 5: 双循环 → 8强淘汰赛 ×10轮
+  按配置创建各赛制循环预赛与加赛，再生成附加赛、淘汰赛和铜牌赛。
+  地图、队表、循环轮数、BoN、回合上限和展示间隔统一由设置模块读取。
 
 用法:
   python ai_battle.py                        # 全部赛制 (1v1 + 2v2 + 3v3)
@@ -43,119 +40,43 @@ from characters_data import ALL_CHARACTERS, load_character_to_engine
 from ai_trainer import (load_q_table, encode_state, get_available_actions, execute_action,
                             action_slot_for, affordable_actions, select_teammate_by_strategy)
 from ai_trainer import encode_summon_state, get_summon_actions, execute_summon_action
-from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
 
-# ============================================================
-#  🎛️ Configurable settings — adjust here to change behaviour
-# ============================================================
-
-# ── Terminal display verbosity ──
+# Display enum values are protocol identifiers, not configurable defaults.
 class DisplayLevel:
-    """Terminal output verbosity for battle display.
-    WINLOSS (0): Only show [Battle] header and final →winner result.
-    ROUND   (1): Also show round-by-round per-player HP within each battle.
-    DEBUG   (2): Show every action, roll, and detail (full debug output).
-    """
     WINLOSS = 0
-    ROUND   = 1
-    DEBUG   = 2
+    ROUND = 1
+    DEBUG = 2
 
-# ── Per-phase delay config (seconds between turns) ──
-DELAY_PRELIM_TURN = 0               # Delay between turns in prelim (0 = fast as possible)
-DELAY_KNOCKOUT_TURN = 0.4           # Delay between turns in knockout / BoN series
-DELAY_CUSTOM_TURN = 0.4             # Delay between turns in custom /game/ battles
-DELAY_PRELIM_BETWEEN_BATTLES = 0    # Delay between prelim battles (0 = no pause)
-DELAY_KNOCKOUT_BETWEEN_GAMES = 1  # Delay between games within a BoN series
-DELAY_DRAW_DISPLAY = 24             # Seconds to show draw results before continuing
-DELAY_STANDINGS_DISPLAY = 40        # Seconds to show standings before knockouts
+from combat_settings import (value as settings_value, snapshot as settings_snapshot,
+    settings_scope, pinned, file_path, season_statuses, LIVE as _LIVE_SETTINGS)
+from combat_defaults import DEFAULTS as _SETTING_DEFAULTS
 
-# ── Per-phase display level ──
-DISPLAY_PRELIM = DisplayLevel.WINLOSS    # Prelim: only show battle results
-DISPLAY_KNOCKOUT = DisplayLevel.ROUND    # Knockout: show round-by-round HP
-DISPLAY_CUSTOM = DisplayLevel.ROUND      # Custom /game/: show round-by-round HP
 
-# ── Logger levels ──
-CONSOLE_LOG_LEVEL = logging.INFO    # Terminal: INFO=summary only, DEBUG=all details
-FILE_LOG_LEVEL = logging.DEBUG      # Log file: always full detail
-WEB_LOG_LEVEL = logging.INFO        # Web buffer: always full detail
+def battle_setting(name):
+    # Explicit legacy overrides remain supported, without duplicate defaults.
+    return globals()[name] if name in globals() else settings_value(name, live=name in _LIVE_SETTINGS)
 
-# ── Custom battle config ──
-CUSTOM_PREVIEW_BATTLES = 20         # Silent preview battles before /game/ match
-CUSTOM_BATTLE_DELAY = 0.4           # Delay for actual /game/ custom battles
 
-# ── Match count config ──
-RR_ROUNDS_1V1 = 7                    # RR rounds per pair per map (1v1) — ceiling, may auto-reduce for 82-target
-RR_ROUNDS_2V2 = 5                    # RR rounds per pair per map (2v2)
-RR_ROUNDS_3V3 = 6                    # RR rounds per pair per map (3v3)
-TARGET_1V1_MATCHES = 82              # target 1v1 matches per character (uses max RR that fits, then bonus)
+def __getattr__(name):
+    if name in _SETTING_DEFAULTS or name == 'CUSTOM_BATTLE_DELAY':
+        return battle_setting(name)
+    raise AttributeError(name)
 
-RANDOM_BONUS_1V1 = 0                # Extra random 1v1 bonus matches (disabled; using allocation to reach target per-player matches)
-RANDOM_BONUS_2V2 = 56               # Extra random 2v2 bonus matches
-RANDOM_BONUS_3V3 = 65               # Extra random 3v3 bonus matches
-
-MAP_SIZES_2V2 = ['10x10']    # Map sizes used for 2v2 prelim RR
-MAP_SIZES_3V3 = ['10x10']   # Map sizes used for 3v3 prelim RR
-                      
-PRELIM_WORKERS = 8                  # Thread pool size for prelim (1=sequential)
-
-# ── Season average status ──
-# Per-character 0-100 value set once per tournament run. Each character has their
-# own season status, biasing their per-battle 状态 via Beta distribution:
-#   100 → Beta(2.5,1.2) ~70% chance status > 50 (better AI)
-#    50 → uniform random (pure luck)
-#     0 → Beta(1.2,2.5) ~70% chance status < 50 (worse AI)
-# Set to None for random per-character per run.
-# Set to an int (0-100) for all characters to share the same season status.
-# Set to a dict like {'Y1':80, 'Y2':30, ...} for fixed per-character values.
-SEASON_AVG_STATUS = None
-
-# ── Round limits ──
-MAX_ROUNDS_PRELIM = 24              # Max rounds before timeout in prelim (raised from 25 to match knockout — dead summons no longer bloat initiative)
-MAX_ROUNDS_KNOCKOUT = 35            # Max rounds before timeout in knockout
-# Per-format overrides for prelim: larger formats need proportionally more rounds.
-# Without this, 3v3 battles (6+ chars, many summons) nearly always time out even at 35.
-MAX_ROUNDS_PRELIM_BY_FORMAT = {'1v1': 20, '2v2': 30, '3v3': 45}
-
-# Knockout draw weights — ranks 5-8 vs seeds 1-4
-# rows: rank5, rank6, rank7, rank8; cols: vs#1, vs#2, vs#3, vs#4
-KNOCKOUT_DRAW_WEIGHTS = [
-    [5, 5, 6, 8],    # rank5
-    [6, 7, 8, 7],    # rank6
-    [7, 8, 7, 6],    # rank7
-    [8, 6, 5, 5],    # rank8
-    [5, 6, 7, 8],    # rank9
-    [6, 5, 8, 7],    # rank10
-    [7, 8, 6, 5],    # rank11
-    [8, 7, 5, 6],    # rank12
-]
-
-# Bracket config
-BO_N_PLAYIN = 5                     # 5-12 play-in round best-of-N
-BO_N_QF = 7                         # Quarterfinal best-of-N
-BO_N_SF = 7                         # Semifinal best-of-N
-BO_N_BRONZE = 7                     # Bronze match best-of-N
-BO_N_FINAL = 7                      # Final best-of-N
-
-# ============================================================
-#  Logger setup — real-time battle progress
-# ============================================================
-
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ai_battle.log')
-RESULT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'result.txt')
-BRACKET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bracket_info.txt')
 
 logger = logging.getLogger('ai_battle')
 logger.setLevel(logging.DEBUG)
 
 # File handler
-fh = logging.FileHandler(LOG_FILE, encoding='utf-8', mode='w')
-fh.setLevel(FILE_LOG_LEVEL)
+fh = logging.FileHandler(file_path('LOG_FILE'), encoding='utf-8', mode='w')
+fh.setLevel(battle_setting('FILE_LOG_LEVEL'))
+fh._combat_setting = 'FILE_LOG_LEVEL'
 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%H:%M:%S'))
 logger.addHandler(fh)
 
 # Console handler — summary only (adjust CONSOLE_LOG_LEVEL above)
 ch = logging.StreamHandler(sys.stdout)
-ch.setLevel(CONSOLE_LOG_LEVEL)
+ch.setLevel(battle_setting('CONSOLE_LOG_LEVEL'))
+ch._combat_setting = 'CONSOLE_LOG_LEVEL'
 ch.setFormatter(logging.Formatter('%(asctime)s %(message)s', '%H:%M:%S'))
 logger.addHandler(ch)
 
@@ -183,11 +104,12 @@ class BufferedLogHandler(logging.Handler):
         msg = self.format(record)
         with log_lock:
             log_buffer.append(msg)
-            if len(log_buffer) > 500:
-                log_buffer.pop(0)
+            if len(log_buffer) > battle_setting('LOG_BUFFER_LIMIT'):
+                del log_buffer[:-battle_setting('LOG_BUFFER_LIMIT')]
 
 buf_handler = BufferedLogHandler()
-buf_handler.setLevel(WEB_LOG_LEVEL)
+buf_handler.setLevel(battle_setting('WEB_LOG_LEVEL'))
+buf_handler._combat_setting = 'WEB_LOG_LEVEL'
 buf_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', '%H:%M:%S'))
 logger.addHandler(buf_handler)
 
@@ -200,16 +122,25 @@ class SimpleBufferedLogHandler(logging.Handler):
         msg = self.format(record)
         with simple_log_lock:
             simple_log_buffer.append(msg)
-            if len(simple_log_buffer) > 500:
-                simple_log_buffer.pop(0)
+            if len(simple_log_buffer) > battle_setting('LOG_BUFFER_LIMIT'):
+                del simple_log_buffer[:-battle_setting('LOG_BUFFER_LIMIT')]
 
 simple_handler = SimpleBufferedLogHandler()
-simple_handler.setLevel(CONSOLE_LOG_LEVEL)
+simple_handler.setLevel(battle_setting('CONSOLE_LOG_LEVEL'))
+simple_handler._combat_setting = 'CONSOLE_LOG_LEVEL'
 simple_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', '%H:%M:%S'))
 logger.addHandler(simple_handler)
 
 
+_logging_override = None
+
+
 def battle_log(level, msg):
+    # File-backed levels also update standalone CLI processes on their next record.
+    for handler in logger.handlers:
+        key = getattr(handler, '_combat_setting', None)
+        if key:
+            handler.setLevel(_logging_override if _logging_override is not None else battle_setting(key))
     getattr(logger, level)(msg)
 
 
@@ -233,10 +164,10 @@ def _parse_modes(raw):
 
 
 def parse_cli_args(argv):
-    port = 8888
-    tournament_type = 1
-    run_times = 1
-    enabled_modes = list(ALL_MODES)
+    port = battle_setting('AI_SERVER_PORT')
+    tournament_type = battle_setting('DEFAULT_TOURNAMENT_TYPE')
+    run_times = battle_setting('DEFAULT_RUN_TIMES')
+    enabled_modes = battle_setting('DEFAULT_ENABLED_MODES')
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -305,7 +236,7 @@ def parse_cli_args(argv):
         elif arg.startswith('-'):
             battle_log('info', f'忽略未知参数: {arg}')
         else:
-            if port == 8888:
+            if port == battle_setting('AI_SERVER_PORT'):
                 try:
                     port = int(arg)
                 except ValueError:
@@ -365,13 +296,15 @@ class AIController:
                 battle_log('info', '========================================')
 
     def __init__(self, char_id, char_data, team):
+        self._settings = settings_snapshot()
         self.char_id = char_id
         self.char_data = char_data
         self.team = team
         # Reaction weights: [dodge_weight, counter_weight] — trained, not hardcoded
-        self.react_dodge_w = 50
-        self.react_counter_w = 50
+        self.react_dodge_w = battle_setting('AI_DODGE_WEIGHT')
+        self.react_counter_w = battle_setting('AI_COUNTER_WEIGHT')
 
+    @pinned
     def decide_action(self, engine, user_id):
         """Use Q-table if available, fall back to rule-based."""
         if engine._get_my_actions(user_id).get('主动', 0) <= 0:
@@ -386,6 +319,7 @@ class AIController:
                 return alternative
         return '.i end'
 
+    @pinned
     def _decide_action(self, engine, user_id):
         if AIController.Q_SOLO is not None or AIController.Q_TEAM is not None:
             ck = self.char_data.get('serial', self.char_id)
@@ -394,6 +328,7 @@ class AIController:
                 return self._q_decide(engine, user_id, ck)
         return self._rule_decide(engine, user_id)
 
+    @pinned
     def _q_decide(self, engine, user_id, ck):
         """Q-table based decision. Routes to solo or team table based on living allies."""
         state = engine._get_state()
@@ -444,13 +379,13 @@ class AIController:
         if not actions_pool: actions_pool = available
 
         # Weighted random sampling based on Q-values (softmax / Boltzmann)
-        TEMPERATURE = 1.0
+        TEMPERATURE = battle_setting('AI_TEMPERATURE')
         q_vals = [qdict.get((st, ak), 0.0) for ak, an in actions_pool]
 
         # 状态 deformation: pollute Q-value pool with random +/- noise, then act on polluted weights
         char = engine.get_char(user_id)
-        zt = char.get_attr('状态', 60) if char else 60
-        deform_prob = (100 - zt) / 100.0 * 0.4
+        zt = char.get_attr('状态', battle_setting('AI_DEFAULT_STATUS')) if char else battle_setting('AI_DEFAULT_STATUS')
+        deform_prob = (100 - zt) / 100.0 * battle_setting('AI_STATE_NOISE')
         if random.random() < deform_prob:
             scale = max(max(abs(q) for q in q_vals), 1.0)
             q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
@@ -467,6 +402,7 @@ class AIController:
 
         return self._command_for_action(engine, user_id, ak)
 
+    @pinned
     def _command_for_action(self, engine, user_id, ak):
         my_acts = engine._get_my_actions(user_id)
         # Parse action: may have __T suffix for target strategy
@@ -495,6 +431,7 @@ class AIController:
             return self._rule_decide(engine, user_id)
         return self._rule_decide(engine, user_id)
 
+    @pinned
     def _prioritize_support(self, engine, user_id, actions):
         """Keep only support actions when the team clearly needs recovery.
 
@@ -512,7 +449,7 @@ class AIController:
         ally_dying = any(e.get('team') == team and not e.get('isSummon')
                          and e['userId'] != user_id and engine._is_dying(e['userId'])
                          for e in engine._get_initiative())
-        urgent = my_hp < max_hp * 0.4 or my_mp < max_mp * 0.25 or ally_dying
+        urgent = my_hp < max_hp * battle_setting('AI_SUPPORT_HP_THRESHOLD') or my_mp < max_mp * battle_setting('AI_SUPPORT_MP_THRESHOLD') or ally_dying
         if not urgent:
             return actions
         support = [(ak, an) for ak, an in actions
@@ -521,10 +458,12 @@ class AIController:
             return actions
         return support
 
+    @pinned
     def _move_cmd(self, engine, user_id):
         coord = engine._next_move_coord(user_id)
         return f'.a m {coord}' if coord else None
 
+    @pinned
     def _rule_decide(self, engine, user_id):
         state = engine._get_state()
         if not state or state.get('phase') != 'active':
@@ -581,8 +520,8 @@ class AIController:
             spells = char.spells or engine.load_spells(user_id)
 
             # 状态 deformation check
-            zt = char.get_attr('状态', 60) if char else 60
-            deform_prob = (100 - zt) / 100.0 * 0.4
+            zt = char.get_attr('状态', battle_setting('AI_DEFAULT_STATUS')) if char else battle_setting('AI_DEFAULT_STATUS')
+            deform_prob = (100 - zt) / 100.0 * battle_setting('AI_STATE_NOISE')
             if random.random() < deform_prob:
                 from ai_trainer import get_available_actions
                 avail = affordable_actions(engine, user_id, get_available_actions(engine, user_id))
@@ -598,10 +537,10 @@ class AIController:
                         target = self._select_cake_target(engine, user_id, 'SELF')
                         return f'.a eat {target}' if target else '.i end'
 
-            # Heal if HP < 40%
-            my_hp = engine._get_combat_hp(user_id) or 10
+            # Heal according to the configured HP threshold.
+            my_hp = engine._get_combat_hp(user_id) or battle_setting('AI_HP_FALLBACK')
             max_hp = char.get_attr('体力上限', my_hp)
-            if my_hp < max_hp * 0.4:
+            if my_hp < max_hp * battle_setting('AI_HEAL_HP_THRESHOLD'):
                 heal_spells = [s for s in spells if s.get('effects') and any(
                     e['type'] in (3,8) and e.get('回复hp') for e in s['effects'])
                     and not _spell_blocked(s)]
@@ -622,11 +561,11 @@ class AIController:
             if summon_spells:
                 return f'.s{summon_spells[0]["index"]}'
 
-            # Eat cake (if available and HP < 60% or MP < 30%)
+            # Item thresholds are configurable independently of spell healing.
             if hasattr(engine, '_has_ready_cake') and engine._has_ready_cake(user_id):
                 my_mp = char.get_attr('魔力', 0) or 0
                 max_mp = char.get_attr('魔力上限', my_mp) or my_mp
-                if my_hp < max_hp * 0.6 or my_mp < max_mp * 0.3:
+                if my_hp < max_hp * battle_setting('AI_ITEM_HP_THRESHOLD') or my_mp < max_mp * battle_setting('AI_ITEM_MP_THRESHOLD'):
                     target = self._select_cake_target(engine, user_id, 'SELF')
                     return f'.a eat {target}'
 
@@ -661,6 +600,7 @@ class AIController:
 
         return '.i end'
 
+    @pinned
     def _select_cake_target(self, engine, user_id, strategy):
         """Select cake target from allies based on strategy."""
         if strategy == 'SELF':
@@ -672,6 +612,7 @@ class AIController:
                   and ((engine._get_combat_hp(e['userId']) or 0) > 0 or engine._is_dying(e['userId']))]
         return select_teammate_by_strategy(engine, user_id, strategy, allies)
 
+    @pinned
     def _nearest(self, engine, user_id, enemies):
         init_list = engine._get_initiative()
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
@@ -689,6 +630,7 @@ class AIController:
                         best = e
         return best or (enemies[0] if enemies else None)
 
+    @pinned
     def _move_toward(self, my_coord, target_coord, user_id):
         mp, tp = parse_coord(my_coord), parse_coord(target_coord)
         if not mp or not tp: return None
@@ -764,15 +706,17 @@ def round_hp_line(engine, round_number, initiative=None):
 
 
 class BattleEngine(FullBattleEngine):
-    def __init__(self, display_level=DisplayLevel.WINLOSS, delay=0.4, quiet=False, max_rounds=None):
+    def __init__(self, display_level=None, delay=None, quiet=False, max_rounds=None):
+        self._settings = settings_snapshot()
         super().__init__()
-        self.max_rounds = max_rounds if max_rounds is not None else MAX_ROUNDS_PRELIM
-        self.display_level = display_level  # DisplayLevel: 0=WINLOSS, 1=ROUND, 2=DEBUG
-        self.delay = delay  # Seconds between turns (0 = skip)
+        self.max_rounds = max_rounds if max_rounds is not None else battle_setting('MAX_ROUNDS_PRELIM')
+        self.display_level = battle_setting('DEFAULT_DISPLAY_LEVEL') if display_level is None else display_level  # DisplayLevel: 0=WINLOSS, 1=ROUND, 2=DEBUG
+        self.delay = battle_setting('DEFAULT_BATTLE_DELAY') if delay is None else delay  # Seconds between turns (0 = skip)
         self.quiet = quiet  # Suppress terminal output (for custom battles)
 
+    @pinned
     def _timeout_verdict(self):
-        """25回合不分胜负 → 按非召唤物HP占最大体力比例（队内人均）判定胜负
+        """达到配置回合上限 → 按非召唤物HP占最大体力比例（队内人均）判定胜负
         使用原始队伍名单（含已阵亡角色，HP比=0），而非仅存活角色。
         多动角色只算一次。"""
         roster = getattr(self, '_team_roster', None)
@@ -833,6 +777,7 @@ class BattleEngine(FullBattleEngine):
         return {'winner': winner, 'rounds': self.max_rounds, 'timeout': True,
                 'y_ratio': round(y_avg, 4), 'x_ratio': round(x_avg, 4)}
 
+    @pinned
     def _run_character_ai_turn(self, uid, ai, emit):
         base = self._resolve_uid(uid)
         self._ai_failed_commands = set()
@@ -870,7 +815,7 @@ class BattleEngine(FullBattleEngine):
                 else:
                     failures += 1
                     self._ai_failed_commands.add(cmd)
-                    if failures >= 5:
+                    if failures >= battle_setting('AI_MAX_FAILURES'):
                         emit('      -> 无可执行动作，结束回合')
                         self._end_turn(uid)
                         return
@@ -879,6 +824,7 @@ class BattleEngine(FullBattleEngine):
             for line in self._drain_battle_events():
                 emit(f'        {line}')
 
+    @pinned
     def run_battle(self, ai_map):
         """AI-driven tournament battle loop with display_level-controlled logging.
         display_level: 0=WINLOSS (result only), 1=ROUND (+round HP), 2=DEBUG (+all actions)."""
@@ -894,7 +840,7 @@ class BattleEngine(FullBattleEngine):
             _bl = battle_log
         try:
             rc = 0; last_round = 0; header_shown = False; step_count = 0
-            while rc < self.max_rounds and step_count < 2000:
+            while rc < self.max_rounds and step_count < battle_setting('BATTLE_MAX_STEPS'):
                 if self.delay > 0: time.sleep(self.delay)
                 self._reconcile_summon_groups()
                 state = self._get_state()
@@ -1015,8 +961,8 @@ class BattleEngine(FullBattleEngine):
                                 av = get_summon_actions(self, m_uid)
                                 sdict = AIController.Q_SUMMON[m_name]
                                 q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
-                                zt = random.randint(40, 80)
-                                deform_prob = (100 - zt) / 100.0 * 0.4
+                                zt = random.randint(battle_setting('AI_SUMMON_STATUS_MIN'), battle_setting('AI_SUMMON_STATUS_MAX'))
+                                deform_prob = (100 - zt) / 100.0 * battle_setting('AI_STATE_NOISE')
                                 if q_vals and random.random() < deform_prob:
                                     scale = max(max(abs(q) for q in q_vals), 1.0)
                                     q_vals = [q + random.uniform(-deform_prob, deform_prob) * scale
@@ -1081,7 +1027,8 @@ class BattleEngine(FullBattleEngine):
 # ============================================================
 
 class Tournament:
-    def __init__(self, tournament_type=1, run_times=1, enabled_modes=None):
+    def __init__(self, tournament_type=None, run_times=None, enabled_modes=None, settings=None):
+        self._settings = settings if settings is not None else settings_snapshot()
         self.char_map = {}
         self.ai_map = {}
         self.results = []
@@ -1089,8 +1036,8 @@ class Tournament:
         self._state_lock = threading.Lock()  # protects results/running across threads
         self.start_time = None
         self._parallel_prelim = False  # True during parallel prelim (skip side effects)
-        self.tournament_type = tournament_type
-        self.run_times = run_times
+        self.tournament_type = self._settings['DEFAULT_TOURNAMENT_TYPE'] if tournament_type is None else tournament_type
+        self.run_times = self._settings['DEFAULT_RUN_TIMES'] if run_times is None else run_times
         self.run_index = 0  # Current run number (1-indexed)
         self.all_run_brackets = []  # Accumulated bracket info for each run
         self._current_bracket_info = {}  # Per-run bracket draw info
@@ -1099,8 +1046,9 @@ class Tournament:
         self._run_stats = []  # Per-run (win_counts, battle_counts) for average stats
         self._results_start_idx = 0  # Track where current run's results start
         self.char_season_status = {}  # Per-run per-character season avg status {serial: 0-100}
-        self.enabled_modes = enabled_modes or ['1v1', '2v2', '3v3']  # Filter which formats to run
+        self.enabled_modes = enabled_modes if enabled_modes is not None else self._settings['DEFAULT_ENABLED_MODES']  # Filter which formats to run
 
+    @pinned
     def init_characters(self):
         engine = CombatEngine()
         AIController.load_q_table()  # Load trained weights if available
@@ -1113,6 +1061,7 @@ class Tournament:
             self.ai_map[uid] = AIController(uid, c, 'Y')
         battle_log('info', f'Loaded {len(self.char_map)} characters')
 
+    @pinned
     def _resolve_clones(self, team_a_serials, team_b_serials, engine):
         """Resolve serials to uids, cloning characters that appear on both sides
         (or multiple times on the same side). Each clone gets independent HP/MP/spells.
@@ -1148,7 +1097,8 @@ class Tournament:
             _resolve_one(s, b_uids)
         return a_uids, b_uids
 
-    def battle(self, team_a, team_b, map_size, phase_label='', best_of=1, display_level=DisplayLevel.WINLOSS, delay=0.4, max_rounds=None):
+    @pinned
+    def battle(self, team_a, team_b, map_size, phase_label='', best_of=1, display_level=None, delay=None, max_rounds=None):
         # Look up display names
         name_map = {c['serial']: c['name'] for c in ALL_CHARACTERS}
         a_names = [name_map.get(s, s) for s in team_a]
@@ -1186,7 +1136,7 @@ class Tournament:
         # Build per-uid season status mapping from per-character dict
         uid_season = {}
         for serial, uid in zip(team_a + team_b, a_uids + b_uids):
-            uid_season[uid] = self.char_season_status.get(serial, 50)
+            uid_season[uid] = self.char_season_status.get(serial, battle_setting('SEASON_FALLBACK_STATUS'))
         engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
         result = engine.run_battle(self.ai_map)
         # Update reaction weights: winners get +1 to their reaction type (skip in parallel prelim)
@@ -1197,11 +1147,11 @@ class Tournament:
                 uid_team = 'Y' if uid in a_uids else 'X'
                 won = result['winner'] == uid_team
                 if won:
-                    ai.react_dodge_w += 0.5
-                    ai.react_counter_w += 0.5
+                    ai.react_dodge_w += battle_setting('AI_REACTION_REWARD')
+                    ai.react_counter_w += battle_setting('AI_REACTION_REWARD')
                 else:
-                    ai.react_dodge_w = max(1, ai.react_dodge_w - 0.1)
-                    ai.react_counter_w = max(1, ai.react_counter_w - 0.1)
+                    ai.react_dodge_w = max(battle_setting('AI_REACTION_MIN_WEIGHT'), ai.react_dodge_w - battle_setting('AI_REACTION_PENALTY'))
+                    ai.react_counter_w = max(battle_setting('AI_REACTION_MIN_WEIGHT'), ai.react_counter_w - battle_setting('AI_REACTION_PENALTY'))
         winner = a_name if result['winner'] == 'Y' else b_name
         loser = b_name if result['winner'] == 'Y' else a_name
         if not self._parallel_prelim:
@@ -1209,8 +1159,10 @@ class Tournament:
             self.results.append((a_name, b_name, winner, result['rounds'], map_size, phase_label, best_of > 1))
         return (winner, loser, result['rounds'], result)
 
-    def _best_of_n(self, team_a, team_b, map_size, phase_label, n=7):
+    @pinned
+    def _best_of_n(self, team_a, team_b, map_size, phase_label, n=None):
         """Best-of-N series. Returns winner string like 'Y1+Y2'."""
+        n = battle_setting('BO_N_FINAL') if n is None else n
         wins_a, wins_b = 0, 0
         needed = n // 2 + 1
         a_str = '+'.join(team_a); a_disp = self._team_display(team_a)
@@ -1218,7 +1170,7 @@ class Tournament:
         battle_log('info', f'  ┌ Bo{n}: {a_disp} vs {b_disp}')
         for game in range(1, n + 1):
             try:
-                winner, loser, rds, _ = self.battle(team_a, team_b, map_size, f'{phase_label} G{game}', best_of=n, display_level=DISPLAY_KNOCKOUT, delay=DELAY_KNOCKOUT_TURN, max_rounds=MAX_ROUNDS_KNOCKOUT)
+                winner, loser, rds, _ = self.battle(team_a, team_b, map_size, f'{phase_label} G{game}', best_of=n, display_level=battle_setting("DISPLAY_KNOCKOUT"), delay=battle_setting("DELAY_KNOCKOUT_TURN"), max_rounds=battle_setting("MAX_ROUNDS_KNOCKOUT"))
             except Exception as e:
                 battle_log('error', f'  !! Bo{n} G{game}异常跳过: {e}')
                 continue  # skip this game without awarding a win to either side
@@ -1227,26 +1179,29 @@ class Tournament:
             w_disp = self._team_display(winner.split('+'))
             battle_log('info', f'  │ G{game}: {w_disp} ({wins_a}-{wins_b})')
             if wins_a >= needed or wins_b >= needed: break
-            if DELAY_KNOCKOUT_BETWEEN_GAMES > 0:
-                time.sleep(DELAY_KNOCKOUT_BETWEEN_GAMES)
+            if battle_setting('DELAY_KNOCKOUT_BETWEEN_GAMES') > 0:
+                time.sleep(battle_setting('DELAY_KNOCKOUT_BETWEEN_GAMES'))
         final_winner = a_str if wins_a >= needed else '+'.join(team_b)
         fw_disp = self._team_display(final_winner.split('+'))
         battle_log('info', f'  └ Bo{n}: {fw_disp} {wins_a}-{wins_b}')
         return final_winner
 
+    @pinned
     def _best_of_seven(self, team_a, team_b, map_size, phase_label):
-        """Backward-compat wrapper."""
-        return self._best_of_n(team_a, team_b, map_size, phase_label, n=7)
+        """Backward-compatible entry point using the configured final series length."""
+        return self._best_of_n(team_a, team_b, map_size, phase_label, n=battle_setting('BO_N_FINAL'))
 
+    @pinned
     def _run_interleaved_series(self, all_series):
         """Run BoN series one complete series at a time, cycling formats.
         all_series: list of {ta, tb, n, label}. Mutates to add 'winner'."""
         for s in all_series:
-            winner = self._best_of_n(s['ta'], s['tb'], '10x10', s['label'], n=s['n'])
+            winner = self._best_of_n(s['ta'], s['tb'], battle_setting('KNOCKOUT_MAP_SIZE'), s['label'], n=s['n'])
             s['winner'] = winner
             s['a_str'] = '+'.join(s['ta'])
             s['b_str'] = '+'.join(s['tb'])
 
+    @pinned
     def _run_knockout_bracket(self, brackets, phase_label_prefix=''):
         """Run all knockout brackets interleaved — QF games mixed across formats, then SF, etc.
         brackets: list of {label, top_teams, map_size}"""
@@ -1274,7 +1229,7 @@ class Tournament:
                         battle_log('info', f'  {seed_names[si]}({sn}) vs ({cn})')
                         all_qf_by_slot[si].append({
                             'ta': seeds[si], 'tb': challengers[si],
-                            'n': BO_N_QF, 'label': f'{label} QF{si+1}',
+                            'n': battle_setting("BO_N_QF"), 'label': f'{label} QF{si+1}',
                             'bracket_label': label,
                         })
                     battle_log('info', '')
@@ -1284,20 +1239,20 @@ class Tournament:
                     seed_names = ['#1', '#2', '#3', '#4']
                     qf_pairs = []
                     for ci, chal in enumerate(challengers):
-                        weights = [KNOCKOUT_DRAW_WEIGHTS[ci][s] for s in remaining_seeds]
+                        weights = [battle_setting('KNOCKOUT_DRAW_WEIGHTS')[ci][s] for s in remaining_seeds]
                         chosen = random.choices(remaining_seeds, weights=weights, k=1)[0]
                         remaining_seeds.remove(chosen)
                         qf_pairs.append((seeds[chosen], chal))
                         cn = self._team_display(chal); sn = self._team_display(seeds[chosen])
                         battle_log('info', f'  {seed_names[chosen]}({sn}) vs rank{5+ci}({cn})')
                     battle_log('info', '')
-                    battle_log('info', f'(抽签结果展示{DELAY_DRAW_DISPLAY}秒...)')
-                    time.sleep(DELAY_DRAW_DISPLAY)
+                    battle_log('info', f'(抽签结果展示{battle_setting("DELAY_DRAW_DISPLAY")}秒...)')
+                    time.sleep(battle_setting('DELAY_DRAW_DISPLAY'))
 
                     for si, (seed, chal) in enumerate(qf_pairs):
                         all_qf_by_slot[si].append({
                             'ta': seed, 'tb': chal,
-                            'n': BO_N_QF, 'label': f'{label} QF{si+1}',
+                            'n': battle_setting("BO_N_QF"), 'label': f'{label} QF{si+1}',
                             'bracket_label': label,
                         })
             else:
@@ -1311,7 +1266,7 @@ class Tournament:
         # Step 2b: Run all QF series (one complete series at a time)
         if all_qf_series:
             battle_log('info', '')
-            battle_log('info', f'--- 四分之一决赛 Bo{BO_N_QF}（跨赛制穿插）---')
+            battle_log('info', f'--- 四分之一决赛 Bo{battle_setting("BO_N_QF")}（跨赛制穿插）---')
             self._run_interleaved_series(all_qf_series)
 
         # Step 3: Build SF matchups from QF results
@@ -1332,18 +1287,18 @@ class Tournament:
                 continue
             t0, t1, t2, t3 = sf_teams[0], sf_teams[1], sf_teams[2], sf_teams[3]
             all_sf_series.append({
-                'ta': t0, 'tb': t3, 'n': BO_N_SF,
+                'ta': t0, 'tb': t3, 'n': battle_setting('BO_N_SF'),
                 'label': f'{label} SF1', 'bracket_label': label, 'slot': 1,
             })
             all_sf_series.append({
-                'ta': t1, 'tb': t2, 'n': BO_N_SF,
+                'ta': t1, 'tb': t2, 'n': battle_setting('BO_N_SF'),
                 'label': f'{label} SF2', 'bracket_label': label, 'slot': 2,
             })
 
         if all_sf_series:
             all_sf_series.sort(key=lambda x: x.pop('slot', 0))
             battle_log('info', '')
-            battle_log('info', f'--- 半决赛 Bo{BO_N_SF}（跨赛制穿插）---')
+            battle_log('info', f'--- 半决赛 Bo{battle_setting("BO_N_SF")}（跨赛制穿插）---')
             self._run_interleaved_series(all_sf_series)
 
         # Step 5: Collect winners/losers per bracket, build Bronze + Final
@@ -1361,22 +1316,22 @@ class Tournament:
             sf2_loser = sf2['tb'] if sf2['winner'] == sf2['a_str'] else sf2['ta']
 
             bronze_series.append({
-                'ta': sf1_loser, 'tb': sf2_loser, 'n': BO_N_BRONZE,
+                'ta': sf1_loser, 'tb': sf2_loser, 'n': battle_setting('BO_N_BRONZE'),
                 'label': f'{label} Bronze', 'bracket_label': label,
             })
             final_series.append({
-                'ta': sf1_winner_team, 'tb': sf2_winner_team, 'n': BO_N_FINAL,
+                'ta': sf1_winner_team, 'tb': sf2_winner_team, 'n': battle_setting('BO_N_FINAL'),
                 'label': f'{label} Final', 'bracket_label': label,
             })
 
         if bronze_series:
             battle_log('info', '')
-            battle_log('info', f'--- 铜牌赛 Bo{BO_N_BRONZE}（跨赛制穿插）---')
+            battle_log('info', f'--- 铜牌赛 Bo{battle_setting("BO_N_BRONZE")}（跨赛制穿插）---')
             self._run_interleaved_series(bronze_series)
 
         if final_series:
             battle_log('info', '')
-            battle_log('info', f'--- 决赛 Bo{BO_N_FINAL}（跨赛制穿插）---')
+            battle_log('info', f'--- 决赛 Bo{battle_setting("BO_N_FINAL")}（跨赛制穿插）---')
             self._run_interleaved_series(final_series)
 
         # Announce results
@@ -1394,9 +1349,11 @@ class Tournament:
                        f'  季军: {self._team_display(bronze.split("+")) if bronze != "—" else "—"}')
 
 
-    def _run_phase_with_format(self, phase_name, teams, map_sizes, label_prefix, rr_rounds=2):
+    @pinned
+    def _run_phase_with_format(self, phase_name, teams, map_sizes, label_prefix, rr_rounds=None):
+        rr_rounds = battle_setting('RR_ROUNDS_1V1') if rr_rounds is None else rr_rounds
         rrc = '单' if rr_rounds==1 else ('双' if rr_rounds==2 else str(rr_rounds))
-        battle_log('info', f'[{phase_name}] {len(teams)}支队伍 | {rrc}循环 → Bo7淘汰赛 + 铜牌赛')
+        battle_log('info', f"[{phase_name}] {len(teams)}支队伍 | {rrc}循环 → Bo{battle_setting('BO_N_FINAL')}决赛 + 铜牌赛")
         results = []
         for map_size in map_sizes:
             battle_log('info', f'  --- 地图 {map_size} ---')
@@ -1407,15 +1364,15 @@ class Tournament:
                     ta = teams[i]; tb = teams[j]
                     team_size = len(ta)  # 1→1v1, 2→2v2, 3→3v3
                     fmt_tag = f'{team_size}v{team_size}'
-                    fmt_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(fmt_tag, MAX_ROUNDS_PRELIM)
-                    winner, loser, rds, _ = self.battle(ta, tb, map_size, f'{label_prefix} RR {map_size}', display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN, max_rounds=fmt_rounds)
+                    fmt_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(fmt_tag, battle_setting('MAX_ROUNDS_PRELIM'))
+                    winner, loser, rds, _ = self.battle(ta, tb, map_size, f'{label_prefix} RR {map_size}', display_level=battle_setting("DISPLAY_PRELIM"), delay=battle_setting("DELAY_PRELIM_TURN"), max_rounds=fmt_rounds)
                     winner_set = set(winner.split('+'))
                     for idx in [i, j]:
                         team_set = set(teams[idx])
                         if team_set == winner_set or team_set.issubset(winner_set):
                             standings[idx] += 1
                             break
-                    time.sleep(DELAY_PRELIM_BETWEEN_BATTLES)
+                    time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
             ranked = sorted(standings.items(), key=lambda x: -x[1])
             rank_names = [(r[0], '+'.join(teams[r[0]]), r[1]) for r in ranked]
             battle_log('info', f'  排名: {[(n,pts) for _,n,pts in rank_names]}')
@@ -1443,7 +1400,7 @@ class Tournament:
                 battle_log('info', f'  [Bronze]   季军: {bronze}')
             elif len(ranked) >= 2:
                 t0 = teams[ranked[0][0]]; t1 = teams[ranked[1][0]]
-                champion = self._best_of_n(t0, t1, map_size, f'{label_prefix} {map_size} Final', n=BO_N_FINAL)
+                champion = self._best_of_n(t0, t1, map_size, f'{label_prefix} {map_size} Final', n=battle_setting("BO_N_FINAL"))
                 battle_log('info', f'  [Champion] 冠军: {champion}')
                 silver = '+'.join(t1 if champion == '+'.join(t0) else t0)
                 bronze = '—'
@@ -1460,9 +1417,11 @@ class Tournament:
             })
         return results
 
-    def _build_rr_pool(self, phase_name, teams, map_sizes, label_prefix, rr_rounds=1):
+    @pinned
+    def _build_rr_pool(self, phase_name, teams, map_sizes, label_prefix, rr_rounds=None):
         """Build list of (label, map_size, ta, tb) for RR matches in a phase.
         rr_rounds: number of times each pair fights per map (1=single, 2=double, 4=quad)."""
+        rr_rounds = battle_setting('RR_ROUNDS_1V1') if rr_rounds is None else rr_rounds
         pool = []
         for map_size in map_sizes:
             for i, j in itertools.combinations(range(len(teams)), 2):
@@ -1471,7 +1430,9 @@ class Tournament:
                                  teams[i], teams[j], i, j))
         return pool
 
-    def _allocate_individual_bonus_matches(self, singles, rr_rounds, target_matches, map_size='10x10', label='1v1 Alloc'):
+    @pinned
+    def _allocate_individual_bonus_matches(self, singles, rr_rounds, target_matches, map_size=None, label='1v1 Alloc'):
+        map_size = battle_setting('BONUS_MAP_SIZE') if map_size is None else map_size
         n_players = len(singles)
         if n_players <= 1:
             return []
@@ -1504,7 +1465,9 @@ class Tournament:
                 allocated.append((label, map_size, [singles[ilast]], [singles[partner]], ilast, partner))
         return allocated
 
-    def _allocate_team_bonus_matches(self, teams, rr_rounds, bonus_count, map_size='10x10', label='Alloc'):
+    @pinned
+    def _allocate_team_bonus_matches(self, teams, rr_rounds, bonus_count, map_size=None, label='Alloc'):
+        map_size = battle_setting('BONUS_MAP_SIZE') if map_size is None else map_size
         if bonus_count <= 0:
             return []
 
@@ -1530,6 +1493,7 @@ class Tournament:
             extra_matches[j] += 1
         return allocated
 
+    @pinned
     def _team_display(self, team_list):
         """Convert team serial list ['Y1','Y2'] to display string '初音(Y1)+春晌(Y2)'."""
         parts = []
@@ -1542,6 +1506,7 @@ class Tournament:
                 parts.append(serial)
         return '+'.join(parts)
 
+    @pinned
     def _calc_points(self, result):
         """Calculate (winner_pts, loser_pts) from battle result.
         Normal win: 3-0. Timeout win: HP-ratio split, max 2.5:0.5, min 1.5:1.5."""
@@ -1556,18 +1521,19 @@ class Tournament:
         l_pts = 3.0 - w_pts
         return (round(w_pts, 2), round(l_pts, 2))
 
+    @pinned
     def run_phases(self, write_results_flag=True):
         self.running = True
         self.start_time = datetime.now()
         self.run_index += 1  # Increment run counter (starts at 0)
 
         # Generate per-character season average status for this run
-        if SEASON_AVG_STATUS is None:
+        if battle_setting('SEASON_AVG_STATUS') is None:
             self.char_season_status = {s: random.randint(0, 100) for s in self.char_map}
-        elif isinstance(SEASON_AVG_STATUS, dict):
-            self.char_season_status = dict(SEASON_AVG_STATUS)  # copy
+        elif isinstance(battle_setting('SEASON_AVG_STATUS'), dict):
+            self.char_season_status = dict(battle_setting('SEASON_AVG_STATUS'))  # copy
         else:
-            self.char_season_status = {s: int(SEASON_AVG_STATUS) for s in self.char_map}
+            self.char_season_status = {s: int(battle_setting('SEASON_AVG_STATUS')) for s in self.char_map}
 
         singles = list(self.char_map.keys())
         battle_log('info', '=' * 60)
@@ -1587,18 +1553,18 @@ class Tournament:
 
         # ---- Build all RR match pools ----
 
-        # Phase 1: 1v1 — RR （轮数自动适配，保证每人正好82场）
+        # Phase 1: 1v1 — RR，按配置补齐每人的目标场数。
         p1_pool = []
         if '1v1' in self.enabled_modes:
             teams_1v1 = [[s] for s in singles]
             n_players = len(singles)
-            effective_rr_1v1 = min(RR_ROUNDS_1V1, TARGET_1V1_MATCHES // (n_players - 1)) if n_players > 1 else RR_ROUNDS_1V1
-            p1_pool = self._build_rr_pool('1v1', teams_1v1, ['10x10'], '1v1', rr_rounds=effective_rr_1v1)
-            allocated_bonus = self._allocate_individual_bonus_matches(singles, effective_rr_1v1, TARGET_1V1_MATCHES, '10x10', '1v1 Alloc')
+            effective_rr_1v1 = min(battle_setting('RR_ROUNDS_1V1'), battle_setting('TARGET_1V1_MATCHES') // (n_players - 1)) if n_players > 1 else battle_setting('RR_ROUNDS_1V1')
+            p1_pool = self._build_rr_pool('1v1', teams_1v1, [battle_setting('DEFAULT_MAP_SIZE')], '1v1', rr_rounds=effective_rr_1v1)
+            allocated_bonus = self._allocate_individual_bonus_matches(singles, effective_rr_1v1, battle_setting('TARGET_1V1_MATCHES'), battle_setting('BONUS_MAP_SIZE'), '1v1 Alloc')
             p1_pool = allocated_bonus + p1_pool
             battle_log('info',
                 f'[1v1] {n_players}人 × {effective_rr_1v1}轮循环 = {len(p1_pool)-len(allocated_bonus)}场'
-                f' + {len(allocated_bonus)}场调配 = {len(p1_pool)}场 (每人目标{TARGET_1V1_MATCHES}场)')
+                f' + {len(allocated_bonus)}场调配 = {len(p1_pool)}场 (每人目标{battle_setting("TARGET_1V1_MATCHES")}场)')
         else:
             battle_log('info', '[1v1] 已跳过（未启用）')
             teams_1v1 = []
@@ -1606,11 +1572,11 @@ class Tournament:
         # Phase 2: 2v2 — use shared team table definitions
         p2_pool = []
         if '2v2' in self.enabled_modes:
-            teams_2v2 = [list(team) for team in TEAM_TABLES_2V2]
-            p2_pool = self._build_rr_pool('2v2', teams_2v2, MAP_SIZES_2V2, '2v2', rr_rounds=RR_ROUNDS_2V2)
-            allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, RR_ROUNDS_2V2, RANDOM_BONUS_2V2, '10x10', '2v2 Alloc')
+            teams_2v2 = [list(team) for team in battle_setting('TEAM_TABLES_2V2') if all(s in self.char_map for s in team)]
+            p2_pool = self._build_rr_pool('2v2', teams_2v2, battle_setting('MAP_SIZES_2V2'), '2v2', rr_rounds=battle_setting('RR_ROUNDS_2V2'))
+            allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, battle_setting('RR_ROUNDS_2V2'), battle_setting('RANDOM_BONUS_2V2'), battle_setting('BONUS_MAP_SIZE'), '2v2 Alloc')
             p2_pool = allocated_bonus_2v2 + p2_pool
-            rrc = '单' if RR_ROUNDS_2V2==1 else ('双' if RR_ROUNDS_2V2==2 else str(RR_ROUNDS_2V2))
+            rrc = '单' if battle_setting('RR_ROUNDS_2V2')==1 else ('双' if battle_setting('RR_ROUNDS_2V2')==2 else str(battle_setting('RR_ROUNDS_2V2')))
             battle_log('info', f'[2v2] {len(teams_2v2)}队 {rrc}循环{len(p2_pool)-len(allocated_bonus_2v2)}场 + {len(allocated_bonus_2v2)}场调配 = {len(p2_pool)}场')
         else:
             battle_log('info', '[2v2] 已跳过（未启用）')
@@ -1619,11 +1585,11 @@ class Tournament:
         # Phase 3: 3v3 — use shared team table definitions
         p3_pool = []
         if '3v3' in self.enabled_modes:
-            teams_3v3 = [list(team) for team in TEAM_TABLES_3V3]
-            p3_pool = self._build_rr_pool('3v3', teams_3v3, MAP_SIZES_3V3, '3v3', rr_rounds=RR_ROUNDS_3V3)
-            allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, RR_ROUNDS_3V3, RANDOM_BONUS_3V3, '10x10', '3v3 Alloc')
+            teams_3v3 = [list(team) for team in battle_setting('TEAM_TABLES_3V3') if all(s in self.char_map for s in team)]
+            p3_pool = self._build_rr_pool('3v3', teams_3v3, battle_setting('MAP_SIZES_3V3'), '3v3', rr_rounds=battle_setting('RR_ROUNDS_3V3'))
+            allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, battle_setting('RR_ROUNDS_3V3'), battle_setting('RANDOM_BONUS_3V3'), battle_setting('BONUS_MAP_SIZE'), '3v3 Alloc')
             p3_pool = allocated_bonus_3v3 + p3_pool
-            rrc = '单' if RR_ROUNDS_3V3==1 else ('双' if RR_ROUNDS_3V3==2 else str(RR_ROUNDS_3V3))
+            rrc = '单' if battle_setting('RR_ROUNDS_3V3')==1 else ('双' if battle_setting('RR_ROUNDS_3V3')==2 else str(battle_setting('RR_ROUNDS_3V3')))
             battle_log('info', f'[3v3] {len(teams_3v3)}队 {rrc}循环{len(p3_pool)-len(allocated_bonus_3v3)}场 + {len(allocated_bonus_3v3)}场调配 = {len(p3_pool)}场')
         else:
             battle_log('info', '[3v3] 已跳过（未启用）')
@@ -1648,22 +1614,25 @@ class Tournament:
         v2_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_2v2))}
         v3_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_3v3))}
 
-        use_parallel = PRELIM_WORKERS > 1
+        use_parallel = battle_setting('PRELIM_WORKERS') > 1
 
         if use_parallel:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             self._parallel_prelim = True
             standings_lock = threading.Lock()
-            battle_log('info', f'预赛并行模式: {PRELIM_WORKERS} workers')
+            battle_log('info', f'预赛并行模式: {battle_setting("PRELIM_WORKERS")} workers')
             # Submit all battles
             future_map = {}
             try:
-                with ThreadPoolExecutor(max_workers=PRELIM_WORKERS) as executor:
+                with ThreadPoolExecutor(max_workers=battle_setting('PRELIM_WORKERS')) as executor:
                     for args in full_pool:
                         phase_tag, label, map_size, ta, tb, i, j = args
-                        fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
-                        fut = executor.submit(self.battle, ta, tb, map_size, label, 1, DisplayLevel.WINLOSS, 0, fmt_max_rounds)
+                        fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
+                        fut = executor.submit(self.battle, ta, tb, map_size, label, 1,
+                                              battle_setting('DISPLAY_PRELIM'), battle_setting('DELAY_PRELIM_TURN'), fmt_max_rounds)
                         future_map[fut] = args
+                        if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
+                            time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
                     # Collect results
                     completed = 0
                     for fut in as_completed(future_map):
@@ -1712,7 +1681,7 @@ class Tournament:
                         a_name = '+'.join(ta)
                         b_name = '+'.join(tb)
                         self.results.append((a_name, b_name, winner, rds, map_size, label, False))
-                        if completed % 50 == 0:
+                        if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
                             battle_log('info', f'  预赛进度: {completed}/{total_matches}')
             finally:
                 self._parallel_prelim = False
@@ -1721,8 +1690,10 @@ class Tournament:
             for phase_tag, label, map_size, ta, tb, i, j in full_pool:
                 completed += 1
                 try:
-                    fmt_max_rounds = MAX_ROUNDS_PRELIM_BY_FORMAT.get(phase_tag, MAX_ROUNDS_PRELIM)
-                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=DISPLAY_PRELIM, delay=DELAY_PRELIM_TURN, max_rounds=fmt_max_rounds)
+                    fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
+                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=battle_setting('DISPLAY_PRELIM'), delay=battle_setting('DELAY_PRELIM_TURN'), max_rounds=fmt_max_rounds)
+                    if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
+                        time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
                 except Exception as e:
                     battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
                     import traceback
@@ -1762,7 +1733,7 @@ class Tournament:
                         elif ts == ls:
                             v3_standings[idx]['pts'] += l_pts
                             v3_standings[idx]['battles'] += 1
-                if completed % 50 == 0:
+                if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
                     battle_log('info', f'  预赛进度: {completed}/{total_matches}')
 
         # ---- Display all standings and run all knockouts ----
@@ -1817,8 +1788,8 @@ class Tournament:
             ranked_3v3 = []
 
         battle_log('info', '')
-        battle_log('info', f'(排名展示{DELAY_STANDINGS_DISPLAY}秒...)')
-        time.sleep(DELAY_STANDINGS_DISPLAY)
+        battle_log('info', f'(排名展示{battle_setting("DELAY_STANDINGS_DISPLAY")}秒...)')
+        time.sleep(battle_setting('DELAY_STANDINGS_DISPLAY'))
 
         # Collect ranking info (also needed by prelim-only mode / sim.py multi-run stats)
         self._rankings_info = {
@@ -1847,7 +1818,8 @@ class Tournament:
         all_brackets = []
         # Helper: run 5-12 play-in → 5v12, 6v11, 7v10, 8v9, winners + ranks 1-4 = top8
         # Combined draw: play-in pairing and QF seed assignment merged into one draw
-        def _build_top8_with_playin(ranked_list, get_team_fn, label, map_size='10x10'):
+        def _build_top8_with_playin(ranked_list, get_team_fn, label, map_size=None):
+            map_size = battle_setting('KNOCKOUT_MAP_SIZE') if map_size is None else map_size
             if len(ranked_list) >= 12:
                 seeds = [get_team_fn(ranked_list[i][0]) for i in range(4)]
                 challengers = [get_team_fn(ranked_list[i][0]) for i in range(4, 12)]
@@ -1860,7 +1832,7 @@ class Tournament:
                 battle_log('info', label + ' 淘汰赛抽签 (附加赛+八进四合并):')
                 for seed_idx in range(4):
                     for _ in range(2):
-                        weights = [KNOCKOUT_DRAW_WEIGHTS[ri][seed_idx] for ri in remaining]
+                        weights = [battle_setting('KNOCKOUT_DRAW_WEIGHTS')[ri][seed_idx] for ri in remaining]
                         chosen_pos = random.choices(range(len(remaining)), weights=weights, k=1)[0]
                         ri = remaining.pop(chosen_pos)
                         seed_assignments[seed_idx].append(ri)
@@ -1893,8 +1865,8 @@ class Tournament:
                 self._current_bracket_info[label] = bracket_draw_info
 
                 battle_log('info', '')
-                battle_log('info', f'(抽签结果展示{DELAY_DRAW_DISPLAY}秒...)')
-                time.sleep(DELAY_DRAW_DISPLAY)
+                battle_log('info', f'(抽签结果展示{battle_setting("DELAY_DRAW_DISPLAY")}秒...)')
+                time.sleep(battle_setting('DELAY_DRAW_DISPLAY'))
 
                 # Run play-in: the two challengers in each seed slot fight
                 new_challengers = []
@@ -1902,7 +1874,7 @@ class Tournament:
                     ci1, ci2 = seed_assignments[seed_idx]
                     ta = challengers[ci1]
                     tb = challengers[ci2]
-                    winner = self._best_of_n(ta, tb, map_size, label + f' Playin S{seed_idx+1}', n=BO_N_PLAYIN)
+                    winner = self._best_of_n(ta, tb, map_size, label + f' Playin S{seed_idx+1}', n=battle_setting("BO_N_PLAYIN"))
                     new_challengers.append(winner.split('+') if '+' in winner else [winner])
                 # Return seeds + winners paired in order: seed0, seed1, seed2, seed3, win0, win1, win2, win3
                 # This pre-paired order tells _run_knockout_bracket to skip the QF draw
@@ -1918,17 +1890,17 @@ class Tournament:
         # 1v1 knockout
         if '1v1' in self.enabled_modes and len(ranked_1v1) >= 4:
             top_1v1 = _build_top8_with_playin(ranked_1v1, lambda s: [s], '1v1')
-            all_brackets.append(('1v1', top_1v1, '10x10'))
+            all_brackets.append(('1v1', top_1v1, battle_setting('KNOCKOUT_MAP_SIZE')))
 
         # 2v2 knockout
         if '2v2' in self.enabled_modes and len(ranked_2v2) >= 4:
             top_2v2 = _build_top8_with_playin(ranked_2v2, lambda i: teams_2v2[i], '2v2')
-            all_brackets.append(('2v2', top_2v2, '10x10'))
+            all_brackets.append(('2v2', top_2v2, battle_setting('KNOCKOUT_MAP_SIZE')))
 
         # 3v3 knockout
         if '3v3' in self.enabled_modes and len(ranked_3v3) >= 4:
             top_3v3 = _build_top8_with_playin(ranked_3v3, lambda i: teams_3v3[i], '3v3')
-            all_brackets.append(('3v3', top_3v3, '10x10'))
+            all_brackets.append(('3v3', top_3v3, battle_setting('KNOCKOUT_MAP_SIZE')))
 
         # ---- Execute knockouts with round-robin interleaving across formats ----
         if all_brackets:
@@ -1977,6 +1949,7 @@ class Tournament:
         battle_log('info', f'锦标赛完成！{len(self.results)}场战斗，耗时{elapsed:.0f}秒')
         self.running = False
 
+    @pinned
     def _compute_contribution_ranking(self):
         """Compute 3 contribution ranking algorithms from self.results.
         Returns {'algo1': [(serial, name, value), ...], 'algo2': [...], 'algo3': [...]}"""
@@ -2066,7 +2039,7 @@ class Tournament:
             in_t = sum(char_in_total[ch].values())
             out_w = sum(char_out_wins[ch].values())
             out_t = sum(char_out_total[ch].values())
-            if in_t < 3 or out_t < 3:
+            if in_t < battle_setting('CONTRIBUTION_MIN_SAMPLES') or out_t < battle_setting('CONTRIBUTION_MIN_SAMPLES'):
                 algo1.append((ch, name_map.get(ch, ch), None))
                 continue
             in_rate = in_w / in_t
@@ -2081,7 +2054,7 @@ class Tournament:
             in_t = char_in_3v3_total[ch]
             out_w = char_out_2v2_wins[ch]
             out_t = char_out_2v2_total[ch]
-            if in_t < 3 or out_t < 3:
+            if in_t < battle_setting('CONTRIBUTION_MIN_SAMPLES') or out_t < battle_setting('CONTRIBUTION_MIN_SAMPLES'):
                 algo2.append((ch, name_map.get(ch, ch), None))
                 continue
             diff = in_w / in_t - out_w / out_t
@@ -2090,7 +2063,7 @@ class Tournament:
         # ---- Algorithm 3: Efficiency average ----
         algo3 = []
         for ch in all_chars:
-            if char_eff_count[ch] < 3:
+            if char_eff_count[ch] < battle_setting('CONTRIBUTION_MIN_SAMPLES'):
                 algo3.append((ch, name_map.get(ch, ch), None))
             else:
                 avg = char_eff_sum[ch] / char_eff_count[ch]
@@ -2103,6 +2076,7 @@ class Tournament:
 
         return {'algo1': algo1, 'algo2': algo2, 'algo3': algo3}
 
+    @pinned
     def _save_bracket_info(self):
         """Save tournament bracket and rankings to BRACKET_FILE before elimination starts.
         Appends for multiple runs (--time=N)."""
@@ -2143,15 +2117,17 @@ class Tournament:
 
         # Write/append to file
         mode = 'a' if self.run_index > 1 else 'w'
-        with open(BRACKET_FILE, mode, encoding='utf-8') as f:
+        with open(file_path('BRACKET_FILE'), mode, encoding='utf-8') as f:
             f.write('\n'.join(lines))
-        battle_log('info', f'赛图与排名已保存至 {BRACKET_FILE} (第{self.run_index}次)')
+        battle_log('info', f'赛图与排名已保存至 {file_path("BRACKET_FILE")} (第{self.run_index}次)')
 
+    @pinned
     def _render_bracket_tree(self, lines, seeds, playin_pairs):
         """Render a visual bracket tree for one format.
         seeds: list of {seed_name, seed_display}
         playin_pairs: list of {seed, team_a_display, team_b_display}"""
-        def _trunc(s, maxlen=18):
+        def _trunc(s, maxlen=None):
+            maxlen = battle_setting('RESULT_NAME_WIDTH') if maxlen is None else maxlen
             return s if len(s) <= maxlen else s[:maxlen-1] + '…'
 
         s = [_trunc(seeds[i]['seed_display']) for i in range(4)]
@@ -2180,6 +2156,7 @@ class Tournament:
         lines.append(f'    附加赛③:  {pa[2]}  vs  {pb[2]}   → QF3 vs #3 {s[2]}')
         lines.append(f'    附加赛④:  {pa[3]}  vs  {pb[3]}   → QF4 vs #4 {s[3]}')
 
+    @pinned
     def _snapshot_run_stats(self):
         """Snapshot win/battle counts for the current run (results since last snapshot)."""
         start = getattr(self, '_results_start_idx', 0)
@@ -2196,6 +2173,7 @@ class Tournament:
         self._run_stats.append((dict(win_counts), dict(battle_counts)))
         self._results_start_idx = len(self.results)
 
+    @pinned
     def _compute_average_stats(self):
         """Compute per-character average wins/battles/rate across all runs.
         Returns list of (serial, name, avg_wins, avg_battles, avg_rate) sorted by avg_wins desc."""
@@ -2218,6 +2196,7 @@ class Tournament:
         result.sort(key=lambda x: -x[2])  # Sort by avg_wins desc
         return result
 
+    @pinned
     def _append_average_stats_to_bracket(self):
         """Append average stats across all runs to BRACKET_FILE."""
         if self.run_times <= 1:
@@ -2235,14 +2214,15 @@ class Tournament:
         for rank, (serial, name, avg_w, avg_b, avg_rate) in enumerate(avg_stats, 1):
             lines.append(f'  {rank:<4} {serial:<8} {name:<6} {avg_w:>8.1f} {avg_b:>8.1f} {avg_rate:>7.1f}%')
         lines.append('')
-        with open(BRACKET_FILE, 'a', encoding='utf-8') as f:
+        with open(file_path('BRACKET_FILE'), 'a', encoding='utf-8') as f:
             f.write('\n'.join(lines))
-        battle_log('info', f'平均统计已追加至 {BRACKET_FILE}')
+        battle_log('info', f'平均统计已追加至 {file_path("BRACKET_FILE")}')
 
+    @pinned
     def write_results(self):
         lines = ['=' * 70,
                  '  AI战斗模拟 锦标赛结果',
-                 '  全阶段: 双循环 + Bo7淘汰赛 + 铜牌赛',
+                 f"  全阶段: 循环预赛 + Bo{battle_setting('BO_N_FINAL')}决赛 + 铜牌赛",
                  '=' * 70,
                  f'总运行次数: {self.run_times}',
                  f'总战斗数: {len(self.results)}', '']
@@ -2302,7 +2282,7 @@ class Tournament:
         lines.append('=' * 70)
         name_map = {c['serial']: c['name'] for c in ALL_CHARACTERS}
         for a, b, winner, rounds, map_sz, phase, is_bo7 in self.results:
-            bo7_tag = ' [Bo7]' if is_bo7 else ''
+            bo7_tag = ' [系列赛]' if is_bo7 else ''
             a_disp = '+'.join(name_map.get(s, s) for s in a.split('+'))
             b_disp = '+'.join(name_map.get(s, s) for s in b.split('+'))
             w_disp = '+'.join(name_map.get(s, s) for s in winner.split('+'))
@@ -2342,9 +2322,9 @@ class Tournament:
                 for rank, (serial, name, avg_w, avg_b, avg_rate) in enumerate(avg_stats, 1):
                     lines.append(f'  {rank:<4} {serial:<8} {name:<6} {avg_w:>8.1f} {avg_b:>8.1f} {avg_rate:>7.1f}%')
 
-        with open(RESULT_FILE, 'w', encoding='utf-8') as f:
+        with open(file_path('RESULT_FILE'), 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
-        battle_log('info', f'结果已写入 {RESULT_FILE}')
+        battle_log('info', f'结果已写入 {file_path("RESULT_FILE")}')
 
 
 # ============================================================
@@ -2398,8 +2378,8 @@ AI模式: {q_status}
             self._send(200, body or '(暂无日志)')
 
         elif self.path == '/results':
-            if os.path.exists(RESULT_FILE):
-                with open(RESULT_FILE, 'r', encoding='utf-8') as f:
+            if os.path.exists(file_path('RESULT_FILE')):
+                with open(file_path('RESULT_FILE'), 'r', encoding='utf-8') as f:
                     body = f.read()
                 self._send(200, body)
             else:
@@ -2425,7 +2405,7 @@ AI模式: {q_status}
                     self.wfile.write(b'data: [DONE]\n\n')
                     self.wfile.flush()
                     break
-                time.sleep(1)
+                time.sleep(battle_setting('LOG_STREAM_INTERVAL'))
 
         elif self.path == '/log/stream/simple':
             # SSE stream matching terminal output (CONSOLE_LOG_LEVEL only)
@@ -2447,7 +2427,7 @@ AI模式: {q_status}
                     self.wfile.write(b'data: [DONE]\n\n')
                     self.wfile.flush()
                     break
-                time.sleep(1)
+                time.sleep(battle_setting('LOG_STREAM_INTERVAL'))
 
         elif self.path.startswith('/game/'):
             self._handle_custom_game()
@@ -2468,8 +2448,8 @@ AI模式: {q_status}
         team_a = team_a_raw.split('&')
         # Parse team B and options
         team_b = []
-        num = 1
-        map_size = '10x10'
+        num = battle_setting('CUSTOM_DEFAULT_GAMES')
+        map_size = battle_setting('DEFAULT_MAP_SIZE')
         for token in team_b_raw.split('&'):
             if token.startswith('num='): num = int(token[4:])
             elif token.startswith('map='): map_size = token[4:]
@@ -2485,7 +2465,7 @@ AI模式: {q_status}
                 self._send(400, f'无效角色: {s}. 可用: {sorted(valid)}')
                 return
 
-        num = max(1, min(num, 99))
+        num = max(1, min(num, battle_setting('CUSTOM_MAX_GAMES')))
 
         def run_custom():
             set_terminal_quiet(True)
@@ -2516,22 +2496,22 @@ AI模式: {q_status}
                     # Build per-uid season status mapping from per-character dict
                     uid_season = {}
                     for serial, uid in zip(team_a + team_b, a_uids + b_uids):
-                        uid_season[uid] = tournament.char_season_status.get(serial, 50)
+                        uid_season[uid] = tournament.char_season_status.get(serial, battle_setting('SEASON_FALLBACK_STATUS'))
                     engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
                     return a_uids, b_uids
 
                 # Phase 0: Silent preview — estimate win rates
-                if CUSTOM_PREVIEW_BATTLES > 0:
-                    battle_log('info', f'[Custom Preview] 运行 {CUSTOM_PREVIEW_BATTLES} 场预览...')
+                if battle_setting('CUSTOM_PREVIEW_BATTLES') > 0:
+                    battle_log('info', f'[Custom Preview] 运行 {battle_setting("CUSTOM_PREVIEW_BATTLES")} 场预览...')
                     p_a = p_b = 0
-                    for _ in range(CUSTOM_PREVIEW_BATTLES):
+                    for _ in range(battle_setting('CUSTOM_PREVIEW_BATTLES')):
                         eng = BattleEngine(display_level=DisplayLevel.WINLOSS, delay=0, quiet=True)
                         _setup_engine(eng)
                         r = eng.run_battle(tournament.ai_map)
                         if r['winner'] == 'Y': p_a += 1
                         else: p_b += 1
-                    rate_a = p_a / CUSTOM_PREVIEW_BATTLES * 100
-                    rate_b = p_b / CUSTOM_PREVIEW_BATTLES * 100
+                    rate_a = p_a / battle_setting('CUSTOM_PREVIEW_BATTLES') * 100
+                    rate_b = p_b / battle_setting('CUSTOM_PREVIEW_BATTLES') * 100
                     battle_log('info', f'  [Preview] {a_disp}: {rate_a:.1f}% ({p_a}胜) | {b_disp}: {rate_b:.1f}% ({p_b}胜)')
                     a_name = '+'.join(team_a); b_name = '+'.join(team_b)
                     fav = a_name if p_a >= p_b else b_name
@@ -2541,7 +2521,7 @@ AI模式: {q_status}
                 a_wins = b_wins = 0
                 battle_log('info', f'[Custom] {"/".join(team_a)} vs {"/".join(team_b)} Bo{num} [{map_size}]')
                 for g in range(1, num + 1):
-                    engine = BattleEngine(display_level=DISPLAY_CUSTOM, delay=DELAY_CUSTOM_TURN, quiet=True)
+                    engine = BattleEngine(display_level=battle_setting('DISPLAY_CUSTOM'), delay=battle_setting('DELAY_CUSTOM_TURN'), quiet=True)
                     _setup_engine(engine)
                     result = engine.run_battle(tournament.ai_map)
                     w = '+'.join(team_a) if result['winner'] == 'Y' else '+'.join(team_b)
@@ -2602,7 +2582,7 @@ evt.onmessage=function(e){{
   log.appendChild(div);
   log.scrollTop=log.scrollHeight;
   // Trim old lines to keep DOM light
-  while(log.children.length>800)log.removeChild(log.firstChild);
+  while(log.children.length>{battle_setting('WEB_LOG_LINE_LIMIT')})log.removeChild(log.firstChild);
 }};
 evt.onerror=function(){{status.textContent='⚠ 重连中...';status.style.color='#e94560'}};
 </script>
@@ -2643,10 +2623,11 @@ evt.onerror=function(){{status.textContent='⚠ 重连中...';status.style.color
             self._send(404, 'Not Found')
 
 
-def start_server(port=8888):
+def start_server(port=None):
+    port = battle_setting('AI_SERVER_PORT') if port is None else port
     global server_thread
-    server = ThreadingHTTPServer(('0.0.0.0', port), BattleHandler)
-    battle_log('info', f'AI战斗服务器启动: http://0.0.0.0:{port}')
+    server = ThreadingHTTPServer((battle_setting('AI_SERVER_HOST'), port), BattleHandler)
+    battle_log('info', f'AI战斗服务器启动: http://{battle_setting("AI_SERVER_HOST")}:{port}')
     battle_log('info', f'本机: http://localhost:{port}')
     battle_log('info', f'实时日志流: http://<IP>:{port}/log/stream (SSE)')
     battle_log('info', f'POST /start 开始锦标赛')
@@ -2665,7 +2646,7 @@ if __name__ == '__main__':
 
     # Auto-start tournament in background thread
     def auto_start():
-        time.sleep(1)
+        time.sleep(battle_setting('AUTO_START_DELAY'))
         for run_idx in range(1, run_times + 1):
             tournament.run_index = run_idx
             battle_log('info', '')

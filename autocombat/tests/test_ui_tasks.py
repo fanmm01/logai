@@ -1,4 +1,6 @@
 """Exercise real isolated workers, matrix CLI parity and a small training run."""
+import ast
+import copy
 import json
 import os
 import re
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,11 +76,90 @@ class WorkerTests(unittest.TestCase):
                            .replace('BATTLES_PER_GEN = 100', 'BATTLES_PER_GEN = 2')
                            .replace('NUM_WORKERS = 12', 'NUM_WORKERS = 1'), encoding='utf-8')
         before = (ROOT/'ai_weights.json').read_bytes()
-        result = self.run_worker({'mode': 'train', 'seed': 42})
-        self.assertEqual(result[-1]['completed'], 1)
-        weights = json.loads((self.root/'ai_weights.json').read_text(encoding='utf-8'))
-        self.assertIn('Q_solo', weights)
+        saved_weights = json.loads((self.root/'ai_weights.json').read_text(encoding='utf-8'))
+        sentinel = '0__old_training_sentinel'
+        saved_weights.setdefault('Q_solo', {})['Y13'] = {sentinel: 1.25}
+        saved_weights.setdefault('Q_team', {})['Y13'] = {sentinel: -2.5}
+        saved_weights.setdefault('Q_solo', {})['Y2'] = {sentinel: 7.5}
+        saved_weights.setdefault('Q_summon', {})['虚假之月'] = {sentinel: 4.5}
+        (self.root/'ai_weights.json').write_text(json.dumps(saved_weights), encoding='utf-8')
+        data_path = self.root/'characters_data.py'
+        original = data_path.read_text(encoding='utf-8')
+        tree = ast.parse(original)
+        definitions = {}
+        for n in tree.body:
+            if isinstance(n, ast.Assign) and isinstance(n.value, ast.Dict):
+                for key, value in zip(n.value.keys, n.value.values):
+                    if isinstance(key, ast.Constant) and key.value == 'serial' and isinstance(value, ast.Constant):
+                        definitions[value.value] = n.targets[0].id
+        active = next(n for n in tree.body if isinstance(n, ast.Assign)
+                      and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'ALL_CHARACTERS')
+        for enabled, summons in [(['Y1', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7'], []),
+                                 (['Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6'], ['使魔'])]:
+            with self.subTest(enabled=enabled):
+                lines = original.splitlines(keepends=True)
+                lines[active.lineno-1:active.end_lineno] = ['ALL_CHARACTERS = [' + ', '.join(definitions[s] for s in enabled) + ']\n']
+                data_path.write_text(''.join(lines), encoding='utf-8')
+                # Remove only this disposable module's cache; the second pass
+                # deliberately changes membership without changing list size.
+                for cached in (self.root/'__pycache__').glob('characters_data.*.pyc'):
+                    cached.unlink()
+                previous = json.loads((self.root/'ai_weights.json').read_text(encoding='utf-8'))
+                result = self.run_worker({'mode': 'train', 'seed': 42, 'enabled_serials': enabled})
+                self.assertEqual(result[-1]['completed'], 1)
+                self.assertEqual(result[-1]['result']['characters'], enabled)
+                self.assertEqual(result[-1]['result']['summons'], summons)
+                weights = json.loads((self.root/'ai_weights.json').read_text(encoding='utf-8'))
+                self.assertEqual(weights['params']['characters'], enabled)
+                self.assertEqual(weights['params']['summons'], summons)
+                for table, active_roster in [('Q_solo', enabled), ('Q_team', enabled), ('Q_summon', summons)]:
+                    for key, entries in previous[table].items():
+                        if key not in active_roster:
+                            self.assertEqual(weights[table][key], entries)
+                    self.assertTrue(set(weights[table]) <= set(previous[table]) | set(active_roster))
+                self.assertEqual(weights['Q_solo']['Y13'], {sentinel: 1.25})
+                self.assertEqual(weights['Q_team']['Y13'], {sentinel: -2.5})
+                self.assertEqual(weights['Q_summon']['虚假之月'], {sentinel: 4.5})
+                self.assertIn('Y13', result[-1]['result']['preserved_characters'])
+                if 'Y2' in enabled:
+                    self.assertNotIn(sentinel, weights['Q_solo'].get('Y2', {}))
         self.assertEqual((ROOT/'ai_weights.json').read_bytes(), before)
+
+    def test_imported_trainer_reads_live_roster_and_freezes_each_run(self):
+        import ai_trainer
+        import characters_data as data
+        lookup = {ch['serial']: ch for ch in vars(data).values() if isinstance(ch, dict) and 'serial' in ch and 'attrs' in ch}
+        selected = copy.deepcopy([lookup[s] for s in ['Y1', 'Y2']])
+        with patch.object(data, 'ALL_CHARACTERS', selected):
+            first = ai_trainer.QTrainer()
+            first.init_characters()
+            self.assertEqual(list(first.char_map), ['Y1', 'Y2'])
+            self.assertEqual(first.training_summons, ['使魔'])
+            selected[0]['name'] = 'later edit'
+            self.assertNotEqual(first.characters[0]['name'], selected[0]['name'])
+        with patch.object(data, 'ALL_CHARACTERS', [lookup['Y1']]):
+            second = ai_trainer.QTrainer()
+            second.init_characters()
+            self.assertEqual(list(second.char_map), ['Y1'])
+            self.assertEqual(second.training_summons, [])
+            self.assertEqual(list(first.char_map), ['Y1', 'Y2'])
+            with patch.object(ai_trainer.QTrainer, 'train') as run:
+                with self.assertRaisesRegex(ValueError, '快照不一致'):
+                    ai_trainer.main(expected_serials=['Y99'])
+                run.assert_not_called()
+
+    def test_legacy_weights_keep_untrained_entries_and_replace_only_active_tables(self):
+        from ai_trainer import merge_untrained_tables
+        previous = {'Q': {'Y1': {'old': 1}, 'Y13': {'keep': 2}},
+                    'Q_summon': {'使魔': {'old': 3}, '虚假之月': {'keep': 4}}}
+        original = copy.deepcopy(previous)
+        tables = merge_untrained_tables(previous, {'Q_solo': {'Y1': {'new': 5}},
+            'Q_team': {'Y1': {'new': 6}}, 'Q_summon': {'使魔': {'new': 7}}}, ['Y1'], ['使魔'])
+        self.assertEqual(tables['Q_solo']['Y13'], {'keep': 2})
+        self.assertEqual(tables['Q_team']['Y13'], {'keep': 2})
+        self.assertEqual(tables['Q_summon']['虚假之月'], {'keep': 4})
+        self.assertEqual(tables['Q_solo']['Y1'], {'new': 5})
+        self.assertEqual(previous, original)
 
     def test_game_replay_matches_ai_battle_round_display_and_verbose_keeps_details(self):
         params = dict(mode='game', team_a=['Y1'], team_b=['Y2'], seed=22, season=50, max_rounds=4)

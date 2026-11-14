@@ -20,8 +20,9 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 
-from flask import Blueprint, Response, jsonify, request, send_from_directory
+from flask import Blueprint, Response, jsonify, redirect, request, send_from_directory
 from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
+from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, instance_name
 
 ROOT = Path(__file__).resolve().parent
 COLORS = ['#db775a', '#8a78c5', '#5b9b91', '#c88c45', '#c56785', '#6694bc',
@@ -37,11 +38,7 @@ def register_ui(app, ns):
     bp = Blueprint('combat_ui', __name__)
     rooms, jobs, identities = {}, {}, {}
     guard = threading.RLock()
-    instance = os.environ.get('AUTOCOMBAT_UI_INSTANCE', '')
-    if not instance and '--port' in sys.argv:
-        index = sys.argv.index('--port')
-        instance = sys.argv[index + 1] if index + 1 < len(sys.argv) else ''
-    instance = instance if instance.isdigit() else '8889'
+    instance = instance_name()
     cookie_name = 'combat_ui_session' + ('' if instance == '8889' else '_' + instance)
     try:
         lan_ips = sorted({r[4][0] for r in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
@@ -254,7 +251,7 @@ def register_ui(app, ns):
             output += '\n' + '\n'.join(extra)
         event = dict(id=room['revision'], kind=kind, output=output.strip(), time=time.time(), snapshot=snapshot(room))
         room['history'].append(event)
-        room['history'] = room['history'][-1500:]
+        room['history'] = room['history'][-room['settings']['ROOM_HISTORY_LIMIT']:]
         room['updated'].set()
         return event
 
@@ -277,9 +274,9 @@ def register_ui(app, ns):
             if len(set(team)) != len(team):
                 raise BadRequest('同队角色不能重复')
             teams.append(team)
-        size = data.get('map_size', '10x10')
-        if not isinstance(size, str) or not re.fullmatch(r'(8|10|12|16)x(8|10|12|16)', size):
-            raise BadRequest('地图边长请选择 8、10、12 或 16')
+        size = data.get('map_size', setting('DEFAULT_MAP_SIZE'))
+        if not isinstance(size, str) or not re.fullmatch(r'(?:[8-9]|1[0-6])x(?:[8-9]|1[0-6])', size):
+            raise BadRequest('地图边长应为 8–16')
         return teams
 
     def ai_step(room):
@@ -304,17 +301,16 @@ def register_ui(app, ns):
 
     def runner(code):
         while True:
-            delay = .75
             with guard, app.app_context():
                 room = rooms.get(code)
                 if not room:
                     return
-                if time.time() - room['touched'] > 12 * 3600:
+                if time.time() - room['touched'] > room['settings']['ROOM_IDLE_HOURS'] * 3600:
                     ns['_battles'].pop(room['battle_id'], None)
                     ns['_pending_reactions'].pop(room['battle_id'], None)
                     rooms.pop(code, None)
                     return
-                delay = .85 / room['speed']
+                delay = setting('ROOM_AI_DELAY', live=True) / room['speed']
                 if room['running'] or pending_for(room):
                     try:
                         if not reactions.step(room) and room['running']:
@@ -333,6 +329,13 @@ def register_ui(app, ns):
     @bp.errorhandler(Conflict)
     def ui_error(e):
         return jsonify(error=True, message=e.description), e.code
+
+    @bp.get('/')
+    @bp.get('/index.html')
+    def root():
+        # Tunnel users commonly open the bare host. Keep invite links working.
+        query = '?' + request.query_string.decode('latin-1') if request.query_string else ''
+        return redirect('/ui/' + query, code=302)
 
     @bp.get('/ui/')
     @bp.get('/ui/<path:path>')
@@ -377,14 +380,15 @@ def register_ui(app, ns):
         if not sid:
             raise Forbidden('请先建立玩家会话')
         a, b = valid_teams(data)
-        with guard:
+        with guard, settings_scope():
             code = secrets.token_hex(3).upper()
             while code in rooms:
                 code = secrets.token_hex(3).upper()
             battle_id = 'ui_' + code
             invoke('create_battle', data=dict(group_id=battle_id, mode='multi_pvp', team_a=a,
-                                              team_b=b, map_size=data.get('map_size', '10x10')))
+                                              team_b=b, map_size=data.get('map_size', setting('DEFAULT_MAP_SIZE'))))
             eng = ns['_battles'][battle_id]
+            eng._settings = settings_snapshot()
             eng._ui_deferred_ai = True
             eng._range_override_snapshot = getattr(ns['characters_data_pvp'], 'GLOBAL_RANGE_OVERRIDE', 0)
             eng._summon_templates_snapshot = copy.deepcopy(ns['characters_data_pvp'].SUMMON_TEMPLATES)
@@ -403,7 +407,7 @@ def register_ui(app, ns):
             room = dict(code=code, battle_id=battle_id, name=str(data.get('name', '星序演习室'))[:30],
                         host=sid, local=local, controls=controls, revision=0,
                         members={sid: dict(id=sid, name=str(data.get('player_name', '指挥官'))[:20], ready=True, spectator=False)},
-                        history=[], requests=OrderedDict(), running=False, speed=1, updated=threading.Event(), touched=time.time())
+                        history=[], requests=OrderedDict(), running=False, speed=setting('ROOM_DEFAULT_SPEED'), settings=settings_snapshot(), updated=threading.Event(), touched=time.time())
             room['rng'] = random.Random(data.get('seed', secrets.randbits(31))).getstate()
             rooms[code] = room
             emit(room, 'created', '战术室已就绪。调整角色控制权与站位后，开始本次演习。')
@@ -550,7 +554,9 @@ def register_ui(app, ns):
         if pending_for(room):
             raise Conflict('请先处理当前防御反应')
         slot_uid = entry['userId']
-        payload = dict(player_id=who, action=cmd, target=target, args=target_mode, _ui_target=target or None)
+        payload = dict(player_id=who, action=cmd, target=target, args=target_mode, _ui_target=target or None,
+                       restim_mode=room['settings']['DEFAULT_RESTIM_MODE'],
+                       allow_failed_reaction=int(room['settings']['ALLOW_FAILED_REACTION']))
         for key in ('skill_name', 'skill_value', 'damage_dice', 'penetration', 'lethality',
                     'count', 'bp_suffix', 'restim_mode', 'allow_failed_reaction'):
             if key in data:
@@ -734,6 +740,9 @@ def register_ui(app, ns):
     from ui_store import Store
     from ui_tasks import Tasks
     management = Management(bp, locals())
+    from ui_settings import Settings
+    settings = Settings(bp, locals(), management, instance)
+    app.extensions['combat_ui']['settings'] = settings
     store = Store(management.runtime / ('browser.sqlite3' if instance == '8889' else f'browser-{instance}.sqlite3'))
     tasks = Tasks(bp, locals(), management, store)
     app.extensions['combat_ui'].update(management=management, store=store, tasks=tasks)

@@ -20,3 +20,5 @@
 .summon-members{display:flex;flex-direction:column;gap:5px}.summon-members>button{display:flex;align-items:center;justify-content:space-between;border:1px solid #eee7f4;border-radius:6px;padding:7px 8px;color:#867295;font-size:9px}.summon-members>button.active{background:#f1ebf7}.summon-members small{font-size:8px;color:#8b8395}
 
 .invite-links{display:flex;flex-direction:column;gap:9px;margin-top:20px}.invite-links>label{display:flex;align-items:center;gap:5px}.invite-links input{width:100%;font-size:10px}
+
+.unit-row-select{display:flex;align-items:center;gap:inherit;flex:1;min-width:0;padding:0;text-align:left}.unit-row>.slot-control{flex:none;margin-top:0}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, type Effect, type Room } from './types';
+import { api, requestId, type Effect, type Room } from './types';
 
 const suffixes = [['', '无奖惩'], ['b', '奖励骰 ×1'], ['b2', '奖励骰 ×2'], ['b3', '奖励骰 ×3'], ['p', '惩罚骰 ×1'], ['p2', '惩罚骰 ×2'], ['p3', '惩罚骰 ×3']];
 export function BonusSelect({ value, change }: { value: string; change: (value: string) => void }) {
@@ -44,7 +44,7 @@ export function CombatControls({ room, session, live, onRoom, onError, bonus, se
     setBusy(true);
     try {
       onRoom(await api<Room>(`/rooms/${room.code}/action`, { command: '.s0', target, count, bp_suffix: bonus,
-        restim_mode: timing, allow_failed_reaction: failedReaction ? 1 : 0, actor: actor?.uid, revision: room.revision, request_id: crypto.randomUUID(),
+        restim_mode: timing, allow_failed_reaction: failedReaction ? 1 : 0, actor: actor?.uid, revision: room.revision, request_id: requestId(),
         ...(skillName ? { skill_name: skillName } : {}), ...(skillValue ? { skill_value: Number(skillValue) } : {}),
         ...(damage ? { damage_dice: damage } : {}), ...(pen ? { penetration: Number(pen) } : {}), ...(leth ? { lethality: Number(leth) } : {}) }));
     } catch (e) { onError((e as Error).message); } finally { setBusy(false); }

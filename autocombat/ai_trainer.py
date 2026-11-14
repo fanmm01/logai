@@ -2,12 +2,12 @@
 """
 Q-Learning AI自训练系统 (ai_trainer.py)
 =========================================
-50代 × 100场对战，用HP差分奖励训练12角色的行动策略。
+50代 × 100场对战，用HP差分奖励训练当前启用角色的行动策略。
 使用 characters_data 的数据集进行训练。
 输出 ai_weights.json 供 ai_battle.py 使用。
 """
 
-import sys, os, random, math, json, itertools, time
+import sys, os, random, math, json, itertools, time, copy
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
@@ -419,6 +419,7 @@ def _mp_run_battle(args):
     """
     team_a, team_b, map_size, all_char_data, char_map_dict, summon_templates = args
     engine = FastBattleEngine()
+    engine._summon_templates_snapshot = summon_templates
     if summon_templates:
         import battle_engine as _be
         _be._SUMMON_TEMPLATES = summon_templates
@@ -1247,6 +1248,7 @@ def _mp_run_summon_battle(args):
     """
     team_a, team_b, map_size, summon_templates = args
     engine = FastBattleEngine()
+    engine._summon_templates_snapshot = summon_templates
     if summon_templates:
         import battle_engine as _be
         _be._SUMMON_TEMPLATES = summon_templates
@@ -1386,12 +1388,29 @@ def _mp_run_summon_battle(args):
 #  Q-Learning Trainer
 # ============================================================
 
+def merge_untrained_tables(previous, trained, characters, summons):
+    """Replace trained entries while preserving every untrained entry verbatim."""
+    result = {}
+    for name, active in [('Q_solo', characters), ('Q_team', characters), ('Q_summon', summons)]:
+        old = previous.get(name, previous.get('Q', {}) if name != 'Q_summon' else {})
+        if not isinstance(old, dict):
+            raise ValueError(f'原权重文件中的 {name} 不是有效训练表')
+        result[name] = {key: value for key, value in old.items() if key not in active}
+        result[name].update(trained[name])
+    return result
+
+
 class QTrainer:
     def __init__(self):
         self.Q_solo = defaultdict(lambda: defaultdict(float))   # 单人/最后一人 Q[char_id][(state, action)]
         self.Q_team = defaultdict(lambda: defaultdict(float))   # 多人 Q[char_id][(state, action)]
         self.Q_summon = defaultdict(lambda: defaultdict(float)) # 召唤物 Q[summon_name][(state, action)]
         self.char_map = {}
+        self.characters = []
+        self.summon_templates = {}
+        self.training_summons = []
+        self.preserved_characters = []
+        self.preserved_summons = []
         self.win_counts = defaultdict(int)
         self.battle_counts = defaultdict(int)
         self._react_dw = defaultdict(lambda: 50)  # Trainable dodge weight
@@ -1399,8 +1418,31 @@ class QTrainer:
         self._react_bw = defaultdict(lambda: 0)   # Trainable block weight
 
     def init_characters(self):
+        # Resolve the live canonical module at training start. A from-imported
+        # ALL_CHARACTERS list becomes stale after browser saves rebind it.
+        import characters_data as data
+        self.characters = copy.deepcopy(data.ALL_CHARACTERS)
+        self.summon_templates = copy.deepcopy(data.SUMMON_TEMPLATES)
+        self.char_map.clear()
+        referenced = set()
+
+        def collect(value):
+            if isinstance(value, dict):
+                template = value.get('召唤物模板')
+                if isinstance(template, str) and template in self.summon_templates:
+                    referenced.add(template)
+                for nested in value.values():
+                    collect(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    collect(nested)
+
+        collect(self.characters)
+        self.training_summons = [name for name, template in self.summon_templates.items()
+                                 if name in referenced and not template.get('_meta')]
         engine = CombatEngine()
-        for c in ALL_CHARACTERS:
+        engine._summon_templates_snapshot = self.summon_templates
+        for c in self.characters:
             uid = f"q_{c['serial']}"
             load_character_to_engine(engine, c, uid)
             if not c.get('pre_transformed'):
@@ -1418,9 +1460,10 @@ class QTrainer:
         table_type: 'solo' | 'team' | 'summon'
         """
         engine = FastBattleEngine()
+        engine._summon_templates_snapshot = self.summon_templates
         a_uids = [self.char_map[s] for s in team_a]
         b_uids = [self.char_map[s] for s in team_b]
-        for c in ALL_CHARACTERS:
+        for c in self.characters:
             uid = self.char_map[c['serial']]
             load_character_to_engine(engine, c, uid)
             if not c.get('pre_transformed'): engine.process_command(uid, '.hs')
@@ -1662,10 +1705,26 @@ class QTrainer:
         log(f'Alpha={ALPHA}, Gamma={GAMMA}, Temperature=1.0')
         log('')
         singles = list(self.char_map.keys())
+        if len(singles) < 6:
+            raise ValueError('默认训练包含 3 对 3 抽样，需要至少启用 6 名角色')
+        log(f'Training characters: {singles}')
+        log(f'Training summons: {self.training_summons}')
+        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
+        previous = {}
+        if os.path.exists(weight_path):
+            with open(weight_path, encoding='utf-8') as saved:
+                previous = json.load(saved)
+            if not isinstance(previous, dict):
+                raise ValueError('原权重文件不是有效训练表')
+        preserved = merge_untrained_tables(previous, {'Q_solo': {}, 'Q_team': {}, 'Q_summon': {}}, singles, self.training_summons)
+        self.preserved_characters = sorted(set(preserved['Q_solo']) | set(preserved['Q_team']))
+        self.preserved_summons = sorted(preserved['Q_summon'])
+        log(f'Preserved character tables (not trained): {self.preserved_characters}')
+        log(f'Preserved summon tables (not trained): {self.preserved_summons}')
         stats_log = []
         NUM_WORKERS = 12
         # Prepare picklable data for subprocesses
-        all_char_data = [c for c in ALL_CHARACTERS]
+        all_char_data = self.characters
         char_map_dict = dict(self.char_map)
         _ACTION_CACHE.clear()
         for gen in range(1, GENERATIONS + 1):
@@ -1681,20 +1740,20 @@ class QTrainer:
                     ch = random.sample(singles,6)
                     specs.append((ch[:3],ch[3:],random.choice(['10x10','20x20'])))
             # Build summon-only battle specs (1v1 / 2v2 independent summon fights)
-            SUMMON_BATTLE_TMPLS = ['使魔','生灵','藤蔓','蜂鸟','玄武','朱雀','龙虎']
+            summon_pool = self.training_summons
             NUM_SUMMON_BATTLES = BATTLES_PER_GEN // 2
             summon_specs = []
-            for _ in range(NUM_SUMMON_BATTLES):
-                if random.random() < 0.5:
-                    a,b = random.sample(SUMMON_BATTLE_TMPLS,2)
+            for _ in range(NUM_SUMMON_BATTLES if summon_pool else 0):
+                if len(summon_pool) < 4 or random.random() < 0.5:
+                    a,b = random.sample(summon_pool, 2) if len(summon_pool) >= 2 else summon_pool * 2
                     summon_specs.append(([a],[b],random.choice(['6x6','8x8','10x10'])))
                 else:
-                    ch = random.sample(SUMMON_BATTLE_TMPLS,4)
+                    ch = random.sample(summon_pool,4)
                     summon_specs.append((ch[:2],ch[2:],random.choice(['10x10','20x20'])))
             # Submit ALL battles at once — no waiting between batches
             all_ups = []
-            char_tasks = [(ta,tb,ms,all_char_data,char_map_dict,SUMMON_TEMPLATES) for ta,tb,ms in specs]
-            summon_tasks = [(ta,tb,ms,SUMMON_TEMPLATES) for ta,tb,ms in summon_specs]
+            char_tasks = [(ta,tb,ms,all_char_data,char_map_dict,self.summon_templates) for ta,tb,ms in specs]
+            summon_tasks = [(ta,tb,ms,self.summon_templates) for ta,tb,ms in summon_specs]
             total_tasks = len(char_tasks) + len(summon_tasks)
             completed = 0
             with ProcessPoolExecutor(max_workers=NUM_WORKERS) as ex:
@@ -1744,21 +1803,25 @@ class QTrainer:
             log(f'       solo:{sum(len(v) for v in self.Q_solo.values())} team:{sum(len(v) for v in self.Q_team.values())} summon:{sum(len(v) for v in self.Q_summon.values())}')
             stats_log.append((gen, gen_battles, total_actions, avg_reward))
         # Serialize all three tables
-        def serialize_q(qdict):
+        def serialize_q(qdict, allowed):
             result = {}
             for ck, qd in qdict.items():
+                if ck not in allowed:
+                    continue
                 result[ck] = {'|'.join(str(x) for x in s) + '__' + ak: v
                               for (s, ak), v in qd.items() if isinstance(s, tuple)}
             return result
-        q_solo = serialize_q(self.Q_solo)
-        q_team = serialize_q(self.Q_team)
-        q_summon = serialize_q(self.Q_summon)
-        weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
+        q_solo = serialize_q(self.Q_solo, self.char_map)
+        q_team = serialize_q(self.Q_team, self.char_map)
+        q_summon = serialize_q(self.Q_summon, self.training_summons)
+        tables = merge_untrained_tables(previous, {'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon}, singles, self.training_summons)
         pending_path = weight_path + '.tmp'
         with open(pending_path, 'w', encoding='utf-8') as f:
-            json.dump({'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon,
+            json.dump({**tables,
                        'stats': stats_log, 'params': {
                 'generations': GENERATIONS, 'battles_per_gen': BATTLES_PER_GEN,
+                'characters': singles, 'summons': self.training_summons,
+                'preserved_characters': self.preserved_characters, 'preserved_summons': self.preserved_summons,
                 'alpha': ALPHA, 'gamma': GAMMA, 'temperature': 1.0
             }}, f, ensure_ascii=False, indent=2)
         os.replace(pending_path, weight_path)
@@ -1815,12 +1878,16 @@ def load_q_table(path=None):
         return None
     return result
 
-def main():
+def main(expected_serials=None):
     random.seed(42)
     trainer = QTrainer()
     trainer.init_characters()
+    if expected_serials is not None and list(trainer.char_map) != expected_serials:
+        raise ValueError('训练角色名单与启用角色快照不一致，请重新启动训练')
     print(f'Characters loaded: {list(trainer.char_map.keys())}', flush=True)
     trainer.train()
+    return {'characters': list(trainer.char_map), 'summons': trainer.training_summons,
+            'preserved_characters': trainer.preserved_characters, 'preserved_summons': trainer.preserved_summons}
 
 if __name__ == '__main__':
     main()

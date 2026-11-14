@@ -38,6 +38,7 @@ import sys, os, random, time, json, csv, re, logging, contextlib, io
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ai_battle import BattleEngine, Tournament, AIController, set_terminal_quiet, DisplayLevel
 from characters_data import ALL_CHARACTERS, load_character_to_engine
+from combat_settings import value as setting, settings_scope, snapshot as settings_snapshot
 
 PRELIM_RESULT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                   'prelim_avg_stats_results.txt')
@@ -52,7 +53,7 @@ def parse_single_args(argv):
         print('Usage: python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S]')
         sys.exit(1)
     left, right = parts[0].strip(), parts[1].strip()
-    num, map_size, seed, season_status = 100, '10x10', random.randint(0, 99999), None
+    num, map_size, seed, season_status = setting('SIM_SINGLE_COUNT'), setting('DEFAULT_MAP_SIZE'), random.randint(0, 99999), setting('SEASON_AVG_STATUS')
     m_n = re.search(r'-n\s+(\d+)', right)
     if m_n: num = int(m_n.group(1)); right = right.replace(m_n.group(0), '')
     m_m = re.search(r'-m\s+(\S+)', right)
@@ -68,8 +69,8 @@ def parse_single_args(argv):
 
 def parse_table_args(argv):
     """Parse table-mode args."""
-    fmt = '1v1'; teams_list = None; num = 50; map_size = '10x10'
-    seed = random.randint(0, 99999); season_status = None
+    fmt = setting('SIM_DEFAULT_FORMAT'); teams_list = None; num = setting('SIM_TABLE_COUNT'); map_size = setting('DEFAULT_MAP_SIZE')
+    seed = random.randint(0, 99999); season_status = setting('SEASON_AVG_STATUS')
     i = 2
     while i < len(argv):
         if argv[i] == '--format' and i + 1 < len(argv):
@@ -107,7 +108,7 @@ def parse_prelim_modes(raw):
 
 def parse_prelim_args(argv):
     """Parse prelim-mode args. Returns (rounds, workers, seed, season_status, modes)."""
-    rounds, workers, seed, season_status = 10, 8, None, None
+    rounds, workers, seed, season_status = setting('SIM_PRELIM_COUNT'), setting('PRELIM_WORKERS'), None, setting('SEASON_AVG_STATUS')
     modes = list(PRELIM_MODES)
     seen_format = False
     i = 2
@@ -141,7 +142,7 @@ def parse_prelim_args(argv):
     if workers <= 0:
         print(f'错误: workers 必须 > 0, 收到: {workers}', file=sys.stderr)
         sys.exit(1)
-    if season_status is not None and not 0 <= season_status <= 100:
+    if season_status is not None and not isinstance(season_status, dict) and not 0 <= season_status <= 100:
         print(f'错误: season 必须在 0-100 之间, 收到: {season_status}', file=sys.stderr)
         sys.exit(1)
     return rounds, workers, seed, season_status, modes
@@ -311,7 +312,7 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
         if isinstance(season_status, dict):
             uid_season = {}
             for serial, uid in zip(team_a + team_b, a_uids + b_uids):
-                uid_season[uid] = season_status.get(serial, 50)
+                uid_season[uid] = season_status.get(serial, setting('SEASON_FALLBACK_STATUS'))
         else:
             uid_season = season_status  # None or int
         engine.setup_battle(a_uids, b_uids, map_size, season_status=uid_season)
@@ -320,7 +321,7 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     wins_a = wins_b = timeouts = total_rds = 0
     t0 = time.time()
     for bi in range(N):
-        t.char_season_status = ({s: season_status.get(s, 50) for s in t.char_map} if isinstance(season_status, dict)
+        t.char_season_status = ({s: season_status.get(s, setting('SEASON_FALLBACK_STATUS')) for s in t.char_map} if isinstance(season_status, dict)
                                else {s: season_status if season_status is not None else random.randint(0, 100) for s in t.char_map})
         t._parallel_prelim = True
         _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.WINLOSS, delay=0)
@@ -473,7 +474,7 @@ def mode_single(argv, verbose=False):
         print(f'\n{"="*60}')
         print(f'  详细战斗回放: {a_disp} v.s. {b_disp}')
         print(f'{"="*60}\n')
-        _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.DEBUG, delay=0.4)
+        _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.DEBUG, delay=setting('DELAY_CUSTOM_TURN'))
         print(f'\n{"="*60}')
         print(f'  结果: {"Y队" if r["winner"]=="Y" else "X队"} 胜 ({r["rounds"]}回合)')
         if r.get('timeout'):

@@ -14,6 +14,7 @@ import time
 
 from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
+from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, season_statuses, valid_season
 
 
 def standings(t):
@@ -23,6 +24,7 @@ def standings(t):
 def bracket(t):
     """Same weighted combined play-in/QF draw and SF pairings as Tournament."""
     import ai_battle as ab
+    cfg = t.get('settings') or settings_snapshot()
     ranked = [row['id'] for row in standings(t)]
     rng = random.Random(t['seed'] + 701)
     series = []
@@ -36,25 +38,25 @@ def bracket(t):
         for i, seed in enumerate(seeds):
             pair = []
             for _ in range(2):
-                chosen = rng.choices(remaining, weights=[ab.KNOCKOUT_DRAW_WEIGHTS[c][i] for c in remaining])[0]
+                chosen = rng.choices(remaining, weights=[cfg['KNOCKOUT_DRAW_WEIGHTS'][c][i] for c in remaining])[0]
                 remaining.remove(chosen)
                 pair.append(challengers[chosen])
-            add(f'PI{i+1}', '附加赛', *pair, ab.BO_N_PLAYIN)
-            add(f'QF{i+1}', '八进四', seed, f'W:PI{i+1}', ab.BO_N_QF)
+            add(f'PI{i+1}', '附加赛', *pair, cfg['BO_N_PLAYIN'])
+            add(f'QF{i+1}', '八进四', seed, f'W:PI{i+1}', cfg['BO_N_QF'])
     elif len(ranked) >= 8:
         remaining = list(range(4))
         for i, challenger in enumerate(ranked[4:8]):
-            chosen = rng.choices(remaining, weights=[ab.KNOCKOUT_DRAW_WEIGHTS[i][c] for c in remaining])[0]
+            chosen = rng.choices(remaining, weights=[cfg['KNOCKOUT_DRAW_WEIGHTS'][i][c] for c in remaining])[0]
             remaining.remove(chosen)
-            add(f'QF{i+1}', '八进四', ranked[chosen], challenger, ab.BO_N_QF)
+            add(f'QF{i+1}', '八进四', ranked[chosen], challenger, cfg['BO_N_QF'])
     if len(ranked) >= 8:
         sf = [('W:QF1', 'W:QF4'), ('W:QF2', 'W:QF3')]
     else:
         sf = [(ranked[0], ranked[3]), (ranked[1], ranked[2])]
     for i, pair in enumerate(sf):
-        add(f'SF{i+1}', '半决赛', *pair, ab.BO_N_SF)
-    add('BRONZE', '季军赛', 'L:SF1', 'L:SF2', ab.BO_N_BRONZE)
-    add('FINAL', '决赛', 'W:SF1', 'W:SF2', ab.BO_N_FINAL)
+        add(f'SF{i+1}', '半决赛', *pair, cfg['BO_N_SF'])
+    add('BRONZE', '季军赛', 'L:SF1', 'L:SF2', cfg['BO_N_BRONZE'])
+    add('FINAL', '决赛', 'W:SF1', 'W:SF2', cfg['BO_N_FINAL'])
     order = {'附加赛': 0, '八进四': 1, '半决赛': 2, '季军赛': 3, '决赛': 4}
     return sorted(series, key=lambda s: order[s['stage']])
 
@@ -77,6 +79,9 @@ class Tournaments:
         self.c, self.management, self.store = context, management, store
         self.lock, self.threads, self.workers = threading.RLock(), set(), {}
         for t in store.list('tournament'):
+            if 'settings' not in t:
+                t['settings'] = settings_snapshot()
+                self.save(t)
             if t['status'] in ('running', 'watching'):
                 t.update(status='paused', current=None, message='服务重启，已完成赛果已保留；未完成场次将从场初重新开始')
                 self.save(t)
@@ -93,12 +98,14 @@ class Tournaments:
 
     def lookup(self, tid):
         t = self.store.get('tournament', tid)
-        if not t or t['owner'] != self.c['session_id']():
+        if not t or not self.c['session_id']():
             raise NotFound('赛事不存在')
         return t
 
     def public(self, t):
         result = copy.deepcopy(t)
+        result.pop('owner', None)
+        result.setdefault('speed', 1)
         result['standings'] = standings(t)
         for s in result['series']:
             s['team_a'] = participant(t, s['a'])
@@ -106,7 +113,9 @@ class Tournaments:
         return result
 
     def list(self):
-        return jsonify(tournaments=[self.public(t) for t in self.store.list('tournament') if t['owner'] == self.c['session_id']()])
+        if not self.c['session_id']():
+            raise NotFound('赛事不存在')
+        return jsonify(tournaments=[self.public(t) for t in self.store.list('tournament')])
 
     def get(self, tid):
         return jsonify(self.public(self.lookup(tid)))
@@ -130,43 +139,47 @@ class Tournaments:
         if not self.c['session_id']():
             raise BadRequest('请先建立会话')
         import ai_battle as ab
-        from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
-        fmt = data.get('format', '1v1')
+        TEAM_TABLES_2V2, TEAM_TABLES_3V3 = setting('TEAM_TABLES_2V2'), setting('TEAM_TABLES_3V3')
+        cfg = settings_snapshot()
+        fmt = data.get('format', cfg['SIM_DEFAULT_FORMAT'])
         if fmt not in ('1v1', '2v2', '3v3'):
             raise BadRequest('无效赛制')
         valid = {c['serial'] for c in self.management.module().ALL_CHARACTERS}
         teams = data.get('teams') or ([[c['serial']] for c in self.management.module().ALL_CHARACTERS] if fmt == '1v1'
                                    else TEAM_TABLES_2V2 if fmt == '2v2' else TEAM_TABLES_3V3)
+        if not data.get('teams'):
+            teams = [team for team in teams if all(s in valid for s in team)]
         if len(teams) < 4 or any(not isinstance(team, list) or not team or len(team) != len(set(team)) or any(s not in valid for s in team) for team in teams):
             raise BadRequest('赛事至少需要四支有效队伍，请检查预设引用')
-        seed, season = data.get('seed', random.randrange(2**31)), data.get('season')
-        if type(seed) is not int or not 0 <= seed < 2**31 or (season is not None and (type(season) is not int or not 0 <= season <= 100)):
+        seed, season = data.get('seed', random.randrange(2**31)), data.get('season', cfg['SEASON_AVG_STATUS'])
+        if type(seed) is not int or not 0 <= seed < 2**31 or not valid_season(season):
             raise BadRequest('种子或赛季状态无效')
         # Pool builders use module RNG; preserve live battle randomness.
         with self.lock, self.management.lock, self.c['ns']['_lock']:
             state = random.getstate()
             random.seed(seed)
             try:
-                tournament = ab.Tournament(enabled_modes=[fmt])
+                tournament = ab.Tournament(enabled_modes=[fmt], settings=cfg)
                 if fmt == '1v1':
-                    rr = min(ab.RR_ROUNDS_1V1, ab.TARGET_1V1_MATCHES // (len(teams)-1))
-                    pool = tournament._build_rr_pool(fmt, teams, ['10x10'], fmt, rr)
-                    pool += tournament._allocate_individual_bonus_matches([x[0] for x in teams], rr, ab.TARGET_1V1_MATCHES)
+                    rr = min(cfg['RR_ROUNDS_1V1'], cfg['TARGET_1V1_MATCHES'] // (len(teams)-1))
+                    pool = tournament._build_rr_pool(fmt, teams, [cfg['DEFAULT_MAP_SIZE']], fmt, rr)
+                    pool += tournament._allocate_individual_bonus_matches([x[0] for x in teams], rr, cfg['TARGET_1V1_MATCHES'])
                 else:
-                    rr = ab.RR_ROUNDS_2V2 if fmt == '2v2' else ab.RR_ROUNDS_3V3
-                    maps = ab.MAP_SIZES_2V2 if fmt == '2v2' else ab.MAP_SIZES_3V3
+                    rr = cfg['RR_ROUNDS_2V2'] if fmt == '2v2' else cfg['RR_ROUNDS_3V3']
+                    maps = cfg['MAP_SIZES_2V2'] if fmt == '2v2' else cfg['MAP_SIZES_3V3']
                     pool = tournament._build_rr_pool(fmt, teams, maps, fmt, rr)
-                    pool += tournament._allocate_team_bonus_matches(teams, rr, ab.RANDOM_BONUS_2V2 if fmt == '2v2' else ab.RANDOM_BONUS_3V3)
+                    pool += tournament._allocate_team_bonus_matches(teams, rr, cfg['RANDOM_BONUS_2V2'] if fmt == '2v2' else cfg['RANDOM_BONUS_3V3'])
                 random.shuffle(pool)
                 schedule = [dict(a=p[4], b=p[5], map_size=p[1], seed=random.randrange(2**31)) for p in pool]
-                statuses = {s: season if season is not None else random.randint(0, 100) for s in valid}
+                with settings_scope(cfg):
+                    statuses = season_statuses(valid, season)
             finally:
                 random.setstate(state)
             tid = secrets.token_hex(8)
             self.management.snapshot_task(tid)
             t = dict(id=tid, owner=self.c['session_id'](), format=fmt, seed=seed, char_season=statuses,
                      teams=teams, schedule=schedule, completed=0, series=[], phase='regular', status='paused',
-                     current=None, revision=0, requests=[], logs=[], results=[],
+                     current=None, revision=0, requests=[], logs=[], results=[], speed=cfg['ROOM_DEFAULT_SPEED'], settings=cfg,
                      standings=[dict(id=i, team=team, points=0, wins=0, battles=0) for i, team in enumerate(teams)])
             self.save(t)
             return jsonify(self.public(t))
@@ -178,7 +191,17 @@ class Tournaments:
             rid, op = data.get('request_id'), data.get('op')
             if not isinstance(rid, str) or not 1 <= len(rid) <= 100:
                 raise BadRequest('缺少请求 ID')
-            if rid in t['requests']:
+            sid = self.c['session_id']()
+            request_key = sid + ':' + rid
+            if request_key in t['requests'] or (rid in t['requests'] and t.get('owner') == sid):
+                return jsonify(self.public(t))
+            if op == 'speed':
+                speed = data.get('speed')
+                if type(speed) is not int or speed not in (1, 2, 4):
+                    raise BadRequest('速度必须为 1、2 或 4')
+                t['speed'] = speed
+                t['requests'] = (t['requests'] + [request_key])[-200:]
+                self.save(t)
                 return jsonify(self.public(t))
             watch_room = (t.get('current') or {}).get('room')
             resuming = op == 'resume' and (tid in self.threads or watch_room) and t['status'] == 'paused' and t.get('current')
@@ -219,7 +242,7 @@ class Tournaments:
                 if op in ('game', 'series', 'round', 'turn_game') and not any(s['id'] == selected for s in available):
                     raise BadRequest('请选择已确定双方且尚未结束的系列赛')
                 t.update(status='running', operation=op, selected=selected)
-            t['requests'] = (t['requests'] + [rid])[-200:]
+            t['requests'] = (t['requests'] + [request_key])[-200:]
             self.save(t)
             if op != 'pause' and not resuming:
                 self.threads.add(tid)
@@ -251,7 +274,7 @@ class Tournaments:
                             return
                         s = available[0]
                         identifier = s['id']
-                        match = dict(a=participant(t, s['a']), b=participant(t, s['b']), map_size='10x10',
+                        match = dict(a=participant(t, s['a']), b=participant(t, s['b']), map_size=t['settings']['KNOCKOUT_MAP_SIZE'],
                                      seed=t['seed'] + 10000 + t['series'].index(s)*100 + len(s['games']))
                     t['current'] = dict(series=identifier, match=match, replay=[])
                     t['logs'] = []
@@ -288,18 +311,20 @@ class Tournaments:
                 err.close()
 
     def simulate(self, tid, t, match, verbose=False):
+        cfg = t['settings']
         import ai_battle as ab
         folder = self.management.runtime/'jobs'/tid
-        params = dict(mode='game', team_a=t['teams'][match['a']], team_b=t['teams'][match['b']],
+        params = dict(settings=cfg, mode='game', team_a=t['teams'][match['a']], team_b=t['teams'][match['b']],
                       map_size=match['map_size'], seed=match['seed'], char_season=t['char_season'], verbose=verbose,
-                      max_rounds=ab.MAX_ROUNDS_PRELIM_BY_FORMAT.get(t['format'], ab.MAX_ROUNDS_PRELIM) if t['phase'] == 'regular' else ab.MAX_ROUNDS_KNOCKOUT)
+                      max_rounds=cfg['MAX_ROUNDS_PRELIM_BY_FORMAT'].get(t['format'], cfg['MAX_ROUNDS_PRELIM']) if t['phase'] == 'regular' else cfg['MAX_ROUNDS_KNOCKOUT'])
         result = None
         replay = []
         logs = []
         if tid not in self.workers:
             # Upgrade the display adapter for existing pinned tournaments too.
             # Their engine, character data and weights remain untouched.
-            shutil.copyfile(Path(__file__).with_name('ui_task_worker.py'), folder/'ui_task_worker.py')
+            for name in ('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py'):
+                shutil.copyfile(Path(__file__).with_name(name), folder/name)
             err = (folder/'game-error.log').open('w', encoding='utf-8')
             proc = subprocess.Popen([sys.executable, '-u', str(folder/'ui_task_worker.py'), '--server'], cwd=folder,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, encoding='utf-8', text=True,
@@ -311,7 +336,7 @@ class Tournaments:
         for line in proc.stdout:
             if verbose:
                 while self.store.get('tournament', tid)['status'] == 'paused':
-                    time.sleep(.1)
+                    time.sleep(setting('TOURNAMENT_PAUSE_POLL', live=True))
             row = json.loads(line)
             if 'result' in row:
                 result = dict(row['result'], _round_replay=row.get('replay', replay), _battle_logs=logs)
@@ -323,7 +348,8 @@ class Tournaments:
                     current = self.store.get('tournament', tid)
                     current['current']['replay'] = list(replay)
                     self.save(current)
-                time.sleep(.65)
+                speed = self.store.get('tournament', tid).get('speed', 1)
+                time.sleep(setting('TOURNAMENT_EVENT_DELAY', live=True) / speed)
             if verbose and 'log' in row:
                 logs.append(row['log'])
                 with self.lock:
@@ -415,6 +441,7 @@ class Tournaments:
             return response
 
     def open_watch(self, t, s):
+        cfg = t['settings']
         tid = t['id']
         folder = self.management.runtime/'jobs'/tid
         spec = importlib.util.spec_from_file_location('watch_data', folder/'characters_data.py')
@@ -424,15 +451,15 @@ class Tournaments:
         keys = ('ALL_CHARACTERS', 'SUMMON_TEMPLATES', 'ITEM_TEMPLATES', 'GLOBAL_RANGE_OVERRIDE')
         before = {k: getattr(module, k) for k in keys}
         a, b = participant(t, s['a']), participant(t, s['b'])
-        match = dict(a=a, b=b, map_size='10x10', seed=t['seed']+10000+t['series'].index(s)*100+len(s['games']))
-        params = dict(seed=match['seed'], team_a=t['teams'][a], team_b=t['teams'][b], local=True,
+        match = dict(a=a, b=b, map_size=t['settings']['KNOCKOUT_MAP_SIZE'], seed=t['seed']+10000+t['series'].index(s)*100+len(s['games']))
+        params = dict(map_size=match['map_size'], seed=match['seed'], team_a=t['teams'][a], team_b=t['teams'][b], local=True,
                       ai_slots=['Y:'+x for x in t['teams'][a]] + ['X:'+x for x in t['teams'][b]], name='锦标赛 · '+s['id'])
         cookie = request.headers.get('Cookie', '')
         room = None
         try:
             for k in keys:
                 setattr(module, k, getattr(pinned, k))
-            with self.c['app'].test_request_context('/api/ui/rooms', method='POST', json=params, headers={'Cookie': cookie}):
+            with settings_scope(cfg), self.c['app'].test_request_context('/api/ui/rooms', method='POST', json=params, headers={'Cookie': cookie}):
                 response = self.c['create_room']()
                 info = response.get_json()
             room = self.c['rooms'][info['code']]
@@ -443,9 +470,9 @@ class Tournaments:
                 for uid in dict.fromkeys(eng._resolve_uid(e['userId']) for e in eng._get_initiative()):
                     serial = eng.get_char(uid).serial
                     from battle_engine import season_status_roll
-                    eng.get_char(uid).set_attr('状态', season_status_roll(t['char_season'].get(serial, 50)))
+                    eng.get_char(uid).set_attr('状态', season_status_roll(t['char_season'].get(serial, cfg['SEASON_FALLBACK_STATUS'])))
             import ai_battle as ab
-            eng.max_rounds = ab.MAX_ROUNDS_KNOCKOUT
+            eng.max_rounds = cfg['MAX_ROUNDS_KNOCKOUT']
             eng._team_roster = list(dict.fromkeys((eng._resolve_uid(e['userId']), e.get('team', 'Y')) for e in eng._get_initiative() if not e.get('isSummon')))
             room.update(running=True, tournament_id=tid, series_id=s['id'], manual=False)
             from ai_battle import round_hp_line
@@ -461,7 +488,7 @@ class Tournaments:
         finally:
             for k, v in before.items():
                 setattr(module, k, v)
-        match = dict(a=a, b=b, map_size='10x10', seed=t['seed']+10000+t['series'].index(s)*100+len(s['games']))
+        match = dict(a=a, b=b, map_size=t['settings']['KNOCKOUT_MAP_SIZE'], seed=t['seed']+10000+t['series'].index(s)*100+len(s['games']))
         t.update(status='watching', current=dict(room=room['code'], series=s['id'], match=match))
         self.save(t)
         return jsonify(room=self.c['public'](room, True), tournament=self.public(t))

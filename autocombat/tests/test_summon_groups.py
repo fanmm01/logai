@@ -34,12 +34,14 @@ def setup_engine(cls=be.FullBattleEngine, reverse=False):
 def battle_classes():
     """Load the actual tournament classes without executing module logger setup."""
     import ai_trainer as trainer
+    from combat_settings import value, snapshot, pinned
     tree = ast.parse((ROOT / 'ai_battle.py').read_text(encoding='utf-8'))
     classes = [n for n in tree.body if
                (isinstance(n, ast.ClassDef) and n.name in ('DisplayLevel', 'AIController', 'BattleEngine'))
                or (isinstance(n, ast.FunctionDef) and n.name == 'round_hp_line')]
     logs = []
     ns = dict(FullBattleEngine=be.FullBattleEngine, random=random, math=math, re=re,
+              battle_setting=value, settings_snapshot=snapshot, pinned=pinned,
               time=time, MAX_ROUNDS_PRELIM=35, battle_log=lambda level, msg: logs.append((level, msg)),
               set_terminal_quiet=lambda value: None,
               load_q_table=trainer.load_q_table,
@@ -121,6 +123,13 @@ class SummonGroupTests(unittest.TestCase):
                     self.assertEqual(sum(e.get('isSummon', False) for e in eng._get_initiative()), 1)
 
     def test_extinction_resummon_keeps_total_cap(self):
+        # This engine regression requires three complete two-member groups;
+        # use its own fixture instead of depending on editable balance data.
+        templates = copy.deepcopy(cd.SUMMON_TEMPLATES)
+        templates['藤蔓']['max_total_spawned'] = 6
+        fixture = patch.object(be, '_SUMMON_TEMPLATES', templates)
+        fixture.start()
+        self.addCleanup(fixture.stop)
         for cls in (be.FullBattleEngine, be.FastBattleEngine):
             with self.subTest(engine=cls.__name__):
                 eng = setup_engine(cls)

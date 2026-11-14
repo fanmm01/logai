@@ -1,54 +1,8 @@
-#!/usr/bin/env python3
-"""共享的 2v2 / 3v3 分队表。"""
+"""Compatibility access to shared, configurable team presets."""
+from combat_settings import value
 
-TEAM_TABLES_2V2 = [
-['Y9', 'Y2'],
-['Y3', 'Y1'],
-['Y12', 'Y11'],
-['Y2', 'Y11'],
-['Y10', 'Y4'],
-['Y2', 'Y4'],
-['Y1', 'Y4'],
-['Y9', 'Y6'],
-['Y5', 'Y7'],
-['Y10', 'Y6'],
-['Y1', 'Y7'],
-['Y3', 'Y8'],
-['Y11', 'Y7'],
-['Y12', 'Y8'],
-['Y5', 'Y8'],
-['Y6', 'Y7'],
-]
 
-# TEAM_TABLES_3V3 = [
-#     ['Y1', 'Y10', 'Y11'],
-#     ['Y5', 'Y6', 'Y7', 'Y8'],
-#     ['Y9', 'Y12'],
-#     ['Y5', 'Y6', 'Y7'],
-#     ['Y2', 'Y5', 'Y10'],
-#     ['Y2', 'Y11', 'Y6'],
-#     ['Y8', 'Y1', 'Y2'],
-#     ['Y3', 'Y4', 'Y10'],
-#     ['Y11', 'Y5', 'Y6'],
-#     ['Y7', 'Y8', 'Y1'],
-#     ['Y12', 'Y3', 'Y4'],
-#     ['Y9', 'Y3'],
-#     ['Y10', 'Y6', 'Y2'],
-# ]
-
-TEAM_TABLES_3V3 = [
-    ['Y1', 'Y10', 'Y11'],        # T1
-    ['Y5', 'Y6', 'Y7', 'Y8'],     # T2 (锁死)
-    ['Y9', 'Y12'],                # T3 (锁死)
-    ['Y2', 'Y5', 'Y10'],          # T5
-    ['Y2', 'Y11', 'Y4'],          # T6 (修改：Y6 -> Y4)
-    ['Y8', 'Y1', 'Y2'],           # T7
-    ['Y3', 'Y4', 'Y10'],          # T8
-    ['Y11', 'Y5', 'Y6'],          # T9
-    ['Y7', 'Y8', 'Y1'],           # T10
-    ['Y12', 'Y3', 'Y4'],          # T11
-    ['Y9', 'Y3'],                 # T12
-    ['Y6', 'Y2', 'Y12'],         # T13 (修改：Y6 -> Y12)
-    ['Y7', 'Y9', 'Y4'],           # T14 (新增：平衡三人)
-]
-
+def __getattr__(name):
+    if name in ('TEAM_TABLES_2V2', 'TEAM_TABLES_3V3'):
+        return value(name)
+    raise AttributeError(name)

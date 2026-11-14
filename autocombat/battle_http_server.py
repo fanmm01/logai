@@ -12,6 +12,7 @@ Uses sys.modules trick to redirect battle_engine's lazy imports to characters_da
 
 import sys, os, json, uuid, threading, random, math, time, importlib, re
 from datetime import datetime
+from combat_settings import value as _battle_setting, pinned as _settings_pinned
 
 # Ensure we can import from the autocombat directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -208,6 +209,7 @@ def _load_spells_from_chdata(engine, uid: str, ch_data: dict):
             char.set_str(f"{prefix}_mp_formula", mpf)
 
         # Load each effect category
+        char.set_attr(f"{prefix}效果数量", len(spell.get('effects', [])))
         for ei, eff in enumerate(spell.get('effects', [])):
             letter = CAT_LETTERS[ei]
             prefix_l = f"{prefix}类别{letter}"
@@ -810,8 +812,8 @@ class PvPFullBattleEngine(FullBattleEngine):
             # AI defender -> sync react weights from initiative entry, then delegate to base
             def_entry = self._unit_il_entry(target_id, self._get_initiative())
             if def_entry:
-                self._ai_react_dodge_w[target_id] = def_entry.get('react_dodge_w', 50)
-                self._ai_react_counter_w[target_id] = def_entry.get('react_counter_w', 50)
+                self._ai_react_dodge_w[target_id] = def_entry.get('react_dodge_w', _battle_setting('AI_DODGE_WEIGHT'))
+                self._ai_react_counter_w[target_id] = def_entry.get('react_counter_w', _battle_setting('AI_COUNTER_WEIGHT'))
                 self._ai_react_block_w[target_id] = def_entry.get('react_block_w', 0)
             return super()._trigger_spell_reaction(
                 caster_id, target_id, eff, spell, dmg_dice,
@@ -1454,15 +1456,15 @@ def _ai_decide_action(engine, uid: str, Q=None):
                     import random as _random
                     q_vals = [qdict.get((st, ak), 0.0) for ak, an in avail]
                     # deformation
-                    zt = char.get_attr('状态', 60)
-                    deform_prob = (100 - zt) / 100.0 * 0.4
+                    zt = char.get_attr('状态', _battle_setting('AI_DEFAULT_STATUS'))
+                    deform_prob = (100 - zt) / 100.0 * _battle_setting('AI_STATE_NOISE')
                     if _random.random() < deform_prob:
                         scale = max(max(abs(q) for q in q_vals), 1.0)
                         q_vals = [q + _random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
                     if q_vals:
                         import math
                         max_q = max(q_vals)
-                        exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                        exp_vals = [math.exp((q - max_q) / _battle_setting('AI_TEMPERATURE')) for q in q_vals]
                         total = sum(exp_vals)
                         probs = [e / total for e in exp_vals] if total > 0 else None
                         idx = _random.choices(range(len(avail)), weights=probs, k=1)[0]
@@ -1792,6 +1794,7 @@ def _build_reaction_prompt(def_name, can_dodge=True, can_counter=True, can_block
     return f"\n@{def_name} 请做出反应：\n{'  '.join(opts)}"
 
 
+@_settings_pinned
 def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                   max_steps: int = 50, ui_step: bool = False) -> list:
     """Advance battle through all AI turns until a human-controlled character is active or battle ends.
@@ -2028,14 +2031,14 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                         if av:
                             import random as _random, math
                             q_vals = [sdict.get((st, ak), 0.0) for ak, an in av]
-                            zt = _random.randint(40, 80)
-                            deform_prob = (100 - zt) / 100.0 * 0.4
+                            zt = _random.randint(_battle_setting('AI_SUMMON_STATUS_MIN'), _battle_setting('AI_SUMMON_STATUS_MAX'))
+                            deform_prob = (100 - zt) / 100.0 * _battle_setting('AI_STATE_NOISE')
                             if _random.random() < deform_prob:
                                 scale = max(max(abs(q) for q in q_vals), 1.0)
                                 q_vals = [q + _random.uniform(-deform_prob, deform_prob) * scale for q in q_vals]
                             if q_vals:
                                 max_q = max(q_vals)
-                                exp_vals = [math.exp((q - max_q) / 1.0) for q in q_vals]
+                                exp_vals = [math.exp((q - max_q) / _battle_setting('AI_TEMPERATURE')) for q in q_vals]
                                 total = sum(exp_vals)
                                 probs = [e / total for e in exp_vals] if total > 0 else None
                                 idx = _random.choices(range(len(av)), weights=probs, k=1)[0]
@@ -2450,7 +2453,7 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
         if still_actor and engine._get_my_actions(uid) == actions_before:
             failed_attempts += 1
             engine._ai_failed_commands.add(cmd)
-            if failed_attempts >= 5:
+            if failed_attempts >= _battle_setting('AI_MAX_FAILURES'):
                 outputs.append('无可执行动作，结束回合。')
                 engine._end_turn(uid)
                 continue
@@ -3191,12 +3194,12 @@ def create_battle():
                             engine._player_controllers[base_uid].append(player_id)
 
             # Get map_size
-            map_size_str = data.get('map_size', '10x10')
+            map_size_str = data.get('map_size', _battle_setting('DEFAULT_MAP_SIZE'))
             try:
                 w_str, h_str = map_size_str.split('x')
                 w, h = int(w_str), int(h_str)
             except Exception:
-                w, h = 10, 10
+                w, h = map(int, _battle_setting('DEFAULT_MAP_SIZE').split('x'))
             map_data = {'width': w, 'height': h, 'entryRow': math.ceil(h / 2),
                         'obstacles': {}, 'occupants': {}}
 
@@ -3268,8 +3271,8 @@ def create_battle():
         if mode != 'multi_pvp':
             map_data = data.get('map')
             if not map_data:
-                # Default 10x10 map
-                map_data = {'width': 10, 'height': 10, 'entryRow': 5, 'obstacles': {}, 'occupants': {}}
+                w, h = map(int, _battle_setting('DEFAULT_MAP_SIZE').split('x'))
+                map_data = {'width': w, 'height': h, 'entryRow': math.ceil(h / 2), 'obstacles': {}, 'occupants': {}}
 
             init_list = data.get('initiative', [])
             if not init_list:
@@ -6119,8 +6122,8 @@ def _do_train(job_id: str):
         _be._SUMMON_TEMPLATES = _pvp_data.SUMMON_TEMPLATES
 
         trainer = QTrainer()
-        # init_characters() uses ALL_CHARACTERS from characters_data,
-        # which is redirected to characters_data_pvp via sys.modules hack.
+        # Resolve the current canonical enabled roster at training start,
+        # including browser saves made after ai_trainer was imported.
         trainer.init_characters()
         trainer.train()
         _debug_log(f'[train] Job {job_id}: training complete')
@@ -6332,7 +6335,7 @@ def api_sim():
             fmt = data.get('format', '1v1')
             teams_str = data.get('teams', '')
             n = int(data.get('n', 50))
-            map_size = data.get('map_size', '10x10')
+            map_size = data.get('map_size', _battle_setting('DEFAULT_MAP_SIZE'))
             seed = data.get('seed')
             season = data.get('season')
 
@@ -6349,7 +6352,7 @@ def api_sim():
             team_a = data.get('team_a', [])
             team_b = data.get('team_b', [])
             n = int(data.get('n', 100))
-            map_size = data.get('map_size', '10x10')
+            map_size = data.get('map_size', _battle_setting('DEFAULT_MAP_SIZE'))
             seed = data.get('seed')
             season = data.get('season')
             verbose = data.get('verbose', False)
@@ -6359,7 +6362,7 @@ def api_sim():
 
             argv = ['sim.py'] + list(team_a) + ['vs'] + list(team_b)
             if n != 100: argv += ['-n', str(n)]
-            if map_size != '10x10': argv += ['-m', map_size]
+            if map_size != _battle_setting('DEFAULT_MAP_SIZE'): argv += ['-m', map_size]
             if seed is not None: argv += ['-s', str(seed)]
             if season is not None: argv += ['--season', str(season)]
             if verbose: argv += ['--verbose']

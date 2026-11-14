@@ -13,6 +13,7 @@ import time
 from flask import jsonify, request, Response
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 from ui_management import atomic_write, digest
+from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, valid_season
 
 
 class Tasks:
@@ -33,20 +34,20 @@ class Tasks:
         mode = data.get('mode', 'single')
         if mode not in ('single', 'verbose', 'table', 'prelim'):
             raise BadRequest('不支持的模拟模式')
-        defaults = {'single': 100, 'verbose': 1, 'table': 50, 'prelim': 10}
+        defaults = {'single': setting('SIM_SINGLE_COUNT'), 'verbose': 1, 'table': setting('SIM_TABLE_COUNT'), 'prelim': setting('SIM_PRELIM_COUNT')}
         n = data.get('n', defaults[mode])
         if type(n) is not int or not 1 <= n <= 1000:
             raise BadRequest('模拟次数必须为 1–1000')
-        seed, season = data.get('seed', random.randrange(2**31)), data.get('season')
-        if type(seed) is not int or not 0 <= seed < 2**31 or (season is not None and (type(season) is not int or not 0 <= season <= 100)):
+        seed, season = data.get('seed', random.randrange(2**31)), data.get('season', setting('SEASON_AVG_STATUS'))
+        if type(seed) is not int or not 0 <= seed < 2**31 or not valid_season(season):
             raise BadRequest('种子应为非负整数，赛季状态为 0–100 或随机')
-        params = dict(mode=mode, n=1 if mode == 'verbose' else n, seed=seed, season=season, map_size=data.get('map_size', '10x10'))
+        params = dict(mode=mode, n=1 if mode == 'verbose' else n, seed=seed, season=season, map_size=data.get('map_size', setting('DEFAULT_MAP_SIZE')))
         valid = {c['serial'] for c in self.management.module().ALL_CHARACTERS}
         if mode in ('single', 'verbose'):
             self.c['valid_teams'](data)
             params.update(team_a=data['team_a'], team_b=data['team_b'])
         else:
-            fmt = data.get('format', '1v1')
+            fmt = data.get('format', setting('SIM_DEFAULT_FORMAT'))
             if fmt not in ('1v1', '2v2', '3v3'):
                 raise BadRequest('请选择有效赛制')
             params['format'] = fmt
@@ -54,17 +55,24 @@ class Tasks:
                 from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
                 teams = data.get('teams') or ([[s] for s in sorted(valid)] if fmt == '1v1' else
                                              TEAM_TABLES_2V2 if fmt == '2v2' else TEAM_TABLES_3V3)
+                if not data.get('teams'):
+                    teams = [team for team in teams if all(s in valid for s in team)]
                 if not isinstance(teams, list) or len(teams) < 2:
                     raise BadRequest('至少需要两个有效小队')
                 for team in teams:
                     if not isinstance(team, list) or not team or len(set(team)) != len(team) or any(s not in valid for s in team):
-                        raise BadRequest('小队含重复或已删除角色，请检查预设')
+                        raise BadRequest('小队含重复、已禁用或已删除角色，请检查预设')
                 params['teams'] = teams
             else:
                 formats = data.get('formats', [fmt])
                 if not isinstance(formats, list) or not formats or any(f not in ('1v1', '2v2', '3v3') for f in formats):
                     raise BadRequest('请选择预赛赛制')
-                workers = data.get('workers', 8)
+                from team_tables import TEAM_TABLES_2V2, TEAM_TABLES_3V3
+                pools = {'1v1': [[s] for s in valid], '2v2': TEAM_TABLES_2V2, '3v3': TEAM_TABLES_3V3}
+                for requested in formats:
+                    if sum(all(s in valid for s in team) for team in pools[requested]) < 2:
+                        raise BadRequest(f'{requested} 预赛至少需要两支由启用角色组成的有效小队')
+                workers = data.get('workers', setting('PRELIM_WORKERS'))
                 if type(workers) is not int or not 1 <= workers <= 32:
                     raise BadRequest('并发数应为 1–32')
                 params.update(formats=formats, workers=workers)
@@ -78,8 +86,13 @@ class Tasks:
 
     def launch(self, params):
         with self.lock, self.management.lock:
-            if params['mode'] != 'train':
+            if params['mode'] == 'train':
+                if len(self.management.module().ALL_CHARACTERS) < 6:
+                    raise BadRequest('默认训练包含 3 对 3 抽样，需要至少启用 6 名角色')
+                params = {**params, 'enabled_serials': [ch['serial'] for ch in self.management.module().ALL_CHARACTERS]}
+            else:
                 params = self.params(params)
+            params = {**params, 'settings': settings_snapshot()}
             if any(j['status'] == 'running' for j in self.store.list('task')):
                 raise Conflict('已有任务正在运行，请等待或取消模拟')
             jid = secrets.token_hex(8)

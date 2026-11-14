@@ -8,6 +8,15 @@ export type Member = { id: string; name: string; ready: boolean; spectator: bool
 export type Room = { code: string; name: string; local: boolean; me: string; host: string; members: Member[]; revision: number; running: boolean; speed: number; controls: Record<string, string>; snapshot: Snapshot; history: BattleEvent[]; invite_urls: string[]; tournament?: { id: string; series: string; next_available: boolean } | null };
 export type Simulation = { id: string; status: string; completed: number; params: Effect; message?: string; result: { wins_a: number; wins_b: number; rate_a: number; rate_b: number; average_rounds: number; elapsed: number; timeouts: number } | null };
 
+export function requestId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    return Array.from(cryptoApi.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('');
+  }
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 export async function api<T>(path: string, data?: unknown): Promise<T> {
   const response = await fetch('/api/ui' + path, data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const result = await response.json().catch(() => ({ message: '服务返回了无法识别的响应' }));

@@ -106,7 +106,7 @@ def main():
                  'parse_coord','format_coord','avg_damage','success_rank','rank_text',
                  'max_damage','AUX_NAME_TO_CODE','_get_attack_range','chebyshev_dist','_resolve_db',
                  '_get_db_str','_calc_net_bp','season_status_roll','_parse_bp_token',
-                 '_format_bp','_parse_attr_mods','ActionExecutionResult','action_committed']:
+                 '_format_bp','_parse_attr_mods','SpellInterrupted','ActionExecutionResult','action_committed']:
         output_lines.append(f'if \"{_sym}\" in dir():_bem.{_sym} = {_sym}\n')
     output_lines.append('sys.modules[\'battle_engine\'] = _bem\n')
 
@@ -115,9 +115,14 @@ def main():
     import argparse, logging
     parser = argparse.ArgumentParser(description='autocombat integrated backend v1.4.0')
     parser.add_argument('--port', type=int, default=8889, help='Server port')
+    parser.add_argument('--tcp-port', type=int, default=8892, help='TCP tunnel forwarding port')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
+    if not 1 <= args.port <= 65535 or not 1 <= args.tcp_port <= 65535:
+        parser.error('ports must be between 1 and 65535')
+    if args.port == args.tcp_port:
+        parser.error('--port and --tcp-port must be different')
 
     # Flask error logging
     app_logger = logging.getLogger('flask.app')
@@ -140,8 +145,15 @@ def main():
     except Exception as e:
         print(f'[reload] character data load failed: {e}')
 
+    from ui_tcp_tunnel import start_tcp_forwarder
+    tcp_forwarder = start_tcp_forwarder(args.host, args.tcp_port, '127.0.0.1', args.port)
     print(f'[autocombat_backend v1.4.0] http://{args.host}:{args.port}')
-    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
+    print(f'[WebUI TCP tunnel] {args.host}:{args.tcp_port} -> 127.0.0.1:{args.port}')
+    try:
+        app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, use_reloader=False)
+    finally:
+        tcp_forwarder.shutdown()
+        tcp_forwarder.server_close()
 """)
 
     output_path = os.path.join(BASE, 'autocombat_backend.py')

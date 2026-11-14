@@ -2907,7 +2907,10 @@ class CombatEngine:
                        'extra_attack_per_blood','blood_ml_per_hp','heal_limit_not_dying']:
                 sv = char.get_attr(f"{prefix}{sk}")
                 if sv is not None: spell[sk] = sv
-            for ci, letter in enumerate(CAT_LETTERS):
+            # An explicitly empty effect list must not synthesize the legacy
+            # first-category fallback after all effects were commented out.
+            effect_letters = [] if char.get_attr(f"{prefix}效果数量") == 0 else CAT_LETTERS
+            for ci, letter in enumerate(effect_letters):
                 pl = f"{prefix}类别{letter}"
                 has_data = bool(char.get_attr(f"{pl}客体") or char.get_str(f"{pl}伤害骰") or
                     char.get_str(f"{pl}护盾值") or char.get_str(f"{pl}回复hp") or
@@ -6236,7 +6239,10 @@ class FullBattleEngine(CombatEngine):
     def _react_bw(self, val):
         self._ai_react_block_w = val
 
-    def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
+    def setup_battle(self, team_a, team_b, map_size=None, season_status=None):
+        if map_size is None:
+            from combat_settings import value as battle_setting
+            map_size = battle_setting("DEFAULT_MAP_SIZE")
         self._pending_battle_events = []
         self._zone_tick_results = []
         self._ai_failed_commands = set()
@@ -8104,7 +8110,10 @@ class FastBattleEngine(FullBattleEngine):
         # Note: max_rounds=20, _ai_react_*_w dicts, _summoned_once, _summon_counters
         # are all initialized by FullBattleEngine.__init__(fast_mode=True)
 
-    def setup_battle(self, team_a, team_b, map_size="10x10", season_status=None):
+    def setup_battle(self, team_a, team_b, map_size=None, season_status=None):
+        if map_size is None:
+            from combat_settings import value as battle_setting
+            map_size = battle_setting("DEFAULT_MAP_SIZE")
         self._pending_battle_events = []
         self._zone_tick_results = []
         self._ai_failed_commands = set()

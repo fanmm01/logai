@@ -80,6 +80,52 @@ class BrowserUITests(unittest.TestCase):
         self.assertIn(b'<!doctype html>', response.data)
         response.close()
 
+    def test_bare_host_redirects_to_ui_preserving_query(self):
+        for path, location in [('/', '/ui/'), ('/index.html', '/ui/'), ('/?room=AB12', '/ui/?room=AB12')]:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 302, path)
+            self.assertEqual(response.headers['Location'], location)
+        # Unknown API paths keep the legacy JSON 404 contract.
+        self.assertEqual(self.client.get('/api/nope').status_code, 404)
+
+    def test_disabled_roster_blocks_new_operations_but_preserves_existing_room(self):
+        self.create()
+        self.control(op='start')
+        self.control(op='pause')
+        before = self.state()['snapshot']
+        module = self.srv.characters_data_pvp
+        remaining = [ch for ch in module.ALL_CHARACTERS if ch['serial'] != 'Y1']
+        with patch.object(module, 'ALL_CHARACTERS', remaining):
+            catalog = self.client.get('/api/ui/catalog').get_json()['characters']
+            self.assertNotIn('Y1', {ch['serial'] for ch in catalog})
+            presets = self.client.get('/api/ui/presets').get_json()['presets']
+            self.assertTrue(all(not p['valid'] for p in presets if 'Y1' in p['team']))
+            self.assertEqual(self.client.post('/api/ui/rooms', json=dict(team_a=['Y1'], team_b=['Y2'], local=True)).status_code, 400)
+            self.assertEqual(self.client.post('/api/ui/simulations', json=dict(mode='single', team_a=['Y1'], team_b=['Y2'])).status_code, 400)
+            self.assertEqual(self.client.post('/api/ui/tournaments', json=dict(format='1v1', teams=[['Y1'], ['Y2'], ['Y3'], ['Y4']])).status_code, 400)
+            params = self.ext['tasks'].params(dict(mode='table', format='2v2', n=1))
+            self.assertTrue(params['teams'])
+            self.assertTrue(all('Y1' not in team for team in params['teams']))
+            tournament = self.client.post('/api/ui/tournaments', json=dict(format='2v2', seed=77))
+            self.assertEqual(tournament.status_code, 200, tournament.get_json())
+            self.assertTrue(all('Y1' not in team for team in tournament.get_json()['teams']))
+            self.assertEqual(self.state()['snapshot']['units'], before['units'])
+        with patch.object(module, 'ALL_CHARACTERS', remaining[:5]):
+            self.assertEqual(self.client.post('/api/ui/training', json={}).status_code, 400)
+        with patch.object(module, 'ALL_CHARACTERS', remaining[:1]):
+            self.assertEqual(self.client.post('/api/ui/simulations', json=dict(mode='prelim', formats=['1v1'])).status_code, 400)
+
+    def test_training_job_records_current_enabled_roster(self):
+        module = self.srv.characters_data_pvp
+        enabled = module.ALL_CHARACTERS[:6]
+        with patch.object(module, 'ALL_CHARACTERS', enabled), patch('ui_tasks.threading.Thread'):
+            response = self.client.post('/api/ui/training', json={})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        job = response.get_json()
+        self.assertEqual(job['params']['enabled_serials'], [ch['serial'] for ch in enabled])
+        job['status'] = 'cancelled'
+        self.ext['store'].put('task', job)
+
     def test_zero_hp_is_not_replaced_by_maximum(self):
         self.create()
         uid = self.eng._get_initiative()[0]['userId']
@@ -441,7 +487,8 @@ class BrowserUITests(unittest.TestCase):
             self.assertEqual(self.client.post(next_url, json={'room': next_room['code']}).status_code, 409)
             outsider = self.app.test_client()
             outsider.post('/api/ui/session', json={'name': '访客'})
-            self.assertEqual(outsider.post(next_url, json={'room': code}).status_code, 404)
+            # Tournaments are shared; the watched room still denies non-members.
+            self.assertEqual(outsider.post(next_url, json={'room': code}).status_code, 403)
             # The deciding game ends SF1; Next must open SF2's first game.
             saved = self.ext['store'].get('tournament', t['id'])
             saved['series'][0]['score'] = [3, 0]

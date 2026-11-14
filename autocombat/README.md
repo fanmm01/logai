@@ -3,7 +3,7 @@
 SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支持。
 
 现已提供 **星序浏览器战术室**：明亮卡牌界面、本地对战、局域网房间、AI 观战、完整战报、自动反应开关、角色编辑与备份、训练、矩阵模拟及可暂停的锦标赛。
-运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；局域网使用 `python start_ui.py --lan`。
+运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；WebUI HTTP 服务监听 `0.0.0.0:8889`，另有 `0.0.0.0:8892` TCP 字节流转发端口，供 TCP 隧道映射到本机。启动器可用 `--tcp-port` 更改转发端口。
 首次构建需 Node.js 与 npm，详情见 [界面使用说明](frontend/README.md)。
 
 ## 环境要求
@@ -24,7 +24,7 @@ pip install flask
 python autocombat_backend.py
 ```
 
-后端默认监听 `http://0.0.0.0:8889`。也可使用 `--port` 指定端口。
+后端默认监听 `http://0.0.0.0:8889`，并在 `0.0.0.0:8892` 启动 WebUI TCP 转发入口。可以使用 `--port` 和 `--tcp-port` 分别指定 HTTP 与转发端口；隧道目标设为本机 TCP 8892，浏览器使用隧道提供的 HTTP 地址访问 `/ui/`。
 
 ### 2. 加载 JS 插件
 
@@ -477,3 +477,5 @@ ITEM_TEMPLATES = {
 
 
 浏览器升级与数据统一说明见 [界面使用说明](frontend/README.md)；`characters_data_pvp.py` / `ai_trainer_pvp.py` 现在是基础版的兼容入口，不再维护第二套数值。
+
+WebUI 新增“设置”：集中显示和修改 AI 战斗、模拟、锦标赛及完整队伍表配置，逐回合等待支持即时调整；赛事规则与队表固定在创建时。详见 [设置说明](frontend/README.md#设置) 和 [配置逐项清单与验证](artifacts/settings/配置提取与验证.md)。升级后需重启后端。

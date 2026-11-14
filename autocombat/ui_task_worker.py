@@ -7,6 +7,7 @@ import random
 import re
 import sys
 import time
+from combat_settings import settings_scope, value as setting, season_statuses
 
 
 def main(params=None, wire=None):
@@ -33,8 +34,9 @@ def main(params=None, wire=None):
         def reconfigure(self, **kwargs):
             pass
 
-    with contextlib.redirect_stdout(Log()), contextlib.redirect_stderr(Log()):
+    with settings_scope(params.get('settings')), contextlib.redirect_stdout(Log()), contextlib.redirect_stderr(Log()):
         import ai_battle as ab
+        ab._logging_override = logging.DEBUG if params.get('mode') == 'verbose' or params.get('verbose') else None
         if params.get('mode') == 'verbose' or params.get('verbose'):
             for handler in ab.logger.handlers:
                 handler.setLevel(logging.DEBUG)
@@ -44,14 +46,14 @@ def main(params=None, wire=None):
         mode = params.get('mode', 'single')
         if mode == 'train':
             import ai_trainer
-            ai_trainer.main()
-            report(completed=1, result={'message': '训练完成'})
+            roster = ai_trainer.main(expected_serials=params.get('enabled_serials'))
+            report(completed=1, result={'message': '训练完成', **roster})
             return
         t = ab.Tournament()
         t.init_characters()
-        season = params.get('season')
+        season = params.get('season', setting('SEASON_AVG_STATUS'))
         if mode == 'game':
-            t.char_season_status = params.get('char_season') or {s: season if season is not None else random.randint(0, 100) for s in t.char_map}
+            t.char_season_status = params.get('char_season') or season_statuses(t.char_map, season)
             t._parallel_prelim = True
             replay = []
 
@@ -65,23 +67,23 @@ def main(params=None, wire=None):
             handler = RoundLog()
             ab.logger.addHandler(handler)
             try:
-                _, _, _, result = t.battle(params['team_a'], params['team_b'], params.get('map_size', '10x10'),
+                _, _, _, result = t.battle(params['team_a'], params['team_b'], params.get('map_size', setting('DEFAULT_MAP_SIZE')),
                     display_level=ab.DisplayLevel.DEBUG if params.get('verbose') else ab.DisplayLevel.ROUND, delay=0,
                     max_rounds=params.get('max_rounds', ab.MAX_ROUNDS_KNOCKOUT))
             finally:
                 ab.logger.removeHandler(handler)
             report(completed=1, result=result, replay=replay)
         elif mode == 'verbose':
-            t.char_season_status = {s: season if season is not None else random.randint(0, 100) for s in t.char_map}
-            _, _, _, result = t.battle(params['team_a'], params['team_b'], params.get('map_size', '10x10'),
+            t.char_season_status = season_statuses(t.char_map, season)
+            _, _, _, result = t.battle(params['team_a'], params['team_b'], params.get('map_size', setting('DEFAULT_MAP_SIZE')),
                 display_level=ab.DisplayLevel.DEBUG, delay=0)
             report(completed=1, result=result)
         elif mode == 'table':
             teams = params['teams']
-            char_season = {s: season if season is not None else random.randint(0, 100) for s in t.char_map}
+            char_season = season_statuses(t.char_map, season)
             names = {c['serial']: c['name'] for c in ALL_CHARACTERS}
             team_names = ['+'.join(names.get(s, s) for s in team) for team in teams]
-            matrix = compute_matrix(t, teams, params['n'], params.get('map_size', '10x10'), char_season,
+            matrix = compute_matrix(t, teams, params['n'], params.get('map_size', setting('DEFAULT_MAP_SIZE')), char_season,
                                     lambda done, matrix: report(completed=done, result={'teams': team_names, 'matrix': matrix}))
             report(completed=len(teams)*(len(teams)-1)//2, result=dict(teams=team_names, matrix=matrix,
                    rankings=compute_avg_points_ranking(matrix, team_names),
@@ -90,7 +92,7 @@ def main(params=None, wire=None):
             from sim import prelim_runtime, new_prelim_totals, accumulate_prelim_rankings, compute_prelim_averages
             modes = params.get('formats', ['1v1', '2v2', '3v3'])
             totals = new_prelim_totals(modes)
-            with prelim_runtime(params.get('workers', 8), season):
+            with prelim_runtime(params.get('workers', setting('PRELIM_WORKERS')), season):
                 for i in range(params['n']):
                     tournament = ab.Tournament(tournament_type=0, enabled_modes=modes)
                     tournament.init_characters()
@@ -100,9 +102,9 @@ def main(params=None, wire=None):
         else:
             a = b = rounds = timeouts = 0
             started = time.monotonic()
-            char_season = {s: season if season is not None else random.randint(0, 100) for s in t.char_map}
+            char_season = season_statuses(t.char_map, season)
             for i in range(params['n']):
-                wa, wb, avg, out, _ = run_battle_pair(t, params['team_a'], params['team_b'], params.get('map_size', '10x10'), 1, season_status=char_season)
+                wa, wb, avg, out, _ = run_battle_pair(t, params['team_a'], params['team_b'], params.get('map_size', setting('DEFAULT_MAP_SIZE')), 1, season_status=char_season)
                 a += wa
                 b += wb
                 rounds += avg
