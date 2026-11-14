@@ -437,18 +437,19 @@ class PvPFullBattleEngine(FullBattleEngine):
         dname = dchar.name
         lines = []
 
-        if self._is_y14(atk_uid):
-            profile = self._y14_attack_profile(atk_uid)
+        if self._is_y14(atk_uid) or self._is_y17(atk_uid):
+            profile = self._basic_attack_profile(atk_uid)
             if profile:
                 can_atk, _ = self._move_to_attack_range(atk_uid, def_uid, profile[1])
                 if not can_atk:
                     return (def_uid, atk_uid, [f'{aname} 无法接近目标！'])
-                if getattr(achar, 'phase', 2) != 1:
+                if not (self._is_y14(atk_uid) and getattr(achar, 'phase', 2) == 1):
                     can_melee, penalty = self._can_melee(atk_uid, def_uid)
                     if not can_melee:
                         return (def_uid, atk_uid, [f'{aname} 无法近战飞行目标！'])
                     if penalty:
                         bp_suffix = 'p'
+                self._y17_weapon_used(atk_uid)
 
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
@@ -948,12 +949,13 @@ class PvPFullBattleEngine(FullBattleEngine):
                 spell_index=state.get('spell_index', spell.get('index', 0)),
                 atk_rank=state.get('atk_rank', 1),
                 atk_roll=state.get('atk_roll', 0),
+                spell=spell,
                 moon_drain=eff.get('_moon_drain', 0))
             if dmg_out:
                 lines.append(dmg_out.rstrip('\n'))
 
         # ── Resume the remaining effects of the paused spell (if any) ──
-        if state.get('spell_plan'):
+        if 'spell_plan' in state:
             try:
                 resume_out = self.resume_spell_plan(state)
                 if resume_out:
@@ -971,7 +973,7 @@ class PvPFullBattleEngine(FullBattleEngine):
         try:
             return super()._execute_spell(caster_id, target_id, spell)
         except ReactionNeeded as e:
-            if self._is_y16(caster_id) and e.data.get('spell_plan') is not None:
+            if (self._is_y16(caster_id) or self._is_y17(caster_id)) and e.data.get('spell_plan') is not None:
                 # The resumable plan already includes the actual transformed/volley
                 # price. Rebuilding it from the original card would display 1 MP.
                 raise

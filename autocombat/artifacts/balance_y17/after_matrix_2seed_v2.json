@@ -1,0 +1,981 @@
+{
+  "rows": [
+    {
+      "opponent": "Y1",
+      "stats": {
+        "casts": 35,
+        "spell_5": 4,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 18,
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 13,
+        "spell_7": 4
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 5,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y2",
+      "stats": {
+        "casts": 22,
+        "spell_5": 4,
+        "spell_12": 8,
+        "spell_3": 4,
+        "spell_2": 6,
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 7
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y3",
+      "stats": {
+        "casts": 31,
+        "spell_5": 3,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 14,
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 11,
+        "spell_7": 5
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y4",
+      "stats": {
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 6,
+        "casts": 14,
+        "spell_5": 2,
+        "spell_12": 4,
+        "spell_3": 2,
+        "spell_2": 6
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y5",
+      "stats": {
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 6,
+        "casts": 17,
+        "spell_5": 3,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 5
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y6",
+      "stats": {
+        "casts": 37,
+        "spell_7": 4,
+        "spell_2": 20,
+        "spell_5": 4,
+        "games": 4,
+        "wins": 2,
+        "draws": 0,
+        "rounds": 14,
+        "spell_12": 6,
+        "spell_3": 3
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 5,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 5,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y7",
+      "stats": {
+        "casts": 64,
+        "spell_7": 12,
+        "spell_2": 43,
+        "spell_5": 3,
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 26,
+        "spell_12": 4,
+        "spell_3": 2
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 8,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 9,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 7,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y8",
+      "stats": {
+        "casts": 71,
+        "spell_5": 5,
+        "spell_12": 8,
+        "spell_3": 4,
+        "spell_2": 50,
+        "spell_10": 1,
+        "games": 4,
+        "wins": 2,
+        "draws": 0,
+        "rounds": 34,
+        "spell_7": 2,
+        "spell_6": 1
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "Y",
+            "rounds": 10,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 12,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 10,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y9",
+      "stats": {
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 10,
+        "casts": 23,
+        "spell_5": 3,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 11
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y10",
+      "stats": {
+        "casts": 32,
+        "spell_5": 3,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 15,
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 13,
+        "spell_10": 1,
+        "spell_7": 4
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y11",
+      "stats": {
+        "casts": 29,
+        "spell_7": 9,
+        "spell_2": 12,
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 10,
+        "spell_5": 2,
+        "spell_12": 4,
+        "spell_3": 2
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y12",
+      "stats": {
+        "casts": 43,
+        "spell_7": 9,
+        "spell_2": 24,
+        "spell_5": 4,
+        "games": 4,
+        "wins": 1,
+        "draws": 0,
+        "rounds": 16,
+        "spell_12": 4,
+        "spell_3": 2
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 6,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y13",
+      "stats": {
+        "casts": 41,
+        "spell_5": 4,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 20,
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 14,
+        "spell_7": 7,
+        "spell_10": 1
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 5,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 3,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y14",
+      "stats": {
+        "casts": 26,
+        "spell_7": 4,
+        "spell_2": 13,
+        "spell_5": 3,
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 10,
+        "spell_12": 4,
+        "spell_3": 2
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 6,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y15",
+      "stats": {
+        "games": 4,
+        "wins": 0,
+        "draws": 0,
+        "rounds": 6,
+        "casts": 17,
+        "spell_5": 3,
+        "spell_12": 6,
+        "spell_3": 3,
+        "spell_2": 5
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 1,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    },
+    {
+      "opponent": "Y16",
+      "stats": {
+        "casts": 36,
+        "spell_7": 5,
+        "spell_6": 4,
+        "spell_5": 4,
+        "spell_2": 14,
+        "games": 4,
+        "wins": 2,
+        "draws": 0,
+        "rounds": 14,
+        "spell_12": 6,
+        "spell_3": 3
+      },
+      "games": [
+        [
+          2026111700,
+          0,
+          {
+            "winner": "X",
+            "rounds": 4,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111700,
+          1,
+          {
+            "winner": "X",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          0,
+          {
+            "winner": "Y",
+            "rounds": 2,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ],
+        [
+          2026111701,
+          1,
+          {
+            "winner": "Y",
+            "rounds": 6,
+            "mutual_death": false,
+            "y_overflow": 0,
+            "x_overflow": 0
+          }
+        ]
+      ]
+    }
+  ],
+  "weights_sha256": "6a72023de2d35308a8ca7a0703397aa09245f081627eba98aa23a100671fc779"
+}

@@ -716,6 +716,11 @@ def get_available_actions(engine, uid):
             if not sp:
                 continue
             if sp:
+                if engine._is_y17(uid):
+                    if engine._y17_preflight(uid, sp, ai=True):
+                        continue
+                    if not ak.endswith('__T0') and not any(e.get('type') == 1 for e in sp.get('effects', [])):
+                        continue
                 if engine._is_y16(uid):
                     if engine._y16_preflight(uid, sp, check_cost=True):
                         continue
@@ -744,7 +749,10 @@ def get_available_actions(engine, uid):
                     continue
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
-                    if engine._is_y16(uid):
+                    if engine._is_y17(uid):
+                        if not (engine._y17_chant(uid) and engine._y17_chant(uid)['spellIndex'] == idx):
+                            continue
+                    elif engine._is_y16(uid):
                         own = [e for e in effects if e.get('spellName') == sp['name']
                                and e.get('remainingRounds', 0) > 0
                                and engine._resolve_uid(e.get('sourceUserId', '')) == engine._resolve_uid(uid)]
@@ -769,6 +777,11 @@ def get_available_actions(engine, uid):
                 if summon_blocked:
                     continue
         filtered.append((ak, an))
+
+    if engine._is_y17(uid) and engine._y17_spears(uid) and not engine._y17_chant(uid):
+        spear = next((s for s in spells if s['index'] == 12), None)
+        if spear and not engine._y17_preflight(uid, dict(spear, _blood_options={'mode': 'throw'}), ai=True):
+            filtered.append(('SKILL_12_THROW__T0', '投掷血枪'))
 
     # ── 射程过滤: 仅对敌方伤害动作检查可达性 ──
     my_entry = next((e for e in il if e['userId'] == uid), None)
@@ -873,6 +886,8 @@ def action_slot_for(engine, uid, action_key):
     - Everything else uses a main action.
     """
     base, _ = parse_action(action_key)
+    if base == 'SKILL_12_THROW':
+        return '主动'
     if base in ('EAT_CAKE', 'GIVE_CAKE', 'MOVE_TOWARD'):
         return '附加'
     acts = engine._get_my_actions(uid) if hasattr(engine, '_get_my_actions') else {}
@@ -900,7 +915,7 @@ def affordable_actions(engine, uid, actions):
     for ak, an in actions:
         if acts.get(action_slot_for(engine, uid, ak), 0) > 0:
             out.append((ak, an))
-    return out
+    return engine._y17_ai_priority(uid, out)
 
 
 def _compute_threat(engine, enemy_entry):
@@ -1170,6 +1185,8 @@ def execute_action(engine, uid, action_key):
         spells = engine.load_spells(uid)
         spell = next((s for s in spells if s['index'] == skill_num), None)
         if spell:
+            if base == 'SKILL_12_THROW':
+                return engine._execute_spell(uid, tid, dict(spell, _blood_options={'mode': 'throw'}))
             reason = engine._revive_preflight(uid, spell)
             if reason:
                 return ActionExecutionResult(reason, False, 'no_revive_target')
@@ -1179,6 +1196,11 @@ def execute_action(engine, uid, action_key):
                                             or acts_now.get('附加', 0) > 0):
                 return engine._additional_action(uid, f's{skill_num}')
             target = tid if tid is not None else engine._smart_target(uid, spell)
+            if engine._is_y17(uid) and engine._y17_spell_kind(uid, spell) == 'store':
+                target = engine._y17_heal_target(uid, tid)
+                if not target:
+                    return ActionExecutionResult('没有可治疗的轻伤目标', False, 'no_heal_target')
+                spell = dict(spell, _blood_options={'target': target})
             return engine._execute_spell(uid, target, spell)
     elif base == 'EAT_CAKE':
         if hasattr(engine, '_eat_cake') and engine._has_ready_cake(uid):

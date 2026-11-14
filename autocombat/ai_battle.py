@@ -417,6 +417,8 @@ class AIController:
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a give {target}' if target else '.i end'
         if base_ak == 'END_TURN': return '.i end'
+        if base_ak == 'SKILL_12_THROW':
+            return '.s12 mode=throw'
         if base_ak.startswith('SKILL_'):
             skill_num = int(base_ak.split('_')[1])
             spells = engine.load_spells(user_id) or []
@@ -427,8 +429,14 @@ class AIController:
                 # preserving main actions; timing-3-only must use it.
                 if has_timing(timing, '3') and (not has_timing(timing, '2')
                                                 or my_acts.get('附加', 0) > 0):
+                    if engine._is_y17(user_id) and engine._y17_spell_kind(user_id, spell) == 'store':
+                        target = engine._y17_heal_target(user_id)
+                        return f'.a s{skill_num} target={target}' if target else '.i end'
                     return f'.a s{skill_num}'
                 if has_timing(timing, '1') or has_timing(timing, '2'):
+                    if engine._is_y17(user_id) and engine._y17_spell_kind(user_id, spell) == 'store':
+                        target = engine._y17_heal_target(user_id)
+                        return f'.s{skill_num} target={target}' if target else '.i end'
                     return f'.s{skill_num}'
             return self._rule_decide(engine, user_id)
         return self._rule_decide(engine, user_id)
@@ -484,6 +492,12 @@ class AIController:
         char = engine.get_char(user_id)
         my_entry = next((e for e in init_list if e['userId'] == user_id), None)
         if not my_entry: return '.i end'
+
+        if engine._is_y17(user_id):
+            available = affordable_actions(engine, user_id, get_available_actions(engine, user_id))
+            if not available:
+                return '.i end'
+            return self._command_for_action(engine, user_id, available[0][0])
 
         my_team_rd = my_entry.get('team', 'Y')
         enemies = [e for e in init_list if e.get('team') != my_team_rd]
