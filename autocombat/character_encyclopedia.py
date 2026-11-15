@@ -29,33 +29,33 @@ PROFILES = {
 # 每名参赛者的逐技能机制正文；通用的费用、范围、检定、持续、模板信息
 # 由下方函数从实时 chData 补入，避免平衡修改后图鉴仍显示旧数字。
 # 稳定键：(参赛者编号、技能名、阶段)。正文不依赖技能排列顺序。
-ARTICLES = {('Y2', '火球术', 0): '连续发射三枚火球，每段独立检定与结算。不能闪避或反击仍须通过施法者的攻击检定。',
- ('Y2', '召唤使魔', 0): '召唤使魔加入己方。使魔可飞行，以独立单位参与行动；相同召唤物按召唤组管理。',
- ('Y2', '速攻', 0): '入场被动提高自身行动力；带魔力费用的被动按引擎自动施放流程支付费用。',
- ('Y3', '斗殴强化', 0): '常驻攻击奖励骰，提升普通攻击等伤害检定的可靠性。',
- ('Y3', '附魔术', 0): '为自身攻击附加额外伤害骰，依附魔效果与原攻击一并结算。',
- ('Y4', '星闪攻击', 0): '一次动作发动两段星闪攻击，各有独立检定和奖励骰。',
- ('Y4', '演唱', 0): '以附加动作对敌方施加攻击惩罚骰，持续期间降低其进攻可靠性。',
+ARTICLES = {('Y2', '火球术', 0): '向同一目标连续发射{count}枚火球，每枚分别以 {values} 的技能值检定，依次造成 {damage} 伤害。',
+ ('Y2', '召唤使魔', 0): '召唤 {count} 只使魔加入战斗{cap}。名额已满时无法施放，使魔死亡后可以补召。',
+ ('Y2', '速攻', 0): '战斗开始时支付费用，获得 {gain}，{duration}。魔力不足时无法发动。',
+ ('Y3', '斗殴强化', 0): '战斗开始时获得 {reward}，适用于普通攻击、法术攻击及反击，{duration}。',
+ ('Y3', '附魔术', 0): '战斗开始时支付费用，为自身的普通攻击及法术攻击附加 {damage} 伤害，{duration}。魔力不足时无法发动。',
+ ('Y4', '星闪攻击', 0): '向同一目标连续发动{count}段星闪攻击，每段分别以 {values} 的技能值检定，各获得 {reward}，依次造成 {damage} 伤害。',
+ ('Y4', '演唱', 0): '使敌方全体获得 {penalty}，适用于普通攻击、法术攻击及反击，持续 {duration} 轮。',
  ('Y5', '飞行', 0): '提高行动力并赋予攻击奖励骰。实际飞行资格同时遵循角色属性和飞行状态规则。',
  ('Y5', '吸血', 0): '近距离血术攻击允许反击、不允许闪避。有效伤害大于零时按修正伤害吸取生命，最终回复受生命上限约束；吸血基数和护盾的先后关系见特殊规则。',
  ('Y6', '制造雪带', 0): '创建固定雪带，创建动作不立即增加冰冻值；随后每轮向区域内敌人施加冰冻。自身同类雪带只能同时存在一处。',
  ('Y6', '雪幕', 0): '以自身为中心移动的保护领域，减少友方受到的伤害；来源死亡后解除。',
  ('Y6', '发送雪球', 0): '连续投出两个雪球，每段命中分别增加冰冻值；每段可独立闪避。',
- ('Y6', '雪之法杖', 0): '入场时向己方授予限时攻击附魔与护盾，两种效果分别存在，到期不自动刷新。',
+ ('Y6', '雪之法杖', 0): '入场时向己方授予攻击附魔与护盾。伤害骰加值持续5轮，到期失效且不自动刷新；护盾保留默认延续设置，耗尽后消失。',
  ('Y6', '堆雪人', 0): '召唤小雪人。小雪人可施放自身的小雪带与雪球，冰冻记在主人名下；它的领域与主人的领域分别占用上限。',
  ('Y60', '制造雪带', 0): '旧版雪带包含固定减速、斗殴削减和持续伤害，并额外发动一次群体攻击；不使用 v2 的冰冻层数体系。',
  ('Y60', '雪幕', 0): '跟随自身的友方减伤领域；施法者死亡后解除。',
  ('Y60', '发送雪球', 0): '投出一枚雪球，进行一次可闪避、不可反击的远程攻击。',
- ('Y7', '战意值削弱', 0): '在战意流程中逐轮削弱敌人。敌方主体和召唤物分别计算战意：主体低战意承受攻击惩罚、减伤或沉默限制；召唤物战意耗尽后撤离。各阈值见本角色被动机制。',
- ('Y7', '治愈领域', 0): '生成随身治疗领域，施放时立即结算，并在后续轮首结算。领域可以急救濒死者，同时恢复生命和魔力；同类领域最多一处。',
- ('Y7', '返生之花', 0): '从死亡窗口内的同队墓地候选复活一个单位，可选主体或允许的召唤物；不会一次恢复主体及其全部召唤物。复活的召唤物转归施法者，每场限一次。',
- ('Y8', '美味的蛋糕', 0): '制造生命蛋糕放入物品栏。制造本身不等于立刻治疗，之后须按食用或递交规则使用。',
- ('Y8', '甜甜的蛋糕', 0): '制造魔力蛋糕放入物品栏，供后续食用与递交。',
- ('Y8', '品尝蛋糕', 0): '开场品尝效果恢复自身生命；也作为比哈米特色蛋糕的额外生命回复标识，不能当成可反复主动施放的治疗技能。',
- ('Y8', '最后的款待-恢复', 0): '制造并向己方主体分发生命和魔力蛋糕。生命蛋糕带有额外品尝回复；人数分配规则见模板说明。',
- ('Y8', '轻盈蛋糕', 0): '制造轻盈蛋糕，食用后暂时提高行动力。',
- ('Y8', '幸运蛋糕', 0): '制造幸运蛋糕，食用后暂时获得全 D100 检定奖励骰。',
- ('Y8', '最后的款待-进攻', 0): '制造并分发轻盈和幸运蛋糕，将机动与检定增益同时交给队伍。',
+ ('Y7', '战意值削弱', 0): '战斗开始时获得战意光环，逐轮削弱敌方主体与召唤物的战意。主体承受攻击惩罚、伤害降低及沉默；召唤物战意归零时整组撤离。',
+ ('Y7', '治愈领域', 0): '创建随自身移动的治愈领域，半径 {radius} 格，持续 {duration} 回合。范围内的自身、己方主体及召唤物分别回复 {hp} HP 与 {mp} MP。',
+ ('Y7', '返生之花', 0): '复活 1 个己方阵亡主体或召唤物，生命恢复至上限的 {hp_ratio}，向下取整，最低为 1 HP。{uses}，施放后冷却 {cooldown} 回合。',
+ ('Y8', '美味的蛋糕', 0): '立即制造 {count} 个{item}，放入己方共享制造物池。每个{benefit}',
+ ('Y8', '甜甜的蛋糕', 0): '立即制造 {count} 个{item}，放入己方共享制造物池。每个{benefit}',
+ ('Y8', '品尝蛋糕', 0): '战斗开始时回复自身 {hp} HP。附带品尝回复的生命蛋糕在食用时，额外为食用者回复 {extra} HP。',
+ ('Y8', '最后的款待-恢复', 0): '立即制造并分发{items}，两类蛋糕分别放入己方主体的个人库存。',
+ ('Y8', '轻盈蛋糕', 0): '立即制造 {count} 个{item}，放入己方共享制造物池。{benefit}',
+ ('Y8', '幸运蛋糕', 0): '立即制造 {count} 个{item}，放入己方共享制造物池。{benefit}',
+ ('Y8', '最后的款待-进攻', 0): '立即制造并分发{items}，两类蛋糕分别放入己方主体的个人库存。',
  ('Y9', '召唤生灵', 1): '木·荣召唤成群生灵；魔力费用随实际召唤数量变化。',
  ('Y9', '生之矛', 1): '可攻击敌人，也可对友方先伤害再登记分轮回复。敌我分支并不对称，实际代码中的额外回复挂接位置与字段名称存在差异；须结合结算步骤与边界说明阅读。',
  ('Y9', '领域·生', 1): '创建随身友方治疗领域，并给予限时敏捷提升。',
@@ -78,8 +78,8 @@ ARTICLES = {('Y2', '火球术', 0): '连续发射三枚火球，每段独立检�
  ('Y13', '飞行', 0): '常驻飞行并提高自身行动力。地面单位近战交互遵循飞行规则。',
  ('Y13', '斗殴精通', 0): '常驻攻击奖励骰。',
  ('Y13', '魔力护体', 0): '把生命损耗转为魔力消耗；魔力不足时仍受实际结算规则限制。',
- ('Y1', '斗殴精通', 0): '持续强化自身攻击检定。奖励骰影响命中成功等级，不等于直接增加技能值。',
- ('Y1', '火焰附魔', 0): '发动火焰攻击，并在命中后附加灼烧。即时伤害与后续每轮伤害分别结算；持续伤害不重复进行攻击检定。',
+ ('Y1', '斗殴精通', 0): '战斗开始时获得 {reward}，适用于普通攻击、法术攻击及反击，{duration}。',
+ ('Y1', '火焰附魔', 0): '发动一次火焰攻击，以{skill}检定，造成 {damage} 伤害。目标可以{reactions}。',
  ('Y14', '卡带切换·魂斗罗', 0): '切换至魂斗罗，启用光枪攻击与残机替身。切换共享冷却；已弹出的卡带本场不能再次加载。',
  ('Y14', '卡带切换·最终幻想', 0): '切换至最终幻想，默认进入迅捷模式，并启用极限槽。',
  ('Y14', '卡带切换·音速索尼克', 0): '切换至音速索尼克，启用金环与高速救援技能。',
@@ -294,6 +294,7 @@ EFFECT_LABELS = {
  'type': '效果种类', '客体': '作用对象', '伤害骰': '基础伤害', '护盾值': '护盾容量',
  '回复hp': '生命回复', '回复mp': '魔力回复', '回复san': '理智回复',
  '射程': '射程', '作用半径': '作用半径', '持续回合': '持续时间', '成功率': '基础检定技能值',
+ '默认延续性': '到期后延续',
  '成功率奖惩骰': '效果固有攻击奖惩骰', '可闪避性': '允许闪避', '可反击性': '允许反击',
  '可贯穿性': '允许贯穿伤害规则', '吸血比例': '生命吸取比例',
  '辅助效果': '辅助机制', '辅助效果值': '辅助机制数值', '技能加减值': '技能或属性修正',
@@ -445,7 +446,7 @@ def _effect_detail(effect, spell, character, number):
     if effect.get('type') == 4:
         notes.append('未允许叠加的同名同效果增益通常刷新剩余时间；同技能的不同效果分别保留。')
     if effect.get('type') == 5:
-        notes.append('实际召唤数受同时存活、每场累计、可用位置与模板唯一性约束。纯召唤在名额为零时拒绝施放；同类召唤物按组共享先攻位置。')
+        notes.append('实际召唤数受同时存活、每场累计、可用位置与模板唯一性约束。纯召唤在名额为零时拒绝施放；同类召唤物按组共享先攻位置。声明持续回合时，各成员独立计时，到期退场并释放存活名额。')
     dynamic_keys = set()
     if kind in ('arcana', 'sacrifice', 'slash') or effect.get('consume_moon'):
         dynamic_keys.add('伤害骰')
@@ -644,7 +645,7 @@ def rule_notes(s, c):
     if any(e.get('吸血比例') for e in s.get('effects', [])):
         notes.append('当前通用法术吸血在有效伤害大于零时，以护盾吸收前的修正伤害乘吸血比例向下取整；月斩另以目标实际可失去生命为基数。回复受施法者生命上限约束，不能统一写成“按最终扣血吸取”。')
     if s.get('default_persist') is not None:
-        notes.append('默认延续性表示效果清理政策，不等于无限持续；仍须服从本效果的持续轮数、来源绑定和阶段专属清理。')
+        notes.append('普通增益持续回合耗尽后失效；默认延续增益到期后保留生效，效果自身的默认延续性设置优先于技能设置。来源绑定、阶段清理及专用机制另行处理。')
     if str(s.get('timing', '2')).find('1') >= 0:
         notes.append('开战时自动尝试施放被动，隔离状态会阻止该次自动施放；有费用的被动仍经费用检查。未声明自动刷新的限时被动不会因到期而自动重施。')
     if s.get('吟唱回合') and not kind:
@@ -793,6 +794,341 @@ def _section(key, title, paragraphs=None, rows=None, effects=None, templates=Non
             'effects':effects or [], 'templates':templates or [], 'ordered':ordered}
 
 
+def _y1_y2_content(s, c, summons):
+    """Player-facing copy for the five reviewed skills; tuning stays in data."""
+    identity = (c['serial'], s['name'], s.get('phase', 0))
+    if identity not in {
+        ('Y1', '斗殴精通', 0), ('Y1', '火焰附魔', 0),
+        ('Y2', '火球术', 0), ('Y2', '召唤使魔', 0), ('Y2', '速攻', 0),
+    }:
+        return None
+
+    costs = [f'{text_value(s[k])} {unit}' for k, unit in
+             (('消耗mp', 'MP'), ('消耗san', 'SAN')) if k in s]
+    requirements = [row('时机', timing_text(s.get('timing', '2')))]
+    if costs:
+        requirements.append(row('费用', ' / '.join(costs)))
+    effects = s.get('effects', [])
+    effect = effects[0] if effects else {}
+    paragraphs = []
+    summon_rows = []
+    limits = ''
+    duration = ('持续生效' if s.get('default_persist') else
+                f"持续 {text_value(effect.get('持续回合', DEFAULT))} 回合")
+
+    def reactions(e):
+        choices = [label for key, label in
+                   (('可闪避性', '闪避'), ('可反击性', '反击'), ('可格挡性', '格挡'))
+                   if e.get(key, 1)]
+        return '或'.join(choices) if len(choices) < 3 else '、'.join(choices[:-1]) + '或' + choices[-1]
+
+    def attack_value(e):
+        return str(e['成功率']) if e.get('成功率', 0) > 0 else '自身最佳近战技能'
+
+    if identity == ('Y1', '斗殴精通', 0):
+        token = str(effect.get('辅助效果值', '')).strip()
+        bonus = re.fullmatch(r'b(\d*)|(\d+)b', token)
+        reward = (f"{bonus.group(1) or bonus.group(2) or '1'} 颗攻击奖励骰" if bonus else
+                  formatted_field('辅助效果值', effect.get('辅助效果值', DEFAULT)))
+        description = ARTICLES[identity].format(reward=reward, duration=duration)
+        costs = [target_text(effect.get('客体'))]
+    elif identity == ('Y2', '速攻', 0):
+        gain = re.sub(r'(?=[+−-])', ' ', str(effect.get('技能加减值', DEFAULT)), count=1)
+        description = ARTICLES[identity].format(gain=gain, duration=duration)
+        limits = target_text(effect.get('客体'))
+    elif identity == ('Y1', '火焰附魔', 0):
+        description = ARTICLES[identity].format(skill=attack_value(effect),
+                                               damage=text_value(effect.get('伤害骰', DEFAULT)),
+                                               reactions=reactions(effect))
+        limits = target_text(effect.get('客体'))
+        if '射程' in effect:
+            requirements.append(row('射程', f"{text_value(effect['射程'])} 格"))
+            limits += f"｜射程 {text_value(effect['射程'])} 格"
+        paragraphs = [
+            f"命中后附加灼烧，每轮造成 {text_value(effect.get('每回合伤害骰', DEFAULT))} 伤害，"
+            f"持续 {text_value(effect.get('持续回合', DEFAULT))} 轮。多次命中产生的灼烧分别生效。",
+        ]
+    elif identity == ('Y2', '火球术', 0):
+        attacks = [e for e in effects if e.get('type') == 1]
+        count = len(attacks)
+        count_text = '零一二三四五六七八九十'[count] if count <= 10 else str(count)
+        values = list(dict.fromkeys(attack_value(e) for e in attacks))
+        damage = '、'.join(text_value(e.get('伤害骰', DEFAULT)) for e in attacks)
+        description = ARTICLES[identity].format(count=count_text, values='、'.join(values), damage=damage)
+        limits = target_text(effect.get('客体'))
+        ranges = list(dict.fromkeys(text_value(e.get('射程', DEFAULT)) for e in attacks))
+        limits += f"｜射程 {'、'.join(ranges)} 格"
+        paragraphs = [f'目标仅可{reactions(effect)}。某枚火球未命中时，继续结算其余火球；目标倒下后停止后续攻击。']
+    else:
+        template = summons.get(effect.get('召唤物模板'), {})
+        count = text_value(effect.get('召唤个数', DEFAULT))
+        cap = (f"，同一施法者最多同时拥有 {template['max_simultaneous']} 只"
+               if template.get('max_simultaneous') is not None else '')
+        description = ARTICLES[identity].format(count=count, cap=cap)
+        paragraphs = [
+            f'同一施法者的使魔组成召唤组，共享先攻位置，各自保留生命与状态。使魔持续 {text_value(effect.get("持续回合", DEFAULT))} 回合，到期退场；主人死亡时随之退场。',
+        ]
+        for key, label in [('HP', '生命'), ('MOV', '基础行动力'), ('DEX', '敏捷')]:
+            if key in template:
+                summon_rows.append(row(label, text_value(template[key]), key))
+        for skill in template.get('skills', []):
+            if isinstance(skill, str):
+                parts = skill.split()
+                skill_name, _, value = parts[0].partition(':')
+                summon_rows.append(row(skill_name, value))
+                if len(parts) > 1:
+                    summon_rows.append(row('攻击伤害', parts[1]))
+        for key, label in [('闪避', '闪避'), ('flying', '飞行')]:
+            if key in template:
+                summon_rows.append(row(label, text_value(template[key]), key))
+        defense = [label for key, label in [('可反应', '闪避'), ('可反击', '反击')]
+                   if template.get(key)]
+        if defense:
+            summon_rows.append(row('防御反应', '、'.join(defense)))
+
+    requirements.append(row('目标', target_text(effect.get('客体'))))
+    sections = [_section('inputs', '施放要求', rows=requirements)]
+    if summon_rows:
+        sections.append(_section('templates', '使魔属性', rows=summon_rows))
+    if paragraphs:
+        sections.append(_section('effects', '技能效果', paragraphs))
+    facts = [f"{r['label']}：{r['value']}" for r in summon_rows] + paragraphs
+    return dict(description=description, cost=' / '.join(costs), limits=limits,
+                timing=timing_text(s.get('timing', '2')).replace(' / ', '／'), facts=facts,
+                versions=[dict(id=v['id'], label=v['label'], overview=description,
+                               sections=deepcopy(sections)) for v in VERSIONS])
+
+
+def _y3_y4_content(s, c):
+    """Reviewed Y3/Y4 copy, using the same sections as Y1/Y2."""
+    identity = (c['serial'], s['name'], s.get('phase', 0))
+    if identity not in {('Y3', '斗殴强化', 0), ('Y3', '附魔术', 0),
+                        ('Y4', '星闪攻击', 0), ('Y4', '演唱', 0)}:
+        return None
+    effects = s.get('effects', [])
+    effect = effects[0] if effects else {}
+    costs = [f'{text_value(s[k])} {unit}' for k, unit in
+             (('消耗mp', 'MP'), ('消耗san', 'SAN')) if k in s]
+    requirements = [row('时机', timing_text(s.get('timing', '2')))]
+    if costs:
+        requirements.append(row('费用', ' / '.join(costs)))
+
+    def dice_text(token):
+        token = str(token).strip()
+        match = re.fullmatch(r'([bp])(\d*)|(\d+)([bp])', token)
+        if match:
+            kind = match.group(1) or match.group(4)
+            count = match.group(2) or match.group(3) or '1'
+            return f'{count} 颗攻击' + ('奖励骰' if kind == 'b' else '惩罚骰')
+        if isinstance(token, str) and re.fullmatch(r'-?\d+', token):
+            count = int(token)
+            return f'{abs(count)} 颗攻击' + ('奖励骰' if count > 0 else '惩罚骰')
+        return token or DEFAULT
+
+    facts = []
+    limits = target_text(effect.get('客体'))
+    duration = ('持续生效' if s.get('default_persist') else
+                f"持续 {text_value(effect.get('持续回合', DEFAULT))} 轮")
+    if identity == ('Y3', '斗殴强化', 0):
+        description = ARTICLES[identity].format(
+            reward=dice_text(effect.get('辅助效果值', '')), duration=duration)
+    elif identity == ('Y3', '附魔术', 0):
+        description = ARTICLES[identity].format(
+            damage=text_value(effect.get('辅助效果值', DEFAULT)), duration=duration)
+    elif identity == ('Y4', '星闪攻击', 0):
+        attacks = [e for e in effects if e.get('type') == 1]
+        count = len(attacks)
+        count_text = '两' if count == 2 else '零一二三四五六七八九十'[count] if count <= 10 else str(count)
+        values = '、'.join(dict.fromkeys(str(e['成功率']) if e.get('成功率', 0) > 0
+                                     else '自身最佳近战技能' for e in attacks))
+        reward = '、'.join(dict.fromkeys(dice_text(e.get('成功率奖惩骰', 0)) for e in attacks))
+        description = ARTICLES[identity].format(count=count_text, values=values, reward=reward,
+            damage='、'.join(text_value(e.get('伤害骰', DEFAULT)) for e in attacks))
+        ranges = '、'.join(dict.fromkeys(text_value(e.get('射程', DEFAULT)) for e in attacks))
+        requirements.append(row('射程', f'{ranges} 格'))
+        limits += f'｜射程 {ranges} 格'
+        defenses = '；'.join(dict.fromkeys('、'.join(label for key, label in
+            (('可闪避性', '闪避'), ('可反击性', '反击'), ('可格挡性', '格挡'))
+            if e.get(key, 1)) for e in attacks))
+        facts = [f'目标仅可{defenses}。每段攻击分别处理格挡；某段攻击未命中或被格挡时，继续结算其余攻击；目标倒下后停止后续攻击。',
+                 '贯穿：' + '、'.join(dict.fromkeys('是' if e.get('可贯穿性', 1) else '否' for e in attacks)) + '。']
+    else:
+        rounds = text_value(effect.get('持续回合', DEFAULT))
+        penalty = dice_text(effect.get('辅助效果值', ''))
+        description = ARTICLES[identity].format(penalty=penalty, duration=rounds)
+        facts = [f'施放后直接对全场存活敌人生效，包含召唤物。重复施放时，各目标已有的演唱效果刷新至至少剩余 {rounds} 轮，同名效果保持 {penalty}。持续时间结束后解除。']
+    requirements.append(row('目标', target_text(effect.get('客体'))))
+    sections = [_section('inputs', '施放要求', rows=requirements)]
+    if facts:
+        sections.append(_section('effects', '技能效果', facts))
+    return dict(description=description, cost=' / '.join(costs), limits=limits,
+                timing=timing_text(s.get('timing', '2')), facts=facts,
+                versions=[dict(id=v['id'], label=v['label'], overview=description,
+                               sections=deepcopy(sections)) for v in VERSIONS])
+
+
+def _y7_spirit_paragraphs(e):
+    """Shared skill/passive prose; thresholds and probabilities remain card-owned."""
+    def value(key):
+        return text_value(e.get(key, DEFAULT))
+
+    cap = e.get('战意惩罚骰上限')
+    p1 = min(1, cap) if isinstance(cap, (int, float)) else DEFAULT
+    p2 = min(2, cap) if isinstance(cap, (int, float)) else DEFAULT
+    rate = value('战意削弱概率')
+    if e.get('战意削弱概率奖励层') != e.get('战意削弱概率'):
+        rate += (f"%（战意至多为 {value('战意奖励骰阈值')} 层时为 "
+                 f"{value('战意削弱概率奖励层')}%）")
+    else:
+        rate += '%'
+    return [
+        f"敌方主体分别记录战意，初始为 {value('战意主体初始层数')} 层。首次轮首记录初始层数，此后每轮有 {value('战意主体削弱概率')}% 概率减少 1 层，最低为 0 层。"
+        f"战意至多为 {value('战意惩罚1阈值')} 层时，攻击检定承受 {p1} 颗惩罚骰；至多为 {value('战意惩罚2阈值')} 层时，改为 {p2} 颗惩罚骰；"
+        f"至多为 {value('战意主体减伤阈值')} 层时，造成伤害降低 {value('战意主体减伤百分比')}%；降至 {value('战意主体沉默阈值')} 层时，另受 4 级沉默，继续留在战场。",
+        f"敌方召唤物按召唤组共享战意，初始为 {value('战意初始层数')} 层。首次轮首记录初始层数，此后每轮有 {rate} 概率减少 1 层。"
+        f"战意至多为 {value('战意惩罚1阈值')} 层时，攻击检定承受 {p1} 颗惩罚骰；至多为 {value('战意惩罚2阈值')} 层时，改为 {p2} 颗惩罚骰；"
+        '降至 0 层时，整组撤离。更换组内代表保留已有战意。',
+        '环花暖生命大于 0、留在战场且处于隔离状态之外时，推进战意削弱并施加主体压制。条件中断时，已有战意层数保留，召唤组已获得的攻击惩罚保留。多个来源共同作用时，每个主体或召唤组每轮处理一次，主体同类压制取较强效果。',
+    ]
+
+
+def _y7_y8_content(s, c, items):
+    """Approved Y7/Y8 copy in the same overview/inputs/effects layout as Y1/Y2."""
+    identity = (c['serial'], s['name'], s.get('phase', 0))
+    if identity not in {
+        ('Y7', '战意值削弱', 0), ('Y7', '治愈领域', 0), ('Y7', '返生之花', 0),
+        ('Y8', '美味的蛋糕', 0), ('Y8', '甜甜的蛋糕', 0), ('Y8', '品尝蛋糕', 0),
+        ('Y8', '最后的款待-恢复', 0), ('Y8', '轻盈蛋糕', 0), ('Y8', '幸运蛋糕', 0),
+        ('Y8', '最后的款待-进攻', 0),
+    }:
+        return None
+
+    effects = s.get('effects', [])
+    e = effects[0] if effects else {}
+    def value(key):
+        return text_value(e.get(key, DEFAULT))
+
+    def count_word(value):
+        return {1: '一', 2: '两'}.get(value, str(value))
+
+    costs = [f'{text_value(s[k])} {unit}' for k, unit in
+             (('消耗mp', 'MP'), ('消耗san', 'SAN')) if k in s]
+    requirements = [row('时机', timing_text(s.get('timing', '2')))]
+    if costs:
+        requirements.append(row('费用', ' / '.join(costs)))
+    name = s['name']
+    paragraphs = []
+    template = ARTICLES[identity]
+    cake_use = [
+        '蛋糕可供自身或同队存活、濒死单位食用。使用时优先消耗使用者个人库存中的首个可用蛋糕，再取用己方共享制造物池中的首个成品。',
+        '同种蛋糕的增益重复食用时，剩余持续时间取原值与该蛋糕完整持续时间中的较大值。同种增益保留一份。',
+        '携带个人生命蛋糕的单位进入濒死时，自动食用生命蛋糕，直至脱离濒死或可用生命蛋糕耗尽。',
+    ]
+    item_names = {'蛋糕HP': '生命蛋糕', '蛋糕MP': '魔力蛋糕',
+                  '蛋糕轻盈': '轻盈蛋糕', '蛋糕幸运': '幸运蛋糕'}
+
+    def item_benefit(effect):
+        item = items.get(effect.get('制造物模板'), {})
+        duration = text_value(item.get('buff持续回合', DEFAULT))
+        healing = [f"{text_value(item[key])} {unit}" for key, unit in
+                   (('回复hp', 'HP'), ('回复mp', 'MP'), ('回复san', 'SAN')) if key in item]
+        gain = re.sub(r'(?=[+−-])', ' ', str(item.get('技能加减值', DEFAULT)), count=1)
+        gain = gain.replace('MOV', '行动力')
+        if healing:
+            result = '食用后回复 ' + ' 与 '.join(healing)
+            if effect.get('消费追加回复hp'):
+                result += f"，另触发一次 {text_value(effect['消费追加回复hp'])} HP 的品尝回复"
+            if '技能加减值' in item:
+                result += f'，并获得{gain}，持续 {duration} 回合'
+            return result + '。'
+        if item.get('辅助效果') == '全D100检定奖励骰':
+            token = str(item.get('辅助效果值', ''))
+            match = re.fullmatch(r'b(\d*)|(\d+)b', token)
+            dice = (match.group(1) or match.group(2) or '1') if match else DEFAULT
+            return f'食用后，所有 D100 检定获得 {dice} 颗奖励骰，持续 {duration} 回合。'
+        return f'食用后获得{gain}，持续 {duration} 回合。'
+
+    def feast_paragraphs(effect):
+        overrides = effect.get('分发人数覆盖', {})
+        one = overrides.get('1', overrides.get(1, {}))
+        two = overrides.get('2', overrides.get(2, {}))
+        keep = effect.get('分发自留', DEFAULT)
+        ally = effect.get('分发队友每人', DEFAULT)
+        formula = effect.get('分发给总数公式', {})
+        offset = formula.get('加', DEFAULT)
+        signed_offset = (f'−{abs(offset)}' if offset < 0 else f'+{offset}') if isinstance(offset, (int, float)) else str(offset)
+        return [
+            '按己方存活或濒死主体人数分配，人数包含比哈米。两类蛋糕分别分配至个人库存。',
+            f"仅有 1 人时，比哈米每类获得 {one.get('分发自留', DEFAULT)} 个；共 2 人时，比哈米每类获得 {two.get('分发自留', keep)} 个，"
+            f"队友每类获得 {two.get('分发队友每人', ally)} 个；共 3 人时，比哈米每类获得 {keep} 个，两名队友每类各获得 {ally} 个。",
+            f"4 人及以上时，每类总量为 min({effect.get('分发给总数上限', DEFAULT)}，{formula.get('每人', DEFAULT)}×人数{signed_offset})。"
+            f'先按比哈米 {keep} 个、每名队友 {ally} 个分配；超额部分先削减比哈米份额，再逐个随机削减尚有份额的队友。两类蛋糕分别随机削减。',
+        ]
+
+    if c['serial'] == 'Y7':
+        if name == '战意值削弱':
+            description = template
+            target = '敌方主体与召唤物'
+            paragraphs = _y7_spirit_paragraphs(e)
+        elif name == '治愈领域':
+            description = template.format(radius=value('作用半径'), duration=value('持续回合'),
+                                          hp=value('回复hp'), mp=value('回复mp'))
+            target = '自身及范围内己方单位'
+            paragraphs = [
+                f"施放时立即回复{count_word(e.get('领域立即结算', DEFAULT))}次，随后于轮首回复 {value('领域轮首结算次数')} 次。各目标、各项回复分别掷骰。轮首先为范围内的濒死单位急救，同一单位在该次轮首获得的同类回复计入本轮回复。",
+                '隔离中的单位及已点燃的召唤物排除在回复对象之外。',
+                f"每名施法者同时至多维持 {value('领域同时上限')} 个治愈领域。已有领域时，重复施放被拒绝，保留本次费用。",
+            ]
+        else:
+            uses = '每场战斗限用 1 次' if s.get('_once_per_battle') else ''
+            description = template.format(hp_ratio=ratio(e.get('复活回复比例', DEFAULT)), uses=uses,
+                                          cooldown=text_value(s.get('cooldown_rounds', DEFAULT)))
+            target = '符合死亡轮窗口的己方阵亡单位'
+            paragraphs = [
+                f"目标须有阵亡记录，且施放轮次与阵亡轮次之差至多为 {value('死亡轮窗口')}；阵亡当轮可以复活。每条阵亡记录可复活一次。",
+                '可以指定符合条件的阵亡单位。省略选择时，优先复活候选召唤物的主人；其余情况优先主体，再按阵亡轮次由早到晚选择。',
+                '复活主体时，仅恢复所选主体。复活召唤物时，召唤物归环花暖所有，并受其对应召唤名额限制；首次转归环花暖计入其累计召唤数量。',
+                '优先返回原位置；原位置无法容纳时，尝试施法者附近的空位。复活保留阵亡时记录的魔力、物品、形态及技能次数消耗，行动额度沿用已有记录。',
+                '缺少符合条件的阵亡目标时，施放被拒绝，保留魔力与本场使用次数。召唤物名额及复活位置须满足要求。',
+            ]
+    elif name == '品尝蛋糕':
+        inventory = [entry for entry in c.get('inventory', []) if entry.get('消费追加回复hp')]
+        extra = text_value(inventory[0]['消费追加回复hp']) if inventory else DEFAULT
+        count = sum(entry.get('count', 0) for entry in inventory)
+        description = template.format(hp=value('回复hp'), extra=extra)
+        target = '自身；品尝回复作用于食用者'
+        paragraphs = [f'比哈米初始携带 {count} 个附带品尝回复的生命蛋糕。“最后的款待-恢复”分发的生命蛋糕同样附带此效果。蛋糕基础回复与品尝回复分别掷骰，每个蛋糕触发一次额外回复。']
+    elif name.startswith('最后的款待-'):
+        target = '己方存活或濒死主体'
+        names = [item_names.get(effect.get('制造物模板'), text_value(effect.get('制造物模板', DEFAULT))) for effect in effects]
+        description = template.format(items='与'.join(names))
+        paragraphs = [f'{label}：{item_benefit(effect)}' for label, effect in zip(names, effects)]
+        # The two shipped effects share allocation rules; keep each distinct
+        # allocation visible if a data edit gives them different parameters.
+        allocations = []
+        for effect in effects:
+            allocation = feast_paragraphs(effect)
+            if allocation not in allocations:
+                allocations.append(allocation)
+                paragraphs.extend(allocation)
+        paragraphs.extend(cake_use)
+    else:
+        target = '己方共享制造物池'
+        description = template.format(count=value('制造个数'),
+                                      item=item_names.get(e.get('制造物模板'), text_value(e.get('制造物模板', DEFAULT))),
+                                      benefit=item_benefit(e))
+        paragraphs = cake_use
+
+    requirements.append(row('目标', target))
+    sections = [_section('inputs', '施放要求', rows=requirements)]
+    if paragraphs:
+        sections.append(_section('effects', '技能效果', paragraphs))
+    return dict(description=description, cost=' / '.join(costs), limits=target,
+                timing=timing_text(s.get('timing', '2')).replace(' / ', '／'), facts=paragraphs,
+                versions=[dict(id=v['id'], label=v['label'], overview=description,
+                               sections=deepcopy(sections)) for v in VERSIONS])
+
+
 def skill_article(s, c, summons, items):
     identity = (c['serial'], s['name'], s.get('phase', 0))
     overview = ARTICLES.get(identity)
@@ -849,7 +1185,7 @@ def skill_article(s, c, summons, items):
         versions.append({'id':key, 'label':version['label'], 'overview':intro, 'sections':section_list})
     icon_order = ARTICLE_ORDER.get(c['serial'], [])
     legacy_facts = [e['title']+'：'+'；'.join(v['label']+' '+v['value'] for v in e['rows']) for e in effects]
-    return dict(id=json.dumps(identity, ensure_ascii=False, separators=(',',':')), name=s['name'],
+    article = dict(id=json.dumps(identity, ensure_ascii=False, separators=(',',':')), name=s['name'],
                 phase=s.get('phase',0), timing=timing_text(s.get('timing','2')), reviewed=reviewed,
                 cost='；'.join(v['label']+'：'+v['value'] for v in costs),
                 limits='；'.join(v['label']+'：'+v['value'] for v in limits),
@@ -857,6 +1193,16 @@ def skill_article(s, c, summons, items):
                 audit={'spell_fields':list(s), 'unverified_fields':unknown_spell+unknown_effects,
                        'paths':AUDIT_PATHS['blood'] if s.get('blood_kind') else AUDIT_PATHS['common']},
                 icon=(f"/ui/icons/{c['serial']}-s{icon_order.index(identity[1:])+1}.svg" if identity[1:] in icon_order else '/ui/icons/star.svg'))
+    content = _y1_y2_content(s, c, summons)
+    if content is not None:
+        article.update(content)
+    content = _y3_y4_content(s, c)
+    if content is not None:
+        article.update(content)
+    content = _y7_y8_content(s, c, items)
+    if content is not None:
+        article.update(content)
+    return article
 
 
 def encyclopedia(character, summons, items):
@@ -891,5 +1237,5 @@ def passive_articles(c):
         e = next((e for s in c.get('spells', []) for e in s.get('effects', []) if e.get('type') == 11), None)
         if e is None:
             return rows
-        rows.append(f"主体战意：初始{e['战意主体初始层数']}，每轮{e['战意主体削弱概率']}%削弱；战意≤{e['战意惩罚1阈值']}时1颗攻击惩罚骰，≤{e['战意惩罚2阈值']}时2颗；≤{e['战意主体减伤阈值']}时造成伤害降低{e['战意主体减伤百分比']}%，≤{e['战意主体沉默阈值']}时沉默。召唤物初始{e['战意初始层数']}，基础削弱概率{e['战意削弱概率']}%，战意≤{e['战意奖励骰阈值']}时改用削弱概率{e['战意削弱概率奖励层']}%。")
+        rows.extend(_y7_spirit_paragraphs(e))
     return rows

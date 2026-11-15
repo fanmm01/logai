@@ -2494,7 +2494,7 @@ cmdHs.name = 'hs';
 cmdHs.help =
   '.hs // 魔法少女变身（自动 .btastart）\n' +
   'HP ×(5+level)  MP ×(2+0.5×level)  APP+60(上限80)\n' +
-  '全部战斗类技能（只要属性表有值）+20  体格+1  行动力+2\n' +
+  '全部战斗类技能（只要属性表有值）+20  体格+1  行动力+3\n' +
   '变身同时自动开启战斗同步（等同于 .btastart）';
 cmdHs.allowDelegate = true;
 cmdHs.solve = (ctx, msg, cmdArgs) => {
@@ -2553,7 +2553,7 @@ cmdHs.solve = (ctx, msg, cmdArgs) => {
   const newAPP = Math.min(origAPP + 60, 80);
   const newDodge = Math.min(origDodge + 20, 80);
   const newBuild = origBuild + 1;
-  const newMOV   = origMOV + 2;
+  const newMOV   = origMOV + 3;
   const newDB = dbFromBuild(newBuild);
 
   seal.vars.intSet(mctx, '体力上限', newHPmax);
@@ -2565,6 +2565,7 @@ cmdHs.solve = (ctx, msg, cmdArgs) => {
   seal.vars.intSet(mctx, '体格', newBuild);
   seal.vars.intSet(mctx, '行动力', newMOV);
   seal.vars.intSet(mctx, '$gHsTransformed', 1);
+  ext.storageSet(`hs_transformed_${mctx.player.userId}`, '1');
   seal.vars.intSet(mctx, '$gHsSpellCount', 0);
   seal.vars.intSet(mctx, '$gHsCombatFlag', 0);
 
@@ -2585,7 +2586,7 @@ cmdHs.solve = (ctx, msg, cmdArgs) => {
   out += `APP: ${origAPP} → ${newAPP}  (+60, max80)\n`;
   out += `闪避: ${origDodge} → ${newDodge}  (+20, max80)\n`;
   out += `体格: ${origBuild} → ${newBuild}  (+1, DB→${newDB})\n`;
-  out += `行动力: ${origMOV} → ${newMOV}  (+2)\n`;
+  out += `行动力: ${origMOV} → ${newMOV}  (+3)\n`;
   out += `\n（战斗同步已自动开启，.st 修改属性将实时生效）\n`;
   if (boostedSkills.length > 0) {
     out += `\n【战斗技能】（+20）:\n`;
@@ -2623,6 +2624,7 @@ cmdUnh.solve = (ctx, msg, cmdArgs) => {
   if (!raw) {
     seal.replyToSender(ctx, msg, '未找到变身前的数据记录，将仅清除变身标记。');
     seal.vars.intSet(mctx, '$gHsTransformed', 0);
+  ext.storageSet(`hs_transformed_${mctx.player.userId}`, '0');
     return seal.ext.newCmdExecuteResult(true);
   }
 
@@ -2630,6 +2632,7 @@ cmdUnh.solve = (ctx, msg, cmdArgs) => {
   try { orig = JSON.parse(raw); } catch (e) {
     seal.replyToSender(ctx, msg, '变身数据损坏。');
     seal.vars.intSet(mctx, '$gHsTransformed', 0);
+  ext.storageSet(`hs_transformed_${mctx.player.userId}`, '0');
     return seal.ext.newCmdExecuteResult(true);
   }
 
@@ -2799,6 +2802,7 @@ cmdUnh.solve = (ctx, msg, cmdArgs) => {
   seal.vars.intSet(mctx, '体格', orig.build);
   seal.vars.intSet(mctx, '行动力', orig.mov);
   seal.vars.intSet(mctx, '$gHsTransformed', 0);
+  ext.storageSet(`hs_transformed_${mctx.player.userId}`, '0');
   seal.vars.intSet(mctx, '$gHsSpellCount', 0);
   seal.vars.intSet(mctx, '$gHsCombatFlag', 0);
 
@@ -5072,6 +5076,7 @@ function canReactJS(gid, uid) { return !hasStatus(gid, uid, '击晕'); }
 function isFlying(gid, uid) {
   const il = getInitiative(gid);
   const entry = il.find(e => e.userId === uid);
+  if (!(entry && entry.isSummon) && ext.storageGet(`hs_transformed_${uid}`) !== '1') return false;
   if (entry && entry.flying) return true;
   const ch = getChData(gid, uid);
   if (ch && (ch.attrs['飞行'] || 0)) return true;
@@ -5079,7 +5084,7 @@ function isFlying(gid, uid) {
 }
 function calcEffectiveMOV(gid, uid) {
   const ch = getChData(gid, uid);
-  let base = ch ? (ch.attrs['MOV'] || ch.attrs['行动力'] || 8) : 8;
+  let base = ch ? (ch.attrs['MOV'] ?? ch.attrs['行动力'] ?? 8) : 8;
   if (ch && ch.attrs['分离行动力移动力']) base = ch.attrs['移动力'] || base;
   // Named MOV/行动力/移动力 modifiers from buffs and live zone auras
   base += applyBuffAttrMod(gid, uid, 'MOV');
@@ -5091,8 +5096,9 @@ function calcEffectiveMOV(gid, uid) {
 }
 function calcMainActions(gid, uid) {
   const ch = getChData(gid, uid);
+  if (ch && ch.attrs['无主动行动']) return 0;
   const baseActs = ch ? (ch.attrs['额外行动数'] ?? ch.attrs['回合行动数'] ?? 0) : 0;
-  return Math.max(1, Math.floor(calcEffectiveMOV(gid, uid) / 5) + baseActs);
+  return Math.max(1, Math.floor((calcEffectiveMOV(gid, uid) + 1) / 5) + baseActs);
 }
 
 /** Format a grid coordinate e.g. A1 -> {col:0, row:0} */

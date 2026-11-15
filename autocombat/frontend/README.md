@@ -58,7 +58,7 @@ python autocombat_backend.py --host 127.0.0.1 --port 8889
 
 ## 自定义美术
 
-图鉴的文字统一维护于 `../character_encyclopedia.py`：`PROFILES` 为各角色的两个定位词及释义，`ARTICLES` 为逐技能机制正文，`ARTICLE_ORDER` 绑定技能名称与阶段，避免角色管理重排技能后串文案。费用、射程、伤害、持续时间、召唤物和制造物资料从实时 chData 生成。非战斗技能仍保留百科条目并标明不可用。
+技能百科为纯前端静态资料，统一维护于 `src/data/encyclopedia.json`，由 `src/encyclopedia.ts` 按角色编号、技能名和阶段匹配。后端 `/api/ui/catalog` 只返回角色战斗数据，不再生成百科文案。修改百科后运行 `npm run build`，刷新页面即可，无需重启 Python。战斗平衡改动后需同步更新静态文案中的数值；新增技能或阶段缺少条目时会明确显示尚未编写。`../character_encyclopedia.py` 仅保留为旧版文案和机制测试兼容资料，不再参与页面运行。
 
 角色专属被动参数维护在 `../characters_data.py` 各角色的 `passive_rules` 中；冰冻循环、卡带资源、火鼠裘、写作收益和月能门槛不再散落在引擎计算中。血术月相表归入夜诏明的 `blood_rules.moon_phases`，初始武器使用 `initial_weapon`。这是数据归位，不是一次数值平衡调整。
 

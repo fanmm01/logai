@@ -47,6 +47,24 @@ def http_module():
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_transform_skill_boundaries_and_reversal(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            for original, expected in ((50, 70), (60, 80), (61, 80), (70, 80),
+                                       (80, 80), (85, 85)):
+                with self.subTest(engine=cls.__name__, original=original):
+                    eng = cls()
+                    cd.load_character_to_engine(eng, cd.YEZHAOMING, 'actor')
+                    char = eng.get_char('actor')
+                    skills = be.ALL_COMBAT_SKILLS + ['弓术', '闪避']
+                    for skill in skills:
+                        char.set_attr(skill, original)
+                    eng.process_command('actor', '.hs')
+                    for skill in skills:
+                        self.assertEqual(char.get_attr(skill), expected, skill)
+                    eng.process_command('actor', '.unh')
+                    for skill in skills:
+                        self.assertEqual(char.get_attr(skill), original, skill)
+
     def test_move_updates_map_slots_and_cost_once(self):
         eng = setup()
         il = eng._get_initiative()

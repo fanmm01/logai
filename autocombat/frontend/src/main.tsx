@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, CakeSlice, Check, ChevronDown, ChevronRight, CircleHelp, CirclePause, CirclePlay, Clock3, Compass, Copy, Diamond, Eye, Feather, Flame, Flower2, Gem, Heart, Home, Leaf, Link, LoaderCircle, MapPin, Moon, MoreHorizontal, MousePointer2, Plus, Radio, RotateCcw, Settings2, Shield, Snowflake, Sparkles, Star, StepForward, Sun, Sword, Swords, Users, Waves, Wifi, X, Zap, BarChart3, VolumeX } from 'lucide-react';
 import { api, requestId, type BattleEvent, type Character, type Effect, type Room, type Skill, type Snapshot, type Unit } from './types';
 import './styles.css';
+import { characterStats } from './characterStats';
+import { withEncyclopedia, type CatalogCharacter } from './encyclopedia';
+import { EncyclopediaProse } from './EncyclopediaProse';
 import './expansion.css';
 import { CombatControls, BonusSelect } from './CombatControls';
 import { AutoReactionControls, DataEditor, SimulationPanel, TournamentPanel } from './Expansion';
@@ -19,7 +22,7 @@ function Tag({ children, className = '' }: { children: ReactNode; className?: st
 function AiCheckbox({ checked, onChange, disabled = false, label, title }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; label: string; title?: string }) {
   return <label className="slot-control" title={title}><input type="checkbox" aria-label={label} checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)}/>AI</label>;
 }
-function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) { return <div className="modal-scrim" onClick={onClose}><section className={'modal ' + (wide ? 'wide' : '')} role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()}><header><h2>{title}</h2><IconButton title="关闭" onClick={onClose}><X size={19}/></IconButton></header>{children}</section></div>; }
+function Modal({ title, children, onClose, wide = false, className = '' }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; className?: string }) { return <div className="modal-scrim" onClick={onClose}><section className={'modal ' + (wide ? 'wide ' : '') + className} role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()}><header><h2>{title}</h2><IconButton title="关闭" onClick={onClose}><X size={19}/></IconButton></header>{children}</section></div>; }
 function Sigil({ character, compact = false }: { character?: Character; compact?: boolean }) {
   const color = character?.color || '#8a78c5';
   return <div className={'sigil ' + (compact ? 'compact' : '')} style={styleColor(color)}>
@@ -31,12 +34,20 @@ function Sigil({ character, compact = false }: { character?: Character; compact?
 function CharacterCard({ character: c, selected = false, onClick, small = false }: { character: Character; selected?: boolean; onClick?: () => void; small?: boolean }) { return <button className={'character-card ' + (selected ? 'selected ' : '') + (small ? 'small' : '')} style={styleColor(c.color)} onClick={onClick} aria-label={c.name + (selected ? '，已选择' : '')}><div className="card-top"><span>{c.serial}</span><Diamond size={12}/></div><Sigil character={c}/><div className="card-name"><span className="role-traits">{c.traits.map(t=><span key={t.name} title={t.description}>{t.name}</span>)}</span><h3>{c.name}</h3><div className="card-bottom"><span>MAGICAL GIRL</span>{selected ? <Check size={16}/> : <ArrowUpRight/>}</div></div></button>; }
 function ArrowUpRight() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M4 4H12V12" stroke="currentColor" strokeWidth="1.5"/></svg>; }
 function Resource({ label, value, max, kind = 'hp' }: { label: string; value: number; max: number; kind?: string }) { return <div className={'resource ' + kind}><div><span>{label}</span><strong>{value}<small> / {max}</small></strong></div><i><b style={{ width: Math.max(0, Math.min(100, value / Math.max(1,max) * 100)) + '%' }}/></i></div>; }
+function CharacterStats({ character }: { character: Character }) {
+  const stats = characterStats(character.attrs, character.serial, character.str_attrs);
+  return <section className="profile-stats"><table>
+    <caption>角色数值表</caption>
+    <thead><tr><th scope="col">属性</th><th scope="col">变身前</th><th scope="col">变身后</th></tr></thead>
+    <tbody>{stats.map(stat => <tr key={stat.label}><th scope="row">{stat.label}</th><td>{stat.before ?? '—'}</td><td>{stat.after ?? '—'}</td></tr>)}</tbody>
+  </table><p>体力、魔力为满值；攻击次数按每轮主动作数计算。不含技能、被动与状态加成。</p></section>;
+}
 function coordPoint(coord: string) { const m = /^([A-Z])(\d+)$/.exec(coord); return m ? [m[1].charCodeAt(0)-65, Number(m[2])-1] : [-1,-1]; }
 function App() {
   const [catalog, setCatalog] = useState<Character[]>([]);
   const [presets, setPresets] = useState<Effect[]>([]);
   const updateRoom = (r: Room) => setRoom(old => old?.code === r.code && r.revision >= old.revision ? r : old);
-  const reloadCatalog = () => { api<{characters:Character[]}>('/catalog').then(x=>{setCatalog(x.characters);const valid=new Set(x.characters.map(c=>c.serial));setTeamA(old=>old.filter(s=>valid.has(s)));setTeamB(old=>old.filter(s=>valid.has(s)));}); api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)); };
+  const reloadCatalog = () => { api<{characters:CatalogCharacter[]}>('/catalog').then(x=>{setCatalog(x.characters.map(withEncyclopedia));const valid=new Set(x.characters.map(c=>c.serial));setTeamA(old=>old.filter(s=>valid.has(s)));setTeamB(old=>old.filter(s=>valid.has(s)));}); api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)); };
   useEffect(()=>{ api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)).catch(()=>{}); },[]);
   const [page, setPage] = useState('home');
   const [name, setName] = useState(readPreferences().name);
@@ -94,7 +105,7 @@ function App() {
     const url = new URL(location.href); url.searchParams.set('room',r.code); window.history.replaceState({},'',url);
   }
   useEffect(()=>{
-    Promise.all([api<{characters: Character[]}>('/catalog'),api<{id:string}>('/session',{name}),api<SettingsResponse>('/settings')]).then(([c,s,config])=>{setCatalog(c.characters);setSession(s.id);setDefaults(config.values);setMapSize(config.values.DEFAULT_MAP_SIZE);setTiming(config.values.DEFAULT_RESTIM_MODE);setFailedReaction(config.values.ALLOW_FAILED_REACTION);setConnected(true);}).catch(e=>setError(e.message));
+    Promise.all([api<{characters: CatalogCharacter[]}>('/catalog'),api<{id:string}>('/session',{name}),api<SettingsResponse>('/settings')]).then(([c,s,config])=>{setCatalog(c.characters.map(withEncyclopedia));setSession(s.id);setDefaults(config.values);setMapSize(config.values.DEFAULT_MAP_SIZE);setTiming(config.values.DEFAULT_RESTIM_MODE);setFailedReaction(config.values.ALLOW_FAILED_REACTION);setConnected(true);}).catch(e=>setError(e.message));
   },[]);
   useEffect(()=>{
     if (!session || restored.current) return;
@@ -221,19 +232,25 @@ function App() {
     </main>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
     {draft&&<Modal title="确认本次行动" onClose={()=>setDraft(null)}><div className="confirmation-art"><Sparkles size={32}/></div><h3 className="confirmation-title">{draft.label}</h3><p className="confirmation-target">作用目标：{draft.targetName}</p><p className="muted confirmation-target">{draft.cost!=null?'基础消耗 '+draft.cost+' MP · ':''}随机费用与骰点在执行时结算</p><div className="modal-note"><Shield size={17}/>确认后执行行动，并同步给房间内所有玩家。</div>{room?.revision!==draft.revision&&<p className="error-text">战况已更新，请取消后重新选择行动。</p>}<div className="modal-actions"><button className="button" onClick={()=>setDraft(null)}>取消</button><button className="button primary" disabled={busy||room?.revision!==draft.revision} onClick={send}>{busy?<LoaderCircle className="spin" size={16}/>:<Check size={16}/>}确认行动</button></div></Modal>}
-    {detail&&<Modal title="角色百科" onClose={()=>setDetail(null)} wide>
+    {detail&&<Modal title="角色百科" onClose={()=>setDetail(null)} wide className="encyclopedia-modal">
       <div className="character-profile" style={styleColor(detail.color)}>
-        <div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p>{detail.role}</p></div>
+        <div className="profile-sidebar">
+          <div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p>{detail.role}</p></div>
+          <CharacterStats character={detail}/>
+        </div>
         <div className="profile-skills"><span className="eyebrow">CHARACTER ENCYCLOPEDIA</span><h3>技能百科</h3>
-          <div className="base-stats">{[['体力',detail.attrs['体力']],['魔力',detail.attrs['魔力']],['行动力',detail.attrs['行动力']]].map(([k,v])=><div key={k}><small>{k}</small><strong>{v??'—'}</strong></div>)}</div>
-          <div className="trait-definitions">{detail.traits.map(t=><p key={t.name}><strong>{t.name}</strong> {t.description}</p>)}</div>
-          <p className="encyclopedia-basic">{detail.basic}</p>
-          {detail.passives.length>0&&<section className="encyclopedia-passives"><h4>角色被动与专属规则</h4>{detail.passives.map((p,i)=><p key={i}>{p}</p>)}</section>}
-          {detail.skills.map((s,i)=><details key={i} open>
+          <div className="base-stats">{characterStats(detail.attrs).slice(0,3).map(stat=><div key={stat.label}><small>{stat.label} · 变身后</small><strong>{stat.after??'—'}</strong></div>)}</div>
+          <section><h4 className="encyclopedia-section-title">角色特性与普通攻击</h4>
+            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name}><h5>{t.name}</h5><EncyclopediaProse content={t.description}/></div>)}</div>
+            <EncyclopediaProse content={detail.basic}/>
+          </section>
+          {detail.passives.length>0&&<section className="encyclopedia-passives"><h4 className="encyclopedia-section-title">角色被动与专属规则</h4><EncyclopediaProse content={detail.passives}/></section>}
+          <h4 className="encyclopedia-section-title">技能详解</h4>
+          {detail.skills.map(s=><details key={s.id} open>
             <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong>{s.name}</strong><Tag>{s.timing}</Tag><ChevronDown size={15}/></summary>
-            <p className="skill-cost">{s.cost}{s.limits&&<> · {s.limits}</>}</p>
-            <p className="skill-article">{s.description}</p>
-            {s.facts.map((p,j)=><p className="effect-description" key={j}>{p}</p>)}
+            <div className="skill-meta"><span><b>费用 / 条件</b>{s.cost}</span>{s.limits&&<span><b>范围 / 限制</b>{s.limits}</span>}</div>
+            <EncyclopediaProse content={s.description}/>
+            {s.facts.length>0&&<div className="skill-facts"><EncyclopediaProse content={s.facts}/></div>}
           </details>)}
         </div>
       </div>

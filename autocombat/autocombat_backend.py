@@ -416,7 +416,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
          'EDU': 0,
          'HP': 200,
          'INT': 40,
-         'MOV': 10,
+         'MOV': 13,
          'MP': 50,
          'POW': 40,
          'SAN': 0,
@@ -450,7 +450,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 24,
         'INT': 30,
-        'MOV': 6,
+        'MOV': 9,
         'MP': 0,
         'POW': 30,
         'SAN': 0,
@@ -470,7 +470,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 75,
         'INT': 30,
-        'MOV': 11,
+        'MOV': 14,
         'MP': 0,
         'POW': 30,
         'SAN': 0,
@@ -506,7 +506,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 160,
         'INT': 20,
-        'MOV': 3,
+        'MOV': 6,
         'MP': 0,
         'POW': 20,
         'SAN': 0,
@@ -550,7 +550,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 6,
         'INT': 10,
-        'MOV': 10,
+        'MOV': 13,
         'MP': 0,
         'POW': 10,
         'SAN': 0,
@@ -570,7 +570,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 24,
         'INT': 1,
-        'MOV': 8,
+        'MOV': 11,
         'MP': 0,
         'POW': 10,
         'SAN': 0,
@@ -590,7 +590,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 12,
         'INT': 20,
-        'MOV': 11,
+        'MOV': 14,
         'MP': 0,
         'POW': 10,
         'SAN': 0,
@@ -611,7 +611,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'EDU': 0,
         'HP': 125,
         'INT': 30,
-        'MOV': 8,
+        'MOV': 11,
         'MP': 50,
         'POW': 30,
         'SAN': 0,
@@ -984,7 +984,7 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              '消耗mp': 2},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 13, '持续回合': 5, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6'},
+             'effects': [{'type': 4, '客体': 13, '持续回合': 5, '默认延续性': 0, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6'},
                          {'type': 2, '客体': 13, '护盾值': '1d8+4', '持续回合': 5}],
              'name': '雪之法杖',
              'timing': '1'},
@@ -1002,7 +1002,7 @@ SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
  'EDU': 30,
  'HP': 35,
  'INT': 30,
- 'MOV': 5,
+ 'MOV': 8,
  'MP': 12,
  'POW': 50,
  'SAN': 0,
@@ -1451,7 +1451,7 @@ LAN = {'attrs': {'伤害贯穿': 1,
              '消耗mp': 3},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+3'}],
+             'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+2d3'}],
              'name': '镰刃余势',
              'timing': '1'}],
  'str_attrs': {'伤害值': '2d4+4'}}
@@ -1546,7 +1546,8 @@ GELIYA = {'attrs': {'伤害贯穿': 1,
            '额外行动数': 0,
            '魔力': 18,
            '魔力上限': 18,
-           '魔法少女序号': 13},
+           '魔法少女序号': 13,
+           '飞行': 1},
  'inventory': [],
  'name': '“巨人”',
  'serial': 'Y13',
@@ -1557,8 +1558,7 @@ GELIYA = {'attrs': {'伤害贯穿': 1,
              'timing': '1'},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99},
-                         {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '飞行', '辅助效果值': '1'}],
+             'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99}],
              'name': '飞行',
              'timing': '1'},
             {'category': 4,
@@ -1582,7 +1582,7 @@ SUMMON_TEMPLATES['虚假之月'] = {'APP': 1,
  'EDU': 0,
  'HP': 9999,
  'INT': 1,
- 'MOV': 0,
+ 'MOV': 3,
  'MP': 0,
  'POW': 1,
  'SAN': 0,
@@ -1621,7 +1621,7 @@ SUMMON_TEMPLATES['影之克隆'] = {'APP': 1,
  'EDU': 0,
  'HP': 3,
  'INT': 1,
- 'MOV': 8,
+ 'MOV': 11,
  'MP': 0,
  'POW': 1,
  'SAN': 0,
@@ -1644,7 +1644,7 @@ SUMMON_TEMPLATES['血液长枪'] = {'APP': 1,
  'EDU': 0,
  'HP': 8,
  'INT': 1,
- 'MOV': 0,
+ 'MOV': 3,
  'MP': 0,
  'POW': 1,
  'SAN': 0,
@@ -5510,8 +5510,8 @@ class CombatEngine:
         return result
 
     def _calc_main_actions(self, uid, include_zone=True):
-        """计算每回合主动作数。公式: max(1, (effective_MOV + 4) // 5 + 额外行动数)，无上限。
-        区间映射: MOV 0-5→1动, 6-10→2动, 11-15→3动, 16-20→4动, 21-25→5动, ...
+        """计算每回合主动作数。公式: max(1, (effective_MOV + 1) // 5 + 额外行动数)，无上限。
+        区间映射: MOV 0-8→1动, 9-13→2动, 14-18→3动, 19-23→4动, 24-28→5动, ...
         若角色/召唤物设置了 无主动行动=1，返回 0。"""
         char = self.get_char(self._resolve_uid(uid))
         if char.get_attr('无主动行动', 0) == 1:
@@ -5520,7 +5520,7 @@ class CombatEngine:
         extra = char.get_attr('额外行动数', None)
         if extra is None:
             extra = char.get_attr('回合行动数', 0)
-        return max(1, (effective_mov + 4) // 5 + extra)
+        return max(1, (effective_mov + 1) // 5 + extra)
 
     def _sync_actions_from_mov(self, uid, old_max=None, new_max=None):
         """当普通 buff 的 MOV 变化时，同步调整当前剩余主行动数。
@@ -6310,7 +6310,8 @@ class CombatEngine:
             if (e.get('type') in ('buff', 'debuff')
                     and e.get('auxType') == '隔离'
                     and self._resolve_uid(e.get('targetUserId', '')) == resolved
-                    and e.get('remainingRounds', 0) != 0):
+                    and (e.get('remainingRounds', 0) > 0 or
+                         (e.get('persistent') and e.get('remainingRounds', 0) < 0))):
                 has_isolation = True
                 break
         result = []
@@ -6319,7 +6320,8 @@ class CombatEngine:
                 continue
             if self._resolve_uid(e.get('targetUserId', '')) != resolved:
                 continue
-            if e.get('remainingRounds', 0) == 0:
+            if e.get('remainingRounds', 0) <= 0 and not (
+                    e.get('persistent') and e.get('remainingRounds', 0) < 0):
                 continue
             # 隔离: pause passive-originated buffs on the isolated target
             if has_isolation and e.get('sourcePassive'):
@@ -6364,7 +6366,8 @@ class CombatEngine:
                     e.get('type') in ('buff', 'debuff')
                     and e.get('auxType') == '隔离'
                     and self._resolve_uid(e.get('targetUserId', '')) == self._resolve_uid(source)
-                    and e.get('remainingRounds', 0) != 0
+                    and (e.get('remainingRounds', 0) > 0 or
+                         (e.get('persistent') and e.get('remainingRounds', 0) < 0))
                     for e in self._get_effects()):
                 return ''
         if eff.get('centerFollows'):
@@ -6783,7 +6786,7 @@ class CombatEngine:
                           '制造个数','制造花费回合数','召唤个数','领域中心跟随','触发HP比例','target_phase',
                           '友方延迟回复回合','敌方延迟回复回合','ignite','ignite_tick_dmg',
                           'cooldown_rounds','on_enter_mp_drain_pct','on_enter_trigger_rate',
-                          '可叠加','忽略全局奖惩骰','ally_safe',
+                          '可叠加','忽略全局奖惩骰','ally_safe','默认延续性',
                           'respawn_hp','respawn_radius','max_value',
                           'cost_counter_amount','吟唱回合',
                           '战意初始层数','战意削弱概率','战意削弱概率奖励层',
@@ -6971,7 +6974,8 @@ class CombatEngine:
         if cmd == '.hs':
             char = self.get_char(uid)
             # Y17's card uses the custom archery name instead of 射击:弓.
-            # Include that skill in the same +20 / cap-80 transform and reversal.
+            # Include that skill in the same transform and reversal. The +20
+            # increase caps at 80, but skills already above 80 keep their value.
             combat_skills = ALL_COMBAT_SKILLS + (['弓术'] if self._is_y17(uid) else [])
             # Save original stats for .unh reversal
             char.hs_orig = {
@@ -6991,12 +6995,13 @@ class CombatEngine:
             nhp = int(ohp * (5 + level)); nmp = int(omp * (2 + 0.5 * level))
             char.set_attr('体力上限', nhp); char.set_attr('体力', nhp)
             char.set_attr('魔力上限', nmp); char.set_attr('魔力', nmp)
-            char.set_attr('闪避', min(char.get_attr('闪避',25)+20, 80))
+            dodge = char.get_attr('闪避', 25)
+            char.set_attr('闪避', max(dodge, min(dodge + 20, 80)))
             char.set_attr('体格', char.get_attr('体格',0)+1)
-            char.set_attr('行动力', char.get_attr('行动力',8)+2)
+            char.set_attr('行动力', char.get_attr('行动力',8)+3)
             for sk in combat_skills:
                 v = char.get_attr(sk)
-                if v > 0: char.set_attr(sk, min(v+20, 80))
+                if v > 0: char.set_attr(sk, max(v, min(v + 20, 80)))
             # Recalculate db from updated 体格
             new_build = char.get_attr('体格', 0)
             char.set_str('db', _DB_TABLE.get(int(new_build), '0'))
@@ -7872,7 +7877,7 @@ class CombatEngine:
             shield_entry = {'type': 'shield', 'value': sv, 'remainingRounds': dur,
                             'sourceUserId': caster_id, 'targetUserId': tid or caster_id,
                             'spellName': spell['name'], 'spellIndex': spell['index'],
-                            'persistent': spell.get('默认延续性', 0)}
+                            'persistent': eff.get('默认延续性', spell.get('默认延续性', 0))}
             if eff.get('shield_absorb_moon_ratio'):
                 shield_entry['shield_absorb_moon_ratio'] = eff['shield_absorb_moon_ratio']
             if is_passive_spell:
@@ -7954,7 +7959,7 @@ class CombatEngine:
                     'sourceUserId': caster_id, 'targetUserId': tid,
                     'spellName': spell['name'], 'spellIndex': spell['index'],
                     'effectKey': eff_key,
-                    'persistent': spell.get('默认延续性', 0),
+                    'persistent': eff.get('默认延续性', spell.get('默认延续性', 0)),
                     'stackable': stackable,
                     'exclude': eff.get('exclude', [])}
                 if bonus_dmg:
@@ -8533,6 +8538,25 @@ class CombatEngine:
             if charged > 0:
                 self._spell_plan_output += f'  月能充能 ({spell["name"]}): +{charged}\n'
 
+    def _register_summon_lifetime(self, sid, caster_id, eff, spell, effects=None):
+        """Register one physical member's declared lifetime, independent of its group."""
+        if not sid:
+            return
+        duration = eff.get('持续回合') or 0
+        if isinstance(duration, str):
+            duration = roll_dice(duration)
+        if duration <= 0:
+            return
+        timer = dict(type='summon', summonId=sid, targetUserId=sid,
+                     sourceUserId=caster_id, remainingRounds=duration,
+                     spellName=spell['name'], spellIndex=spell['index'], persistent=0)
+        if effects is not None:
+            effects.append(timer)
+        else:
+            current = self._get_effects()
+            current.append(timer)
+            self._set_effects(current)
+
     def _execute_summon_effect(self, caster_id, target_id, eff, spell, is_passive_spell):
         """Summon effect body (extracted from _execute_spell for resumable plans)."""
         out = ''
@@ -8565,6 +8589,7 @@ class CombatEngine:
                 summon_group=tmpl if count > 1 else None,
                 shared_roll=shared_s_roll, shared_rank=None)
             if sid:
+                self._register_summon_lifetime(sid, caster_id, eff, spell)
                 # Set initial MP from spell cost for unlimited_mp summons
                 tmpls_c = getattr(self, '_summon_templates_snapshot', _SUMMON_TEMPLATES)
                 if tmpls_c is None:
@@ -9891,7 +9916,7 @@ class CombatEngine:
 
     def _tick_down_effects(self):
         effects = self._get_effects(); init_list = self._get_initiative()
-        msgs = []; new_effects = []
+        msgs = []; new_effects = []; expired_summons = set()
 
         # Configured zone first-aid resolves before the dying CON save of this round.
         urgent_rows = []
@@ -10062,11 +10087,31 @@ class CombatEngine:
                             else:
                                 count = int(count_raw) if count_raw else 1
                             tmpl = seff.get('召唤物模板', '')
+                            created = 0
                             for _ in range(count):
-                                self._create_summon(caster_id, tmpl)
-                            chant_out += f'  召唤 {count} 个【{tmpl or "使魔"}】\n'
+                                sid = self._create_summon(caster_id, tmpl)
+                                if sid:
+                                    created += 1
+                                    self._register_summon_lifetime(sid, caster_id, seff,
+                                        {'name': spell_name, 'index': spell_index}, new_effects)
+                            chant_out += f'  召唤 {created} 个【{tmpl or "使魔"}】\n'
                     msgs.append(chant_out)
                     continue  # Don't keep expired chanting effect
+                else:
+                    new_effects.append(eff)
+                continue
+
+            # Summon lifetimes are not paused by passive isolation or persistence.
+            if eff.get('type') == 'summon' and eff.get('summonId'):
+                sid = eff['summonId']
+                if (self._get_combat_hp(sid) or 0) <= 0:
+                    continue
+                eff['remainingRounds'] = eff.get('remainingRounds', 0) - 1
+                if eff['remainingRounds'] <= 0:
+                    expired_summons.add(sid)
+                    # Natural departure must bypass death rewards, saves and conversion.
+                    self._init_combat_hp(sid, 0)
+                    msgs.append(f"召唤【{eff.get('spellName', '')}】持续结束，召唤物退场")
                 else:
                     new_effects.append(eff)
                 continue
@@ -10162,7 +10207,12 @@ class CombatEngine:
             else:
                 new_effects.append(eff)
 
+        if expired_summons:
+            new_effects = [e for e in new_effects if e.get('targetUserId') not in expired_summons]
         self._set_effects(new_effects)
+        if expired_summons:
+            self._reconcile_summon_groups()
+            init_list = self._get_initiative()
 
         # Natural restoration precedes paid top-ups; the moon explicitly opts out.
         has_moon = any(self._find_summons_by_field(team, 'replenish_allies') for team in ('Y', 'X'))
@@ -12194,6 +12244,9 @@ class FullBattleEngine(CombatEngine):
 
     def _is_flying(self, uid):
         il = self._get_initiative(); entry = self._unit_il_entry(uid, il)
+        char = self.get_char(uid)
+        if not (entry and entry.get('isSummon')) and not getattr(char, 'hs_transformed', False):
+            return False
         if entry and entry.get("flying"): return True
         char = self.get_char(uid)
         if char and char.get_attr('飞行', 0): return True
@@ -12965,6 +13018,9 @@ class FastBattleEngine(FullBattleEngine):
 
     def _is_flying(self, uid):
         il = self._get_initiative(); entry = self._unit_il_entry(uid, il)
+        char = self.get_char(uid)
+        if not (entry and entry.get('isSummon')) and not getattr(char, 'hs_transformed', False):
+            return False
         if entry and entry.get("flying"): return True
         char = self.get_char(uid)
         if char and char.get_attr('飞行', 0): return True

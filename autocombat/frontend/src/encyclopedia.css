@@ -1,0 +1,45 @@
+.modal.encyclopedia-modal{width:1060px;padding:28px 32px;scroll-behavior:smooth}
+.encyclopedia-modal .character-profile{grid-template-columns:220px minmax(0,1fr);gap:36px}
+.encyclopedia-modal .profile-skills{min-width:0;color:#423f4a}
+.encyclopedia-modal .profile-skills>h3{font-size:22px;font-weight:650;color:#42394f;margin:8px 0 20px}
+.encyclopedia-modal .encyclopedia-section-title{font-size:17px;font-weight:650;color:#42394f;margin:28px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.encyclopedia-modal .trait-definitions{display:block;margin:18px 0}
+.encyclopedia-modal .trait-definitions>div{margin:12px 0}
+.encyclopedia-modal .trait-definitions h5{font-size:14px;font-weight:650;color:var(--character);margin-bottom:4px}
+.encyclopedia-modal .encyclopedia-passives{border:0;background:none;padding:0;margin:28px 0}
+.encyclopedia-prose{font-size:14px;line-height:1.95;color:#514c5c;overflow-wrap:anywhere}
+.encyclopedia-prose p{margin:10px 0}
+.encyclopedia-prose h5{font-size:15px;font-weight:650;line-height:1.6;color:#42394f;margin:24px 0 10px}
+.encyclopedia-prose>:first-child{margin-top:0}
+.encyclopedia-prose>:last-child{margin-bottom:0}
+.encyclopedia-prose strong{font-weight:650;color:#42394f}
+.encyclopedia-prose .prose-label{margin-right:.65em}
+.encyclopedia-prose .prose-parameters{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;line-height:1.8;text-align:left}
+.encyclopedia-prose .prose-parameters th,.encyclopedia-prose .prose-parameters td{padding:9px 12px;border:1px solid var(--line);vertical-align:top}
+.encyclopedia-prose .prose-parameters thead th{background:#f1edf5;color:#645074;font-weight:600}
+.encyclopedia-prose .prose-parameters tbody th{width:34%;font-weight:600;color:#51445f}
+.encyclopedia-prose .prose-parameters tbody tr:nth-child(even){background:#faf9fc}
+.encyclopedia-prose .prose-parameters td{font-variant-numeric:tabular-nums}
+.encyclopedia-prose ul,.encyclopedia-prose ol{padding-left:24px;margin:12px 0;list-style:revert}
+.encyclopedia-prose li{padding-left:4px;margin:8px 0}
+.encyclopedia-prose li::marker{color:var(--character)}
+.encyclopedia-prose .prose-levels{list-style:none;padding:0;border-left:2px solid color-mix(in srgb,var(--character) 30%,white)}
+.encyclopedia-prose .prose-levels li{padding:7px 14px;margin:0}
+.encyclopedia-prose .prose-levels li:nth-child(odd){background:#f8f6fa}
+.encyclopedia-prose blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--character);background:#f8f6fa}
+.encyclopedia-prose code{font-size:.9em;padding:2px 5px;border-radius:4px;background:#f1edf5;color:#645074}
+.encyclopedia-modal .profile-skills details{padding:20px 0;border-bottom:1px solid var(--line)}
+.encyclopedia-modal .profile-skills summary{gap:10px;color:#51445f;flex-wrap:wrap}
+.encyclopedia-modal .profile-skills summary strong{font-size:17px;font-weight:650;flex:1;min-width:100px}
+.encyclopedia-modal .profile-skills summary .tag{font-size:11px;padding:4px 9px}
+.encyclopedia-modal summary>svg{transition:transform .15s}
+.encyclopedia-modal details:not([open]) summary>svg{transform:rotate(-90deg)}
+.encyclopedia-modal .skill-meta{display:flex;flex-wrap:wrap;gap:6px 20px;margin:14px 0;font-size:12px;line-height:1.8;color:#71657f}
+.encyclopedia-modal .skill-meta b{font-weight:600;margin-right:8px;color:#51445f}
+.encyclopedia-modal .skill-facts{margin-top:18px}
+@media(max-width:750px){
+  .modal.encyclopedia-modal{padding:20px}
+  .encyclopedia-modal .character-profile{grid-template-columns:minmax(0,1fr);gap:24px}
+  .encyclopedia-modal .profile-skills summary strong{font-size:16px}
+  .encyclopedia-prose{font-size:14px;line-height:1.9}
+}

@@ -23,6 +23,18 @@
 
 .unit-row-select{display:flex;align-items:center;gap:inherit;flex:1;min-width:0;padding:0;text-align:left}.unit-row>.slot-control{flex:none;margin-top:0}
 /* Character library assets and encyclopedia. Text remains selectable on touch. */
+.profile-sidebar{min-width:0;align-self:start;display:flex;flex-direction:column;gap:18px}
+.profile-sidebar>.profile-art{align-self:stretch}
+.profile-stats{border:1px solid var(--line);border-radius:10px;padding:16px;background:#fff}
+.profile-stats table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.6}
+.profile-stats caption{text-align:left;font-size:14px;font-weight:600;color:var(--character);padding-bottom:12px}
+.profile-stats th,.profile-stats td{padding:7px 8px;border-bottom:1px solid var(--line)}
+.profile-stats th{text-align:left;font-weight:400;color:#625f6a;overflow-wrap:anywhere}
+.profile-stats thead th{font-size:11px;color:#777087;background:#f8f6fa}
+.profile-stats td,.profile-stats thead th:not(:first-child){text-align:right}
+.profile-stats td{font-variant-numeric:tabular-nums;font-weight:600;color:#423f4a}
+.profile-stats tbody tr:last-child>*{border-bottom:0}
+.profile-stats>p{font-size:11px;line-height:1.8;color:#777087;margin:12px 0 0}
 .library-emblem{display:inline-block;flex-shrink:0;background:currentColor;mask-repeat:no-repeat;mask-size:contain;mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:contain;-webkit-mask-position:center;vertical-align:middle}
 .skill-emblem{width:30px;height:30px;color:var(--character)}
 .role-traits{display:flex;gap:10px}.role-traits>span+span:before{content:'·';margin-right:10px}.role-traits>span{cursor:help}

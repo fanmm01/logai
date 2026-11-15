@@ -23,7 +23,6 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, redirect, request, send_from_directory
 from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
 from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, instance_name
-from character_encyclopedia import encyclopedia
 
 ROOT = Path(__file__).resolve().parent
 
@@ -68,9 +67,8 @@ def register_ui(app, ns):
         return data
 
     def catalog():
-        return [dict(serial=c['serial'], name=c['name'], attrs=c.get('attrs', {}),
-                     spells=c.get('spells', []), **encyclopedia(c, ns['characters_data_pvp'].SUMMON_TEMPLATES,
-                                                             ns['characters_data_pvp'].ITEM_TEMPLATES),
+        return [dict(serial=c['serial'], name=c['name'], attrs=c.get('attrs', {}), str_attrs=c.get('str_attrs', {}),
+                     spells=c.get('spells', []),
                      portrait=f"/ui/portraits/{c['serial']}.webp",
                      avatar=f"/ui/portraits/{c['serial']}-avatar.webp")
                 for c in ns['characters_data_pvp'].ALL_CHARACTERS]

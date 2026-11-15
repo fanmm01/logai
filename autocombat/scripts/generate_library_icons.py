@@ -3,10 +3,11 @@ from pathlib import Path
 import sys
 from html import escape
 import math
+import json
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from character_encyclopedia import PROFILES
+PROFILES = json.loads((ROOT / 'frontend/src/data/encyclopedia.json').read_text(encoding='utf-8'))
 from characters_data import ALL_CHARACTERS
 
 # Each emblem has its own silhouette, rather than wrapping at twelve entries.
@@ -40,7 +41,7 @@ def main():
     for emblem, path in PATHS.items():
         (out / f'{emblem}.svg').write_text(svg(f'<path d="{path}"/>', emblem), encoding='utf-8')
     for c in ALL_CHARACTERS:
-        emblem = PROFILES[c['serial']][0]
+        emblem = PROFILES[c['serial']]['emblem']
         for i, s in enumerate(c['spells'], 1):
             # Individual skill asset: character silhouette, action marker, index
             # and a progress arc. The ordinal distinguishes forms and variants.

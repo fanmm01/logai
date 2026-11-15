@@ -74,7 +74,7 @@ class BrowserUITests(unittest.TestCase):
     def test_catalog_and_built_page(self):
         data = self.client.get('/api/ui/catalog').get_json()['characters']
         self.assertGreaterEqual(len(data), 12)
-        self.assertTrue(all(c['spells'] and c['color'] and c['emblem'] for c in data))
+        self.assertTrue(all(c['spells'] and c['attrs'] and c['portrait'] for c in data))
         response = self.client.get('/ui/')
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'<!doctype html>', response.data)
