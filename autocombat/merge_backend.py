@@ -6,6 +6,7 @@ import re, os
 BASE = os.path.dirname(os.path.abspath(__file__))  # = autocombat/
 
 FILES_IN_ORDER = [
+    'skill_identity.py',
     'characters_data.py',
     'battle_engine.py',
     'ai_trainer.py',
@@ -15,6 +16,7 @@ FILES_IN_ORDER = [
 ]
 
 INTERNAL_MODULES = {
+    'skill_identity',
     'battle_engine', 'characters_data', 'characters_data_pvp',
     'ai_trainer', 'ai_trainer_pvp', 'ai_battle', 'team_tables',
 }

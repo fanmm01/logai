@@ -61,7 +61,7 @@ def main(params=None, wire=None):
         if params.get('mode') == 'verbose' or params.get('verbose'):
             for handler in ab.logger.handlers:
                 handler.setLevel(logging.DEBUG)
-        from sim import run_battle_pair, compute_matrix, compute_avg_points_ranking, compute_contribution_from_matrix
+        from sim import run_battle_pair, compute_matrix_with_rounds, compute_avg_points_ranking, compute_contribution_from_matrix
         from characters_data import ALL_CHARACTERS
         random.seed(params.get('seed'))
         mode = params.get('mode', 'single')
@@ -104,11 +104,19 @@ def main(params=None, wire=None):
             char_season = season_statuses(t.char_map, season)
             names = {c['serial']: c['name'] for c in ALL_CHARACTERS}
             team_names = ['+'.join(names.get(s, s) for s in team) for team in teams]
-            matrix = compute_matrix(t, teams, params['n'], params.get('map_size', setting('DEFAULT_MAP_SIZE')), char_season,
-                                    lambda done, matrix: report(completed=done, result={'teams': team_names, 'matrix': matrix}))
-            report(completed=len(teams)*(len(teams)-1)//2, result=dict(teams=team_names, matrix=matrix,
-                   rankings=compute_avg_points_ranking(matrix, team_names),
-                   contribution=compute_contribution_from_matrix(matrix, teams, names)))
+            def matrix_progress(done, matrix, average_rounds):
+                report(completed=done, result={'teams': team_names, 'matrix': matrix,
+                                               'average_rounds': average_rounds,
+                                               'matrix_semantics': 'matrix[行队伍][列队伍]表示行队伍战胜列队伍的概率'})
+
+            matrix, average_rounds = compute_matrix_with_rounds(
+                t, teams, params['n'], params.get('map_size', setting('DEFAULT_MAP_SIZE')),
+                char_season, matrix_progress)
+            result = dict(teams=team_names, matrix=matrix, average_rounds=average_rounds,
+                          matrix_semantics='matrix[行队伍][列队伍]表示行队伍战胜列队伍的概率',
+                          rankings=compute_avg_points_ranking(matrix, team_names),
+                          contribution=compute_contribution_from_matrix(matrix, teams, names))
+            report(completed=len(teams)*(len(teams)-1)//2, result=result)
         elif mode == 'prelim':
             from sim import prelim_runtime, new_prelim_totals, accumulate_prelim_rankings, compute_prelim_averages
             modes = params.get('formats', ['1v1', '2v2', '3v3'])

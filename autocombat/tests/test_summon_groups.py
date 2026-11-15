@@ -67,6 +67,15 @@ class SummonGroupTests(unittest.TestCase):
         self.templates.start()
         self.addCleanup(self.templates.stop)
 
+    def test_previously_free_summon_attacks_keep_explicit_zero_mp_cost(self):
+        templates = ('三合一', '朱雀', '玄武', '藤蔓', '蜂鸟', '小雪人')
+        for template_name in templates:
+            for skill in cd.SUMMON_TEMPLATES[template_name].get('skills', []):
+                if isinstance(skill, dict):
+                    with self.subTest(template=template_name, skill=skill.get('name')):
+                        self.assertEqual(skill.get('mp_cost'), 0)
+                        self.assertEqual(be._summon_skill_mp_cost(skill), 0)
+
     def test_promotion_preserves_slot_pool_and_member_order(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):
             with self.subTest(engine=cls.__name__):

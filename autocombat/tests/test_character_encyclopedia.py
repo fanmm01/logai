@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import battle_engine as be
 import characters_data as cd
 from character_encyclopedia import ARTICLES, ARTICLE_ORDER, PROFILES, encyclopedia
+from tests.encyclopedia_helpers import resolved_encyclopedia
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -208,7 +209,7 @@ class Y1Y2EncyclopediaTests(unittest.TestCase):
                 '发动一次火焰攻击，以自身最佳近战技能检定，造成 2d6+1d8 伤害。目标可以闪避、反击或格挡。',
                 ['命中后附加灼烧，每轮造成 2d4+2 伤害，持续 4 轮。多次命中产生的灼烧分别生效。']),
             ('Y2', '火球术'): (
-                '向同一目标连续发射三枚火球，每枚分别以 90 的技能值检定，依次造成 1d8、1d8+2、1d8+2 伤害。',
+                '向同一目标连续发射三枚火球，每枚分别以 90 的技能值检定，依次造成 1d8+2、1d8+2、1d8+2 伤害。',
                 ['目标仅可格挡。某枚火球未命中时，继续结算其余火球；目标倒下后停止后续攻击。']),
             ('Y2', '召唤使魔'): (
                 '召唤 1 只使魔加入战斗，同一施法者最多同时拥有 12 只。名额已满时无法施放，使魔死亡后可以补召。',
@@ -415,7 +416,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
         expected = {
             '斗殴强化': ('战斗开始时获得 1 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。',
                          [('时机', '被动'), ('费用', '1 MP'), ('目标', '自身')], []),
-            '附魔术': ('战斗开始时支付费用，为自身的普通攻击及法术攻击附加 1d6+1d4+1 伤害，持续生效。魔力不足时无法发动。',
+            '附魔术': ('战斗开始时支付费用，为自身的普通攻击及法术攻击附加 1d6+1d4 伤害，持续生效。魔力不足时无法发动。',
                        [('时机', '被动'), ('费用', '1 MP'), ('目标', '自身')], []),
             '星闪攻击': ('向同一目标连续发动两段星闪攻击，每段分别以 75 的技能值检定，各获得 1 颗攻击奖励骰，依次造成 1d12+4+1d3、1d12+4+1d3 伤害。',
                          [('时机', '主动'), ('费用', '1 MP'), ('射程', '99 格'), ('目标', '敌方单体')],
@@ -485,7 +486,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                 eng = self.engine(cls)
                 self.assertEqual(eng.get_char('bull').get_attr('魔力'), cd.LINGNIU['attrs']['魔力'] - 2)
                 self.assertEqual(be._calc_net_bp(eng._get_active_buffs('bull')), 'b')
-                self.assertEqual(eng._get_buff_dmg_dice_bonus('bull'), '1d6+1d4+1')
+                self.assertEqual(eng._get_buff_dmg_dice_bonus('bull'), '1d6+1d4')
                 effects = eng._get_effects()
                 for effect in effects:
                     if effect.get('sourceUserId') == 'bull':
@@ -493,10 +494,10 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                 eng._set_effects(effects)
                 eng._tick_down()
                 self.assertEqual(be._calc_net_bp(eng._get_active_buffs('bull')), 'b')
-                self.assertEqual(eng._get_buff_dmg_dice_bonus('bull'), '1d6+1d4+1')
+                self.assertEqual(eng._get_buff_dmg_dice_bonus('bull'), '1d6+1d4')
                 with patch.object(be, 'roll_dice_detailed', return_value=(8, '8')) as roll:
                     eng._apply_spell_damage('bull', 'star', '2d6', 0, 0)
-                self.assertEqual(roll.call_args.args[0], '2d6+1d6+1d4+1')
+                self.assertEqual(roll.call_args.args[0], '2d6+1d6+1d4')
                 poor = self.engine(cls, mp=0)
                 self.assertEqual(poor.get_char('bull').get_attr('魔力'), 0)
                 self.assertEqual(poor._get_buff_dmg_dice_bonus('bull'), '')
@@ -514,7 +515,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                         eng._fast_coc7_attack('bull', 'star', '斗殴', 85, '2d6', 0, 0)
                     else:
                         eng._coc7_attack('bull', 'star', '斗殴', 85, '2d6', 0, 0)
-                self.assertIn('2d6+1d6+1d4+1', [call.args[0] for call in maximum.call_args_list])
+                self.assertIn('2d6+1d6+1d4', [call.args[0] for call in maximum.call_args_list])
                 with patch.object(be, 'roll_d100', return_value=(50, '')) as check, \
                      patch.object(be, 'roll_dice_detailed', return_value=(7, '7')) as damage:
                     _, countered, _ = eng._resolve_spell_counter(
@@ -823,7 +824,7 @@ class Y7Y8EncyclopediaTests(unittest.TestCase):
 
 class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
     def setUp(self):
-        self.profiles = json.loads((ROOT / 'frontend/src/data/encyclopedia.json').read_text(encoding='utf-8'))
+        self.profiles = resolved_encyclopedia()
         self.registry = patch.object(be, '_SUMMON_TEMPLATES', copy.deepcopy(cd.SUMMON_TEMPLATES))
         self.registry.start()
         self.addCleanup(self.registry.stop)
@@ -868,7 +869,8 @@ class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
         for effect in balls:
             article = self.article('Y6', '发送雪球')
             self.assertIn(f"以 {effect['成功率']} 的技能值", article['description'])
-            self.assertIn(f"造成 {effect['伤害骰']} 伤害", article['description'])
+            self.assertIn(effect['伤害骰'], article['description'])
+            self.assertIn('依次造成', article['description'])
             self.assertIn(f"射程：{effect['射程']} 格", article['facts'])
             self.assertEqual((effect['客体'], effect['可闪避性'], effect['可反击性'], effect.get('可格挡性', 1)), (4, 1, 0, 1))
 

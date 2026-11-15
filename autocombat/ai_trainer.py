@@ -259,6 +259,7 @@ def encode_state(engine, uid):
     # Spells
     spells = char.spells or engine.load_spells(uid)
 
+
     # Dim 7: n_skills (available active skills, capped at 4)
     n_skills = min(len([s for s in spells
                         if has_timing(s.get('时机','2'), '2')
@@ -670,8 +671,11 @@ def get_available_actions(engine, uid):
         phase_key += '_' + (char.get_str('_weapon_name') or 'staff')
     spells = char.spells or engine.load_spells(uid)
 
+    # Re-enabled or reordered definitions must not reuse stale AI candidates.
+    phase_key = (phase_key, tuple((s['index'], s.get('skill_id'), s['name'], str(s.get('时机', '2'))) for s in spells))
+
     if uid in getattr(engine, '_summon_members', {}):
-        phase_key += repr([(sp['index'], sp['name']) for sp in spells])
+        phase_key += (tuple((sp['index'], sp['name']) for sp in spells),)
 
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
 
@@ -809,9 +813,9 @@ def get_available_actions(engine, uid):
         filtered.append((ak, an))
 
     if engine._is_y17(uid) and engine._y17_spears(uid) and not engine._y17_chant(uid):
-        spear = next((s for s in spells if s['index'] == 12), None)
+        spear = next((s for s in spells if engine._y17_spell_kind(uid, s) == 'spear'), None)
         if spear and not engine._y17_preflight(uid, dict(spear, _blood_options={'mode': 'throw'}), ai=True):
-            filtered.append(('SKILL_12_THROW__T0', '投掷血枪'))
+            filtered.append((f'SKILL_{spear["index"]}_THROW__T0', '投掷血枪'))
 
     # ── 射程过滤: 仅对敌方伤害动作检查可达性 ──
     my_entry = next((e for e in il if e['userId'] == uid), None)
@@ -916,7 +920,7 @@ def action_slot_for(engine, uid, action_key):
     - Everything else uses a main action.
     """
     base, _ = parse_action(action_key)
-    if base == 'SKILL_12_THROW':
+    if base.startswith('SKILL_') and base.endswith('_THROW'):
         return '主动'
     if base in ('EAT_CAKE', 'GIVE_CAKE', 'MOVE_TOWARD'):
         return '附加'
@@ -1229,7 +1233,7 @@ def execute_action(engine, uid, action_key):
         spells = engine.load_spells(uid)
         spell = next((s for s in spells if s['index'] == skill_num), None)
         if spell:
-            if base == 'SKILL_12_THROW':
+            if base.endswith('_THROW'):
                 return engine._execute_spell(uid, tid, dict(spell, _blood_options={'mode': 'throw'}))
             if engine._is_y17(uid):
                 options = engine._y17_ai_options(uid, spell)

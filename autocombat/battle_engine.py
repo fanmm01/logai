@@ -47,7 +47,9 @@ _SUMMON_TEMPLATES = None
 
 
 def _summon_skill_mp_cost(skill):
-    """Ordinary attacks are free; every named summon ability costs at least 1 MP."""
+    """Honor explicit free attacks; other named summon abilities cost at least 1 MP."""
+    if 'mp_cost' in skill and skill.get('mp_cost') == 0:
+        return 0
     if skill.get('name', '') in ('', '攻击', '普通攻击', '斗殴'):
         return 0
     return max(1, int(skill.get('mp_cost', 0) or 0))
@@ -1089,7 +1091,9 @@ class CombatEngine:
             e.get('sourceUserId') == uid and e.get('spellIndex') in (11, 12))])
         char._y14_mode = mode
         index = 11 if mode == 'swift' else 12
-        spell = next(s for s in self.load_spells(uid) if s['index'] == index)
+        spell = next((s for s in self.load_spells(uid) if s['index'] == index), None)
+        if not spell:
+            return
         for i, eff in enumerate(spell['effects']):
             self._apply_target_effect(uid, uid, eff, spell, False, i)
 
@@ -2048,37 +2052,38 @@ class CombatEngine:
                 spell = spells.get(index)
                 if not spell:
                     continue
+                kind = self._y17_spell_kind(uid, spell)
                 options = self._y17_ai_options(uid, spell)
-                if index == 3 and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
+                if kind == 'guard' and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
                     score = 65 if distance <= 10 else 8
-                elif index == 5 and acts.get('附加', 0) > 0:
+                elif kind == 'blade' and acts.get('附加', 0) > 0:
                     score = 60 if not self._y17_blade(uid) else (50 if options['form'] == 'sword' and blood >= 600 else 12)
-                elif index == 7 and options.get('target'):
+                elif kind == 'store' and options.get('target'):
                     target = options['target']
                     cap = self.get_char(target).get_attr('体力上限')
                     missing = cap - self._hp_safe(target)
                     if acts.get('附加', 0) > 0 and missing >= rules.get('ball_heal', 1) and self._hp_safe(target) <= cap * .8:
                         score = 75 if self._hp_safe(target) <= cap * .65 else 35
-                elif index == 10 and mp < 8 and blood >= rules['cape_ml'] + 500 and acts.get('附加', 0) > 0:
+                elif kind == 'cape' and mp < 8 and blood >= rules['cape_ml'] + 500 and acts.get('附加', 0) > 0:
                     score = 70
-                elif base == 'SKILL_12_THROW':
+                elif kind == 'spear' and base.endswith('_THROW'):
                     spears = self._y17_spears(uid)
                     if spears and (spears[0] <= 1 or target_hp <= 16 or distance > 2):
                         score = avg_damage(rules['spear_throw']) * char.get_attr('弓术', 0) / 100
-                elif index == 12 and not self._y17_spears(uid) and acts.get('附加', 0) > 0 and distance <= 2 and blood >= rules['spear_ml'] + 500:
+                elif kind == 'spear' and not self._y17_spears(uid) and acts.get('附加', 0) > 0 and distance <= 2 and blood >= rules['spear_ml'] + 500:
                     score = 40
-                elif index == 11:
+                elif kind == 'slash':
                     segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
                     phase_damage = avg_damage(rules['moon_phases'][options['moon'] - 1][1])
                     healing = min(max_hp - hp, phase_damage) if options['moon'] in (1, 2, 7, 8) else 0
                     score = (phase_damage + healing * .7) * .8 * segments
-                elif index == 6 and hp > max(8, max_hp * .3):
+                elif kind == 'war' and hp > max(8, max_hp * .3):
                     score = 13 * min(3, len(enemies))
-                elif index == 2 and hp >= max_hp * .45:
+                elif kind == 'arcana' and hp >= max_hp * .45:
                     # Three actions, paid once; compare against immediate attacks.
                     plan = self._y17_plan(uid, None, dict(spell, _blood_options=options), ai=True)
                     score = min(plan['spell']['_actual_mp_cost'] * 4, target_hp) * .8 / 3 - plan['hp'] * .25
-                elif index == 4 and hp <= max_hp * .3:
+                elif kind == 'sacrifice' and hp <= max_hp * .3:
                     score = max_hp * .9 / 2
             scores.append((score, action))
         if not scores:
@@ -4097,6 +4102,8 @@ class CombatEngine:
                 if current_wpn != wpn_req:
                     continue
             spell = {'index': i, 'name': name, 'effects': []}
+            spell['skill_id'] = char.get_str(f"{prefix}skill_id") or f'{char.serial or uid}-S{i:03}'
+            spell['skill_index'] = i
             for k in ['级别','类别','消耗mp','消耗san','熟练度','里程碑','吟唱回合','默认延续性']:
                 v = char.get_attr(f"{prefix}{k}")
                 if not v:
@@ -5656,15 +5663,15 @@ class CombatEngine:
             # 夜诏明 s2: max(25% maxMP, 50% curMP)
             max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
             cur_mp_raw = char.get_attr('魔力', 0) or 0
-            pct_max = max(1, max_mp * 25 // 100)
-            pct_cur = max(1, cur_mp_raw * 50 // 100)
+            pct_max = max_mp * 25 // 100
+            pct_cur = cur_mp_raw * 50 // 100
             mp_cost = max(pct_max, pct_cur)
             spell['_actual_mp_cost'] = mp_cost  # Store for damage calculation
         else:
             mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
 
         if not spell.get('_registration_only') and not deferred_phase_cost:
-            mp_cost = max(1, mp_cost)
+            mp_cost = max(0, mp_cost)
 
         san_cost_raw = 0 if deferred_phase_cost else spell.get('消耗san', 0)
         if isinstance(san_cost_raw, str) and 'd' in str(san_cost_raw).lower():
@@ -5794,7 +5801,7 @@ class CombatEngine:
         mp_pct_max = spell.get('cost_mp_pct_max', 0) or 0
         if mp_pct_max > 0:
             max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
-            mp_cost_pct = max(1, max_mp * mp_pct_max // 100)
+            mp_cost_pct = max(0, max_mp * mp_pct_max // 100)
             # Use the larger of dice cost and percentage cost
             mp_cost = max(mp_cost, mp_cost_pct)
 
@@ -5802,14 +5809,14 @@ class CombatEngine:
         mp_pct_cur = spell.get('cost_mp_pct_current', 0) or 0
         if mp_pct_cur > 0:
             cur_mp_for_pct = char.get_attr('魔力', 0) or 0
-            mp_cost_cur = max(1, cur_mp_for_pct * mp_pct_cur // 100)
+            mp_cost_cur = max(0, cur_mp_for_pct * mp_pct_cur // 100)
             mp_cost = max(mp_cost, mp_cost_cur)
 
         # AUX 9/10: MP cost modifiers
         if mp_cost > 0:
-            mp_cost = max(1, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
+            mp_cost = max(0, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
             mp_cost += self._get_buff_mp_cost_flat(caster_id)  # AUX code 10
-            mp_cost = max(1, mp_cost)
+            mp_cost = max(0, mp_cost)
 
         if any(self._get_counter(caster_id, kind) < amount for kind, amount in deferred_counters.items()):
             return ActionExecutionResult(f'{char.name} 资源不足。\n', False, 'spell_rejected')
@@ -7431,10 +7438,12 @@ class CombatEngine:
         self._move_to_attack_range(uid, target, 1)
         if not self._in_range_of(uid, target, 1):
             return ['小雪人移动接近目标']
+        # Older saved template snapshots inherit the current data definition.
+        melee = template.get('frost_melee') or _get_summon_template('小雪人')['frost_melee']
         if hasattr(self, '_fast_coc7_attack'):
-            result = self._fast_coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)
+            result = self._fast_coc7_attack(uid, target, '斗殴', melee['success'], melee['dice'], 0, 0)
             return [result[-1]]
-        return self._coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)[-1]
+        return self._coc7_attack(uid, target, '斗殴', melee['success'], melee['dice'], 0, 0)[-1]
 
     # ---- Tick-down (unified) ----
     def _tick_down(self):

@@ -6,7 +6,7 @@
     "traits": [
       {
         "name": "连击",
-        "description": "一次火球术分别结算三段攻击。"
+        "description": "一次火球术分别结算{{skills.火球术.effects|count|cn}}段攻击。"
       },
       {
         "name": "召唤",
@@ -20,9 +20,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
-        "limits": "敌方单体｜射程 99 格",
-        "description": "向同一目标连续发射三枚火球，每枚分别以 90 的技能值检定，依次造成 1d8、1d8+2、1d8+2 伤害。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "向同一目标连续发射{{spell.effects|count|cn}}枚火球，每枚分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。",
         "facts": [
           "目标仅可格挡。"
         ],
@@ -34,19 +34,19 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "4 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "召唤 1 只使魔加入战斗，同一施法者最多同时拥有 12 只。名额已满时无法施放，使魔死亡后可以补召。",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 只使魔加入战斗，同一施法者最多同时拥有 {{summons.使魔.max_simultaneous}} 只。名额已满时无法施放，使魔死亡后可以补召。",
         "facts": [
-          "生命：24",
-          "基础行动力：9",
-          "敏捷：70",
-          "斗殴：55",
-          "攻击伤害：1d6+1d4",
-          "闪避：35",
+          "生命：{{summons.使魔.HP}}",
+          "基础行动力：{{summons.使魔.MOV}}",
+          "敏捷：{{summons.使魔.DEX}}",
+          "斗殴：{{summonSkills.使魔.斗殴.val}}",
+          "攻击伤害：{{summonSkills.使魔.斗殴.dice}}",
+          "闪避：{{summons.使魔.闪避}}",
           "飞行：是",
           "防御反应：闪避、反击",
-          "持续：99 轮"
+          "持续：{{spell.effects.0.持续回合}} 轮"
         ],
         "icon": "/ui/icons/Y2-s2.svg"
       },
@@ -56,15 +56,15 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "战斗开始时支付费用，获得行动力 +5，持续生效。",
+        "description": "战斗开始时支付费用，获得行动力 {{spell.effects.0.技能加减值|modifier:行动力|signed}}，持续生效。",
         "facts": [],
         "icon": "/ui/icons/Y2-s3.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d8+1d6+1d4；斗殴 65；基础闪避 50。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y3": {
     "emblem": "horn",
@@ -87,9 +87,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "战斗开始时获得 1 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。",
+        "description": "战斗开始时获得 {{spell.effects.0.辅助效果值|bonus}} 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。",
         "facts": [],
         "icon": "/ui/icons/Y3-s1.svg"
       },
@@ -99,15 +99,15 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "战斗开始时支付费用，为自身的普通攻击及法术攻击附加 1d6+1d4+1 伤害，持续生效。",
+        "description": "战斗开始时支付费用，为自身的普通攻击及法术攻击附加 {{spell.effects.0.辅助效果值|unsigned}} 伤害，持续生效。",
         "facts": [],
         "icon": "/ui/icons/Y3-s2.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：2d6；斗殴 85；基础闪避 65。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y4": {
     "emblem": "microphone",
@@ -116,7 +116,7 @@
     "traits": [
       {
         "name": "双击",
-        "description": "星闪攻击分别结算两段伤害。"
+        "description": "星闪攻击分别结算{{skills.星闪攻击.effects|count|cn}}段伤害。"
       },
       {
         "name": "干扰",
@@ -130,9 +130,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "敌方单体｜射程 99 格",
-        "description": "向同一目标连续发动两段星闪攻击，每段分别以 75 的技能值检定，各获得 1 颗攻击奖励骰，依次造成 1d12+4+1d3、1d12+4+1d3 伤害。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "向同一目标连续发动{{spell.effects|count|cn}}段星闪攻击，每段分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，各获得 {{spell.effects.0.成功率奖惩骰|bonus}} 颗攻击奖励骰，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。",
         "facts": [
           "目标仅可格挡。",
           "贯穿：是。"
@@ -145,17 +145,17 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "敌方全体",
-        "description": "使敌方全体获得 1 颗攻击惩罚骰，适用于普通攻击、法术攻击及反击，持续 3 轮。",
+        "description": "使敌方全体获得 {{spell.effects.0.辅助效果值|bonus}} 颗攻击惩罚骰，适用于普通攻击、法术攻击及反击，持续 {{spell.effects.0.持续回合}} 轮。",
         "facts": [
-          "重复施放刷新至至少 3 轮，同名惩罚不叠加。"
+          "重复施放刷新至至少 {{spell.effects.0.持续回合}} 轮，同名惩罚不叠加。"
         ],
         "icon": "/ui/icons/Y4-s2.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d4+1d3；斗殴 60；基础闪避 75。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y5": {
     "emblem": "bat",
@@ -178,11 +178,11 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "战斗开始时获得行动力 +5 和 1 颗攻击奖励骰，持续生效。",
+        "description": "战斗开始时获得行动力 {{spell.effects.0.技能加减值|modifier:行动力|signed}} 和 {{spell.effects.1.辅助效果值|bonus}} 颗攻击奖励骰，持续生效。",
         "facts": [
-          "自身飞行另提供行动力 +8，与本技能叠加。"
+          "自身飞行另提供额外行动力，与本技能叠加。"
         ],
         "icon": "/ui/icons/Y5-s1.svg"
       },
@@ -192,12 +192,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "对敌方单体发动吸血攻击，以自身最佳近战技能检定，造成 2d4+1d6+2 伤害，并按伤害的 100% 回复自身生命。",
+        "description": "对敌方单体发动吸血攻击，以自身最佳近战技能检定，造成 {{spell.effects.0.伤害骰}} 伤害，并按伤害的 {{spell.effects.0.吸血比例|percent}}% 回复自身生命。",
         "facts": [
           "目标：敌方单体",
-          "射程：基础 2 格；当前全局射程覆盖启用时为 99 格",
+          "射程：基础 {{spell.effects.0.射程}} 格；当前全局射程覆盖启用时为 99 格",
           "防御反应：反击、格挡",
           "护盾后仍有伤害时，按护盾吸收前的修正伤害吸血。"
         ],
@@ -205,7 +205,7 @@
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：2d3+1d4；斗殴 70；基础闪避 75。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y6": {
     "emblem": "snow",
@@ -228,14 +228,14 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "在自身所在位置创建半径 5 格的固定雪带，持续 6 轮。自下一轮起，每轮为区域内敌方单位增加 2 层冰冻。",
+        "description": "在自身所在位置创建半径 {{spell.effects.0.作用半径}} 格的固定雪带，持续 {{spell.effects.0.持续回合}} 轮。自下一轮起，每轮为区域内敌方单位增加 {{spell.effects.0.冰冻每轮层数}} 层冰冻。",
         "facts": [
           "作用对象：区域内敌方单位",
-          "作用半径：5 格",
-          "持续时间：6 轮",
-          "同时存在上限：每名施法者 1 处",
+          "作用半径：{{spell.effects.0.作用半径}} 格",
+          "持续时间：{{spell.effects.0.持续回合}} 轮",
+          "同时存在上限：每名施法者 {{spell.effects.0.领域同时上限}} 处",
           "固定在创建位置，自下一轮起每轮施加冰冻。",
           "雪人与小雪人的雪带分别占用名额，冰冻层数相加。"
         ],
@@ -247,12 +247,12 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "战斗开始时生成随自身移动、半径 5 格的雪幕，使范围内己方单位受到的伤害降低 10%。",
+        "description": "战斗开始时生成随自身移动、半径 {{spell.effects.0.作用半径}} 格的雪幕，使范围内己方单位受到的伤害降低 {{spell.effects.0.辅助效果值|abs}}%。",
         "facts": [
           "作用对象：区域内己方单位，含自身",
-          "作用半径：5 格",
+          "作用半径：{{spell.effects.0.作用半径}} 格",
           "随自身移动；隔离时暂停，来源死亡或离场后消散。"
         ],
         "icon": "/ui/icons/Y6-s2.svg"
@@ -263,12 +263,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "向同一敌人连续投出两枚雪球。每枚分别以 80 的技能值检定，造成 1d8+2 伤害，命中后增加 1 层冰冻。",
+        "description": "向同一敌人连续投出{{spell.effects|count|cn}}枚雪球。每枚分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害，命中后增加 {{character.attrs.冰冻雪球命中层数}} 层冰冻。",
         "facts": [
           "目标：敌方单体",
-          "射程：99 格",
+          "射程：{{spell.effects.0.射程}} 格",
           "防御反应：闪避、格挡",
           "命中后的冰冻独立于实际生命损失，伤害被护盾完全吸收或被一次伤害免疫抵消时，仍可增加冰冻层数。"
         ],
@@ -280,9 +280,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "战斗开始时，为在场己方单位附加 1d6 攻击伤害骰，持续 5 轮，并分别授予 1d8+4 点护盾。",
+        "description": "战斗开始时，为在场己方单位附加 {{spell.effects.0.辅助效果值|unsigned}} 攻击伤害骰，持续 {{spell.effects.0.持续回合}} 轮，并分别授予 {{spell.effects.1.护盾值}} 点护盾。",
         "facts": [
           "目标：开战时在场的己方单位，含自身与召唤物",
           "护盾耗尽前保留；后续入场单位不获得增益。"
@@ -295,24 +295,24 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "",
-        "description": "召唤 1 只小雪人，持续 999 轮，技能冷却 4 轮。同一施法者最多同时拥有 1 只小雪人。",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 只小雪人，持续 {{spell.effects.0.持续回合}} 轮，技能冷却 {{spell.cooldown_rounds}} 轮。同一施法者最多同时拥有 {{summons.小雪人.max_simultaneous}} 只小雪人。",
         "facts": [
-          "技能冷却：4 轮",
-          "召唤数量：1 只",
-          "同时存活上限：1 只",
-          "持续时间：999 轮",
+          "技能冷却：{{spell.cooldown_rounds}} 轮",
+          "召唤数量：{{spell.effects.0.召唤个数}} 只",
+          "同时存活上限：{{summons.小雪人.max_simultaneous}} 只",
+          "持续时间：{{spell.effects.0.持续回合}} 轮",
           "小雪人",
-          "生命：35",
-          "初始魔力：12",
-          "基础行动力：8",
-          "敏捷：50",
-          "闪避：35",
+          "生命：{{summons.小雪人.HP}}",
+          "初始魔力：{{summons.小雪人.MP}}",
+          "基础行动力：{{summons.小雪人.MOV}}",
+          "敏捷：{{summons.小雪人.DEX}}",
+          "闪避：{{summons.小雪人.闪避}}",
           "防御反应：闪避",
-          "小雪带：消耗 3 MP；半径 3 格；持续 4 轮；每轮增加 2 层冰冻",
-          "雪球：消耗 1 MP；技能值 65；伤害 1d8+2；射程 8 格；可闪避、格挡；命中增加 2 层冰冻",
-          "近战攻击：斗殴 45；伤害 1d4；命中增加 2 层冰冻",
+          "小雪带：消耗 {{summons.小雪人.frost_zone.mp_cost}} MP；半径 {{summons.小雪人.frost_zone.radius}} 格；持续 {{summons.小雪人.frost_zone.duration}} 轮；每轮增加 {{summons.小雪人.frost_zone.stacks}} 层冰冻",
+          "雪球：消耗 {{summons.小雪人.frost_ball.mp_cost}} MP；技能值 {{summons.小雪人.frost_ball.success}}；伤害 {{summons.小雪人.frost_ball.dice}}；射程 {{summons.小雪人.frost_ball.range}} 格；可闪避、格挡；命中增加 {{character.attrs.冰冻命中层数}} 层冰冻",
+          "近战攻击：斗殴 {{summons.小雪人.frost_melee.success}}；伤害 {{summons.小雪人.frost_melee.dice}}；命中增加 {{character.attrs.冰冻命中层数}} 层冰冻",
           "优先在敌人附近创建小雪带，否则投掷雪球；MP 不足时近战。冰冻并入主人的记录，回复归主人。"
         ],
         "icon": "/ui/icons/Y6-s5.svg"
@@ -320,21 +320,22 @@
     ],
     "passives": [
       "## 冰冻来源",
-      "普攻、反击及小雪人的攻击命中增加 2 层；自身每枚雪球命中增加 1 层。雪带按各自数值叠加，按主人与目标分别记录。每轮先衰减 1 层，再结算雪带。",
+      "普攻、反击及小雪人的攻击命中增加 {{character.attrs.冰冻命中层数}} 层；自身每枚雪球命中增加 {{character.attrs.冰冻雪球命中层数}} 层。雪带按各自数值叠加，按主人与目标分别记录。每轮先衰减 {{character.passive_rules.frost.decay}} 层，再结算雪带。",
       "## 八层循环",
-      "第 1 层：所属阵营对目标的伤害提高 18%。",
-      "第 2 层：技能值 −10，每轮受到 1d4+2 伤害。",
-      "第 3 层：伤害降低 20%，行动力 −5；主人立即回复 2d10 HP。",
-      "第 4 层：下一轮行动力为零，受到 1d10+1d6+2 爆发伤害。",
-      "第 5 层：所属阵营对目标的伤害再提高 18%。",
-      "第 6 层：自下一轮起，主人每轮回复 1d6+2 HP、1d10 MP。",
-      "第 7 层：额外叠加技能值 −10、每轮 1d4+2 伤害。",
+      "第 1 层：所属阵营对目标的伤害提高 {{character.passive_rules.frost.vulnerability_pct}}%。",
+      "第 2 层：技能值 −{{character.passive_rules.frost.skill_penalty}}，每轮受到 {{character.passive_rules.frost.dot}} 伤害。",
+      "第 3 层：伤害降低 {{character.passive_rules.frost.dodge_penalty}}%，行动力 −{{character.passive_rules.frost.move_penalty}}。",
+      "第 4 层：下一轮行动力为零，受到 {{character.passive_rules.frost.burst}} 爆发伤害。",
+      "第 5 层：所属阵营对目标的伤害再提高 {{character.passive_rules.frost.vulnerability_pct}}%。",
+      "第 6 层：自下一轮起，主人每轮回复 {{character.passive_rules.frost.regen_hp}} HP、{{character.passive_rules.frost.regen_mp}} MP。",
+      "第 7 层：额外叠加技能值 −{{character.passive_rules.frost.skill_penalty}}、每轮 {{character.passive_rules.frost.dot}} 伤害。",
       "第 8 层：再次登记爆发，移除本循环第 1、5 层易伤及第 7 层效果。",
       "## 循环与衰减",
-      "每 8 层进入新循环。第 2、3、6 层效果可跨循环叠加；自然衰减按剩余层数解除减益。冰冻归零前不重复触发同一循环的回复和爆发，第 8 层移除的效果不恢复。",
-      "已登记爆发在冰冻归零后仍生效；持续回复也保留，可由不同目标、不同循环叠加。"
+      "每循环第 {{character.attrs.冰冻即时回复层数}} 层，主人立即回复 {{character.passive_rules.frost.instant_heal}} HP。",
+      "每 8 层进入新循环。跨循环叠加：{{character.attrs.冰冻跨循环叠加|enabled}}。开启时，第 2、3、6 层效果可跨循环叠加；自然衰减按剩余层数解除减益。冰冻归零前不重复触发同一循环的回复和爆发，第 8 层移除的效果不恢复。",
+      "已登记爆发在冰冻归零后仍生效；持续回复也保留；是否由不同目标、不同循环叠加由上述开关决定。"
     ],
-    "basic": "普通攻击基础骰：1d6+1d4；斗殴 50；基础闪避 65。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y60": {
     "emblem": "snowman",
@@ -357,12 +358,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP",
-        "limits": "固定雪带半径 5 格；同一施法者同时维持 1 处",
-        "description": "在自身所在位置创建固定雪带，使范围内敌方单位行动力降低 5、斗殴降低 10；同时对基础射程 99 格内的所有敌方单位各发动一次攻击，以技能值 70 检定，基础伤害为 1d6+1d4。目标可闪避或格挡，不可反击。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "固定雪带半径 {{spell.effects.0.作用半径}} 格；同一施法者同时维持 {{spell.effects.0.领域同时上限}} 处",
+        "description": "在自身所在位置创建固定雪带，使范围内敌方单位行动力降低 {{spell.effects.0.属性削减|modifier:行动力|abs}}、斗殴降低 {{spell.effects.0.属性削减|modifier:斗殴|abs}}；同时对基础射程 {{spell.effects.1.射程}} 格内的所有敌方单位各发动一次攻击，以技能值 {{spell.effects.1.成功率}} 检定，基础伤害为 {{spell.effects.1.伤害骰}}。目标可闪避或格挡，不可反击。",
         "facts": [
-          "雪带半径 5 格，第三次轮首消失；前两次轮首各造成 1d6 持续伤害。",
-          "固定在创建位置，同时限 1 处；隔离单位不受影响。"
+          "雪带半径 {{spell.effects.0.作用半径}} 格，第{{spell.effects.0.持续回合|cn}}次轮首消失；前{{spell.effects.0.持续回合|minus:1|cn}}次轮首各造成 {{spell.effects.0.每回合伤害骰}} 持续伤害。",
+          "固定在创建位置，同时限 {{spell.effects.0.领域同时上限}} 处；隔离单位不受影响。"
         ],
         "icon": "/ui/icons/Y60-s1.svg"
       },
@@ -372,11 +373,11 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "战斗开始时消耗 2 MP",
-        "limits": "随自身移动；半径 5 格；作用于己方全体，包含自身",
-        "description": "战斗开始时生成雪幕，使范围内己方单位受到的伤害降低 10%。减伤随单位进出范围即时生效或解除。",
+        "cost": "战斗开始时消耗 {{spell.消耗mp}} MP",
+        "limits": "随自身移动；半径 {{spell.effects.0.作用半径}} 格；作用于己方全体，包含自身",
+        "description": "战斗开始时生成雪幕，使范围内己方单位受到的伤害降低 {{spell.effects.0.辅助效果值|abs}}%。减伤随单位进出范围即时生效或解除。",
         "facts": [
-          "范围：自身周围 5 格",
+          "范围：自身周围 {{spell.effects.0.作用半径}} 格",
           "随自身移动；隔离时暂停，来源死亡或离场后消散。"
         ],
         "icon": "/ui/icons/Y60-s2.svg"
@@ -387,15 +388,15 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "敌方单体；基础射程 99 格",
-        "description": "向一名敌人投出一枚雪球，以技能值 75 检定，基础伤害为 1d6+1d4+2。目标可闪避或格挡，不可反击。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体；基础射程 {{spell.effects.0.射程}} 格",
+        "description": "向一名敌人投出一枚雪球，以技能值 {{spell.effects.0.成功率}} 检定，基础伤害为 {{spell.effects.0.伤害骰}}。目标可闪避或格挡，不可反击。",
         "facts": [],
         "icon": "/ui/icons/Y60-s3.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d8+1d4；斗殴 50；基础闪避 65。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y7": {
     "emblem": "flower",
@@ -418,7 +419,7 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "敌方主体与召唤物",
         "description": "战斗开始时获得战意光环，逐轮削弱敌方主体与召唤物的战意。主体承受攻击惩罚、伤害降低及沉默；召唤物战意归零时整组撤离。",
         "facts": [],
@@ -430,12 +431,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身及范围内己方单位",
-        "description": "创建随自身移动的治愈领域，半径 10 格，持续 3 回合。范围内的自身、己方主体及召唤物分别回复 2d8 HP 与 1d6 MP。",
+        "description": "创建随自身移动的治愈领域，半径 {{spell.effects.0.作用半径}} 格，持续 {{spell.effects.0.持续回合}} 回合。范围内的自身、己方主体及召唤物分别回复 {{spell.effects.0.回复hp}} HP 与 {{spell.effects.0.回复mp}} MP。",
         "facts": [
-          "施放时立即回复，随后两次轮首各回复一次，并可急救濒死单位。",
-          "同时限 1 处；隔离单位及点燃的召唤物不受治疗。"
+          "施放时立即回复，随后{{spell.effects.0.领域轮首结算次数|cn}}次轮首各回复一次，并可急救濒死单位。",
+          "同时限 {{spell.effects.0.领域同时上限}} 处；隔离单位及点燃的召唤物不受治疗。"
         ],
         "icon": "/ui/icons/Y7-s2.svg"
       },
@@ -445,11 +446,11 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "12 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "符合死亡轮窗口的己方阵亡单位",
-        "description": "复活 1 个己方阵亡主体或召唤物，生命恢复至上限的 40%，向下取整，最低为 1 HP。每场战斗限用 1 次，施放后冷却 99 回合。",
+        "description": "复活 1 个己方阵亡主体或召唤物，生命恢复至上限的 {{spell.effects.0.复活回复比例|percent}}%，向下取整，最低为 1 HP。每场战斗限用 1 次，施放后冷却 {{spell.cooldown_rounds}} 回合。",
         "facts": [
-          "可复活本轮或此前 3 轮阵亡的己方单位，每条阵亡记录限一次。",
+          "可复活本轮或此前 {{spell.effects.0.死亡轮窗口}} 轮阵亡的己方单位，每条阵亡记录限一次。",
           "未指定时优先召唤物的主人，其次主体，再按阵亡先后选择。",
           "复活召唤物归环花暖所有，占用其召唤名额。优先回到原位，其次尝试施法者附近空位。",
           "保留阵亡时的魔力、物品、形态、技能次数及行动记录。"
@@ -458,12 +459,12 @@
       }
     ],
     "passives": [
-      "主体战意：初始 4 层，首次轮首后每轮有 65% 概率减少 1 层。≤4 层承受 1 颗攻击惩罚骰，≤2 层改为 2 颗，≤1 层伤害降低 30%，0 层另受 4 级沉默。",
-      "主体战意归零后，下一个完整个人回合受到沉默；该回合结束时恢复为 3 层战意、1 颗攻击惩罚骰，并解除沉默与战意减伤。主体不会因此撤离。",
-      "召唤组战意：初始 5 层，首次轮首后每轮有 50% 概率减少 1 层。≤4 层承受 1 颗攻击惩罚骰，≤2 层改为 2 颗，0 层整组撤离。",
+      "主体战意：初始 {{skills.战意值削弱.effects.0.战意主体初始层数}} 层，首次轮首后每轮有 {{skills.战意值削弱.effects.0.战意主体削弱概率}}% 概率减少 1 层。≤{{skills.战意值削弱.effects.0.战意惩罚1阈值}} 层承受 1 颗攻击惩罚骰，≤{{skills.战意值削弱.effects.0.战意惩罚2阈值}} 层改为 {{skills.战意值削弱.effects.0.战意惩罚骰上限}} 颗，≤{{skills.战意值削弱.effects.0.战意主体减伤阈值}} 层伤害降低 {{skills.战意值削弱.effects.0.战意主体减伤百分比}}%，0 层另受 4 级沉默。",
+      "主体战意归零后，下一个完整个人回合受到沉默；该回合结束时恢复为 {{skills.战意值削弱.effects.0.战意奖励骰阈值}} 层战意、1 颗攻击惩罚骰，并解除沉默与战意减伤。主体不会因此撤离。",
+      "召唤组战意：初始 {{skills.战意值削弱.effects.0.战意初始层数}} 层，首次轮首后每轮有 {{skills.战意值削弱.effects.0.战意削弱概率}}% 概率减少 1 层。≤{{skills.战意值削弱.effects.0.战意惩罚1阈值}} 层承受 1 颗攻击惩罚骰，≤{{skills.战意值削弱.effects.0.战意惩罚2阈值}} 层改为 {{skills.战意值削弱.effects.0.战意惩罚骰上限}} 颗，0 层整组撤离。",
       "光环：来源存活、在场且未被隔离时生效。多个来源每轮只处理一次，主体压制取较强效果；中断时保留已有层数及召唤组攻击惩罚。"
     ],
-    "basic": "普通攻击基础骰：1d4+1d3；斗殴 45；基础闪避 60。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y8": {
     "emblem": "cake",
@@ -486,9 +487,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "3 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方共享制造物池",
-        "description": "立即制造 1d2+1 个生命蛋糕，放入己方共享制造物池。每个食用后回复 2d8+4 HP，并获得闪避 +10，持续 1 回合。",
+        "description": "立即制造 {{spell.effects.0.制造个数}} 个生命蛋糕，放入己方共享制造物池。每个食用后回复 {{items.蛋糕HP.回复hp}} HP，并获得闪避 {{items.蛋糕HP.技能加减值|modifier:闪避|signed}}，持续 {{items.蛋糕HP.buff持续回合}} 回合。",
         "facts": [],
         "icon": "/ui/icons/Y8-s1.svg"
       },
@@ -498,9 +499,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "3 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方共享制造物池",
-        "description": "立即制造 1d2+1 个魔力蛋糕，放入己方共享制造物池。每个食用后回复 2d8+4 MP，并获得斗殴 +10，持续 1 回合。",
+        "description": "立即制造 {{spell.effects.0.制造个数}} 个魔力蛋糕，放入己方共享制造物池。每个食用后回复 {{items.蛋糕MP.回复mp}} MP，并获得斗殴 {{items.蛋糕MP.技能加减值|modifier:斗殴|signed}}，持续 {{items.蛋糕MP.buff持续回合}} 回合。",
         "facts": [],
         "icon": "/ui/icons/Y8-s2.svg"
       },
@@ -510,11 +511,11 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身；品尝回复作用于食用者",
-        "description": "战斗开始时回复自身 2d8+4 HP。附带品尝回复的生命蛋糕在食用时，额外为食用者回复 2d8+4 HP。",
+        "description": "战斗开始时回复自身 {{spell.effects.0.回复hp}} HP。初始携带的生命蛋糕在食用时，额外为食用者回复 {{character.inventory.0.消费追加回复hp}} HP；“最后的款待-恢复”分发的生命蛋糕额外回复 {{skills.最后的款待-恢复.effects.0.消费追加回复hp}} HP。",
         "facts": [
-          "初始携带 4 个附带品尝回复的生命蛋糕；“最后的款待-恢复”分发的生命蛋糕同样附带该效果。"
+          "初始携带 {{character.inventory.0.count}} 个附带品尝回复的生命蛋糕；“最后的款待-恢复”分发的生命蛋糕同样附带该效果。"
         ],
         "icon": "/ui/icons/Y8-s3.svg"
       },
@@ -524,14 +525,14 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "5 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方存活或濒死主体",
         "description": "立即制造并分发生命蛋糕与魔力蛋糕，两类蛋糕分别放入己方主体的个人库存。",
         "facts": [
-          "生命蛋糕：食用后回复 2d8+4 HP，另触发一次 2d8+4 HP 的品尝回复，并获得闪避 +10，持续 1 回合。",
-          "魔力蛋糕：食用后回复 2d8+4 MP，并获得斗殴 +10，持续 1 回合。",
-          "按存活或濒死主体人数分配：1 人时自身每类 3 个；2～3 人时自身每类 1 个、队友每类 2 个。",
-          "4 人以上时，每类总量 min(6，2×人数−1)；超额先扣自身，再随机扣队友，两类分别分配。"
+          "生命蛋糕：食用后回复 {{items.蛋糕HP.回复hp}} HP，另触发一次 {{spell.effects.0.消费追加回复hp}} HP 的品尝回复，并获得闪避 {{items.蛋糕HP.技能加减值|modifier:闪避|signed}}，持续 {{items.蛋糕HP.buff持续回合}} 回合。",
+          "魔力蛋糕：食用后回复 {{items.蛋糕MP.回复mp}} MP，并获得斗殴 {{items.蛋糕MP.技能加减值|modifier:斗殴|signed}}，持续 {{items.蛋糕MP.buff持续回合}} 回合。",
+          "按存活或濒死主体人数分配：1 人时自身每类 {{spell.effects.0.分发人数覆盖.1.分发自留}} 个；2～3 人时自身每类 {{spell.effects.0.分发自留}} 个、队友每类 {{spell.effects.0.分发队友每人}} 个。",
+          "4 人以上时，每类总量 min({{spell.effects.0.分发给总数上限}}，{{spell.effects.0.分发给总数公式.每人}}×人数{{spell.effects.0.分发给总数公式.加|signed}})；超额先扣自身，再随机扣队友，两类分别分配。"
         ],
         "icon": "/ui/icons/Y8-s4.svg"
       },
@@ -541,9 +542,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "4 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方共享制造物池",
-        "description": "立即制造 1 个轻盈蛋糕，放入己方共享制造物池。食用后获得行动力 +5，持续 5 回合。",
+        "description": "立即制造 {{spell.effects.0.制造个数}} 个轻盈蛋糕，放入己方共享制造物池。食用后获得行动力 {{items.蛋糕轻盈.技能加减值|modifier:MOV|signed}}，持续 {{items.蛋糕轻盈.buff持续回合}} 回合。",
         "facts": [],
         "icon": "/ui/icons/Y8-s5.svg"
       },
@@ -553,9 +554,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "5 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方共享制造物池",
-        "description": "立即制造 1 个幸运蛋糕，放入己方共享制造物池。食用后，所有 D100 检定获得 1 颗奖励骰，持续 5 回合。",
+        "description": "立即制造 {{spell.effects.0.制造个数}} 个幸运蛋糕，放入己方共享制造物池。食用后，所有 D100 检定获得 {{items.蛋糕幸运.辅助效果值|bonus}} 颗奖励骰，持续 {{items.蛋糕幸运.buff持续回合}} 回合。",
         "facts": [],
         "icon": "/ui/icons/Y8-s6.svg"
       },
@@ -565,14 +566,14 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "8 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "己方存活或濒死主体",
         "description": "立即制造并分发轻盈蛋糕与幸运蛋糕，两类蛋糕分别放入己方主体的个人库存。",
         "facts": [
-          "轻盈蛋糕：食用后获得行动力 +5，持续 5 回合。",
-          "幸运蛋糕：食用后，所有 D100 检定获得 1 颗奖励骰，持续 5 回合。",
-          "按存活或濒死主体人数分配：1 人时自身每类 3 个；2～3 人时自身每类 1 个、队友每类 2 个。",
-          "4 人以上时，每类总量 min(6，2×人数−1)；超额先扣自身，再随机扣队友，两类分别分配。"
+          "轻盈蛋糕：食用后获得行动力 {{items.蛋糕轻盈.技能加减值|modifier:MOV|signed}}，持续 {{items.蛋糕轻盈.buff持续回合}} 回合。",
+          "幸运蛋糕：食用后，所有 D100 检定获得 {{items.蛋糕幸运.辅助效果值|bonus}} 颗奖励骰，持续 {{items.蛋糕幸运.buff持续回合}} 回合。",
+          "按存活或濒死主体人数分配：1 人时自身每类 {{spell.effects.0.分发人数覆盖.1.分发自留}} 个；2～3 人时自身每类 {{spell.effects.0.分发自留}} 个、队友每类 {{spell.effects.0.分发队友每人}} 个。",
+          "4 人以上时，每类总量 min({{spell.effects.0.分发给总数上限}}，{{spell.effects.0.分发给总数公式.每人}}×人数{{spell.effects.0.分发给总数公式.加|signed}})；超额先扣自身，再随机扣队友，两类分别分配。"
         ],
         "icon": "/ui/icons/Y8-s7.svg"
       }
@@ -581,7 +582,7 @@
       "蛋糕供同队存活或濒死单位食用，优先取个人库存，再取共享池。",
       "同种增益保留一份，重复食用刷新持续时间。携带个人生命蛋糕时，濒死会自动食用至脱离濒死或耗尽。"
     ],
-    "basic": "普通攻击基础骰：1d4+1d3；斗殴 40；基础闪避 65。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y9": {
     "emblem": "branch",
@@ -605,18 +606,18 @@
         "timing": "主动／附加动作",
         "reviewed": true,
         "cost": "实际召唤数量的一半，向上取整，消耗等量 MP",
-        "limits": "木·荣｜最多同时拥有 12 只生灵",
-        "description": "召唤 2d4+4 只生灵加入战斗。数量超过剩余名额时，按剩余名额召唤并计算费用；名额已满时无法施放，不消耗魔力。",
+        "limits": "木·荣｜最多同时拥有 {{summons.生灵.max_simultaneous}} 只生灵",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 只生灵加入战斗。数量超过剩余名额时，按剩余名额召唤并计算费用；名额已满时无法施放，不消耗魔力。",
         "facts": [
-          "生命：6",
-          "基础行动力：13",
-          "敏捷：85",
-          "斗殴：50",
-          "攻击伤害：1d4+1",
-          "闪避：42",
+          "生命：{{summons.生灵.HP}}",
+          "基础行动力：{{summons.生灵.MOV}}",
+          "敏捷：{{summons.生灵.DEX}}",
+          "斗殴：{{summonSkills.生灵.斗殴.val}}",
+          "攻击伤害：{{summonSkills.生灵.斗殴.dice}}",
+          "闪避：{{summons.生灵.闪避}}",
           "飞行：是",
           "防御反应：闪避、反击",
-          "持续：99 轮",
+          "持续：{{spell.effects.0.持续回合}} 轮",
           "两阶段共用存活上限，可在退场后补召。"
         ],
         "icon": "/ui/icons/Y9-s1.svg"
@@ -627,13 +628,13 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "掷 2d6，结果除以 2 向上取整，消耗等量 MP",
-        "limits": "木·荣｜友方或敌方单体｜射程 99 格",
-        "description": "以 85 的技能值检定。对敌方造成 4d6+7 伤害并回复自身生命；对友方造成 2d6 伤害，再为其附加持续 3 回合的回复。",
+        "cost": "{{spell._mp_formula|formula}}",
+        "limits": "木·荣｜友方或敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以 {{spell.effects.0.成功率}} 的技能值检定。对敌方造成 {{spell.effects.0.伤害骰}} 伤害并回复自身生命；对友方造成 {{spell.effects.0.友方伤害骰}} 伤害，再为其附加持续 {{spell.effects.0.友方延迟回复回合}} 回合的回复。",
         "facts": [
-          "敌方目标仅可格挡；护盾后仍有伤害时，按护盾前伤害的 25% 吸血。命中敌方后，为该敌方登记 min(护盾后伤害÷2 向下取整，2d6) 的回复总量；全盾吸收时不登记。",
-          "友方目标不进行防御反应；回复总量取 max(实际生命损失×2，4d6+3)。命中且全盾吸收时仍保留 4d6+3 的下限；未命中不登记回复。友方不会再获得敌方公式的第二份回复。",
-          "回复分 3 次轮首结算，每次取总量的三分之一，向下取整且至少 1 HP，余数不补发。"
+          "敌方目标仅可格挡；护盾后仍有伤害时，按护盾前伤害的 {{spell.effects.0.吸血比例|percent}}% 吸血。命中敌方后，为该敌方登记 min(护盾后伤害÷2 向下取整，{{spell.effects.0.敌方回复骰}}) 的回复总量；全盾吸收时不登记。",
+          "友方目标不进行防御反应；回复总量取 max(实际生命损失×2，{{spell.effects.0.友方延迟回复骰}})。命中且全盾吸收时仍保留 {{spell.effects.0.友方延迟回复骰}} 的下限；未命中不登记回复。友方不会再获得敌方公式的第二份回复。",
+          "回复分 {{spell.effects.0.友方延迟回复回合}} 次轮首结算，每次取总量除以 {{spell.effects.0.友方延迟回复回合}}，向下取整且至少 1 HP，余数不补发。"
         ],
         "icon": "/ui/icons/Y9-s2.svg"
       },
@@ -643,11 +644,11 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
-        "limits": "木·荣｜半径 20 格｜持续 3 回合",
-        "description": "创建随自身移动的生命领域。范围内的自身及己方单位获得敏捷 +10，存活单位于后续轮首分别回复 1d8 HP。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "木·荣｜半径 {{spell.effects.0.作用半径}} 格｜持续 {{spell.effects.0.持续回合}} 回合",
+        "description": "创建随自身移动的生命领域。范围内的自身及己方单位获得敏捷 {{spell.effects.1.技能加减值|modifier:敏捷|signed}}，存活单位于后续轮首分别回复 {{spell.effects.0.回复hp}} HP。",
         "facts": [
-          "施放时获得敏捷加值，随后两次轮首回复；转入木·枯时消散。",
+          "施放时获得敏捷加值，随后{{spell.effects.0.持续回合|minus:1|cn}}次轮首回复；转入木·枯时消散。",
           "重复领域的回复分别生效，敏捷加值不叠加；隔离单位和点燃的召唤物不受治疗。"
         ],
         "icon": "/ui/icons/Y9-s3.svg"
@@ -658,11 +659,11 @@
         "phase": 1,
         "timing": "被动",
         "reviewed": true,
-        "cost": "转换成功时消耗 1 MP 和 2d6 SAN；开战登记与失败检定不消耗资源",
+        "cost": "转换成功时消耗 {{spell.消耗mp}} MP 和 {{spell.消耗san}} SAN；开战登记与失败检定不消耗资源",
         "limits": "木·荣｜自身",
-        "description": "轮首按生命比例检查阶段转换：不高于上限的 2/3、1/2、1/3、1/6 时，对应成功率分别为 40%、60%、80%、100%。每档每场最多尝试一次，同轮由高到低尝试已达到且未尝试的档位，成功即转入木·枯并停止检定。",
+        "description": "轮首按生命比例检查阶段转换：不高于上限的 {{spell.effects.0.hp_thresholds.*.ratio|fraction|join:、}} 时，对应成功率分别为 {{spell.effects.0.hp_thresholds.*.rate|suffix:%|join:、}}。每档每场最多尝试一次，同轮由高到低尝试已达到且未尝试的档位，成功即转入木·枯并停止检定。",
         "facts": [
-          "成功时才扣除 1 MP 和 2d6 SAN；SAN 不足降至零，仍可转换。没有 1 MP 时不进行检定，也不消耗档位机会。",
+          "成功时才扣除 {{spell.消耗mp}} MP 和 {{spell.消耗san}} SAN；SAN 不足降至零，仍可转换。没有 {{spell.消耗mp}} MP 时不进行检定，也不消耗档位机会。",
           "转换后替换阶段技能，清除自身已有生领域，并点燃自身所有存活生灵；随后召唤的生灵也逐只点燃。"
         ],
         "icon": "/ui/icons/Y9-s4.svg"
@@ -674,20 +675,20 @@
         "timing": "主动／附加动作",
         "reviewed": true,
         "cost": "实际召唤数量的一半，向上取整，消耗等量 MP",
-        "limits": "木·枯｜最多同时拥有 12 只生灵",
-        "description": "召唤 2d4+4 只已点燃的生灵加入战斗，攻击伤害为 1d4+1。数量超过剩余名额时，按剩余名额召唤并计算费用；名额已满时无法施放，不消耗魔力。",
+        "limits": "木·枯｜最多同时拥有 {{summons.生灵.max_simultaneous}} 只生灵",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 只已点燃的生灵加入战斗，攻击伤害为 {{spell.effects.0.ignite_dmg_dice}}。数量超过剩余名额时，按剩余名额召唤并计算费用；名额已满时无法施放，不消耗魔力。",
         "facts": [
-          "生命：6",
-          "基础行动力：13",
-          "敏捷：85",
-          "斗殴：50",
-          "攻击伤害：1d4+1",
-          "闪避：42",
+          "生命：{{summons.生灵.HP}}",
+          "基础行动力：{{summons.生灵.MOV}}",
+          "敏捷：{{summons.生灵.DEX}}",
+          "斗殴：{{summonSkills.生灵.斗殴.val}}",
+          "攻击伤害：{{summonSkills.生灵.斗殴.dice}}",
+          "闪避：{{summons.生灵.闪避}}",
           "飞行：是",
           "防御反应：闪避、反击",
-          "持续：99 轮",
+          "持续：{{spell.effects.0.持续回合}} 轮",
           "两阶段共用存活上限，可在退场后补召。",
-          "每只已点燃的存活生灵每轮分别直接损失 3 HP，包括不在先攻表中代表整组的成员；不能接受治疗领域回复，攻击伤害不提高。"
+          "每只已点燃的存活生灵每轮分别直接损失 {{spell.effects.0.ignite_tick_dmg}} HP，包括不在先攻表中代表整组的成员；不能接受治疗领域回复，攻击伤害不提高。"
         ],
         "icon": "/ui/icons/Y9-s5.svg"
       },
@@ -697,11 +698,11 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "掷 2d6，结果除以 2 向上取整，消耗等量 MP",
-        "limits": "木·枯｜敌方单体｜射程 99 格",
-        "description": "以 85 的技能值检定，造成 2d8+4 伤害。目标仅可格挡。",
+        "cost": "{{spell._mp_formula|formula}}",
+        "limits": "木·枯｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以 {{spell.effects.0.成功率}} 的技能值检定，造成 {{spell.effects.0.伤害骰}} 伤害。目标仅可格挡。",
         "facts": [
-          "护盾后仍有伤害时，按护盾前伤害的 25% 吸血。"
+          "护盾后仍有伤害时，按护盾前伤害的 {{spell.effects.0.吸血比例|percent}}% 吸血。"
         ],
         "icon": "/ui/icons/Y9-s6.svg"
       },
@@ -711,11 +712,11 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
-        "limits": "木·枯｜半径 20 格｜持续 99 回合",
-        "description": "创建随自身移动的毁灭领域。范围内的自身及己方单位获得敏捷 +10、造成伤害提高 10% 和 1 颗攻击奖励骰；领域同时对范围内双方单位造成持续伤害。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "木·枯｜半径 {{spell.effects.0.作用半径}} 格｜持续 {{spell.effects.0.持续回合}} 回合",
+        "description": "创建随自身移动的毁灭领域。范围内的自身及己方单位获得敏捷 {{spell.effects.1.技能加减值|modifier:敏捷|signed}}、造成伤害提高 {{spell.effects.2.辅助效果值|abs}}% 和 {{spell.effects.3.辅助效果值|bonus}} 颗攻击奖励骰；领域同时对范围内双方单位造成持续伤害。",
         "facts": [
-          "随后 98 次轮首，对范围内双方各造成 2d4 基础伤害。",
+          "随后 {{spell.effects.0.持续回合|minus:1}} 次轮首，对范围内双方各造成 {{spell.effects.0.每回合伤害骰}} 基础伤害。",
           "同名领域的增益与每轮伤害不叠加；隔离单位不受影响。"
         ],
         "icon": "/ui/icons/Y9-s7.svg"
@@ -724,7 +725,7 @@
     "passives": [
       "生灵：同一主人的生灵共享位置、先攻与行动额度，各自保留生命和状态。每次组行动由可行动成员分别攻击一次；默认每轮 4 次组行动。两阶段共用存活上限。"
     ],
-    "basic": "普通攻击基础骰：未单独设定，依引擎默认规则；斗殴 60；基础闪避 50。"
+    "basic": "普通攻击基础骰：未单独设定，依引擎默认规则；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y10": {
     "emblem": "hummingbird",
@@ -747,9 +748,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "8 MP",
-        "limits": "自身及半径 4 格内存活己方单位",
-        "description": "为自身及范围内的己方主体、召唤物分别施加 3d6+4 点护盾，持续 5 回合，各目标分别掷骰。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身及半径 {{spell.effects.0.作用半径}} 格内存活己方单位",
+        "description": "为自身及范围内的己方主体、召唤物分别施加 {{spell.effects.0.护盾值}} 点护盾，持续 {{spell.effects.0.持续回合}} 回合，各目标分别掷骰。",
         "facts": [
           "护盾在目标受到伤害时吸收伤害，耗尽或持续时间结束后失效。施放后离开原范围，已经获得的护盾仍然保留。",
           "重复施放可为同一目标增加独立护盾，各份护盾分别记录数值与持续时间。"
@@ -762,9 +763,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
-        "limits": "自身及半径 8 格内存活己方单位",
-        "description": "立即为自身及范围内的己方主体、召唤物分别回复 1d4+2 HP，各目标分别掷骰，至多回复至各自的生命上限。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身及半径 {{spell.effects.0.作用半径}} 格内存活己方单位",
+        "description": "立即为自身及范围内的己方主体、召唤物分别回复 {{spell.effects.0.回复hp}} HP，各目标分别掷骰，至多回复至各自的生命上限。",
         "facts": [],
         "icon": "/ui/icons/Y10-s2.svg"
       },
@@ -774,16 +775,16 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "4 MP",
-        "limits": "同时至多 2 株｜每场累计至多召唤 3 株",
-        "description": "召唤 1 株藤蔓加入战斗，持续 5 回合。春晌拥有存活的己方所属藤蔓时，不能被敌方指定为目标。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "同时至多 {{summons.藤蔓.max_simultaneous}} 株｜每场累计至多召唤 {{summons.藤蔓.max_total_spawned}} 株",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 株藤蔓加入战斗，持续 {{spell.effects.0.持续回合}} 回合。春晌拥有存活的己方所属藤蔓时，不能被敌方指定为目标。",
         "facts": [
-          "生命：24",
-          "基础行动力：11",
-          "敏捷：15",
-          "鞭：60",
-          "攻击伤害：1d8+1d6",
-          "闪避：7",
+          "生命：{{summons.藤蔓.HP}}",
+          "基础行动力：{{summons.藤蔓.MOV}}",
+          "敏捷：{{summons.藤蔓.DEX}}",
+          "鞭：{{summonSkills.藤蔓.鞭.val}}",
+          "攻击伤害：{{summonSkills.藤蔓.鞭.dice}}",
+          "闪避：{{summons.藤蔓.闪避}}",
           "防御反应：闪避、反击",
           "藤蔓持续处于禁锢状态，无法移动或自动接近目标；可以在射程内攻击，攻击射程为 99 格。",
           "同一施法者的藤蔓组成召唤组，共享位置、先攻位置和行动额度，各自保留生命与状态。每次组行动，由当次能够行动的存活藤蔓分别攻击一次。未受其他效果影响时，每轮拥有 2 次组行动。",
@@ -798,16 +799,16 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "6 MP",
-        "limits": "最多同时拥有 12 只蜂鸟",
-        "description": "召唤 1d3 只蜂鸟加入战斗，持续 99 回合。数量超过剩余名额时，按剩余名额召唤，费用仍为 6 MP。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "最多同时拥有 {{summons.蜂鸟.max_simultaneous}} 只蜂鸟",
+        "description": "召唤 {{spell.effects.0.召唤个数}} 只蜂鸟加入战斗，持续 {{spell.effects.0.持续回合}} 回合。数量超过剩余名额时，按剩余名额召唤，费用仍为 {{spell.消耗mp}} MP。",
         "facts": [
-          "生命：12",
-          "基础行动力：14",
-          "敏捷：90",
-          "爪击：65",
-          "攻击伤害：1d4+1d4",
-          "闪避：65",
+          "生命：{{summons.蜂鸟.HP}}",
+          "基础行动力：{{summons.蜂鸟.MOV}}",
+          "敏捷：{{summons.蜂鸟.DEX}}",
+          "爪击：{{summonSkills.蜂鸟.爪击.val}}",
+          "攻击伤害：{{summonSkills.蜂鸟.爪击.dice}}",
+          "闪避：{{summons.蜂鸟.闪避}}",
           "飞行：是",
           "防御反应：闪避、反击",
           "同一施法者的蜂鸟组成召唤组，共享位置、先攻位置和行动额度，各自保留生命与状态。每次组行动，由当次能够行动的存活成员分别攻击一次。未受其他效果影响时，每轮拥有 4 次组行动。",
@@ -817,7 +818,7 @@
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d6+1d4；斗殴 65；基础闪避 60。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y11": {
     "emblem": "scythe",
@@ -840,12 +841,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "敌方单体｜射程 99 格",
-        "description": "以 80 的技能值检定，造成 1d10+1d8+6 伤害，并回复自身生命。目标可以反击或格挡，其本次防御反应承受 1 颗惩罚骰。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以 {{spell.effects.0.成功率}} 的技能值检定，造成 {{spell.effects.0.伤害骰}} 伤害，并回复自身生命。目标可以反击或格挡，其本次防御反应承受 {{spell.effects.0.辅助效果值|bonus}} 颗惩罚骰。",
         "facts": [
-          "镰刃余势额外提供 2d3 伤害；护盾后仍有伤害时，按护盾前伤害的 65% 吸血。",
-          "无论是否命中，全体可指定的存活敌人获得 5 轮致死骰劣势：掷两次取较大值。"
+          "镰刃余势额外提供 {{skills.镰刃余势.effects.0.辅助效果值|unsigned}} 伤害；护盾后仍有伤害时，按护盾前伤害的 {{spell.effects.0.吸血比例|percent}}% 吸血。",
+          "无论是否命中，全体可指定的存活敌人获得 {{spell.effects.1.持续回合}} 轮致死骰劣势：掷两次取较大值。"
         ],
         "icon": "/ui/icons/Y11-s1.svg"
       },
@@ -855,11 +856,11 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
-        "limits": "半径 8 格｜随自身移动",
-        "description": "创建持续 5 回合的黑雾，使范围内敌方单位闪避降低 20；自身获得 1 颗攻击奖励骰，持续 5 回合，并获得行动力 +5，持续 8 回合。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "半径 {{spell.effects.0.作用半径}} 格｜随自身移动",
+        "description": "创建持续 {{spell.effects.0.持续回合}} 回合的黑雾，使范围内敌方单位闪避降低 {{spell.effects.0.属性削减|modifier:闪避|abs}}；自身获得 {{spell.effects.1.辅助效果值|bonus}} 颗攻击奖励骰，持续 {{spell.effects.1.持续回合}} 回合，并获得行动力 {{spell.effects.2.技能加减值|modifier:MOV|signed}}，持续 {{spell.effects.2.持续回合}} 回合。",
         "facts": [
-          "形成或进入黑雾时，敌人有 50% 概率失去当前 MP 的 40%，蓝回复等量 MP。离开后再进入可重新触发。",
+          "形成或进入黑雾时，敌人有 {{spell.effects.0.on_enter_trigger_rate|percent}}% 概率失去当前 MP 的 {{spell.effects.0.on_enter_mp_drain_pct|percent}}%，蓝回复等量 MP。离开后再进入可重新触发。",
           "同名闪避削减与自身增益不叠加，入场触发分别判定；隔离单位不受领域影响。"
         ],
         "icon": "/ui/icons/Y11-s2.svg"
@@ -870,15 +871,15 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "战斗开始时获得 2d3 伤害加值，持续生效，适用于自身的普通攻击、法术攻击及反击。",
+        "description": "战斗开始时获得 {{spell.effects.0.辅助效果值|unsigned}} 伤害加值，持续生效，适用于自身的普通攻击、法术攻击及反击。",
         "facts": [],
         "icon": "/ui/icons/Y11-s3.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：2d4+4；斗殴 75；基础闪避 70。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y12": {
     "emblem": "portal",
@@ -901,9 +902,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "全体可被指定的存活敌方单位",
-        "description": "使目标的攻击检定承受 1 颗惩罚骰，持续 2 回合，适用于普通攻击、法术攻击及反击。",
+        "description": "使目标的攻击检定承受 {{spell.effects.0.辅助效果值|bonus}} 颗惩罚骰，持续 {{spell.effects.0.持续回合}} 回合，适用于普通攻击、法术攻击及反击。",
         "facts": [],
         "icon": "/ui/icons/Y12-s1.svg"
       },
@@ -913,9 +914,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
-        "limits": "敌方单体｜射程 99 格",
-        "description": "以 75 的技能值检定，造成 1d6 伤害。目标仅可格挡，该攻击不触发贯穿伤害。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以 {{spell.effects.0.成功率}} 的技能值检定，造成 {{spell.effects.0.伤害骰}} 伤害。目标仅可格挡，该攻击不触发贯穿伤害。",
         "facts": [],
         "icon": "/ui/icons/Y12-s2.svg"
       },
@@ -925,9 +926,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身及全体存活己方单位",
-        "description": "使目标的攻击检定获得 1 颗奖励骰，持续 2 回合，适用于普通攻击、法术攻击及反击。",
+        "description": "使目标的攻击检定获得 {{spell.effects.0.辅助效果值|bonus}} 颗奖励骰，持续 {{spell.effects.0.持续回合}} 回合，适用于普通攻击、法术攻击及反击。",
         "facts": [],
         "icon": "/ui/icons/Y12-s3.svg"
       },
@@ -937,60 +938,61 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "8 MP",
-        "limits": "每次召唤 1 只｜冷却 2 回合",
-        "description": "从玄武、朱雀、龙虎中等概率随机召唤 1 只尚未召唤过的召唤物，持续 99 回合。每种召唤物每名施法者每场至多召唤 1 次，死亡后也不会重新进入随机池。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "每次召唤 {{spell.effects.0.召唤个数}} 只｜冷却 {{spell.effects.0.cooldown_rounds}} 回合",
+        "description": "从玄武、朱雀、龙虎中等概率随机召唤 {{spell.effects.0.召唤个数}} 只尚未召唤过的召唤物，持续 {{spell.effects.0.持续回合}} 回合。每种召唤物每名施法者每场至多召唤 1 次，死亡后也不会重新进入随机池。",
         "facts": [
           "### 召唤与保护",
           "拥有存活的玄武、朱雀或龙虎时，斯瑞提卡不能被敌方指定为目标。此保护不阻挡领域效果；三合一不提供此项保护。",
           "三种召唤物全部召唤过后，无法再次施放，不消耗 MP、行动或冷却；仅余一种候选时必定召唤该种。召唤物使用自身 MP 和冷却施法，可由自动行动选择法术。",
           "### 玄武",
-          "生命：100",
-          "基础行动力：6",
-          "敏捷：30",
-          "闪避：15",
-          "格挡技能值：75",
-          "盾牌耐久：100",
+          "生命：{{summons.玄武.HP}}",
+          "基础行动力：{{summons.玄武.MOV}}",
+          "敏捷：{{summons.玄武.DEX}}",
+          "闪避：{{summons.玄武.闪避}}",
+          "格挡技能值：{{summons.玄武.格挡}}",
+          "盾牌耐久：{{summons.玄武.shield_block}}",
+          "自动格挡反应权重：{{summons.玄武.react_block}}；盾牌格挡率：{{summons.玄武.shield_block_rate|percent}}%",
           "占地：2×2 格",
           "每轮主动行动：2 次",
           "防御反应：闪避、反击、格挡",
-          "盾击、盾牌冲撞每次消耗 1 MP。盾击以 50 的技能值检定，造成 1d4+3d6+3 伤害。盾牌冲撞作为攻击招式时，以 50 的技能值检定，造成 3d6+3 伤害。",
-          "主动施放盾牌冲撞时，费用为 1 MP，以 50 的技能值检定，造成 3d6 伤害，可以被闪避、反击或格挡，不触发贯穿伤害。",
+          "盾击、盾牌冲撞作为攻击招式时，费用分别为 {{summonSkills.玄武.盾击.mp_cost}} MP、{{summonSkills.玄武.盾牌冲撞.mp_cost}} MP。盾击以 {{summonSkills.玄武.盾击.val}} 的技能值检定，造成 {{summonSkills.玄武.盾击.dice}} 伤害。盾牌冲撞作为攻击招式时，以 {{summonSkills.玄武.盾牌冲撞.val}} 的技能值检定，造成 {{summonSkills.玄武.盾牌冲撞.dice}} 伤害。",
+          "主动施放盾牌冲撞时，费用为 {{summonSpells.玄武.盾牌冲撞.消耗mp}} MP，以 {{summonSpells.玄武.盾牌冲撞.effects.0.成功率}} 的技能值检定，造成 {{summonSpells.玄武.盾牌冲撞.effects.0.伤害骰}} 伤害，可以被闪避、反击或格挡，不触发贯穿伤害。",
           "玄武可使用格挡反应，也可格挡通常不可反应的法术；生命与盾牌耐久分别计算。",
           "### 朱雀",
-          "生命：75",
-          "基础行动力：14",
-          "敏捷：90",
-          "闪避：85",
+          "生命：{{summons.朱雀.HP}}",
+          "基础行动力：{{summons.朱雀.MOV}}",
+          "敏捷：{{summons.朱雀.DEX}}",
+          "闪避：{{summons.朱雀.闪避}}",
           "飞行：是",
           "每轮主动行动：4 次",
           "防御反应：闪避、反击",
-          "爪击、俯冲每次消耗 1 MP。爪击以 75 的技能值检定，造成 2d6+4 伤害。俯冲以 70 的技能值检定，造成 2d8+1d6+4 伤害。",
-          "主动施放俯冲时，费用为 1 MP，目标可以闪避、反击或格挡，不触发贯穿伤害。",
+          "爪击、俯冲作为攻击招式时，费用分别为 {{summonSkills.朱雀.爪击.mp_cost}} MP、{{summonSkills.朱雀.俯冲.mp_cost}} MP。爪击以 {{summonSkills.朱雀.爪击.val}} 的技能值检定，造成 {{summonSkills.朱雀.爪击.dice}} 伤害。俯冲以 {{summonSkills.朱雀.俯冲.val}} 的技能值检定，造成 {{summonSkills.朱雀.俯冲.dice}} 伤害。",
+          "主动施放俯冲时，费用为 {{summonSpells.朱雀.俯冲.消耗mp}} MP，目标可以闪避、反击或格挡，不触发贯穿伤害。",
           "### 龙虎",
-          "生命：125",
-          "魔力：50",
-          "基础行动力：11",
-          "敏捷：60",
-          "斗殴：80",
-          "闪避：40",
+          "生命：{{summons.龙虎.HP}}",
+          "魔力：{{summons.龙虎.MP}}",
+          "基础行动力：{{summons.龙虎.MOV}}",
+          "敏捷：{{summons.龙虎.DEX}}",
+          "斗殴：{{summonSkills.龙虎.斗殴.val}}",
+          "闪避：{{summons.龙虎.闪避}}",
           "每轮主动行动：3 次",
           "防御反应：闪避、反击",
-          "斗殴以 80 的技能值检定，造成 2d6 伤害。",
-          "主动施放水火弹时，费用为 1 MP，以 70 的技能值检定，造成 1d4+2d6+2 伤害。目标可以闪避、反击或格挡，不触发贯穿伤害。",
-          "治愈领域消耗自身 1 MP，冷却 3 轮，半径 8 格，持续 3 轮，为领域选中的自身及其他友方回复 2d6 HP。",
+          "斗殴以 {{summonSkills.龙虎.斗殴.val}} 的技能值检定，造成 {{summonSkills.龙虎.斗殴.dice}} 伤害。",
+          "主动施放水火弹时，费用为 {{summonSpells.龙虎.水火弹.消耗mp}} MP，以 {{summonSpells.龙虎.水火弹.effects.0.成功率}} 的技能值检定，造成 {{summonSpells.龙虎.水火弹.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡，不触发贯穿伤害。",
+          "治愈领域消耗自身 {{summonSpells.龙虎.治愈领域.消耗mp}} MP，冷却 {{summonSpells.龙虎.治愈领域.effects.0.cooldown_rounds}} 轮，半径 {{summonSpells.龙虎.治愈领域.effects.0.zone_半径}} 格，持续 {{summonSpells.龙虎.治愈领域.effects.0.zone_持续}} 轮，为领域选中的自身及其他友方回复 {{summonSpells.龙虎.治愈领域.effects.0.zone_回复hp}} HP。",
           "### 三合一",
           "轮首按主人分别检查合体：该主人已召唤过玄武、朱雀、龙虎，且其三类召唤物仅余一只存活时，该存活者转为三合一；每名主人每场至多一次。其他主人及阵营的召唤物不参与本次资格统计。",
-          "合体后完整采用三合一属性：生命及生命上限 200、魔力及魔力上限 50、基础行动力 13、敏捷 80、闪避 60、飞行、盾牌耐久 50、格挡技能值 75；不保留原召唤物的主动法术。",
-          "三合一攻击技能：盾击检定值 70，伤害 1d4+3d6+4；爪击检定值 75，伤害 2d6+6；水火弹检定值 70，伤害 1d4+2d6+2。每次使用其中一项消耗自身 1 MP。",
-          "水火弹的连击与未造成伤害时的溅射仍保留当前入口差异，尚未统一：自动行动有额外攻击，显式选择技能仅执行首击。溅射沿用主人至少 10 MP 时扣除 10 MP、对全体可被指定的存活敌方分别直接扣除 4d10÷2 生命（向下取整）的既有处理。",
-          "三合一可以闪避、反击或格挡；也可格挡通常不可反应的法术。斯瑞提卡可使用自身 85 的格挡技能，由仍有盾牌耐久的三合一承担成功格挡后的伤害：先消耗盾牌耐久，超出部分扣除三合一生命。"
+          "合体后完整采用三合一属性：生命及生命上限 {{summons.三合一.HP}}、魔力及魔力上限 {{summons.三合一.MP}}、基础行动力 {{summons.三合一.MOV}}、敏捷 {{summons.三合一.DEX}}、闪避 {{summons.三合一.闪避}}、飞行、盾牌耐久 {{summons.三合一.shield_block}}、格挡技能值 {{summons.三合一.格挡}}；不保留原召唤物的主动法术。",
+          "三合一攻击技能：盾击检定值 {{summonSkills.三合一.盾击.val}}，伤害 {{summonSkills.三合一.盾击.dice}}，费用 {{summonSkills.三合一.盾击.mp_cost}} MP；爪击检定值 {{summonSkills.三合一.爪击.val}}，伤害 {{summonSkills.三合一.爪击.dice}}，费用 {{summonSkills.三合一.爪击.mp_cost}} MP；水火弹检定值 {{summonSkills.三合一.水火弹.val}}，伤害 {{summonSkills.三合一.水火弹.dice}}，费用 {{summonSkills.三合一.水火弹.mp_cost}} MP。",
+          "水火弹的连击与未造成伤害时的溅射仍保留当前入口差异，尚未统一：自动行动有额外攻击，显式选择技能仅执行首击。溅射沿用主人至少 {{summonSkills.三合一.水火弹.on_whiff_mp_cost}} MP 时扣除 {{summonSkills.三合一.水火弹.on_whiff_mp_cost}} MP、对全体可被指定的存活敌方分别直接扣除 {{summonSkills.三合一.水火弹.on_whiff_aoe_dmg}}÷2 生命（向下取整）的既有处理。",
+          "三合一可以闪避、反击或格挡；也可格挡通常不可反应的法术。斯瑞提卡可使用自身 {{character.attrs.格挡}} 的格挡技能，由仍有盾牌耐久的三合一承担成功格挡后的伤害：先消耗盾牌耐久，超出部分扣除三合一生命。"
         ],
         "icon": "/ui/icons/Y12-s4.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d3+1d4；斗殴 45；基础闪避 80。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y13": {
     "emblem": "giant",
@@ -1013,11 +1015,12 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "自身魔力消耗降低 100%，技能施放仍至少消耗 1 MP。",
+        "description": "自身魔力消耗降低 {{spell.effects.0.辅助效果值|abs}}%，生效后按该比例结算技能费用，最低为 0 MP。",
         "facts": [
-          "此减免只影响技能施放费用；「魔力护体」代替生命损失扣除的魔力不享受减免。"
+          "此减免只影响技能施放费用；「魔力护体」代替生命损失扣除的魔力不享受减免。",
+          "开战时先支付本技能的 {{spell.消耗mp}} MP，再获得减免；后续被动按减免后的费用结算。"
         ],
         "icon": "/ui/icons/Y13-s1.svg"
       },
@@ -1027,9 +1030,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "基础 {{spell.消耗mp}} MP；魔力永驻生效后为 {{spell.消耗mp|mpAfterReduction:skills.魔力永驻.effects.0.辅助效果值}} MP",
         "limits": "自身",
-        "description": "自身变身后常驻飞行，获得飞行提供的 8 点行动力，并额外获得 5 点行动力，两项加成叠加。",
+        "description": "自身变身后常驻飞行，获得飞行提供的额外行动力，并额外获得 {{spell.effects.0.技能加减值|modifier:行动力}} 点行动力，两项加成叠加。",
         "facts": [],
         "icon": "/ui/icons/Y13-s2.svg"
       },
@@ -1039,9 +1042,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "基础 {{spell.消耗mp}} MP；魔力永驻生效后为 {{spell.消耗mp|mpAfterReduction:skills.魔力永驻.effects.0.辅助效果值}} MP",
         "limits": "自身",
-        "description": "自身获得 1 颗攻击奖励骰，适用于普通攻击、法术攻击及反击检定。",
+        "description": "自身获得 {{spell.effects.0.辅助效果值|bonus}} 颗攻击奖励骰，适用于普通攻击、法术攻击及反击检定。",
         "facts": [],
         "icon": "/ui/icons/Y13-s3.svg"
       },
@@ -1051,9 +1054,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "开战 1 MP；每代替 1 HP 损失消耗 1 MP",
+        "cost": "开战基础 {{spell.消耗mp}} MP，魔力永驻生效后为 {{spell.消耗mp|mpAfterReduction:skills.魔力永驻.effects.0.辅助效果值}} MP；每代替 1 HP 损失消耗 {{spell.effects.0.辅助效果值}} MP",
         "limits": "自身",
-        "description": "自身将要损失 HP 时，优先按 1 MP 代替 1 HP 的比例扣除魔力；魔力不足以代替的部分仍扣除 HP。",
+        "description": "自身将要损失 HP 时，优先按 {{spell.effects.0.辅助效果值}} MP 代替 1 HP 的比例扣除魔力；魔力不足以代替的部分仍扣除 HP。",
         "facts": [
           "每次折算的生命损失最多等于受击前的剩余 HP，超出该值的伤害不增加本次魔力支出。此魔力支出不受「魔力永驻」减免。"
         ],
@@ -1061,7 +1064,7 @@
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d6+1d4；斗殴 80；基础闪避 25。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y1": {
     "emblem": "flame",
@@ -1084,9 +1087,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "战斗开始时获得 1 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。",
+        "description": "战斗开始时获得 {{spell.effects.0.辅助效果值|bonus}} 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。",
         "facts": [],
         "icon": "/ui/icons/Y1-s1.svg"
       },
@@ -1096,17 +1099,17 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "敌方单体｜射程 99 格",
-        "description": "发动一次火焰攻击，以自身最佳近战技能检定，造成 2d6+1d8 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "发动一次火焰攻击，以自身最佳近战技能检定，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
-          "命中后附加灼烧，每轮造成 2d4+2 伤害，持续 4 轮。多次命中产生的灼烧分别生效。"
+          "命中后附加灼烧，每轮造成 {{spell.effects.0.每回合伤害骰}} 伤害，持续 {{spell.effects.0.持续回合}} 轮。多次命中产生的灼烧分别生效。"
         ],
         "icon": "/ui/icons/Y1-s2.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：2d6；斗殴 70；基础闪避 70。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y14": {
     "emblem": "cartridge",
@@ -1129,11 +1132,11 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "自身｜三种卡带切换共享 3 轮冷却",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身｜三种卡带切换共享 {{character.passive_rules.cartridge.cooldown}} 轮冷却",
         "description": "切换为魂斗罗卡带，启用像素射击、S 弹幕、L 型贯穿激光及残机替身。普通攻击改用像素射击的伤害与射程。",
         "facts": [
-          "共享 3 轮切换冷却；不能加载当前或本场已弹出的卡带。"
+          "共享 {{character.passive_rules.cartridge.cooldown}} 轮切换冷却；不能加载当前或本场已弹出的卡带。"
         ],
         "icon": "/ui/icons/Y14-s1.svg"
       },
@@ -1143,11 +1146,11 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "自身｜三种卡带切换共享 3 轮冷却",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身｜三种卡带切换共享 {{character.passive_rules.cartridge.cooldown}} 轮冷却",
         "description": "切换为最终幻想卡带，启用重剑、极限槽、三连斩及极限技。每次进入该卡带时，免费进入迅捷模式，普通攻击随重剑模式变化。",
         "facts": [
-          "初始卡带；进入时自动采用迅捷模式。共享 3 轮切换冷却；不能加载当前或本场已弹出的卡带。"
+          "初始卡带；进入时自动采用迅捷模式。共享 {{character.passive_rules.cartridge.cooldown}} 轮切换冷却；不能加载当前或本场已弹出的卡带。"
         ],
         "icon": "/ui/icons/Y14-s2.svg"
       },
@@ -1157,11 +1160,11 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "自身｜三种卡带切换共享 3 轮冷却",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身｜三种卡带切换共享 {{character.passive_rules.cartridge.cooldown}} 轮冷却",
         "description": "切换为音速索尼克卡带，启用金环、回旋踢、音速冲刺、光速救援及金环回收。普通攻击改用回旋踢的伤害与射程。",
         "facts": [
-          "共享 3 轮切换冷却；不能加载当前或本场已弹出的卡带。"
+          "共享 {{character.passive_rules.cartridge.cooldown}} 轮切换冷却；不能加载当前或本场已弹出的卡带。"
         ],
         "icon": "/ui/icons/Y14-s3.svg"
       },
@@ -1171,9 +1174,9 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "魂斗罗卡带｜敌方单体｜射程 6 格",
-        "description": "以基础检定值 70 发动一次射击，造成 2d6 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "魂斗罗卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次射击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
           "魂斗罗卡带的普通攻击采用相同的基础伤害与射程。"
         ],
@@ -1185,9 +1188,9 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP",
-        "limits": "魂斗罗卡带｜敌方单体｜射程 8 格",
-        "description": "对所选敌人连续发动三段攻击，每段以基础检定值 70 分别检定，造成 2d6 伤害。目标可以对每段攻击分别闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "魂斗罗卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "对所选敌人连续发动{{spell.effects|count|cn}}段攻击，每段以基础检定值 {{spell.effects.*.成功率|unique|join:、}} 分别检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。目标可以对每段攻击分别闪避、反击或格挡。",
         "facts": [],
         "icon": "/ui/icons/Y14-s5.svg"
       },
@@ -1197,9 +1200,9 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP",
-        "limits": "魂斗罗卡带｜敌方单体｜射程 8 格",
-        "description": "以基础检定值 70 发动一次集中射击，造成 2d10+1d6 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "魂斗罗卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次集中射击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [],
         "icon": "/ui/icons/Y14-s6.svg"
       },
@@ -1209,9 +1212,9 @@
         "phase": 1,
         "timing": "主动",
         "reviewed": true,
-        "cost": "7 MP",
-        "limits": "魂斗罗卡带｜敌方单体｜射程 8 格",
-        "description": "以基础检定值 70 发动一次激光攻击，造成 3d8 伤害。目标不能闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "魂斗罗卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次激光攻击，造成 {{spell.effects.0.伤害骰}} 伤害。目标不能闪避、反击或格挡。",
         "facts": [],
         "icon": "/ui/icons/Y14-s7.svg"
       },
@@ -1221,12 +1224,12 @@
         "phase": 1,
         "timing": "被动",
         "reviewed": true,
-        "cost": "触发时消耗 8 MP",
+        "cost": "触发时消耗 {{spell.消耗mp}} MP",
         "limits": "魂斗罗卡带｜每场战斗最多触发一次",
-        "description": "进入魂斗罗卡带时免费获得残机替身。自身生命降至零时，若剩余魔力不少于 8 MP，则消耗 8 MP，以 1 HP 留在战场。",
+        "description": "进入魂斗罗卡带时免费获得残机替身。自身生命降至零时，若剩余魔力不少于 {{spell.消耗mp}} MP，则消耗 {{spell.消耗mp}} MP，以 {{spell.effects.0.respawn_hp}} HP 留在战场。",
         "facts": [
           "触发后永久弹出魂斗罗卡带，本场不能再次加载，并自动切换至尚未弹出的卡带，优先选择最终幻想，其次为音速索尼克。已有卡带切换冷却继续计算。",
-          "触发时停留在原位置，不发生随机位移。魔力不足 8 MP 时不能触发，按正常濒死与死亡规则处理。"
+          "触发时停留在原位置，不发生随机位移。魔力不足 {{spell.消耗mp}} MP 时不能触发，按正常濒死与死亡规则处理。"
         ],
         "icon": "/ui/icons/Y14-s8.svg"
       },
@@ -1236,9 +1239,9 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "最终幻想卡带·迅捷模式｜敌方单体｜射程 2 格",
-        "description": "以基础检定值 70 发动一次重剑攻击，造成 1d8+1d6+db 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "最终幻想卡带·迅捷模式｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次重剑攻击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
           "迅捷模式下，普通攻击采用相同的基础伤害与射程。"
         ],
@@ -1250,9 +1253,9 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "最终幻想卡带·勇气模式｜敌方单体｜射程 2 格",
-        "description": "以基础检定值 70 发动一次重剑攻击，造成 1d8+1d6+4+db 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "最终幻想卡带·勇气模式｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次重剑攻击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
           "勇气模式下，普通攻击采用相同的基础伤害与射程。本技能的主动施放不额外获得勇气模式的伤害骰优势。"
         ],
@@ -1264,9 +1267,9 @@
         "phase": 2,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "最终幻想卡带｜自身｜不能重复切换至正在使用的模式",
-        "description": "进入迅捷模式，自身行动力增加 5，并获得 1 颗攻击奖励骰；启用「重剑·迅捷」，普通攻击采用迅捷重剑的伤害。",
+        "description": "进入迅捷模式，自身行动力增加 {{spell.effects.0.技能加减值|modifier:行动力}}，并获得 {{spell.effects.1.辅助效果值|bonus}} 颗攻击奖励骰；启用「重剑·迅捷」，普通攻击采用迅捷重剑的伤害。",
         "facts": [
           "两模式互斥；离开卡带时结束，重新进入自动恢复迅捷。"
         ],
@@ -1278,9 +1281,9 @@
         "phase": 2,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "最终幻想卡带｜自身｜不能重复切换至正在使用的模式",
-        "description": "进入勇气模式，自身行动力降低 2，普通攻击、反击及直接伤害法术获得伤害骰优势；启用「重剑·勇气」，普通攻击采用勇气重剑的伤害。",
+        "description": "进入勇气模式，自身行动力降低 {{spell.effects.0.技能加减值|modifier:行动力|abs}}，普通攻击、反击及直接伤害法术获得伤害骰优势；启用「重剑·勇气」，普通攻击采用勇气重剑的伤害。",
         "facts": [
           "困难及更高成功等级已有的伤害优势不重复叠加。两模式互斥，离开卡带时结束。"
         ],
@@ -1292,12 +1295,12 @@
         "phase": 2,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "自身｜极限值上限 5 点",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身｜极限值上限 {{spell.effects.0.max_value}} 点",
         "description": "进入最终幻想卡带时建立极限槽，初始为 0 点。每轮开始增加 1 点极限值。",
         "facts": [
-          "上限：5 点",
-          "造成或受到实际生命伤害各 +1，每类每轮限一次；勇气模式成功反击另 +1，每轮限一次。",
+          "上限：{{spell.effects.0.max_value}} 点",
+          "造成或受到实际生命伤害各 {{character.passive_rules.cartridge.event_gain|signed}}，每类每轮限一次；勇气模式成功反击另 {{character.passive_rules.cartridge.event_gain|signed}}，每轮限一次。",
           "其他己方主体首次濒死各 +2；离开卡带保留数值，仍获得轮首与队友濒死增长。"
         ],
         "icon": "/ui/icons/Y14-s13.svg"
@@ -1308,9 +1311,9 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "6 MP",
-        "limits": "最终幻想卡带｜敌方单体｜射程 6 格",
-        "description": "对所选敌人连续发动三段攻击，每段以基础检定值 70 分别检定。三段基础伤害依次为 1d8+2+1d4+db、1d8+2+db、1d8+2+1d6+db。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "最终幻想卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "对所选敌人连续发动{{spell.effects|count|cn}}段攻击，每段以基础检定值 {{spell.effects.*.成功率|unique|join:、}} 分别检定。各段基础伤害依次为 {{spell.effects.*.伤害骰|join:、}}。",
         "facts": [
           "目标可以对每段攻击分别闪避、反击或格挡。"
         ],
@@ -1322,9 +1325,9 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "6 MP",
-        "limits": "最终幻想卡带｜敌方单体｜射程 6 格",
-        "description": "以基础检定值 70 发动一次集中斩击，造成 3d8+2+db 伤害。目标不能闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "最终幻想卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次集中斩击，造成 {{spell.effects.0.伤害骰}} 伤害。目标不能闪避、反击或格挡。",
         "facts": [],
         "icon": "/ui/icons/Y14-s15.svg"
       },
@@ -1334,9 +1337,9 @@
         "phase": 2,
         "timing": "主动",
         "reviewed": true,
-        "cost": "10 MP、5 点极限值",
-        "limits": "最终幻想卡带｜每场战斗限一次｜敌方单体｜射程 5 格",
-        "description": "极限槽达到 5 点时可以发动，消耗全部 5 点极限值，以基础检定值 100 造成 3d10+db 伤害。目标不能闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP、{{spell.counter_required.1}} 点极限值",
+        "limits": "最终幻想卡带｜每场战斗限一次｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "极限槽达到 {{spell.counter_required.1}} 点时可以发动，消耗全部 {{spell.counter_required.1}} 点极限值，以基础检定值 {{spell.effects.0.成功率}} 造成 {{spell.effects.0.伤害骰}} 伤害。目标不能闪避、反击或格挡。",
         "facts": [],
         "icon": "/ui/icons/Y14-s16.svg"
       },
@@ -1346,9 +1349,9 @@
         "phase": 3,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "音速索尼克卡带｜自身｜上限 3 枚",
-        "description": "成功闪避攻击，或在发动「音速冲刺」的同一轮累计实际移动至少 8 格，可以获得 1 枚金环。两种方式共享每轮最多获得 1 枚的限制。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "音速索尼克卡带｜自身｜上限 {{spell.effects.0.max_value}} 枚",
+        "description": "成功闪避攻击，或在发动「音速冲刺」的同一轮累计实际移动至少 {{character.passive_rules.cartridge.dash_distance}} 格，可以获得 1 枚金环。两种方式共享每轮最多获得 1 枚的限制。",
         "facts": [
           "因伤害实际损失 HP 时失去 1 枚金环，最低降至 0 枚。切换卡带时金环清空，再次进入音速索尼克卡带不会恢复。",
           "金环用于支付两种「金环回收」的额外费用。"
@@ -1361,9 +1364,9 @@
         "phase": 3,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "音速索尼克卡带｜敌方单体｜射程 2 格",
-        "description": "以基础检定值 70 发动一次踢击，造成 1d4+2+db 伤害。目标可以闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "音速索尼克卡带｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次踢击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
           "音速索尼克卡带的普通攻击采用相同的基础伤害与射程。"
         ],
@@ -1375,11 +1378,11 @@
         "phase": 3,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "3 MP",
-        "limits": "音速索尼克卡带｜自身｜持续 1 轮",
-        "description": "自身行动力增加 4，获得 1 颗攻击奖励骰及飞行。飞行另提供 8 点行动力，与本技能的 4 点加成叠加。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "音速索尼克卡带｜自身｜持续 {{spell.effects.0.持续回合}} 轮",
+        "description": "自身行动力增加 {{spell.effects.0.技能加减值|modifier:行动力}}，获得 {{spell.effects.1.辅助效果值|bonus}} 颗攻击奖励骰及飞行。飞行另提供额外行动力，与本技能的 {{spell.effects.0.技能加减值|modifier:行动力}} 点加成叠加。",
         "facts": [
-          "当轮累计移动至少 8 格可获得金环，与成功闪避共享每轮 1 枚上限；离开卡带后结束。"
+          "当轮累计移动至少 {{character.passive_rules.cartridge.dash_distance}} 格可获得金环，与成功闪避共享每轮 1 枚上限；离开卡带后结束。"
         ],
         "icon": "/ui/icons/Y14-s19.svg"
       },
@@ -1389,9 +1392,9 @@
         "phase": 3,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
-        "limits": "音速索尼克卡带｜其他存活同队友方｜基础射程 8 格，启用全局射程覆盖时 99 格｜护盾持续 2 轮",
-        "description": "传送到所选友方周围最近的合法空格，再以自身最终位置为中心，为半径 1 格内的自身、友方与敌方分别生成 1d10 点护盾。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "音速索尼克卡带｜其他存活同队友方｜基础射程 {{spell.effects.0.射程}} 格，启用全局射程覆盖时 99 格｜护盾持续 {{spell.effects.1.持续回合}} 轮",
+        "description": "传送到所选友方周围最近的合法空格，再以自身最终位置为中心，为半径 {{spell.effects.1.作用半径}} 格内的自身、友方与敌方分别生成 {{spell.effects.1.护盾值}} 点护盾。",
         "facts": [
           "落点按距离由近到远搜索，斜向一步也算一格；同距按列、行升序选择。没有合法空格或目标不合法时，不消耗 MP 或行动。",
           "传送后，后续攻击与技能均以新位置计算距离。"
@@ -1404,9 +1407,9 @@
         "phase": 3,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP、1 枚金环",
+        "cost": "{{spell.消耗mp}} MP、{{spell.cost_counter_amount}} 枚金环",
         "limits": "音速索尼克卡带｜自身",
-        "description": "消耗 1 枚金环，为自身回复 1d8+2 HP。",
+        "description": "消耗 {{spell.cost_counter_amount}} 枚金环，为自身回复 {{spell.effects.0.回复hp}} HP。",
         "facts": [],
         "icon": "/ui/icons/Y14-s21.svg"
       },
@@ -1416,9 +1419,9 @@
         "phase": 3,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP、2 枚金环",
+        "cost": "{{spell.消耗mp}} MP、{{spell.cost_counter_amount}} 枚金环",
         "limits": "音速索尼克卡带｜自身",
-        "description": "消耗 2 枚金环，为自身回复 1d8+2 HP，并获得 1d8 点护盾，持续 2 轮。回复量与护盾容量分别掷骰。",
+        "description": "消耗 {{spell.cost_counter_amount}} 枚金环，为自身回复 {{spell.effects.0.回复hp}} HP，并获得 {{spell.effects.1.护盾值}} 点护盾，持续 {{spell.effects.1.持续回合}} 轮。回复量与护盾容量分别掷骰。",
         "facts": [],
         "icon": "/ui/icons/Y14-s22.svg"
       }
@@ -1426,7 +1429,7 @@
     "passives": [
       "卡带切换：清空金环，结束旧卡带的重剑模式、冲刺和替身；保留极限槽与独立护盾。"
     ],
-    "basic": "普通攻击基础骰：1d4+db；斗殴 70；基础闪避 60。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y16": {
     "emblem": "quill",
@@ -1449,12 +1452,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "3d3 MP",
-        "limits": "己方全体，含自身｜每名单位最多 2 层",
-        "description": "为己方全体施加一层灵感，持续 2d3 轮。持续时间在本次施放时掷骰确定。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "己方全体，含自身｜每名单位最多 {{spell.effects.0.可叠加}} 层",
+        "description": "为己方全体施加一层灵感，持续 {{spell.effects.0.持续回合}} 轮。持续时间在本次施放时掷骰确定。",
         "facts": [
-          "施放技能消耗 MP 或完成写作检定后，回合结束时每层回复 2d3 MP，每轮限一次。",
-          "最多 2 层；满层时刷新剩余时间较短的一层。"
+          "施放技能消耗 MP 或完成写作检定后，回合结束时每层回复 {{spell.effects.0.turn_mp_refund}} MP，每轮限一次。",
+          "最多 {{spell.effects.0.可叠加}} 层；满层时刷新剩余时间较短的一层。"
         ],
         "icon": "/ui/icons/Y16-s1.svg"
       },
@@ -1464,14 +1467,14 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "变身前 3d4 MP；变身后 2d3 MP",
-        "limits": "召唤 1 个虚假之月｜每名施法者同时最多 1 个，本场累计最多召唤 1 个｜存在 99 轮",
-        "description": "召唤虚假之月，并为施放时的己方全体建立月亮链接，包含自身。链接有效时，每名受益单位获得 1 颗全 D100 检定奖励骰。",
+        "cost": "变身前 {{spell.消耗mp}} MP；变身后 {{spell._mp_formula_transformed}} MP",
+        "limits": "召唤 {{spell.effects.0.召唤个数}} 个虚假之月｜每名施法者同时最多 {{summons.虚假之月.max_simultaneous}} 个，本场累计最多召唤 {{spell.effects.0.召唤个数}} 个｜存在 {{spell.effects.0.持续回合}} 轮",
+        "description": "召唤虚假之月，并为施放时的己方全体建立月亮链接，包含自身。链接有效时，每名受益单位获得 {{spell.effects.1.辅助效果值|bonus}} 颗全 D100 检定奖励骰。",
         "facts": [
-          "初始月能等于实际支付的 MP；生命 9999、敏捷 1、行动力 3、飞行，不可被敌方指定，不主动行动。",
+          "初始月能等于实际支付的 MP；生命 {{summons.虚假之月.HP}}、敏捷 {{summons.虚假之月.DEX}}、行动力 {{summons.虚假之月.MOV}}、飞行，不可被敌方指定，不主动行动。",
           "有效链接将溢出 HP、MP、SAN 按 1∶1 存为月能；隔离时暂停。",
-          "每轮先判定庇佑，再按行动顺序以月能 1∶1 补充存活链接单位的 HP、MP，先 HP 后 MP，最后扣 1 点维持月能。月能归零后仍可充能。",
-          "召唤成功后免费展开随月亮移动的月能馈赠：半径 20 格，于后续轮首为其他友方分别回复 1d4 HP、1d4 MP。领域持续到月亮离场，隔离时暂停回复；月亮本身仍存在 99 轮。",
+          "每轮先判定庇佑，再按行动顺序以月能 1∶1 补充存活链接单位的 HP、MP，先 HP 后 MP，最后扣 {{summons.虚假之月.maintenance_mp}} 点维持月能。月能归零后仍可充能。",
+          "召唤成功后免费展开随月亮移动的月能馈赠：半径 {{summonSpells.虚假之月.月能馈赠.effects.0.作用半径}} 格，于后续轮首为其他友方分别回复 {{summonSpells.虚假之月.月能馈赠.effects.0.回复hp}} HP、{{summonSpells.虚假之月.月能馈赠.effects.0.回复mp}} MP。领域持续到月亮离场，隔离时暂停回复；月亮本身仍存在 {{spell.effects.0.持续回合}} 轮。",
           "月亮消失后链接失效并清理其领域，本场召唤次数不恢复。"
         ],
         "icon": "/ui/icons/Y16-s2.svg"
@@ -1482,14 +1485,14 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2d3 MP",
-        "limits": "召唤至多 2 个影之克隆｜每名施法者同时最多 2 个｜各存在 5 轮",
-        "description": "召唤两个影之克隆；若只剩一个召唤名额，则只召唤一个。名额已满时不能施放，克隆消失后可以重新召唤，本场累计召唤数量不限。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "召唤至多 {{spell.effects.0.召唤个数}} 个影之克隆｜每名施法者同时最多 {{summons.影之克隆.max_simultaneous}} 个｜各存在 {{spell.effects.0.持续回合}} 轮",
+        "description": "召唤{{spell.effects.0.召唤个数|cn}}个影之克隆；若只剩一个召唤名额，则只召唤一个。名额已满时不能施放，克隆消失后可以重新召唤，本场累计召唤数量不限。",
         "facts": [
-          "生命：3",
-          "攻击伤害：1d8+2+db",
+          "生命：{{summons.影之克隆.HP}}",
+          "攻击伤害：{{summonSkills.影之克隆.斗殴.dice}}",
           "防御反应：无",
-          "克隆共享组行动额度，各自保留生命与资源。所有克隆继承主人的适用战斗属性、敏捷、技能和法术，保留模板生命 3 与自动攻击；自动行动可选择继承法术，费用、冷却与单场次数均由各克隆自身承担。",
+          "克隆共享组行动额度，各自保留生命与资源。所有克隆继承主人的适用战斗属性、敏捷、技能和法术，保留模板生命 {{summons.影之克隆.HP}} 与自动攻击；自动行动可选择继承法术，费用、冷却与单场次数均由各克隆自身承担。",
           "克隆普通攻击及适用的幻造法术可借用主人的写作加成。直接攻击命中克隆时，即使随后被护盾吸收，也为主人和同主人其他存活克隆逐次追加一份伤害免疫；领域伤害也可触发，不保护其他主人所属单位。"
         ],
         "icon": "/ui/icons/Y16-s3.svg"
@@ -1500,11 +1503,11 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "开战 1 MP；每次授予庇佑消耗 5 点月能",
+        "cost": "开战 {{spell.消耗mp}} MP；每次授予庇佑消耗 {{spell.effects.0.hp_threshold_grant.cost_moon}} 点月能",
         "limits": "己方全体，含自身",
-        "description": "每轮结算时，生命仍大于零且低于最大 HP 一半的受益单位，若尚未持有一次伤害免疫，且己方虚假之月至少有 5 点月能，则消耗 5 点月能，为该单位授予一次伤害免疫。",
+        "description": "每轮结算时，生命仍大于零且低于最大 HP 的 {{spell.effects.0.hp_threshold_grant.ratio|percent}}% 的受益单位，若尚未持有一次伤害免疫，且己方虚假之月至少有 {{spell.effects.0.hp_threshold_grant.cost_moon}} 点月能，则消耗 {{spell.effects.0.hp_threshold_grant.cost_moon}} 点月能，为该单位授予一次伤害免疫。",
         "facts": [
-          "庇佑持续至抵消一次直接伤害或 99 轮结束；已有庇佑不重复授予。判定先于月能治疗，开战时不直接授予。"
+          "庇佑持续至抵消一次直接伤害或 {{spell.effects.0.持续回合}} 轮结束；已有庇佑不重复授予。判定先于月能治疗，开战时不直接授予。"
         ],
         "icon": "/ui/icons/Y16-s4.svg"
       },
@@ -1514,12 +1517,12 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "自身普通攻击、反击及法术直接伤害附加 1d6 伤害。",
+        "description": "自身普通攻击、反击及法术直接伤害附加 {{spell.effects.0.辅助效果值|unsigned}} 伤害。",
         "facts": [
-          "基础写作值为 70；大成功 +2d6、极难成功 +1d6+6、困难成功 +1d6、普通成功 +1d3、失败不变、大失败 −1d2。",
-          "普通攻击、即兴短句及乌托邦进行写作检定；弓形态三连射共享一次结果。月光王座不检定写作，仍获得附加 1d6。"
+          "基础写作值为 {{character.attrs.写作}}；大成功 {{character.passive_rules.phantom.4|signedDice}}、极难成功 {{character.passive_rules.phantom.3|signedDice}}、困难成功 {{character.passive_rules.phantom.2|signedDice}}、普通成功 {{character.passive_rules.phantom.1|signedDice}}、失败不变、大失败 {{character.passive_rules.phantom.-2|signedDice}}。",
+          "普通攻击、即兴短句及乌托邦进行写作检定；弓形态三连射共享一次结果。月光王座不检定写作，仍获得附加 {{spell.effects.0.辅助效果值|unsigned}}。"
         ],
         "icon": "/ui/icons/Y16-s5.svg"
       },
@@ -1529,12 +1532,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "法杖或剑形态 1 MP；弓形态 2 MP",
-        "limits": "敌方单体｜射程 6 格",
-        "description": "法杖或剑形态下，以基础检定值 70 发动一次攻击，基础伤害为 1d2，另叠加「幻造兵武」的 1d6 伤害及写作检定调整。目标不能闪避、反击或格挡。",
+        "cost": "法杖或剑形态 {{spell.消耗mp}} MP；弓形态 {{spell.消耗mp|add:character.passive_rules.moon.bow_extra_mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "法杖或剑形态下，以基础检定值 {{spell.effects.0.成功率}} 发动一次攻击，基础伤害为 {{spell.effects.0.伤害骰}}，另叠加「幻造兵武」的 {{skills.幻造兵武.effects.0.辅助效果值|unsigned}} 伤害及写作检定调整。目标不能闪避、反击或格挡。",
         "facts": [
-          "弓形态额外消耗 1 MP，改为三连射，每段叠加弓伤害并共享写作结果。",
-          "攻击前为月亮充能 max(0，2＋写作伤害调整)，法杖另 +1；不要求命中，三连射只充能一次。"
+          "弓形态额外消耗 {{character.passive_rules.moon.bow_extra_mp}} MP，改为{{spell.effects.0.bow_volley|cn}}连射，每段叠加弓伤害并共享写作结果。",
+          "攻击前为月亮充能 max(0，{{spell.effects.0.charge_moon}}＋写作伤害调整)，法杖另 {{spell.effects.0.staff_charge_bonus|signed}}；不要求命中，{{spell.effects.0.bow_volley|cn}}连射只充能一次。"
         ],
         "icon": "/ui/icons/Y16-s6.svg"
       },
@@ -1544,9 +1547,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身｜已经装备法杖时不能使用",
-        "description": "切换为法杖，启用「已然遥远的理想城」，并使「幻造兵武·即兴短句」额外增加 1 点月能充能。",
+        "description": "切换为法杖，启用「已然遥远的理想城」，并使「幻造兵武·即兴短句」额外增加 {{skills.幻造兵武·即兴短句.effects.0.staff_charge_bonus}} 点月能充能。",
         "facts": [
           "开战时默认装备法杖。切换武器不会清空月能，也不会移除已经生成的护盾。"
         ],
@@ -1558,11 +1561,11 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身｜已经装备弓时不能使用",
         "description": "切换为弓，启用「万众瞩目的乌托邦」。",
         "facts": [
-          "即兴短句改为三连射，额外消耗 1 MP。"
+          "即兴短句改为{{skills.幻造兵武·即兴短句.effects.0.bow_volley|cn}}连射，额外消耗 {{character.passive_rules.moon.bow_extra_mp}} MP。"
         ],
         "icon": "/ui/icons/Y16-s8.svg"
       },
@@ -1572,9 +1575,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身｜已经装备剑时不能使用",
-        "description": "切换为剑，启用「月光王座全额率输出」。该技能还需要己方虚假之月存活，且月能超过 20 点。",
+        "description": "切换为剑，启用「月光王座全额率输出」。该技能还需要己方虚假之月存活，且月能超过 {{character.passive_rules.moon.ultimate_threshold}} 点。",
         "facts": [
           "切换武器不会清空月能，也不会移除已经生成的护盾。"
         ],
@@ -1586,9 +1589,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "10 MP",
-        "limits": "弓形态｜吟唱 1 轮｜敌方单体｜射程 99 格",
-        "description": "支付费用并开始吟唱，在下一轮开始时对施放时选定的敌人发动攻击，以基础检定值 100 造成 2d12 伤害，另叠加「幻造兵武」的 1d6 伤害及写作检定调整。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "弓形态｜吟唱 {{spell.吟唱回合}} 轮｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "支付费用并开始吟唱，在下一轮开始时对施放时选定的敌人发动攻击，以基础检定值 {{spell.effects.0.成功率}} 造成 {{spell.effects.0.伤害骰}} 伤害，另叠加「幻造兵武」的 {{skills.幻造兵武.effects.0.辅助效果值|unsigned}} 伤害及写作检定调整。",
         "facts": [
           "目标不能闪避、反击或格挡。",
           "受到伤害不会打断本技能的吟唱；吟唱开始后切换武器不会取消已经准备的攻击。"
@@ -1601,11 +1604,11 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "6 MP",
-        "limits": "法杖形态｜自身周围半径 20 格内的己方单位，含自身｜持续 3 轮",
-        "description": "为施放时范围内每名己方单位分别生成 2d6 点护盾，容量分别掷骰。获得护盾后离开施放范围，不会提前失去护盾。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "法杖形态｜自身周围半径 {{spell.effects.0.作用半径}} 格内的己方单位，含自身｜持续 {{spell.effects.0.持续回合}} 轮",
+        "description": "为施放时范围内每名己方单位分别生成 {{spell.effects.0.护盾值}} 点护盾，容量分别掷骰。获得护盾后离开施放范围，不会提前失去护盾。",
         "facts": [
-          "护盾每实际吸收 1 点伤害，为存活月亮充能 1 点；没有月亮仍可生成护盾。"
+          "护盾每实际吸收 1 点伤害，为存活月亮充能 {{spell.effects.0.shield_absorb_moon_ratio}} 点；没有月亮仍可生成护盾。"
         ],
         "icon": "/ui/icons/Y16-s11.svg"
       },
@@ -1615,18 +1618,18 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "10 MP、全部月能",
-        "limits": "剑形态｜己方虚假之月存活且月能超过 20 点｜敌方单体｜射程 18 格",
-        "description": "消耗虚假之月的全部月能并使月亮消失，以基础检定值 100 发动攻击，基础伤害为消耗月能的 5 倍，另叠加「幻造兵武」的 1d6 伤害。",
+        "cost": "{{spell.消耗mp}} MP、全部月能",
+        "limits": "剑形态｜己方虚假之月存活且月能超过 {{character.passive_rules.moon.ultimate_threshold}} 点｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "消耗虚假之月的全部月能并使月亮消失，以基础检定值 {{spell.effects.0.成功率}} 发动攻击，基础伤害为消耗月能的 {{spell.effects.0.damage_moon_mult}} 倍，另叠加「幻造兵武」的 {{skills.幻造兵武.effects.0.辅助效果值|unsigned}} 伤害。",
         "facts": [
           "目标不能闪避、反击或格挡。",
-          "月能恰好为 20 点时不能发动。本技能不进行幻造写作检定；月亮消失后相关链接失效，且本场不能再次召唤该月亮。"
+          "月能恰好为 {{character.passive_rules.moon.ultimate_threshold}} 点时不能发动。本技能不进行幻造写作检定；月亮消失后相关链接失效，且本场不能再次召唤该月亮。"
         ],
         "icon": "/ui/icons/Y16-s12.svg"
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d6+1d4+db；斗殴 55；基础闪避 60。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y15": {
     "emblem": "cloak",
@@ -1649,12 +1652,12 @@
         "phase": 0,
         "timing": "受击反应",
         "reviewed": true,
-        "cost": "1 MP",
-        "limits": "每场战斗限一次｜射程 6 格",
-        "description": "实际失去生命后，对合法攻击来源发动一次爆破，以基础检定值 100 造成 1d10+1d6+2 伤害，附加每轮 1d3 灼烧，持续 3 轮。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "每场战斗限一次｜射程 {{spell.effects.0.射程}} 格",
+        "description": "实际失去生命后，对合法攻击来源发动一次爆破，以基础检定值 {{spell.effects.0.成功率}} 造成 {{spell.effects.0.伤害骰}} 伤害，附加每轮 {{spell.effects.0.每回合伤害骰}} 灼烧，持续 {{spell.effects.0.持续回合}} 轮。",
         "facts": [
           "目标不能闪避、反击或格挡。普通攻击、直接伤害法术、领域及其他持续伤害造成的生命损失均可触发；未命中、闪避或护盾完全吸收时不触发、不付费。",
-          "首次满足生命损失、合法目标与费用条件时，提交 1 MP 及本场次数，再执行反应。同一次范围攻击至多触发一次。"
+          "首次满足生命损失、合法目标与费用条件时，提交 {{spell.消耗mp}} MP 及本场次数，再执行反应。同一次范围攻击至多触发一次。"
         ],
         "icon": "/ui/icons/Y15-s1.svg"
       },
@@ -1664,11 +1667,11 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "5 MP",
-        "limits": "敌方单体｜射程 6 格",
-        "description": "以基础检定值 70 发动一次火焰攻击，造成 2d6+1d4 伤害。目标可以闪避或格挡，不能反击。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "以基础检定值 {{spell.effects.0.成功率}} 发动一次火焰攻击，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避或格挡，不能反击。",
         "facts": [
-          "命中后附加灼烧，自下一轮开始每轮造成 1d3 伤害，持续 3 轮。多次命中附加的灼烧分别生效。"
+          "命中后附加灼烧，自下一轮开始每轮造成 {{spell.effects.0.每回合伤害骰}} 伤害，持续 {{spell.effects.0.持续回合}} 轮。多次命中附加的灼烧分别生效。"
         ],
         "icon": "/ui/icons/Y15-s2.svg"
       },
@@ -1678,9 +1681,9 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "6 MP",
-        "limits": "敌方单体｜射程 6 格",
-        "description": "对所选敌人连续发动三段火焰攻击，每段以基础检定值 70 分别检定，造成 2d6+2 伤害。目标可以对每段攻击分别闪避或格挡，不能反击。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "description": "对所选敌人连续发动{{spell.effects|count|cn}}段火焰攻击，每段以基础检定值 {{spell.effects.*.成功率|unique|join:、}} 分别检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。目标可以对每段攻击分别闪避或格挡，不能反击。",
         "facts": [],
         "icon": "/ui/icons/Y15-s3.svg"
       },
@@ -1690,9 +1693,9 @@
         "phase": 99,
         "timing": "主动",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "阶段 99 专属｜常规战斗无法使用｜自身",
-        "description": "为自身回复 1d3 HP 和 1d3 SAN，两项回复分别掷骰。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "阶段 {{spell.phase}} 专属｜常规战斗无法使用｜自身",
+        "description": "为自身回复 {{spell.effects.0.回复hp}} HP 和 {{spell.effects.0.回复san}} SAN，两项回复分别掷骰。",
         "facts": [],
         "icon": "/ui/icons/Y15-s4.svg"
       },
@@ -1702,9 +1705,9 @@
         "phase": 99,
         "timing": "主动",
         "reviewed": true,
-        "cost": "4 MP",
-        "limits": "阶段 99 专属｜常规战斗无法使用｜自身周围半径 1 格内的其他友方",
-        "description": "为范围内每名其他友方分别回复 1d3 HP 和 1d3 SAN，不包含自身。各目标的两项回复分别掷骰。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "阶段 {{spell.phase}} 专属｜常规战斗无法使用｜自身周围半径 {{spell.effects.0.作用半径}} 格内的其他友方",
+        "description": "为范围内每名其他友方分别回复 {{spell.effects.0.回复hp}} HP 和 {{spell.effects.0.回复san}} SAN，不包含自身。各目标的两项回复分别掷骰。",
         "facts": [],
         "icon": "/ui/icons/Y15-s5.svg"
       },
@@ -1714,12 +1717,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "20 MP",
-        "limits": "敌方全体｜直接攻击射程 2 格",
-        "description": "创建随自身移动、半径 10 格的火焰领域，持续 2 轮；随后对敌方全体分别进行基础检定值 90 的攻击，造成 2d10 伤害。目标不能闪避、反击或格挡。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "敌方全体｜直接攻击使用默认近战射程",
+        "description": "创建随自身移动、半径 {{spell.effects.0.作用半径}} 格的火焰领域，持续 {{spell.effects.0.持续回合}} 轮；随后对敌方全体分别进行基础检定值 {{spell.effects.1.成功率}} 的攻击，造成 {{spell.effects.1.伤害骰}} 伤害。目标不能闪避、反击或格挡。",
         "facts": [
-          "直接攻击不受火焰领域的 10 格范围限制。领域在后续轮次对范围内敌方单位每轮造成 1d4+2 伤害。",
-          "施放时需要至少 20 MP；魔力上限不会代替实际费用要求。"
+          "直接攻击不受火焰领域的 {{spell.effects.0.作用半径}} 格范围限制。领域在后续轮次对范围内敌方单位每轮造成 {{spell.effects.0.每回合伤害骰}} 伤害。",
+          "施放时需要至少 {{spell.消耗mp}} MP；魔力上限不会代替实际费用要求。"
         ],
         "icon": "/ui/icons/Y15-s6.svg"
       },
@@ -1729,11 +1732,11 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "开战 1 MP；每次减伤消耗 1 MP",
+        "cost": "开战 {{spell.消耗mp}} MP；每次减伤消耗 {{character.passive_rules.cloak.mp_per_hit}} MP",
         "limits": "自身",
-        "description": "受到普通攻击、反击或法术直接伤害时，在护盾吸收前消耗 1 MP，按本次伤害减免：伤害不超过 3 点时降为 0 点；伤害为 4 至 6 点时降为 3 点；伤害不少于 7 点时保留 60%，向下取整。",
+        "description": "受到普通攻击、反击或法术直接伤害时，在护盾吸收前消耗 {{character.passive_rules.cloak.mp_per_hit}} MP，按本次伤害减免：伤害不超过 {{character.passive_rules.cloak.immune_max}} 点时降为 0 点；伤害为 {{character.passive_rules.cloak.immune_max|plus:1}} 至 {{character.passive_rules.cloak.middle_below|minus:1}} 点时降为 {{character.passive_rules.cloak.middle_damage}} 点；伤害不少于 {{character.passive_rules.cloak.middle_below}} 点时保留 {{character.passive_rules.cloak.high_multiplier|percent}}%，向下取整。",
         "facts": [
-          "每段直接伤害分别支付 1 MP，先于护盾结算；MP 不足不减伤。持续灼烧与领域伤害不触发。"
+          "每段直接伤害分别支付 {{character.passive_rules.cloak.mp_per_hit}} MP，先于护盾结算；MP 不足不减伤。持续灼烧与领域伤害不触发。"
         ],
         "icon": "/ui/icons/Y15-s7.svg"
       },
@@ -1743,9 +1746,9 @@
         "phase": 0,
         "timing": "被动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "自身",
-        "description": "自身获得飞行，同时行动力降低 3。飞行另提供 8 点行动力，两项效果合计使行动力增加 5。",
+        "description": "自身获得飞行，同时行动力降低 {{spell.effects.1.技能加减值|modifier:行动力|abs}}。飞行另提供额外行动力，两项效果叠加。",
         "facts": [],
         "icon": "/ui/icons/Y15-s8.svg"
       },
@@ -1755,9 +1758,9 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "2 MP",
-        "limits": "自身及周围半径 2 格内的其他友方｜持续 1 轮",
-        "description": "自身行动力增加 3，并获得 1 颗攻击奖励骰；施放时自身周围半径 2 格内的其他友方行动力增加 3。",
+        "cost": "{{spell.消耗mp}} MP",
+        "limits": "自身及周围半径 {{spell.effects.2.作用半径}} 格内的其他友方｜持续 {{spell.effects.0.持续回合}} 轮",
+        "description": "自身行动力增加 {{spell.effects.0.技能加减值|modifier:行动力}}，并获得 {{spell.effects.1.辅助效果值|bonus}} 颗攻击奖励骰；施放时自身周围半径 {{spell.effects.2.作用半径}} 格内的其他友方行动力增加 {{spell.effects.2.技能加减值|modifier:行动力}}。",
         "facts": [
           "其他友方只获得行动力加成，不获得攻击奖励骰或飞行。离开施放时的范围不会提前失去已经获得的加成。"
         ],
@@ -1765,7 +1768,7 @@
       }
     ],
     "passives": [],
-    "basic": "普通攻击基础骰：1d8+1d3+db；斗殴 50；基础闪避 62。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   },
   "Y17": {
     "emblem": "bloodmoon",
@@ -1788,7 +1791,7 @@
         "phase": 99,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP；100 ml 血液",
+        "cost": "{{spell.消耗mp}} MP；{{spell.cost_blood_ml}} ml 血液",
         "limits": "场外技能",
         "description": "场外能力，战斗中不可施放。",
         "facts": [],
@@ -1801,11 +1804,11 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "当前 MP 的一半，向下取整且至少消耗 1 MP；另需血液，不足部分消耗生命",
-        "limits": "基础射程 10 格；吟唱共需 3 次主动作",
-        "description": "起手选择一名射程内的敌人，锁定施法位置及朝向；再以两次主动作续唱，完成后攻击该方向长 10 格、宽 10 格的矩形区域。区域内除自身以外的敌我单位均会受到攻击，区域不随施法者或原目标移动。",
+        "limits": "基础射程 {{spell.effects.0.射程}} 格；吟唱共需 {{spell.吟唱回合}} 次主动作",
+        "description": "起手选择一名射程内的敌人，锁定施法位置及朝向；再以{{spell.吟唱回合|minus:1|cn}}次主动作续唱，完成后攻击该方向长 {{spell.effects.0.射程}} 格、宽 {{spell.effects.0.作用半径}} 格的矩形区域。区域内除自身以外的敌我单位均会受到攻击，区域不随施法者或原目标移动。",
         "facts": [
-          "有效投入＝max(基础 MP 费用，最大 MP÷4 向上取整)；伤害＝有效投入×4。技能值 80，奖励骰 1；可闪避、格挡，可贯穿。",
-          "血量＝100 ml＋(有效投入−基础 MP 费用)×500 ml；缺血每 500 ml 折算 1 HP 反噬，向上取整。",
+          "有效投入＝max(基础 MP 费用，最大 MP÷4 向上取整)；伤害＝有效投入×{{spell.effects.0.damage_mp_multiplier}}。技能值 {{spell.effects.0.成功率}}，奖励骰 {{character.blood_rules.arcana_bonus_dice}}；可闪避、格挡，可贯穿。",
+          "血量＝{{character.blood_rules.arcana_base_blood}} ml＋(有效投入−基础 MP 费用)×{{character.blood_rules.arcana_substitute_ml}} ml；缺血每 {{character.blood_rules.arcana_substitute_ml}} ml 折算 1 HP 反噬，向上取整。",
           "反噬使方向随机；若反噬致濒死，立即在起手位置爆发；若仍存活但耗尽 MP，昏迷并中止。正常受伤不中断吟唱。",
           "造成生命伤害时，收血有效投入×50 ml，受来源上限限制。"
         ],
@@ -1817,11 +1820,11 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "1 MP；300～1800 ml 血液，以 300 ml 为一份",
-        "limits": "自身；持续 10 轮；护甲持续期间不可重复施放",
-        "description": "凝聚血液保护自身，每投入 300 ml 血液，受到的每次伤害减少 2 点，最多减少 12 点。未选择投入量时，默认消耗 300 ml。",
+        "cost": "{{spell.消耗mp}} MP；{{character.blood_rules.armor_ml}}～{{character.blood_rules.armor_cap|divide:character.blood_rules.armor_per_unit|ceil|multiply:character.blood_rules.armor_ml}} ml 血液，以 {{character.blood_rules.armor_ml}} ml 为一份",
+        "limits": "自身；持续 {{character.blood_rules.duration}} 轮；护甲持续期间不可重复施放",
+        "description": "凝聚血液保护自身，每投入 {{character.blood_rules.armor_ml}} ml 血液，受到的每次伤害减少 {{character.blood_rules.armor_per_unit}} 点，最多减少 {{character.blood_rules.armor_cap}} 点。未选择投入量时，默认消耗 {{character.blood_rules.armor_ml}} ml。",
         "facts": [
-          "未选择投入量且储血不足 300 ml 时，改为献出当前生命的一半，向下取整且至少消耗 1 HP；每献出 1 HP 获得 2 点减伤，最多 12 点。",
+          "未选择投入量且储血不足 {{character.blood_rules.armor_ml}} ml 时，改为献出当前生命的一半，向下取整且至少消耗 1 HP；每献出 1 HP 获得 2 点减伤，最多 {{character.blood_rules.armor_cap}} 点。",
           "主动选择血液投入量时，须拥有足额储血。献血代价可能使生命降至零。"
         ],
         "icon": "/ui/icons/Y17-s3.svg"
@@ -1832,12 +1835,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP；完成后自身生命降至 0",
-        "limits": "敌方单体；基础射程 6 格；吟唱共需 2 次主动作",
-        "description": "选择一名敌人开始吟唱，再以一次主动作续唱。完成时，自身生命降至 0 并进入濒死，对原目标造成自身最大生命 90% 的基础伤害，向下取整且至少为 1 点。",
+        "cost": "{{spell.消耗mp}} MP；完成后自身生命降至 0",
+        "limits": "敌方单体；基础射程 {{spell.effects.0.射程}} 格；吟唱共需 {{spell.吟唱回合}} 次主动作",
+        "description": "选择一名敌人开始吟唱，再以{{spell.吟唱回合|minus:1|cn}}次主动作续唱。完成时，自身生命降至 0 并进入濒死，对原目标造成自身最大生命 {{spell.effects.0.damage_pct_caster_max_hp}}% 的基础伤害，向下取整且至少为 1 点。",
         "facts": [
-          "技能值 100，可贯穿；仅可格挡。完成时原目标失效或超出射程则消散。",
-          "吟唱中损失生命会中断并重伤，再损失剩余 HP 的 90%、当前 MP 的 50%，向上取整且至少 1。",
+          "技能值 {{spell.effects.0.成功率}}，可贯穿；仅可格挡。完成时原目标失效或超出射程则消散。",
+          "吟唱中损失生命会中断并重伤，再损失剩余 HP 的 {{spell.chant_interrupt_hp_pct}}%、当前 MP 的 {{spell.chant_interrupt_mp_pct}}%，向上取整且至少 1。",
           "完成后若自身未获治疗便死亡，追加目标最大 HP 的 10% 伤害；凝血式-存不能治疗本技能造成的重伤或濒死。"
         ],
         "icon": "/ui/icons/Y17-s4.svg"
@@ -1848,13 +1851,13 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "1 MP；100 ml 血液；不足部分可献血补足",
-        "limits": "自身；持续 10 轮",
+        "cost": "{{spell.消耗mp}} MP；{{character.blood_rules.blade_ml}} ml 血液；不足部分可献血补足",
+        "limits": "自身；持续 {{character.blood_rules.duration}} 轮",
         "description": "将血液塑成血刃或血弓，默认塑成血刃。两种形态互相替换，切换后重新计算持续时间；同一形态仍有效时不可重复塑造。",
         "facts": [
-          "血刃：伤害 1d8+2，射程 2 格，使用剑或斗殴，启用血月斩击。",
-          "血弓：伤害 1d8+2，射程 8 格，使用弓术。",
-          "缺血每 200 ml 折算 1 HP，向上取整，献血不得超过当前 HP 一半。血枪存在时优先使用血枪。"
+          "血刃：伤害 {{character.blood_rules.blade_damage}}，射程 2 格，使用剑或斗殴，启用血月斩击。",
+          "血弓：伤害 {{character.blood_rules.bow_damage}}，射程 {{character.blood_rules.bow_range}} 格，使用弓术。",
+          "缺血每 {{character.blood_rules.hp_to_ml}} ml 折算 1 HP，向上取整，献血不得超过当前 HP 一半。血枪存在时优先使用血枪。"
         ],
         "icon": "/ui/icons/Y17-s5.svg"
       },
@@ -1864,12 +1867,12 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "最大 MP 的 20%，向上取整；另消耗 1d8 HP、1d8 SAN；可额外投入 MP",
-        "limits": "以自身为中心；基础半径 10 格",
-        "description": "对范围内除自身以外的敌我单位发动冲击。每个目标分别以技能值 100 检定，基础伤害为 2d12；目标可闪避或格挡，不可反击。每额外消耗 1 MP，半径增加 5 格。",
+        "cost": "最大 MP 的 {{spell.cost_mp_pct_max}}%，向上取整；另消耗 {{spell.cost_hp_dice}} HP、{{spell.消耗san}} SAN；可额外投入 MP",
+        "limits": "以自身为中心；基础半径 {{character.blood_rules.war_radius}} 格",
+        "description": "对范围内除自身以外的敌我单位发动冲击。每个目标分别以技能值 {{spell.effects.0.成功率}} 检定，基础伤害为 {{spell.effects.0.伤害骰}}；目标可闪避或格挡，不可反击。每额外消耗 1 MP，半径增加 {{character.blood_rules.war_extra_radius}} 格。",
         "facts": [
-          "击杀主体收血至多 300 ml，每个尸体限一次；自身存活时另回复 1 HP、1 SAN。",
-          "冲击后自身存活、储血≥3000 ml 且仍有目标时，自动扣 3000 ml 再冲击，直至条件不满足；连锁不重复支付其他费用。"
+          "击杀主体收血至多 {{character.blood_rules.corpse_ml}} ml，每个尸体限一次；自身存活时另回复 {{spell.on_kill_heal_hp}} HP、{{spell.on_kill_heal_san}} SAN。",
+          "冲击后自身存活、储血≥{{character.blood_rules.chain_ml}} ml 且仍有目标时，自动扣 {{character.blood_rules.chain_ml}} ml 再冲击，直至条件不满足；连锁不重复支付其他费用。"
         ],
         "icon": "/ui/icons/Y17-s6.svg"
       },
@@ -1879,9 +1882,9 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "2 MP、1 SAN；每份消耗 500 ml 血液",
-        "limits": "5 格内己方单体，可选自身；每次使用 1～4 份",
-        "description": "消耗血液直接治疗一名轻伤友方，每份回复 4 HP，默认使用 1 份。目标须有生命损失，且当前生命不低于最大生命的一半；濒死目标及《祭炼式-破》吟唱中断造成的重伤目标无法接受治疗。",
+        "cost": "{{spell.消耗mp}} MP、{{spell.消耗san}} SAN；每份消耗 {{character.blood_rules.ball_ml}} ml 血液",
+        "limits": "{{spell.effects.0.作用半径}} 格内己方单体，可选自身；每次使用 1～{{character.blood_rules.heal_max_units}} 份",
+        "description": "消耗血液直接治疗一名轻伤友方，每份回复 {{character.blood_rules.ball_heal}} HP，默认使用 1 份。目标须有生命损失，且当前生命不低于最大生命的一半；濒死目标及《祭炼式-破》吟唱中断造成的重伤目标无法接受治疗。",
         "facts": [
           "投入不超过补满缺失生命所需份数；未指定时选择生命比例最低的合格友方。直接治疗，不生成物品。"
         ],
@@ -1893,9 +1896,9 @@
         "phase": 99,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "场外技能",
-        "description": "自身获得飞行，持续 60 轮。此项为场外能力，战斗中不可施放。",
+        "description": "自身获得飞行，持续 {{spell.effects.0.持续回合}} 轮。此项为场外能力，战斗中不可施放。",
         "facts": [],
         "icon": "/ui/icons/Y17-s8.svg"
       },
@@ -1905,7 +1908,7 @@
         "phase": 99,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1d8 MP",
+        "cost": "{{spell.消耗mp}} MP",
         "limits": "场外技能",
         "description": "场外能力，战斗中不可施放。",
         "facts": [],
@@ -1917,9 +1920,9 @@
         "phase": 0,
         "timing": "附加动作",
         "reviewed": true,
-        "cost": "1 MP；每份消耗 1000 ml 血液",
-        "limits": "自身；至少缺失 4 MP",
-        "description": "将储血转化为魔力，每份回复 4 MP，默认使用 1 份。可一次投入多份，但回复总量不得超过当前缺失魔力，且须拥有足额储血。",
+        "cost": "{{spell.消耗mp}} MP；每份消耗 {{character.blood_rules.cape_ml}} ml 血液",
+        "limits": "自身；至少缺失 {{character.blood_rules.cape_mp}} MP",
+        "description": "将储血转化为魔力，每份回复 {{character.blood_rules.cape_mp}} MP，默认使用 1 份。可一次投入多份，但回复总量不得超过当前缺失魔力，且须拥有足额储血。",
         "facts": [],
         "icon": "/ui/icons/Y17-s10.svg"
       },
@@ -1929,23 +1932,23 @@
         "phase": 0,
         "timing": "主动",
         "reviewed": true,
-        "cost": "1d8 MP；500、1500 或 2500 ml 血液",
-        "limits": "持有有效血刃；敌方单体；基础射程 3 格",
-        "description": "以血刃对同一目标发动月相斩击。投入 500、1500、2500 ml 血液时，分别攻击 1、2、3 段；整次施放只支付一次魔力费用。每段分别以技能值 80 检定，可贯穿，目标可闪避、反击或格挡；目标倒下后停止剩余攻击。",
+        "cost": "{{spell.消耗mp}} MP；{{character.blood_rules.slash_base_ml}}、{{character.blood_rules.slash_base_ml|add:character.blood_rules.slash_extra_ml}} 或 {{character.blood_rules.slash_extra_ml|times:2|add:character.blood_rules.slash_base_ml}} ml 血液",
+        "limits": "持有有效血刃；敌方单体；基础射程 {{spell.effects.0.射程}} 格",
+        "description": "以血刃对同一目标发动月相斩击。投入 {{character.blood_rules.slash_base_ml}}、{{character.blood_rules.slash_base_ml|add:character.blood_rules.slash_extra_ml}}、{{character.blood_rules.slash_extra_ml|times:2|add:character.blood_rules.slash_base_ml}} ml 血液时，分别攻击 1、2、3 段；整次施放只支付一次魔力费用。每段分别以技能值 {{spell.effects.0.成功率}} 检定，可贯穿，目标可闪避、反击或格挡；目标倒下后停止剩余攻击。",
         "facts": [
           "## 月相",
           "未指定月相时，每段独立随机决定月相；主动指定时，整次施放的各段使用同一月相。",
-          "1．满月：基础伤害 1d12+3；按主攻击造成的生命伤害等量回复自身生命，回复量不超过目标受击前的剩余生命。",
-          "2．亏凸月：基础伤害 1d8；主攻击造成生命伤害后，若目标仍有生命，再吸取 1d8 点生命，并按追加吸取造成的生命损失回复自身。",
-          "3．弦月：基础伤害 1d12。",
-          "4．残月：基础伤害 1d6+4。",
-          "5．新月：基础伤害 1d16+12。",
-          "6．蛾眉月：基础伤害 8。",
-          "7．上弦月：基础伤害 5；主攻击造成生命伤害后，若目标仍有生命，再吸取 5 点生命，并按追加吸取造成的生命损失回复自身。",
-          "8．盈凸月：基础伤害 10；按主攻击造成的生命伤害等量回复自身生命，回复量不超过目标受击前的剩余生命。",
+          "1．{{character.blood_rules.moon_phases.0.0}}：基础伤害 {{character.blood_rules.moon_phases.0.1}}；按主攻击造成的生命伤害等量回复自身生命，回复量不超过目标受击前的剩余生命。",
+          "2．{{character.blood_rules.moon_phases.1.0}}：基础伤害 {{character.blood_rules.moon_phases.1.1}}；主攻击造成生命伤害后，若目标仍有生命，再吸取 {{character.blood_rules.moon_phases.1.1}} 点生命，并按追加吸取造成的生命损失回复自身。",
+          "3．{{character.blood_rules.moon_phases.2.0}}：基础伤害 {{character.blood_rules.moon_phases.2.1}}。",
+          "4．{{character.blood_rules.moon_phases.3.0}}：基础伤害 {{character.blood_rules.moon_phases.3.1}}。",
+          "5．{{character.blood_rules.moon_phases.4.0}}：基础伤害 {{character.blood_rules.moon_phases.4.1}}。",
+          "6．{{character.blood_rules.moon_phases.5.0}}：基础伤害 {{character.blood_rules.moon_phases.5.1}}。",
+          "7．{{character.blood_rules.moon_phases.6.0}}：基础伤害 {{character.blood_rules.moon_phases.6.1}}；主攻击造成生命伤害后，若目标仍有生命，再吸取 {{character.blood_rules.moon_phases.6.1}} 点生命，并按追加吸取造成的生命损失回复自身。",
+          "8．{{character.blood_rules.moon_phases.7.0}}：基础伤害 {{character.blood_rules.moon_phases.7.1}}；按主攻击造成的生命伤害等量回复自身生命，回复量不超过目标受击前的剩余生命。",
           "## 吸取与收血",
           "生命回复以自身仍有生命为条件，最多回复至生命上限。亏凸月和上弦月的追加吸取另行受到目标减伤及护盾影响。",
-          "主攻击每造成 1 点生命伤害，收集 25 ml 血液；整次施放的各段共享 200 ml 收血上限，并受每名来源的收血上限限制。追加吸取不额外收血。"
+          "主攻击每造成 1 点生命伤害，收集 {{character.blood_rules.slash_harvest_ml_per_hp}} ml 血液；整次施放的各段共享 {{character.blood_rules.slash_harvest_cap}} ml 收血上限，并受每名来源的收血上限限制。追加吸取不额外收血。"
         ],
         "icon": "/ui/icons/Y17-s11.svg"
       },
@@ -1955,20 +1958,20 @@
         "phase": 0,
         "timing": "主动／附加动作",
         "reviewed": true,
-        "cost": "1 MP；凝聚每支消耗 1000 ml 血液；投掷消耗一支血枪",
-        "limits": "最多持有 2 支；投掷须使用主动作",
-        "description": "默认凝聚一支血枪，可使用主动作或附加动作。血枪为魔法武器，不独立行动；每支拥有 3 点耐久，无固定持续轮数。",
+        "cost": "{{spell.消耗mp}} MP；凝聚每支消耗 {{character.blood_rules.spear_ml}} ml 血液；投掷消耗一支血枪",
+        "limits": "最多持有 {{character.blood_rules.spear_cap}} 支；投掷须使用主动作",
+        "description": "默认凝聚一支血枪，可使用主动作或附加动作。血枪为魔法武器，不独立行动；每支拥有 {{character.blood_rules.spear_uses}} 点耐久，无固定持续轮数。",
         "facts": [
-          "普通攻击与反击优先使用最早血枪：斗殴检定，伤害 1d8+6，射程 2 格；每次消耗 1 耐久，随后成功格挡再消耗 1 点。",
-          "投掷消耗整支血枪：弓术检定，伤害 1d10+6，射程 8 格，可贯穿；可闪避、格挡，不可反击。"
+          "普通攻击与反击优先使用最早血枪：斗殴检定，伤害 {{character.blood_rules.spear_melee}}，射程 2 格；每次消耗 1 耐久，随后成功格挡再消耗 1 点。",
+          "投掷消耗整支血枪：弓术检定，伤害 {{character.blood_rules.spear_throw}}，射程 {{character.blood_rules.spear_range}} 格，可贯穿；可闪避、格挡，不可反击。"
         ],
         "icon": "/ui/icons/Y17-s12.svg"
       }
     ],
     "passives": [
-      "储血：每场战斗初始拥有 2000 ml 储血。《阿瑞卡纳律动》《血月斩击》和《污血战争》的收血共享来源限制：每名角色每场战斗最多提供 1000 ml 血液，召唤物不提供血液。",
+      "储血：每场战斗初始拥有 {{character.初始血液}} ml 储血。《阿瑞卡纳律动》《血月斩击》和《污血战争》的收血共享来源限制：每名角色每场战斗最多提供 {{character.blood_rules.source_cap}} ml 血液，召唤物不提供血液。",
       "吟唱：起手支付费用，之后须再次使用同名技能，以主动作续唱；经过轮次不会自动完成吟唱。续唱不重复支付费用。可主动结束吟唱，已付费用不返还。吟唱期间仍可使用《凝血式-守》《凝血式-幻》《凝血式-存》《血染披风》和《血色突刺》。"
     ],
-    "basic": "普通攻击基础骰：1d6+db；斗殴 28；基础闪避 85。"
+    "basic": "普通攻击基础骰：{{character.str_attrs.伤害值}}；斗殴 {{character.attrs.斗殴}}；基础闪避 {{character.attrs.闪避}}。"
   }
 }

@@ -17,6 +17,7 @@ import zipfile
 from flask import jsonify, request, Response
 from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
 from ui_effects import EffectComments, format_character, runtime_character
+from skill_identity import identify_skills, validate_global_skill_ids
 
 ROOT = Path(__file__).resolve().parent
 FILES = ('characters_data.py', 'characters_data_pvp.py', 'team_tables.py', 'ai_weights.json', 'ai_weights_pvp.json')
@@ -185,6 +186,12 @@ class Management:
         with self.lock:
             return self.describe()
 
+    def editable_characters(self, source):
+        comments = EffectComments(source)
+        definitions = self.character_definitions(ast.parse(source))
+        return [identify_skills(comments.restore(ast.literal_eval(node.value), node))
+                for name, node in definitions.items()]
+
     def describe(self):
         current = digest((self.root / 'characters_data.py').read_bytes())
         if current != self.loaded_version:
@@ -197,8 +204,8 @@ class Management:
         nodes = ast.parse(source)
         definitions = self.character_definitions(nodes)
         try:
-            comments = EffectComments(source)
-            characters = [comments.restore(getattr(module, name), node) for name, node in definitions.items()]
+            characters = self.editable_characters(source)
+            validate_global_skill_ids(characters)
         except (ValueError, SyntaxError) as exc:
             raise BadRequest('无法读取禁用效果：' + str(exc)) from exc
         reserved = [ch['serial'] for ch in characters]
@@ -302,6 +309,13 @@ class Management:
             cache.unlink(missing_ok=True)
         raw = (self.root / 'characters_data.py').read_bytes()
         exec(compile(raw, str(self.root / 'characters_data.py'), 'exec'), module.__dict__)
+        # Old backups may predate skill IDs. Restore comments before numbering.
+        by_serial = {getattr(module, name)['serial']: getattr(module, name)
+                     for name in self.character_definitions(ast.parse(raw))}
+        for definition in self.editable_characters(raw.decode('utf-8-sig')):
+            current = by_serial[definition['serial']]
+            current.clear()
+            current.update(runtime_character(definition))
         self.loaded_version = digest(raw)
         import battle_engine
         battle_engine._SUMMON_TEMPLATES = module.SUMMON_TEMPLATES
@@ -399,6 +413,14 @@ class Management:
             summons = data.get('summons', self.module().SUMMON_TEMPLATES)
             if 'enabled_serials' in data and not isinstance(data['enabled_serials'], list):
                 raise BadRequest('启用角色编号必须为列表')
+            if not isinstance(characters, list) or not characters or any(not isinstance(ch, dict) for ch in characters):
+                raise BadRequest('至少保留一个有效角色')
+            try:
+                previous = {ch['serial']: ch for ch in self.editable_characters(raw.decode('utf-8-sig'))}
+                characters = [identify_skills(ch, previous.get(ch.get('serial'))) for ch in characters]
+                validate_global_skill_ids(characters)
+            except ValueError as exc:
+                raise BadRequest(str(exc)) from exc
             self.validate(characters, summons, data.get('enabled_serials'))
             enabled = data.get('enabled_serials', [ch['serial'] for ch in characters])
             serials = {ch['serial'] for ch in characters}

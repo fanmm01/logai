@@ -6,11 +6,26 @@ import json
 import pickle
 import sys
 import unittest
+import ast
+from pathlib import Path
 from unittest.mock import patch
 
 import ai_trainer as trainer
 import battle_engine as be
 import characters_data as cd
+from ui_effects import EffectComments, runtime_character
+
+
+def _enabled_y17():
+    # Rules tests use the complete kit even when the browser has disabled skills.
+    source = Path(cd.__file__).read_text(encoding='utf-8-sig')
+    assignment = next(node for node in ast.parse(source).body
+                      if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                      and node.targets[0].id == 'YEZHAOMING')
+    data = EffectComments(source).restore(cd.YEZHAOMING, assignment)
+    for spell in data['spells']:
+        spell['_disabled'] = False
+    return runtime_character(data)
 
 
 def _setup(cls):
@@ -44,6 +59,61 @@ def _spell(engine, index):
 class Y17BattleStateTests(unittest.TestCase):
     def setUp(self):
         trainer._ACTION_CACHE.clear()
+        data = _enabled_y17()
+        roster = [data if card['serial'] == 'Y17' else card for card in cd.ALL_CHARACTERS]
+        for name, value in (('YEZHAOMING', data), ('ALL_CHARACTERS', roster)):
+            patched = patch.object(cd, name, value)
+            patched.start()
+            self.addCleanup(patched.stop)
+
+    def test_ai_priorities_follow_skill_kind_after_any_skill_is_disabled(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            for disabled in range(len(cd.YEZHAOMING['spells'])):
+                for state, expected_kind in (('healthy', 'guard'), ('injured', 'store'), ('low_mp', 'cape')):
+                    with self.subTest(engine=cls.__name__, disabled=disabled + 1, state=state):
+                        data = copy.deepcopy(cd.YEZHAOMING)
+                        data['spells'][disabled]['_disabled'] = True
+                        data = runtime_character(data)
+                        roster = [data if card['serial'] == 'Y17' else card for card in cd.ALL_CHARACTERS]
+                        with patch.object(cd, 'ALL_CHARACTERS', roster):
+                            engine = _setup(cls)
+                        char = engine.get_char('blood')
+                        if state == 'injured':
+                            engine._set_combat_hp('blood', int(char.get_attr('体力上限') * .6))
+                        elif state == 'low_mp':
+                            char.set_attr('魔力', 4)
+                        actions = trainer.affordable_actions(engine, 'blood', trainer.get_available_actions(engine, 'blood'))
+                        self.assertTrue(actions)
+                        if any(s.get('blood_kind') == expected_kind for s in data['spells']):
+                            for key, _ in actions:
+                                self.assertTrue(key.startswith('SKILL_'))
+                                spell = _spell(engine, int(key.split('_')[1]))
+                                self.assertEqual(engine._y17_spell_kind('blood', spell), expected_kind)
+
+    def test_disabled_arcana_keeps_spear_identity_and_main_action(self):
+        from ai_battle import AIController
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            with self.subTest(engine=cls.__name__):
+                data = copy.deepcopy(cd.YEZHAOMING)
+                data['spells'][1]['_disabled'] = True
+                data = runtime_character(data)
+                roster = [data if card['serial'] == 'Y17' else card for card in cd.ALL_CHARACTERS]
+                with patch.object(cd, 'ALL_CHARACTERS', roster):
+                    engine = _setup(cls)
+                spear = next(s for s in engine.load_spells('blood') if engine._y17_spell_kind('blood', s) == 'spear')
+                self.assertEqual(spear['index'], 12)
+                self.assertTrue(be.action_committed(engine._execute_spell('blood', 'blood', spear)))
+                engine.get_char('blood').set_str('_blood_spears', '[1]')
+                _place(engine, {'B7': 'blood', 'H7': 'enemy'})
+                key = 'SKILL_12_THROW__T0'
+                actions = trainer.get_available_actions(engine, 'blood')
+                self.assertIn(key, [key for key, _ in actions])
+                self.assertEqual(trainer.action_slot_for(engine, 'blood', key), '主动')
+                command = AIController._command_for_action(None, engine, 'blood', key)
+                self.assertEqual(command, '.s12 mode=throw')
+                self.assertEqual(engine._y17_ai_priority('blood', [(key, 'throw')]), [(key, 'throw')])
+                self.assertTrue(be.action_committed(trainer.execute_action(engine, 'blood', key)))
+                self.assertEqual(engine._y17_spears('blood'), [])
 
     def test_blood_ledgers_and_weapons_reset_on_each_engine_setup(self):
         for engine_type in (be.FullBattleEngine, be.FastBattleEngine):

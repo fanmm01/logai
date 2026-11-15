@@ -58,8 +58,22 @@ class SkillMpTests(unittest.TestCase):
                              消耗san=3, cost_hp_pct_current=20, prep_free=True,
                              effects=[dict(type=4, 客体=1, 持续回合=2, 技能加减值='斗殴+1')])
                 self.assertTrue(be.action_committed(engine._execute_spell('actor', 'actor', spell)))
-                self.assertEqual(char.get_attr('魔力'), 10 - max(1, cost))
+                self.assertEqual(char.get_attr('魔力'), 10 - cost)
                 self.assertEqual((engine._hp_safe('actor'), char.get_attr('理智')), before)
+
+    def test_mp_cost_modifier_can_reduce_skill_cost_to_zero(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            engine = setup(cls)
+            state = engine._get_state()
+            state['phase'] = 'preparation'
+            engine._set_state(state)
+            char = engine.get_char('actor')
+            char.set_attr('魔力', 10)
+            spell = dict(index=99, name='免费技能', 时机='2', 消耗mp=4,
+                         effects=[dict(type=4, 客体=1, 持续回合=2)])
+            with patch.object(engine, '_get_buff_mp_cost_pct', return_value=0):
+                self.assertTrue(be.action_committed(engine._execute_spell('actor', 'actor', spell)))
+            self.assertEqual(char.get_attr('魔力'), 10)
 
     def test_passive_initialization_pays_one_mp_per_skill(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):

@@ -1,19 +1,27 @@
 import mechanics from '../../docs/游戏总机制.md?raw';
 import type { Character } from './types';
 
-export const mechanicsSections = mechanics.split(/^## /m).slice(1).map((section, i) => ({
-  id: 'mechanics-' + (i + 1), title: section.split('\n')[0].replace(/^\d+\.\s*/, ''),
-  content: section.slice(section.indexOf('\n')).trim(),
-}));
+// A complete Markdown entry is the shared source for help and card definitions.
+// Section numbers and rule-name IDs remain compatible with saved glossary URLs.
+export const mechanicsSections = mechanics.split(/^## /m).slice(1).map((section, i) => {
+  const content = section.slice(section.indexOf('\n')).trim();
+  return {
+    id: 'mechanics-' + (i + 1), title: section.split('\n')[0].trim().replace(/^\d+\.\s*/, ''), content,
+    entries: content.split(/^### /m).slice(1).map(entry => ({
+      names: entry.slice(0, entry.indexOf('\n')).trim().split(' / '),
+      content: entry.slice(entry.indexOf('\n')).trim(),
+    })),
+  };
+});
 export type Definition = { id: string; name: string; text: string; serial?: string; sections: string[]; sources?:string[] };
-const common: [string, number][] = [
-  ['主动',1],['附加动作',1],['被动',1],['受击反应',1],['先攻',1],['冷却',1],['阶段',1],
-  ['MP',2],['HP',5],['SAN',2],['魔力',2],['理智',2],['准备阶段',2],['技能费用',2],
-  ['D100',3],['奖励骰',3],['惩罚骰',3],['普通成功',3],['困难成功',3],['极难成功',3],['大成功',3],['贯穿',3],['伤害骰',3],
-  ['闪避',4],['反击',4],['格挡',4],['多段攻击',4],['护盾',5],['吸血',5],['治疗',5],['回复',5],
-  ['领域',6],['持续时间',6],['轮首',6],['叠加',6],['隔离',6],['db',6],['射程',6],['作用半径',6],
-  ['召唤物',7],['召唤',7],['濒死',7],['死亡',7],['急救',7],['复活',7],['吟唱',8],['续唱',8],['蛋糕',8],['制造物',8],
-];
+export const mechanicsDefinitions: Definition[] = mechanicsSections.flatMap(section => section.entries.flatMap(entry =>
+  entry.names.map(name => ({id:'rule-'+name, name, text:entry.content, sections:[section.id]}))));
+export function definitionHelpAnchor(definition:Definition,section?:string|null) {
+  if(section)return section;
+  if(definition.serial)return definition.id;
+  const entry=mechanicsSections.flatMap(s=>s.entries).find(e=>e.names.includes(definition.name));
+  return entry?'rule-'+entry.names[0]:definition.sections[0]||'mechanics-character-terms';
+}
 // These names occur inside prose rather than as skill/trait titles.
 const dedicated: Record<string, string[]> = {
   Y2:['使魔'],Y6:['冰冻','小雪人','雪带','雪球'], Y60:['雪带','雪球'],
@@ -21,34 +29,46 @@ const dedicated: Record<string, string[]> = {
   Y9:['生灵'],Y10:['藤蔓','蜂鸟','禁锢'],Y11:['致死骰'],Y12:['玄武','朱雀','龙虎','三合一'],
   Y14:['金环','极限值','极限槽','迅捷模式','勇气模式','魂斗罗','最终幻想','音速索尼克','卡带'],
   Y15:['灼烧'], Y16:['月能','灵感','影之克隆','克隆','月亮链接','月能馈赠','庇佑','伤害免疫','写作检定'],
-  Y17:['血液','储血','人血','吟唱','续唱'],
+  Y17:['血液','储血','人血','血刃','血弓','长枪','吟唱','续唱'],
+};
+// Trait labels are editorial summaries; bind their full explanation to actual
+// abilities instead of guessing a mechanic from a short label such as “守护”.
+const traitSkills:Record<string,Record<string,string[]>>={
+  Y1:{'附魔':['火焰附魔'],'强攻':['斗殴精通']},
+  Y2:{'连击':['火球术'],'召唤':['召唤使魔']},Y3:{'强化':['斗殴强化','附魔术']},
+  Y4:{'双击':['星闪攻击'],'干扰':['演唱']},Y5:{'吸血':['吸血'],'机动':['飞行']},
+  Y6:{'守护':['雪幕','雪之法杖']},Y60:{'领域':['制造雪带'],'减伤':['雪幕']},
+  Y7:{'战意':['战意值削弱'],'救援':['治愈领域','返生之花']},
+  Y8:{'制造':['美味的蛋糕','甜甜的蛋糕','轻盈蛋糕','幸运蛋糕'],'补给':['品尝蛋糕','最后的款待-恢复','最后的款待-进攻']},
+  Y9:{'变身':['阶段转换'],'生灭':['领域·生','领域·灭','召唤生灵']},
+  Y10:{'守护':['屏障术','治疗术'],'召唤':['藤蔓术','召唤蜂鸟']},
+  Y11:{'汲取':['挥动镰刀','镰刃余势'],'黑雾':['黑雾笼罩']},
+  Y12:{'空间':['空间扭曲','空间压缩','空间扩张'],'引入':['空间引入']},
+  Y13:{'飞行':['飞行'],'魔躯':['魔力永驻','魔力护体']},
+  Y14:{'卡带':['卡带切换·魂斗罗','卡带切换·最终幻想','卡带切换·音速索尼克'],'蓄势':['极限槽','金环']},
+  Y15:{'爆破':['爆破圈','瞬爆','余烬','葬火流光'],'火衣':['火鼠裘']},
+  Y16:{'幻造':['幻造兵武','切换·法杖','切换·弓','切换·剑'],'月能':['虚假之月']},
+  Y17:{'血术':['猩红眼眸','阿瑞卡纳律动','等价交换'],'塑兵':['凝血式-幻','凝血式-存','血色突刺']},
 };
 const aliases:Record<string,Record<string,string>>={
   Y14:{'魂斗罗':'卡带切换·魂斗罗','最终幻想':'卡带切换·最终幻想','音速索尼克':'卡带切换·音速索尼克','凶斩':'极限技·凶斩'},
   Y16:{'即兴短句':'幻造兵武·即兴短句','乌托邦':'万众瞩目的乌托邦','理想城':'已然遥远的理想城','月光王座':'月光王座全额率输出','法杖':'切换·法杖','弓形态':'切换·弓','剑形态':'切换·剑'},
+  Y17:{'人血':'储血'},
+};
+const dedicatedSections:Record<string,number[]>={
+  Y2:[7],Y6:[5,6,7],Y60:[5,6],Y7:[1,6,7],Y8:[5,8],Y9:[1,7],Y10:[4,5,6,7],
+  Y11:[3,5,6],Y12:[4,6,7],Y14:[1,2,6],Y15:[5,6],Y16:[2,3,5,6,7],Y17:[2,5,8],
 };
 const clean = (text: string) => text.replace(/^#{1,6}\s*/gm, '').replace(/\*\*|`/g, '');
-const attributeDefinitions: [string,string,number][] = [
-  ['体力','生命资源，以 HP 表示；角色数值表分别列出变身前与变身后的满值。',5],
-  ['生命','生命资源，以 HP 表示；伤害、治疗及濒死按相关规则结算。',5],
-  ['行动力','影响角色的行动次数与移动能力；角色数值表不包含临时技能、被动和状态加成。',1],
-  ['斗殴','普通近战攻击所用的技能值；特定武器或攻击可能使用其他技能值。',3],
-  ['技能值','D100 检定使用的数值，决定普通、困难、极难等成功等级。',3],
-  ['飞行','飞行角色的行动力获得飞行加成；具体角色的额外加减与限制见其技能。',1],
-  ['普通攻击','使用角色或当前武器的普通攻击资料，消耗对应行动额度；普通攻击本身不新增 MP 费用。',2],
-  ['攻击奖励骰','只作用于对应攻击检定的奖励骰，与惩罚骰抵消后计算净额。',3],
-  ['攻击惩罚骰','只作用于对应攻击检定的惩罚骰，与奖励骰抵消后计算净额。',3],
-];
 export function buildDefinitions(catalog: Character[]): Definition[] {
-  const definitions: Definition[] = common.map(([name, number]) => {
-    const section = mechanicsSections[number - 1];
-    const lines = section.content.split('\n').filter(line => line.includes(name));
-    return { id: 'rule-' + name, name, text: clean((lines.length ? lines : [section.content]).join('\n')), sections:[section.id] };
-  });
-  definitions.push(...attributeDefinitions.map(([name,text,section])=>({id:'rule-'+name,name,text,sections:['mechanics-'+section]})));
+  const definitions: Definition[] = [...mechanicsDefinitions];
   for (const c of catalog) {
-    for (const t of c.traits) definitions.push({id:`${c.serial}-trait-${t.name}`,name:t.name,text:t.description,serial:c.serial,
-      sections:definitions.find(d=>!d.serial&&d.name===t.name)?.sections || [],sources:['trait:'+t.name]});
+    for (const t of c.traits) {
+      const common = c.serial==='Y9'&&t.name==='变身'?undefined:mechanicsDefinitions.find(d=>d.name===t.name);
+      definitions.push({id:`${c.serial}-trait-${t.name}`,name:t.name,
+        text:t.description+(common?'\n\n### 通用规则\n\n'+common.text:''),serial:c.serial,
+        sections:common?.sections || [],sources:['trait:'+t.name]});
+    }
     for (const name of new Set(c.skills.map(s=>s.name))) {
       const versions=c.skills.filter(s=>s.name===name);
       definitions.push({id:`${c.serial}-skill-${name}`,name,serial:c.serial,
@@ -68,11 +88,22 @@ export function buildDefinitions(catalog: Character[]): Definition[] {
         }
       }
       if(name==='冰冻'&&c.serial==='Y6')lines.push(...c.passives);
-      if (lines.length) definitions.push({id:`${c.serial}-term-${name}`,name,serial:c.serial,text:clean([...new Set(lines)].join('\n')),sections:(c.serial==='Y17'?[2,8]:c.serial==='Y8'?[8,5]:[6,7]).map(n=>'mechanics-'+n),sources:['prose:'+lines[0]]});
+      if (lines.length) definitions.push({id:`${c.serial}-term-${name}`,name,serial:c.serial,text:clean([...new Set(lines)].join('\n')),
+        sections:[...new Set([...(mechanicsDefinitions.find(d=>d.name===name)?.sections||[]),...(dedicatedSections[c.serial]||[6,7]).map(n=>'mechanics-'+n)])],sources:['prose:'+lines[0]]});
     }
     for(const [name,target] of Object.entries(aliases[c.serial] || {})){
       const original=definitions.find(d=>d.serial===c.serial&&d.name===target);
       if(original)definitions.push({...original,id:`${c.serial}-alias-${name}`,name});
+    }
+    // Keep saved trait URLs as detailed as their bound abilities and resources.
+    for(const trait of definitions.filter(d=>d.serial===c.serial&&d.id.startsWith(c.serial+'-trait-'))) {
+      const local=definitions.find(d=>d.serial===c.serial&&d.name===trait.name&&d.id.startsWith(c.serial+'-term-'))
+        ||definitions.find(d=>d.serial===c.serial&&d.name===trait.name&&d.id.startsWith(c.serial+'-skill-'));
+      const abilities=(traitSkills[c.serial]?.[trait.name]||[]).map(name=>definitions.find(d=>d.serial===c.serial&&d.name===name&&d.id.startsWith(c.serial+'-skill-'))).filter((d):d is Definition=>!!d);
+      for(const source of [...(local?[local]:[]),...abilities])if(!trait.text.includes(source.text)) {
+        trait.text+='\n\n### '+source.name+' · 专属规则\n\n'+source.text;
+        trait.sections=[...new Set([...trait.sections,...source.sections])];
+      }
     }
   }
   return definitions;
@@ -82,6 +113,9 @@ export function termsFor(definitions: Definition[], serial?: string) {
   for (const term of definitions.filter(d => !d.serial)) terms.set(term.name,term);
   for (const term of definitions.filter(d => d.serial === serial)) terms.set(term.name,term);
   return [...terms.values()].sort((a,b) => b.name.length-a.name.length);
+}
+export function specialistDefinitions(definitions:Definition[],serial:string) {
+  return termsFor(definitions,serial).filter(d=>d.serial&&(!d.id.startsWith(serial+'-skill-')||dedicated[serial]?.includes(d.name)));
 }
 export function splitTerms(text: string, terms: Definition[]): (string | Definition)[] {
   const parts:(string|Definition)[]=[]; let plain='';

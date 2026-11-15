@@ -1,12 +1,9 @@
-"""Check static frontend prose against the scoped live combat data.
-
-The approved text fixture belongs to the frontend. No legacy encyclopedia
-generator is used here, and changing combat data does not regenerate prose.
-"""
+"""Check the actual frontend data references against live character data."""
 import ast
 import json
 from pathlib import Path
 import unittest
+from tests.encyclopedia_helpers import resolved_encyclopedia
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +13,7 @@ SERIALS = ('Y13', 'Y14', 'Y15', 'Y16')
 class FrontendEncyclopediaY13Y16Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.profiles = json.loads((ROOT / 'frontend/src/data/encyclopedia.json').read_text(encoding='utf-8'))
+        cls.profiles = resolved_encyclopedia()
         cls.cards = {}
         # Inspect literal cards without loading engines or touching their logs.
         tree = ast.parse((ROOT / 'characters_data.py').read_text(encoding='utf-8-sig'))
@@ -63,7 +60,10 @@ class FrontendEncyclopediaY13Y16Tests(unittest.TestCase):
                     if not effect.get('consume_moon'):
                         self.assertIn(effect['伤害骰'], text, (serial, spell['name'], 'damage'))
                     self.assertIn(f"检定值 {effect['成功率']}", text, (serial, spell['name'], 'check'))
-                    self.assertIn(f"射程 {effect.get('射程', 2)} 格", text)
+                    if '射程' in effect:
+                        self.assertIn(f"射程 {effect['射程']} 格", text)
+                    else:
+                        self.assertIn('默认近战射程', text)
 
     def test_cartridge_resource_rules_and_noncombat_phase_are_explicit(self):
         rules = self.cards['Y14']['passive_rules']['cartridge']

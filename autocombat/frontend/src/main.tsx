@@ -16,6 +16,10 @@ import { SettingsPage } from './SettingsPage';
 import { RuntimeSettings, readPreferences, savePreferences, type SettingsResponse, type SettingsValues, type Preferences } from './settings';
 
 const accents = ['#db775a', '#8a78c5', '#5b9b91', '#c88c45', '#c56785', '#6694bc', '#9a80b1', '#cb8b9e', '#658878', '#c29b52', '#688ab6', '#847fc0'];
+type CatalogResponse = { characters: CatalogCharacter[]; summon_templates?: Record<string, Effect>; item_templates?: Record<string, Effect> };
+const hydrateCatalog = (data: CatalogResponse) => data.characters.map(character => withEncyclopedia({
+  ...character, summon_templates: data.summon_templates || {}, item_templates: data.item_templates || {},
+}));
 const styleColor = (color: string): CSSProperties => ({ '--character': color } as CSSProperties);
 function Emblem({ name = 'star', size = 24, className = '' }: { name?: string; size?: number; className?: string }) {
   return <span aria-hidden="true" className={'library-emblem ' + className} style={{ width:size, height:size, maskImage:`url(/ui/icons/${name}.svg)`, WebkitMaskImage:`url(/ui/icons/${name}.svg)` }}/>;
@@ -50,7 +54,7 @@ function App() {
   const [catalog, setCatalog] = useState<Character[]>([]);
   const [presets, setPresets] = useState<Effect[]>([]);
   const updateRoom = (r: Room) => setRoom(old => old?.code === r.code && r.revision >= old.revision ? r : old);
-  const reloadCatalog = () => { api<{characters:CatalogCharacter[]}>('/catalog').then(x=>{setCatalog(x.characters.map(withEncyclopedia));const valid=new Set(x.characters.map(c=>c.serial));setTeamA(old=>old.filter(s=>valid.has(s)));setTeamB(old=>old.filter(s=>valid.has(s)));}); api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)); };
+  const reloadCatalog = () => { api<CatalogResponse>('/catalog').then(x=>{setCatalog(hydrateCatalog(x));const valid=new Set(x.characters.map(c=>c.serial));setTeamA(old=>old.filter(s=>valid.has(s)));setTeamB(old=>old.filter(s=>valid.has(s)));}); api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)); };
   useEffect(()=>{ api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)).catch(()=>{}); },[]);
   const [page, setPage] = useState(() => pageFromPath(location.pathname));
   const [name, setName] = useState(readPreferences().name);
@@ -125,15 +129,15 @@ function App() {
   const [toast, setToast] = useState('');
   const restored = useRef(false);
   const legacyInvite=useRef(/^\/ui\/?$/.test(location.pathname)&&new URLSearchParams(location.search).has('room'));
-  const navigate = (next: string, replace = false) => {
+  const navigate = (next: string, replace = false, anchor = '') => {
     if(next===page&&!detailSerial)return;
     if (page !== next && page === 'settings' && settingsDirty && !confirm('放弃未保存的设置修改？')) return;
     pageScroll.current[page]=window.scrollY;
     const params=new URLSearchParams(location.search); params.delete('character');params.delete('term');
-    commitUrl(pageUrl(next,params.size?'?'+params:''),replace);
+    commitUrl(pageUrl(next,params.size?'?'+params:'')+(anchor?'#'+encodeURIComponent(anchor):''),replace);
     setDetailSerial(null);setTerm(null);detailOrigin.current=null;
     setSettingsDirty(false);setPage(next);
-    requestAnimationFrame(()=>window.scrollTo(0,pageScroll.current[next]||0));
+    if(!anchor)requestAnimationFrame(()=>window.scrollTo(0,pageScroll.current[next]||0));
   };
   useEffect(()=>{
     const normalized=pageFromPath(location.pathname);
@@ -183,7 +187,7 @@ function App() {
     const url = new URL(location.href); url.searchParams.set('room',r.code); window.history.replaceState(window.history.state,'',url);
   }
   useEffect(()=>{
-    Promise.all([api<{characters: CatalogCharacter[]}>('/catalog'),api<{id:string}>('/session',{name}),api<SettingsResponse>('/settings')]).then(([c,s,config])=>{setCatalog(c.characters.map(withEncyclopedia));setSession(s.id);setDefaults(config.values);setMapSize(config.values.DEFAULT_MAP_SIZE);setTiming(config.values.DEFAULT_RESTIM_MODE);setFailedReaction(config.values.ALLOW_FAILED_REACTION);setConnected(true);}).catch(e=>setError(e.message));
+    Promise.all([api<CatalogResponse>('/catalog'),api<{id:string}>('/session',{name}),api<SettingsResponse>('/settings')]).then(([c,s,config])=>{setCatalog(hydrateCatalog(c));setSession(s.id);setDefaults(config.values);setMapSize(config.values.DEFAULT_MAP_SIZE);setTiming(config.values.DEFAULT_RESTIM_MODE);setFailedReaction(config.values.ALLOW_FAILED_REACTION);setConnected(true);}).catch(e=>setError(e.message));
   },[]);
   useEffect(()=>{
     if (!session || restored.current) return;
@@ -305,7 +309,7 @@ function App() {
     {page==='sim'&&<div className="page sim-page"><SimulationPanel teamA={teamA} teamB={teamB} catalog={catalog} onError={setError}/><TeamEditor sim/></div>}
     {page==='editor'&&<DataEditor onError={setError} onSaved={reloadCatalog}/>}
     {page==='settings'&&<SettingsPage preferences={{name,reduced}} onPreferences={updatePreferences} onSaved={setDefaults} onDirty={setSettingsDirty} catalog={catalog} onError={setError}/>}
-    {page.startsWith('help/')&&<HelpPage tab={page.split('/')[1]} catalog={catalog} navigate={navigate}/>}
+    {page.startsWith('help/')&&<HelpPage tab={page.split('/')[1]} catalog={catalog} navigate={navigate} anchor={location.hash.slice(1)}/>}
     {page==='battle'&&!room&&<div className="page"><h1>尚未加入战术室</h1><p className="muted">输入房间码加入已有房间，或创建一场自由对战。</p><div className="modal-actions"><button className="button" onClick={()=>setDialog('join')}>输入房间码</button><button className="button primary" onClick={()=>prepare('local')}>自由对战</button></div></div>}
     {page==='tournament'&&<TournamentPanel catalog={catalog} onError={setError} onWatch={r=>acceptRoom(r)} onSettings={()=>{navigate('settings');location.hash='playoff-settings';}}/>}
     </>}
@@ -320,17 +324,17 @@ function App() {
         </div>
         <div className="profile-skills"><span className="eyebrow">CHARACTER ENCYCLOPEDIA</span><h3>技能百科</h3>
           <section><h4 className="encyclopedia-section-title">角色特性与普通攻击</h4>
-            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name} data-definition-owner={"trait:"+t.name}><h5><TermText text={t.name}/></h5><EncyclopediaProse content={t.description} sourceKey={"trait:"+t.name}/></div>)}</div>
-            <EncyclopediaProse content={detail.basic}/>
+            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name} data-definition-owner={"trait:"+t.name}><h5><TermText text={t.name}/></h5><EncyclopediaProse content={t.description} sourceKey={"trait:"+t.name} data={{character:detail,spell:{}}}/></div>)}</div>
+            <EncyclopediaProse content={detail.basic} data={{character:detail,spell:{}}}/>
           </section>
-          {detail.passives.length>0&&<section className="encyclopedia-passives"><h4 className="encyclopedia-section-title">角色被动与专属规则</h4><EncyclopediaProse content={detail.passives}/></section>}
+          {detail.passives.length>0&&<section className="encyclopedia-passives"><h4 className="encyclopedia-section-title">角色被动与专属规则</h4><EncyclopediaProse content={detail.passives} data={{character:detail,spell:{}}}/></section>}
           <h4 className="encyclopedia-section-title">技能</h4>
           {detail.skills.map((s,i)=><details key={s.id} data-skill-index={i} data-definition-owner={"skill:"+s.id} open>
             <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong><TermText text={s.name}/></strong><Tag><TermText text={s.timing}/></Tag><ChevronDown size={15}/></summary>
-            <EncyclopediaSkill skill={s}/>
+            <EncyclopediaSkill skill={s} data={{character:detail,spell:detail.spells.find(spell=>spell.name===s.name&&(spell.phase??0)===s.phase)??{}}}/>
           </details>)}
         </div>
-        {term&&<DefinitionPanel id={term} onClose={closeTerm} onOpen={openTerm}/>}
+        {term&&<DefinitionPanel id={term} onClose={closeTerm} onOpen={openTerm} onHelp={anchor=>navigate('help/mechanics',false,anchor)}/>}
       </div>
     </Modal>}
     {dialog==='join'&&<Modal title="加入好友的战术室" onClose={()=>setDialog('')}><p className="muted">连接同一局域网，并使用房主的 IP 地址打开此页面。</p><label className="field">你的称呼<input value={name} maxLength={20} onChange={e=>setName(e.target.value)}/></label><label className="field">房间码<input className="code-input" placeholder="例如 A3B8C2" maxLength={6} value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())}/></label><label className="checkbox"><input type="checkbox" checked={spectator} onChange={e=>setSpectator(e.target.checked)}/><Eye size={16}/>以观众身份加入</label><div className="modal-actions"><button className="button primary" disabled={busy||joinCode.trim().length!==6} onClick={join}>加入战术室 <ArrowRight size={16}/></button></div></Modal>}

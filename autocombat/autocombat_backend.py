@@ -24,6 +24,88 @@ CAT_LETTERS = ['a','b','c','d','e','f']
 
 
 # ============================================================
+# BEGIN INLINED: skill_identity.py
+# ============================================================
+"""Persistent skill identities and command slots, independent of list order."""
+import copy
+import re
+import uuid
+
+MAX_SKILL_INDEX = 30
+IDENTITY_FIELDS = ('skill_id', 'skill_index')
+
+
+def identify_skills(character, previous=None):
+    """Number legacy skills before filtering; preserve IDs and never reuse slots."""
+    result = copy.deepcopy(character)
+    spells = result.get('spells', [])
+    if not isinstance(spells, list) or any(not isinstance(s, dict) for s in spells):
+        raise ValueError('技能必须为字典列表')
+    old = (previous or {}).get('spells', [])
+    by_id = {s['skill_id']: s for s in old if s.get('skill_id')}
+    by_slot = {s['skill_index']: s for s in old if s.get('skill_index')}
+    old_next = (previous or {}).get('next_skill_index', 1)
+    next_index = result.get('next_skill_index', 1)
+    if type(next_index) is not int or not 1 <= next_index <= MAX_SKILL_INDEX + 1:
+        raise ValueError('技能编号分配记录无效')
+    next_index = max(next_index, old_next, max((s.get('skill_index', 0) for s in old), default=0) + 1)
+    ids, slots = set(), set()
+    for spell in spells:
+        sid, slot = spell.get('skill_id'), spell.get('skill_index')
+        if sid is None and slot is None:
+            # Old clients may omit metadata; recover only an unambiguous match.
+            matches = [s for s in old if (s.get('name'), s.get('phase', 0), s.get('weapon_required')) ==
+                       (spell.get('name'), spell.get('phase', 0), spell.get('weapon_required'))]
+            if len(matches) == 1:
+                sid, slot = (matches[0][key] for key in IDENTITY_FIELDS)
+                spell.update(skill_id=sid, skill_index=slot)
+            else:
+                continue
+        if not isinstance(sid, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}', sid):
+            raise ValueError('技能唯一编号格式无效')
+        if type(slot) is not int or not 1 <= slot <= MAX_SKILL_INDEX:
+            raise ValueError(f'技能固定编号必须为 1 至 {MAX_SKILL_INDEX} 的整数')
+        if sid in ids or slot in slots:
+            raise ValueError('技能唯一编号或固定编号重复（包括禁用技能）')
+        if sid in by_id and by_id[sid]['skill_index'] != slot:
+            raise ValueError('已保存技能的固定编号不能修改')
+        if slot in by_slot and by_slot[slot]['skill_id'] != sid:
+            raise ValueError('已保存技能的唯一编号不能修改')
+        if previous is not None and sid not in by_id and slot < old_next:
+            raise ValueError('新技能不能占用已经分配过的固定编号')
+        ids.add(sid)
+        slots.add(slot)
+        next_index = max(next_index, slot + 1)
+    for spell in spells:
+        if spell.get('skill_id'):
+            continue
+        if next_index > MAX_SKILL_INDEX:
+            raise ValueError(f'技能固定编号已用满（最多 {MAX_SKILL_INDEX} 个，禁用及删除不回收编号）')
+        slot = next_index
+        sid = (f'{result.get("serial", "CUSTOM")}-S{slot:03}' if previous is None
+               else 'skill-' + uuid.uuid4().hex)
+        if sid in ids:
+            raise ValueError('技能唯一编号重复')
+        spell.update(skill_id=sid, skill_index=slot)
+        ids.add(sid)
+        slots.add(slot)
+        next_index += 1
+    result['next_skill_index'] = next_index
+    return result
+
+
+def validate_global_skill_ids(characters):
+    seen = set()
+    for character in characters:
+        for spell in character.get('spells', []):
+            sid = spell['skill_id']
+            if sid in seen:
+                raise ValueError('不同角色的技能唯一编号重复：' + sid)
+            seen.add(sid)
+
+# END INLINED: skill_identity.py
+
+# ============================================================
 # BEGIN INLINED: characters_data.py
 # ============================================================
 #!/usr/bin/env python3
@@ -401,6 +483,7 @@ chData = {
 import json
 
 # [INLINED] from battle_engine import CN_NUMS, CAT_LETTERS
+# [INLINED] from skill_identity import identify_skills
 
 # ── 调试开关：设为 1 时，所有技能射程强制变为 99（无视原始射程限制）──
 GLOBAL_RANGE_OVERRIDE = 1
@@ -430,11 +513,11 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
          'react_block': 50,
          'shield_block': 50,
          'shield_block_rate': 0.7,
-         'skills': [{'dice': '1d4+3d6+4', 'mp_cost': 1, 'name': '盾击', 'val': 70},
-                    {'dice': '2d6+6', 'mp_cost': 1, 'name': '爪击', 'val': 75},
+         'skills': [{'dice': '1d4+3d6+4', 'mp_cost': 0, 'name': '盾击', 'val': 70},
+                    {'dice': '2d6+6', 'mp_cost': 0, 'name': '爪击', 'val': 75},
                     {'dice': '1d4+2d6+2',
                      'hits': 2,
-                     'mp_cost': 1,
+                     'mp_cost': 0,
                      'name': '水火弹',
                      'on_whiff_aoe_dmg': '4d10',
                      'on_whiff_mp_cost': 10,
@@ -482,8 +565,8 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'max_total_spawned': 1,
         'merge_group': 'trinity',
         'merge_result': '三合一',
-        'skills': [{'dice': '2d6+4', 'mp_cost': 1, 'name': '爪击', 'val': 75},
-                   {'dice': '2d8+1d6+4', 'mp_cost': 1, 'name': '俯冲', 'val': 70}],
+        'skills': [{'dice': '2d6+4', 'mp_cost': 0, 'name': '爪击', 'val': 75},
+                   {'dice': '2d8+1d6+4', 'mp_cost': 0, 'name': '俯冲', 'val': 70}],
         'spells': [{'category': 1,
                     'effects': [{'type': 1,
                                  '伤害骰': '2d8+1d6+4',
@@ -507,7 +590,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 75,
         'DEX': 30,
         'EDU': 0,
-        'HP': 120,
+        'HP': 101,
         'INT': 20,
         'MOV': 6,
         'MP': 0,
@@ -520,14 +603,14 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'max_total_spawned': 1,
         'merge_group': 'trinity',
         'merge_result': '三合一',
-        'react_block': 80,
+        'react_block': 64,
         'react_counter': 10,
         'react_dodge': 10,
-        'shield_block': 100,
-        'shield_block_rate': 0.75,
+        'shield_block': 120,
+        'shield_block_rate': 0.8,
         'size_2x2': True,
-        'skills': [{'dice': '1d4+3d6+3', 'mp_cost': 1, 'name': '盾击', 'val': 50},
-                   {'dice': '3d6+3', 'mp_cost': 1, 'name': '盾牌冲撞', 'val': 50}],
+        'skills': [{'dice': '1d4+3d6+3', 'mp_cost': 0, 'name': '盾击', 'val': 50},
+                   {'dice': '3d6+3', 'mp_cost': 0, 'name': '盾牌冲撞', 'val': 50}],
         'spells': [{'category': 1,
                     'effects': [{'type': 1,
                                  '伤害骰': '3d6',
@@ -584,7 +667,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'max_simultaneous': 2,
         'max_total_spawned': 3,
         'permanent_statuses': ['禁锢'],
-        'skills': [{'dice': '1d8+1d6', 'mp_cost': 1, 'name': '鞭', 'val': 60}],
+        'skills': [{'dice': '1d8+1d6', 'mp_cost': 0, 'name': '鞭', 'val': 60}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 7,
@@ -604,7 +687,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'flying': True,
         'max_simultaneous': 12,
         'max_total_spawned': None,
-        'skills': [{'dice': '1d4+1d4', 'mp_cost': 1, 'name': '爪击', 'val': 65}],
+        'skills': [{'dice': '1d4+1d4', 'mp_cost': 0, 'name': '爪击', 'val': 65}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 65,
@@ -706,7 +789,9 @@ YANYAN = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴精通',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y1-S001',
+             'skill_index': 1},
             {'category': 1,
              'default_persist': 1,
              'effects': [{'type': 1,
@@ -719,8 +804,11 @@ YANYAN = {'attrs': {'伤害贯穿': 1,
                           '每回合伤害骰': '2d4+2'}],
              'name': '火焰附魔',
              'timing': '2',
-             '消耗mp': 2}],
- 'str_attrs': {'伤害值': '2d6'}}
+             '消耗mp': 2,
+             'skill_id': 'Y1-S002',
+             'skill_index': 2}],
+ 'str_attrs': {'伤害值': '2d6'},
+ 'next_skill_index': 3}
 
 # ============================================================
 #  角色2: 达尼厄斯 (Y2) — 3火球 + 召唤使魔
@@ -753,31 +841,38 @@ DANIUSI = {'attrs': {'伤害贯穿': 1,
  'name': '达尼厄斯',
  'serial': 'Y2',
  'spells': [{'category': 1,
-             'effects': [{'type': 1, '伤害骰': '1d8', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
+             'effects': [{'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
                          {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
                          {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90}],
              'name': '火球术',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y2-S001',
+             'skill_index': 1},
             {'category': 5,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '使魔', '客体': 1, '持续回合': 99}],
              'name': '召唤使魔',
              'timing': '23',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y2-S002',
+             'skill_index': 2},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99}],
              'name': '速攻',
              'timing': '1',
-             '消耗mp': 2}],
- 'str_attrs': {'伤害值': '1d8+1d6+1d4'}}
+             '消耗mp': 2,
+             'skill_id': 'Y2-S003',
+             'skill_index': 3}],
+ 'str_attrs': {'伤害值': '1d8+1d6+1d4'},
+ 'next_skill_index': 4}
 
 # ============================================================
 #  角色3: 灵牛 (Y3) — 斗殴奖励骰 + 附魔(伤害+1d4)
 # ============================================================
 LINGNIU = {'attrs': {'伤害贯穿': 1,
-           '体力': 14,
-           '体力上限': 14,
+           '体力': 13,
+           '体力上限': 13,
            '体型': 60,
            '体格': 1,
            '体质': 60,
@@ -807,14 +902,19 @@ LINGNIU = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴强化',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y3-S001',
+             'skill_index': 1},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6+1d4+1'}],
+             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6+1d4'}],
              'name': '附魔术',
              'timing': '1',
-             '消耗mp': 1}],
- 'str_attrs': {'伤害值': '2d6'}}
+             '消耗mp': 1,
+             'skill_id': 'Y3-S002',
+             'skill_index': 2}],
+ 'str_attrs': {'伤害值': '2d6'},
+ 'next_skill_index': 3}
 
 # ============================================================
 #  角色4: 星闪 (Y4) — 星闪攻击(奖励骰) + 演唱(敌方惩罚骰)
@@ -865,13 +965,18 @@ XINGSHAN = {'attrs': {'伤害贯穿': 1,
                           '成功率奖惩骰': 1}],
              'name': '星闪攻击',
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y4-S001',
+             'skill_index': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 5, '持续回合': 3, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'p'}],
              'name': '演唱',
              'timing': '3',
-             '消耗mp': 2}],
- 'str_attrs': {'伤害值': '1d4+1d3'}}
+             '消耗mp': 2,
+             'skill_id': 'Y4-S002',
+             'skill_index': 2}],
+ 'str_attrs': {'伤害值': '1d4+1d3'},
+ 'next_skill_index': 3}
 
 # ============================================================
 #  角色5: 血天使 (Y5) — 飞行(MOV+5, 奖励骰) + 吸血
@@ -910,10 +1015,12 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
                          {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '飞行',
              'timing': '1',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y5-S001',
+             'skill_index': 1},
             {'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '2d4+1d6+2',
+                          '伤害骰': '2d4+1d6+1',
                           '可反击性': 1,
                           '可闪避性': 0,
                           '吸血比例': '1.0',
@@ -921,8 +1028,11 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
                           '射程': 2}],
              'name': '吸血',
              'timing': '2',
-             '消耗mp': 1}],
- 'str_attrs': {'伤害值': '2d3+1d4'}}
+             '消耗mp': 1,
+             'skill_id': 'Y5-S002',
+             'skill_index': 2}],
+ 'str_attrs': {'伤害值': '2d3+1d4'},
+ 'next_skill_index': 3}
 
 # ============================================================
 #  角色6: 雪人 (Y6) — 雪带/雪幕/雪球 + 雪之法杖被动增伤
@@ -972,7 +1082,9 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 8, '作用半径': 5, '冰冻每轮层数': 2, '客体': 45, '持续回合': 6, '领域中心跟随': 0, '领域同时上限': 1}],
              'name': '制造雪带',
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y6-S001',
+             'skill_index': 1},
             {'category': 8,
              'default_persist': 1,
              'effects': [{'type': 8,
@@ -985,27 +1097,36 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
                           '领域中心跟随': 1}],
              'name': '雪幕',
              'timing': '1',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y6-S002',
+             'skill_index': 2},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80},
                          {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80}],
              'name': '发送雪球',
              'timing': '2',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y6-S003',
+             'skill_index': 3},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 13, '持续回合': 5, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6', '默认延续性': 0},
                          {'type': 2, '客体': 13, '护盾值': '1d8+4', '持续回合': 5}],
              'name': '雪之法杖',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y6-S004',
+             'skill_index': 4},
             {'category': 5,
              'cooldown_rounds': 4,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '小雪人', '客体': 1, '持续回合': 999}],
              'name': '堆雪人',
              'timing': '2',
-             '消耗mp': 5}],
- 'str_attrs': {'伤害值': '1d6+1d4'}}
+             '消耗mp': 5,
+             'skill_id': 'Y6-S005',
+             'skill_index': 5}],
+ 'str_attrs': {'伤害值': '1d6+1d4'},
+ 'next_skill_index': 6}
 
 SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
  'CON': 50,
@@ -1020,11 +1141,12 @@ SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
  'SIZ': 50,
  'STR': 50,
  'frost_ball': {'dice': '1d8+2', 'mp_cost': 1, 'range': 8, 'success': 65},
+ 'frost_melee': {'dice': '1d4', 'success': 45},
  'frost_summon': True,
  'frost_zone': {'duration': 4, 'mp_cost': 3, 'radius': 3, 'stacks': 2},
  'max_simultaneous': 1,
  'max_total_spawned': None,
- 'skills': [{'dice': '1d8+2', 'mp_cost': 1, 'name': '发送雪球', 'val': 65}],
+ 'skills': [{'dice': '1d8+2', 'mp_cost': 0, 'name': '发送雪球', 'val': 65}],
  '可反击': 0,
  '可反应': 1,
  '闪避': 35,
@@ -1085,7 +1207,9 @@ HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
                           '持续回合': 99}],
              'name': '战意值削弱',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y7-S001',
+             'skill_index': 1},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8,
@@ -1101,15 +1225,20 @@ HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
                           '领域轮首结算次数': 2}],
              'name': '治愈领域',
              'timing': '2',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y7-S002',
+             'skill_index': 2},
             {'_once_per_battle': True,
              'category': 3,
              'cooldown_rounds': 99,
              'effects': [{'type': 19, '复活主体': 1, '复活召唤物主人政策': 'caster', '复活回复比例': 0.4, '客体': 2, '死亡轮窗口': 3}],
              'name': '返生之花',
              'timing': '2',
-             '消耗mp': 12}],
- 'str_attrs': {'伤害值': '1d4+1d3'}}
+             '消耗mp': 12,
+             'skill_id': 'Y7-S003',
+             'skill_index': 3}],
+ 'str_attrs': {'伤害值': '1d4+1d3'},
+ 'next_skill_index': 4}
 
 # ============================================================
 #  角色8: 比哈米 (Y8) — 制造蛋糕(HP+MP回复)
@@ -1150,17 +1279,23 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
              'effects': [{'type': 6, '制造个数': '1d2+1', '制造物模板': '蛋糕HP', '制造花费回合数': 0, '客体': 1}],
              'name': '美味的蛋糕',
              'timing': '23',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y8-S001',
+             'skill_index': 1},
             {'category': 6,
              'effects': [{'type': 6, '制造个数': '1d2+1', '制造物模板': '蛋糕MP', '制造花费回合数': 0, '客体': 1}],
              'name': '甜甜的蛋糕',
              'timing': '23',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y8-S002',
+             'skill_index': 2},
             {'category': 3,
              'effects': [{'type': 3, '回复hp': '2d8+4', '客体': 1}],
              'name': '品尝蛋糕',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y8-S003',
+             'skill_index': 3},
             {'category': 6,
              'effects': [{'tasteBonusOwnerSerial': 'Y8',
                           'type': 6,
@@ -1190,17 +1325,23 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
                           '客体': 1}],
              'name': '最后的款待-恢复',
              'timing': '23',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y8-S004',
+             'skill_index': 4},
             {'category': 6,
              'effects': [{'type': 6, '制造个数': 1, '制造物模板': '蛋糕轻盈', '制造花费回合数': 0, '客体': 1}],
              'name': '轻盈蛋糕',
              'timing': '23',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y8-S005',
+             'skill_index': 5},
             {'category': 6,
              'effects': [{'type': 6, '制造个数': 1, '制造物模板': '蛋糕幸运', '制造花费回合数': 0, '客体': 1}],
              'name': '幸运蛋糕',
              'timing': '23',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y8-S006',
+             'skill_index': 6},
             {'category': 6,
              'effects': [{'type': 6,
                           '分发人数覆盖': {'1': {'分发自留': 3}, '2': {'分发自留': 1, '分发队友每人': 2}},
@@ -1228,8 +1369,11 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
                           '客体': 1}],
              'name': '最后的款待-进攻',
              'timing': '23',
-             '消耗mp': 8}],
- 'str_attrs': {'伤害值': '1d4+1d3'}}
+             '消耗mp': 8,
+             'skill_id': 'Y8-S007',
+             'skill_index': 7}],
+ 'str_attrs': {'伤害值': '1d4+1d3'},
+ 'next_skill_index': 8}
 
 # ============================================================
 #  角色9: 木落(决战版) (Y9) — 双阶段: 木·荣(1)→木·枯(2)
@@ -1237,8 +1381,8 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
 # Phase 1 (木·荣): 召唤生灵(2d4+4), 生之矛(友敌分化+延迟回复), 领域·生(治疗+敏捷+10), 阶段转换(HP阈值)
 # Phase 2 (木·枯): 召唤生灵(点燃), 生之矛(2d8纯伤), 领域·灭(全场伤害+友方敏捷+10+伤害骰优势)
 MULUO = {'attrs': {'伤害贯穿': 1,
-           '体力': 10,
-           '体力上限': 10,
+           '体力': 12,
+           '体力上限': 12,
            '体型': 70,
            '体格': 2,
            '体质': 75,
@@ -1270,7 +1414,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '召唤生灵',
              'phase': 1,
              'timing': '23',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y9-S001',
+             'skill_index': 1},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
              'effects': [{'type': 1,
@@ -1292,7 +1438,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '生之矛',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y9-S002',
+             'skill_index': 2},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8, '作用半径': 20, '回复hp': '1d8', '客体': 13, '持续回合': 3, '领域中心跟随': 1},
@@ -1300,7 +1448,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '领域·生',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y9-S003',
+             'skill_index': 3},
             {'category': 9,
              'effects': [{'hp_thresholds': [{'rate': 40, 'ratio': 0.6666666666666666},
                                             {'rate': 60, 'ratio': 0.5},
@@ -1313,7 +1463,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'phase': 1,
              'timing': '1',
              '消耗mp': 1,
-             '消耗san': '2d6'},
+             '消耗san': '2d6',
+             'skill_id': 'Y9-S004',
+             'skill_index': 4},
             {'_mp_formula': 'summon_count_ceil_half',
              'category': 5,
              'effects': [{'ignite': True,
@@ -1327,7 +1479,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '召唤生灵',
              'phase': 2,
              'timing': '23',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y9-S005',
+             'skill_index': 5},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
              'effects': [{'type': 1,
@@ -1341,7 +1495,9 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '死之矛',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y9-S006',
+             'skill_index': 6},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8, '作用半径': 20, '客体': 135, '持续回合': 99, '每回合伤害骰': '2d4', '领域中心跟随': 1},
@@ -1351,8 +1507,11 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '领域·灭',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 5}],
- 'str_attrs': {'伤害值a': '1d6+1d6', '伤害值b': '1d8+1d6+4'}}
+             '消耗mp': 5,
+             'skill_id': 'Y9-S007',
+             'skill_index': 7}],
+ 'str_attrs': {'伤害值a': '1d6+1d6', '伤害值b': '1d8+1d6+4'},
+ 'next_skill_index': 8}
 
 # ============================================================
 #  角色10: 春晌 (Y10) — 屏障+治疗+藤蔓+蜂鸟
@@ -1389,30 +1548,39 @@ CHUNSHANG = {'attrs': {'不可指定': 1,
              'effects': [{'type': 2, '作用半径': 4, '客体': 13, '护盾值': '3d6+4', '持续回合': 5}],
              'name': '屏障术',
              'timing': '2',
-             '消耗mp': 8},
+             '消耗mp': 8,
+             'skill_id': 'Y10-S001',
+             'skill_index': 1},
             {'category': 3,
-             'effects': [{'type': 3, '作用半径': 8, '回复hp': '1d4+2', '客体': 13}],
+             'effects': [{'type': 3, '作用半径': 8, '回复hp': '2d4+4', '客体': 13}],
              'name': '治疗术',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y10-S002',
+             'skill_index': 2},
             {'category': 5,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '藤蔓', '客体': 1, '持续回合': 5}],
              'name': '藤蔓术',
              'timing': '23',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y10-S003',
+             'skill_index': 3},
             {'category': 5,
-             'effects': [{'type': 5, '召唤个数': '1d3', '召唤物模板': '蜂鸟', '客体': 1, '持续回合': 99}],
+             'effects': [{'type': 5, '召唤个数': '1d3+1', '召唤物模板': '蜂鸟', '客体': 1, '持续回合': 99}],
              'name': '召唤蜂鸟',
              'timing': '23',
-             '消耗mp': 6}],
- 'str_attrs': {'不可指定召唤物': '藤蔓', '伤害值': '1d6+1d4'}}
+             '消耗mp': 6,
+             'skill_id': 'Y10-S004',
+             'skill_index': 4}],
+ 'str_attrs': {'不可指定召唤物': '藤蔓', '伤害值': '1d6+1d4'},
+ 'next_skill_index': 5}
 
 # ============================================================
 #  角色11: 蓝 (Y11) — 挥镰刀 + 黑雾(领域+敌方惩罚骰+闪避削减)
 # ============================================================
 LAN = {'attrs': {'伤害贯穿': 1,
-           '体力': 12,
-           '体力上限': 12,
+           '体力': 11,
+           '体力上限': 11,
            '体型': 55,
            '体格': 1,
            '体质': 60,
@@ -1451,7 +1619,9 @@ LAN = {'attrs': {'伤害贯穿': 1,
                          {'type': 4, '客体': 5, '持续回合': 5, '辅助效果': '致死骰优势', '辅助效果值': 'p'}],
              'name': '挥动镰刀',
              'timing': '2',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y11-S001',
+             'skill_index': 1},
             {'category': 8,
              'effects': [{'on_enter_attr_debuff': '闪避-10',
                           'on_enter_mp_drain_pct': 0.4,
@@ -1466,14 +1636,19 @@ LAN = {'attrs': {'伤害贯穿': 1,
                          {'type': 4, '客体': 1, '技能加减值': 'MOV+5', '持续回合': 8}],
              'name': '黑雾笼罩',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y11-S002',
+             'skill_index': 2},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+2d3'}],
+             'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+3'}],
              'name': '镰刃余势',
              'timing': '1',
-             '消耗mp': 1}],
- 'str_attrs': {'伤害值': '2d4+4'}}
+             '消耗mp': 1,
+             'skill_id': 'Y11-S003',
+             'skill_index': 3}],
+ 'str_attrs': {'伤害值': '2d4+4'},
+ 'next_skill_index': 4}
 
 # ============================================================
 #  角色12: 斯瑞提卡 (Y12) — 空间扭曲+压缩+扩张+引入
@@ -1513,10 +1688,12 @@ SIRUITIKA = {'attrs': {'不可指定': 1,
              'effects': [{'type': 4, '客体': 5, '持续回合': 2, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'p'}],
              'name': '空间扭曲',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y12-S001',
+             'skill_index': 1},
             {'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '2d6',
+                          '伤害骰': '1d6+3',
                           '可反击性': 0,
                           '可贯穿性': 0,
                           '可闪避性': 0,
@@ -1525,26 +1702,33 @@ SIRUITIKA = {'attrs': {'不可指定': 1,
                           '成功率': 75}],
              'name': '空间压缩',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y12-S002',
+             'skill_index': 2},
             {'category': 4,
              'effects': [{'type': 4, '客体': 13, '持续回合': 2, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '空间扩张',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y12-S003',
+             'skill_index': 3},
             {'category': 5,
              'effects': [{'cooldown_rounds': 2, 'type': 5, '召唤个数': 1, '召唤物模板': '随机召唤物', '客体': 1, '持续回合': 99}],
              'name': '空间引入',
              'timing': '2',
-             '消耗mp': 8}],
- 'str_attrs': {'block_redirect': '三合一', '伤害值': '1d3+1d4'}}
+             '消耗mp': 8,
+             'skill_id': 'Y12-S004',
+             'skill_index': 4}],
+ 'str_attrs': {'block_redirect': '三合一', '伤害值': '1d3+1d4'},
+ 'next_skill_index': 5}
 
 
 # ============================================================
 #  角色13: 歌莉娅 (Y13) — 飞行 + MP永不消耗 + 普攻3d6
 # ============================================================
 GELIYA = {'attrs': {'伤害贯穿': 1,
-           '体力': 12,
-           '体力上限': 12,
+           '体力': 11,
+           '体力上限': 11,
            '体型': 60,
            '体格': 1,
            '体质': 65,
@@ -1564,8 +1748,8 @@ GELIYA = {'attrs': {'伤害贯穿': 1,
            '闪避': 25,
            '额外行动数': 0,
            '飞行': 1,
-           '魔力': 18,
-           '魔力上限': 18,
+           '魔力': 17,
+           '魔力上限': 17,
            '魔法少女序号': 13},
  'inventory': [],
  'name': '“巨人”',
@@ -1575,26 +1759,35 @@ GELIYA = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '魔能消耗百分比', '辅助效果值': '-100'}],
              'name': '魔力永驻',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y13-S001',
+             'skill_index': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99}],
              'name': '飞行',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y13-S002',
+             'skill_index': 2},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴精通',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y13-S003',
+             'skill_index': 3},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '消耗hp转为消耗mp', '辅助效果值': '1'}],
              'name': '魔力护体',
              'timing': '1',
-             '消耗mp': 1}],
- 'str_attrs': {'伤害值': '1d6+1d4'}}
+             '消耗mp': 1,
+             'skill_id': 'Y13-S004',
+             'skill_index': 4}],
+ 'str_attrs': {'伤害值': '1d6+1d4'},
+ 'next_skill_index': 5}
 
 # ============================================================
 #  新增召唤物模板（林白用）
@@ -1728,27 +1921,35 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '卡带切换·魂斗罗',
              'phase': 0,
              'timing': '3',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y14-S001',
+             'skill_index': 1},
             {'category': 4,
              'cooldown_rounds': 3,
              'effects': [{'target_phase': 2, 'type': 17, '客体': 1, '持续回合': 1}],
              'name': '卡带切换·最终幻想',
              'phase': 0,
              'timing': '3',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y14-S002',
+             'skill_index': 2},
             {'category': 4,
              'cooldown_rounds': 3,
              'effects': [{'target_phase': 3, 'type': 17, '客体': 1, '持续回合': 1}],
              'name': '卡带切换·音速索尼克',
              'phase': 0,
              'timing': '3',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y14-S003',
+             'skill_index': 3},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70}],
              'name': '像素射击',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S004',
+             'skill_index': 4},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 8, '成功率': 70},
                          {'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 8, '成功率': 70},
@@ -1756,13 +1957,17 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': 'S弹幕·散射',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y14-S005',
+             'skill_index': 5},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '2d10+1d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 8, '成功率': 70}],
              'name': 'S弹幕·集中',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y14-S006',
+             'skill_index': 6},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '3d8',
@@ -1775,7 +1980,9 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': 'L型贯穿激光',
              'phase': 1,
              'timing': '2',
-             '消耗mp': 7},
+             '消耗mp': 7,
+             'skill_id': 'Y14-S007',
+             'skill_index': 7},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'eject_phases': [1],
@@ -1788,13 +1995,17 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '残机替身',
              'phase': 1,
              'timing': '1',
-             '消耗mp': 8},
+             '消耗mp': 8,
+             'skill_id': 'Y14-S008',
+             'skill_index': 8},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d8+1d6+db', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 2, '成功率': 70}],
              'name': '重剑·迅捷',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S009',
+             'skill_index': 9},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '1d8+1d6+4+db',
@@ -1806,28 +2017,36 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '重剑·勇气',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S010',
+             'skill_index': 10},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99},
                          {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '模式切换·迅捷',
              'phase': 2,
              'timing': '3',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y14-S011',
+             'skill_index': 11},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力-2', '持续回合': 99},
                          {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰优势', '辅助效果值': '1'}],
              'name': '模式切换·勇气',
              'phase': 2,
              'timing': '3',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y14-S012',
+             'skill_index': 12},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'counter_type': 'limit_gauge', 'max_value': 5, 'type': 14, '客体': 1, '持续回合': 999}],
              'name': '极限槽',
              'phase': 2,
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S013',
+             'skill_index': 13},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '1d8+2+1d4+db',
@@ -1847,13 +2066,17 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '三连斩·散',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 6},
+             '消耗mp': 6,
+             'skill_id': 'Y14-S014',
+             'skill_index': 14},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '3d8+2+db', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 6, '成功率': 70}],
              'name': '三连斩·聚',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 6},
+             '消耗mp': 6,
+             'skill_id': 'Y14-S015',
+             'skill_index': 15},
             {'_once_per_battle': True,
              'category': 1,
              'counter_required': ['limit_gauge', 5],
@@ -1861,20 +2084,26 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '极限技·凶斩',
              'phase': 2,
              'timing': '2',
-             '消耗mp': 10},
+             '消耗mp': 10,
+             'skill_id': 'Y14-S016',
+             'skill_index': 16},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'counter_type': 'rings', 'max_value': 3, 'type': 14, '客体': 1, '持续回合': 999}],
              'name': '金环',
              'phase': 3,
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S017',
+             'skill_index': 17},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d4+2+db', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 2, '成功率': 70}],
              'name': '回旋踢',
              'phase': 3,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y14-S018',
+             'skill_index': 18},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+4', '持续回合': 1},
                          {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
@@ -1882,14 +2111,18 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '音速冲刺',
              'phase': 3,
              'timing': '3',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'Y14-S019',
+             'skill_index': 19},
             {'category': 2,
              'effects': [{'type': 18, '客体': 3, '射程': 8},
                          {'type': 2, '作用半径': 1, '客体': 135, '护盾值': '1d10', '持续回合': 2}],
              'name': '光速救援',
              'phase': 3,
              'timing': '2',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y14-S020',
+             'skill_index': 20},
             {'category': 3,
              'cost_counter_amount': 1,
              'cost_counter_type': 'rings',
@@ -1897,7 +2130,9 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '金环回收·壹',
              'phase': 3,
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y14-S021',
+             'skill_index': 21},
             {'category': 3,
              'cost_counter_amount': 2,
              'cost_counter_type': 'rings',
@@ -1906,8 +2141,11 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'name': '金环回收·贰',
              'phase': 3,
              'timing': '2',
-             '消耗mp': 4}],
- 'str_attrs': {'db': '1d4', '伤害值': '1d4+db'}}
+             '消耗mp': 4,
+             'skill_id': 'Y14-S022',
+             'skill_index': 22}],
+ 'str_attrs': {'db': '1d4', '伤害值': '1d4+db'},
+ 'next_skill_index': 23}
 
 # ============================================================
 #  角色15: 于长风 (Y15) — 火焰魔法 + 爆破圈 + 火鼠裘
@@ -1949,7 +2187,7 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
              'category': 1,
              'default_persist': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '1d10+1d6+2',
+                          '伤害骰': '1d10+1d8',
                           '可反击性': 0,
                           '可闪避性': 0,
                           '客体': 4,
@@ -1959,10 +2197,12 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
                           '每回合伤害骰': '1d3'}],
              'name': '爆破圈',
              'timing': '4',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y15-S001',
+             'skill_index': 1},
             {'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '2d6+1d4',
+                          '伤害骰': '2d6',
                           '可反击性': 0,
                           '可闪避性': 1,
                           '客体': 4,
@@ -1972,57 +2212,74 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
                           '每回合伤害骰': '1d3'}],
              'name': '瞬爆',
              'timing': '2',
-             '消耗mp': 5},
+             '消耗mp': 5,
+             'skill_id': 'Y15-S002',
+             'skill_index': 2},
             {'category': 1,
              'effects': [
-                 {'type': 1, '伤害骰': '2d6+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70},
-                 {'type': 1, '伤害骰': '2d6+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70},
+                 {'type': 1, '伤害骰': '2d6+1', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70},
+                 {'type': 1, '伤害骰': '2d6+1', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70},
                  # autocombat:disabled-effect
                  # {'type': 1, '伤害骰': '2d6+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70}
                  # autocombat:end-disabled-effect
              ],
              'name': '余烬',
              'timing': '2',
-             '消耗mp': 6},
+             '消耗mp': 6,
+             'skill_id': 'Y15-S003',
+             'skill_index': 3},
             {'category': 3,
              'effects': [{'type': 3, '回复hp': '1d3', '回复san': '1d3', '客体': 1}],
              'name': '燃梦孤灯·自身',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y15-S004',
+             'skill_index': 4},
             {'category': 3,
              'effects': [{'type': 3, '作用半径': 1, '回复hp': '1d3', '回复san': '1d3', '客体': 3}],
              'name': '燃梦孤灯·他人',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y15-S005',
+             'skill_index': 5},
             {'category': 8,
-             'effects': [{'type': 8, '作用半径': 10, '客体': 45, '持续回合': 2, '每回合伤害骰': '1d4+2', '领域中心跟随': 1},
-                         {'type': 1, '伤害骰': '2d10', '可反击性': 0, '可闪避性': 0, '客体': 45, '成功率': 90}],
+             'effects': [{'type': 8, '作用半径': 10, '客体': 45, '持续回合': 2, '每回合伤害骰': '1d4+1', '领域中心跟随': 1},
+                         {'type': 1, '伤害骰': '1d10+1d8', '可反击性': 0, '可闪避性': 0, '客体': 45, '成功率': 90}],
              'name': '葬火流光',
              'timing': '2',
-             '消耗mp': 20},
+             '消耗mp': 20,
+             'skill_id': 'Y15-S006',
+             'skill_index': 6},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 12, 'variant': 'fire_rat_cloak', '客体': 1, '持续回合': 999, '消耗mp_per_hit': 1}],
              'name': '火鼠裘',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y15-S007',
+             'skill_index': 7},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '飞行', '辅助效果值': '1'},
                          {'type': 4, '客体': 1, '技能加减值': '行动力-3', '持续回合': 99}],
              'name': '焰动力·悬浮',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y15-S008',
+             'skill_index': 8},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+3', '持续回合': 1},
                          {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
                          {'type': 4, '作用半径': 2, '客体': 3, '技能加减值': '行动力+3', '持续回合': 1}],
              'name': '焰动力·疾飞',
              'timing': '3',
-             '消耗mp': 2}],
- 'str_attrs': {'db': '1d4', '伤害值': '1d8+1d3+db'}}
+             '消耗mp': 2,
+             'skill_id': 'Y15-S009',
+             'skill_index': 9}],
+ 'str_attrs': {'db': '1d4', '伤害值': '1d8+1+db'},
+ 'next_skill_index': 10}
 
 # ============================================================
 #  角色16: 林白 (Y16) — 虚假之月/月能/幻造兵武/武器切换/吟唱
@@ -2047,7 +2304,7 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
            '智力': 65,
            '状态': 60,
            '理智': 70,
-           '等级': 6,
+           '等级': 5,
            '行动力': 8,
            '闪避': 60,
            '额外行动数': 0,
@@ -2064,7 +2321,9 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'effects': [{'turn_mp_refund': '2d3', 'type': 4, '可叠加': 2, '客体': 13, '持续回合': '2d3'}],
              'name': '灵感大爆发',
              'timing': '2',
-             '消耗mp': '3d3'},
+             '消耗mp': '3d3',
+             'skill_id': 'Y16-S001',
+             'skill_index': 1},
             {'_mp_formula_transformed': '2d3',
              'category': 5,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '虚假之月', '客体': 1, '持续回合': 99},
@@ -2076,12 +2335,16 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
                           '辅助效果值': 'b'}],
              'name': '虚假之月',
              'timing': '2',
-             '消耗mp': '3d4'},
+             '消耗mp': '3d4',
+             'skill_id': 'Y16-S002',
+             'skill_index': 2},
             {'category': 5,
              'effects': [{'type': 5, '召唤个数': 2, '召唤物模板': '影之克隆', '客体': 1, '持续回合': 5}],
              'name': '月中的倒影',
              'timing': '2',
-             '消耗mp': '2d3'},
+             '消耗mp': '2d3',
+             'skill_id': 'Y16-S003',
+             'skill_index': 3},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'hp_threshold_grant': {'aux_code': 30, 'cost_moon': 5, 'ratio': 0.5},
@@ -2092,13 +2355,17 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
                           '辅助效果值': '1'}],
              'name': '辉月女神的祝福',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S004',
+             'skill_index': 4},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6'}],
+             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d4'}],
              'name': '幻造兵武',
              'timing': '1',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S005',
+             'skill_index': 5},
             {'category': 1,
              'effects': [{'bow_volley': 3,
                           'charge_moon': 2,
@@ -2113,25 +2380,33 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
                           '成功率': 70}],
              'name': '幻造兵武·即兴短句',
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S006',
+             'skill_index': 6},
             {'category': 4,
              'effects': [{'type': 17, 'weapon_state': 'staff', '客体': 1, '持续回合': 99}],
              'name': '切换·法杖',
              'timing': '23',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S007',
+             'skill_index': 7},
             {'category': 4,
              'effects': [{'type': 17, 'weapon_state': 'bow', '客体': 1, '持续回合': 99}],
              'name': '切换·弓',
              'timing': '23',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S008',
+             'skill_index': 8},
             {'category': 4,
              'effects': [{'type': 17, 'weapon_state': 'sword', '客体': 1, '持续回合': 99}],
              'name': '切换·剑',
              'timing': '23',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y16-S009',
+             'skill_index': 9},
             {'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '2d12',
+                          '伤害骰': '2d10',
                           '可反击性': 0,
                           '可贯穿性': 1,
                           '可闪避性': 0,
@@ -2143,7 +2418,9 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'timing': '2',
              'weapon_required': 'bow',
              '吟唱回合': 1,
-             '消耗mp': 10},
+             '消耗mp': 10,
+             'skill_id': 'Y16-S010',
+             'skill_index': 10},
             {'category': 2,
              'effects': [{'shield_absorb_moon_ratio': 1,
                           'type': 2,
@@ -2154,7 +2431,9 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'name': '已然遥远的理想城',
              'timing': '2',
              'weapon_required': 'staff',
-             '消耗mp': 6},
+             '消耗mp': 6,
+             'skill_id': 'Y16-S011',
+             'skill_index': 11},
             {'category': 1,
              'effects': [{'consume_moon': True,
                           'damage_moon_mult': 5,
@@ -2169,12 +2448,15 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
              'name': '月光王座全额率输出',
              'timing': '2',
              'weapon_required': 'sword',
-             '消耗mp': 10}],
+             '消耗mp': 10,
+             'skill_id': 'Y16-S012',
+             'skill_index': 12}],
  'str_attrs': {'damage_suffix_map': {'剑': 'a', '弓术': 'b'},
                'db': '0',
                '伤害值': '1d6+1d4+db',
                '伤害值a': '1d8+1d4+db',
-               '伤害值b': '1d6+1d2+1+db/2'}}
+               '伤害值b': '1d6+1d2+1+db/2'},
+ 'next_skill_index': 13}
 
 # ============================================================
 #  角色17: 夜诏明 (Y17) — 血液魔法使
@@ -2256,7 +2538,9 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '猩红眼眸',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S001',
+             'skill_index': 1},
             {'blood_kind': 'arcana',
              'category': 1,
              'cost_blood_ml': 100,
@@ -2274,13 +2558,17 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '阿瑞卡纳律动',
              'timing': '2',
              '吟唱回合': 3,
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S002',
+             'skill_index': 2},
             {'blood_kind': 'guard',
              'category': 4,
              'effects': [{'type': 4, '客体': 1, '持续回合': 10, '辅助效果': '受到伤害加值', '辅助效果值': '-1'}],
              'name': '凝血式-守',
              'timing': '3',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S003',
+             'skill_index': 3},
             {'blood_kind': 'sacrifice',
              'category': 1,
              'chant_interrupt_hp_pct': 90,
@@ -2298,14 +2586,18 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '祭炼式-破',
              'timing': '2',
              '吟唱回合': 2,
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S004',
+             'skill_index': 4},
             {'blood_kind': 'blade',
              'category': 4,
              'cost_blood_ml': 100,
              'effects': [{'type': 4, '客体': 1, '持续回合': 10}],
              'name': '凝血式-幻',
              'timing': '3',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S005',
+             'skill_index': 5},
             {'blood_kind': 'war',
              'category': 1,
              'chain_on_blood_ml': 3000,
@@ -2324,7 +2616,9 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'on_kill_heal_san': 1,
              'timing': '2',
              '消耗mp': 1,
-             '消耗san': '1d8'},
+             '消耗san': '1d8',
+             'skill_id': 'Y17-S006',
+             'skill_index': 6},
             {'blood_kind': 'store',
              'category': 3,
              'cost_blood_ml': 500,
@@ -2333,26 +2627,34 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '凝血式-存',
              'timing': '23',
              '消耗mp': 2,
-             '消耗san': 1},
+             '消耗san': 1,
+             'skill_id': 'Y17-S007',
+             'skill_index': 7},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '持续回合': 60, '辅助效果': '飞行', '辅助效果值': '1'}],
              'name': '凝血式-浮',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S008',
+             'skill_index': 8},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '持续回合': 1}],
              'name': '等价交换',
              'phase': 99,
              'timing': '2',
-             '消耗mp': '1d8'},
+             '消耗mp': '1d8',
+             'skill_id': 'Y17-S009',
+             'skill_index': 9},
             {'blood_kind': 'cape',
              'category': 3,
              'cost_blood_ml': 1000,
              'effects': [{'type': 3, '回复mp': '4', '客体': 1}],
              'name': '血染披风',
              'timing': '3',
-             '消耗mp': 1},
+             '消耗mp': 1,
+             'skill_id': 'Y17-S010',
+             'skill_index': 10},
             {'blood_kind': 'slash',
              'category': 1,
              'cost_blood_ml': 500,
@@ -2366,16 +2668,21 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'extra_attack_per_blood': 1000,
              'name': '血月斩击',
              'timing': '2',
-             '消耗mp': '1d8'},
+             '消耗mp': '1d8',
+             'skill_id': 'Y17-S011',
+             'skill_index': 11},
             {'blood_kind': 'spear',
              'category': 1,
              'cost_blood_ml': 1000,
              'effects': [{'type': 4, '客体': 1}],
              'name': '血色突刺',
              'timing': '23',
-             '消耗mp': 1}],
+             '消耗mp': 1,
+             'skill_id': 'Y17-S012',
+             'skill_index': 12}],
  'str_attrs': {'damage_suffix_map': {'剑': 'a', '弓术': 'b'}, 'db': '-2', '伤害值': '1d6+db', '伤害值b': '1d6+db/2'},
- '初始血液': 2000}
+ '初始血液': 2000,
+ 'next_skill_index': 13}
 
 # ============================================================
 #  X1 — Y10底子(全技能) + Y11双技能，HP=80
@@ -2411,22 +2718,30 @@ X1 = {'attrs': {'不可指定': 1,
              'effects': [{'type': 2, '作用半径': 4, '客体': 13, '护盾值': '2d6', '持续回合': 5}],
              'name': '屏障术',
              'timing': '2',
-             '消耗mp': 9},
+             '消耗mp': 9,
+             'skill_id': 'X1-S001',
+             'skill_index': 1},
             {'category': 3,
              'effects': [{'type': 3, '作用半径': 8, '回复hp': '1d4+2', '客体': 13}],
              'name': '治疗术',
              'timing': '2',
-             '消耗mp': 3},
+             '消耗mp': 3,
+             'skill_id': 'X1-S002',
+             'skill_index': 2},
             {'category': 5,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '藤蔓', '客体': 1, '持续回合': 5}],
              'name': '藤蔓术',
              'timing': '23',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'X1-S003',
+             'skill_index': 3},
             {'category': 5,
              'effects': [{'type': 5, '召唤个数': '1d4', '召唤物模板': '蜂鸟', '客体': 1, '持续回合': 99}],
              'name': '召唤蜂鸟',
              'timing': '23',
-             '消耗mp': 6},
+             '消耗mp': 6,
+             'skill_id': 'X1-S004',
+             'skill_index': 4},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '1d10+2d6+3',
@@ -2440,7 +2755,9 @@ X1 = {'attrs': {'不可指定': 1,
                           '辅助效果值': 'p'}],
              'name': '挥动镰刀',
              'timing': '2',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'X1-S005',
+             'skill_index': 5},
             {'category': 8,
              'effects': [{'on_enter_attr_debuff': '闪避-10',
                           'on_enter_mp_drain_pct': 0.4,
@@ -2456,8 +2773,11 @@ X1 = {'attrs': {'不可指定': 1,
                          {'type': 4, '客体': 1, '技能加减值': 'MOV+5', '持续回合': 3}],
              'name': '黑雾笼罩',
              'timing': '2',
-             '消耗mp': 3}],
- 'str_attrs': {'不可指定召唤物': '藤蔓', '伤害值': '1d6+1d4'}}
+             '消耗mp': 3,
+             'skill_id': 'X1-S006',
+             'skill_index': 6}],
+ 'str_attrs': {'不可指定召唤物': '藤蔓', '伤害值': '1d6+1d4'},
+ 'next_skill_index': 7}
 
 # ============================================================
 #  所有角色列表
@@ -2558,7 +2878,9 @@ XUEREN_V1 = {'attrs': {'伤害贯穿': 1,
                          {'type': 1, '伤害骰': '1d6+1d4', '可反击性': 0, '可闪避性': 1, '客体': 45, '射程': 99, '成功率': 70}],
              'name': '制造雪带',
              'timing': '2',
-             '消耗mp': 4},
+             '消耗mp': 4,
+             'skill_id': 'Y60-S001',
+             'skill_index': 1},
             {'category': 8,
              'default_persist': 1,
              'effects': [{'type': 8,
@@ -2571,13 +2893,47 @@ XUEREN_V1 = {'attrs': {'伤害贯穿': 1,
                           '领域中心跟随': 1}],
              'name': '雪幕',
              'timing': '1',
-             '消耗mp': 2},
+             '消耗mp': 2,
+             'skill_id': 'Y60-S002',
+             'skill_index': 2},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d6+1d4+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 75}],
              'name': '发送雪球',
              'timing': '2',
-             '消耗mp': 2}],
- 'str_attrs': {'伤害值': '1d8+1d4'}}
+             '消耗mp': 2,
+             'skill_id': 'Y60-S003',
+             'skill_index': 3}],
+ 'str_attrs': {'伤害值': '1d8+1d4'},
+ 'next_skill_index': 4}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2597,7 +2953,15 @@ ALL_CHARACTERS = [DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI, XUEREN, XUEREN_V1, HUA
 
 def load_character_to_engine(engine, char_data: dict, user_id: str):
     """Load a character definition into the CombatEngine."""
+    char_data = identify_skills(char_data)
     char = engine.get_char(user_id)
+    # Reloading a definition must also remove disabled/deleted skill attributes.
+    skill_prefixes = tuple(f'技能{number}' for number in CN_NUMS[1:])
+    for attributes in (char.attrs, char.str_attrs):
+        for key in list(attributes):
+            if key.startswith(skill_prefixes):
+                del attributes[key]
+    char.spells = []
     char.name = char_data['name']
     char.serial = char_data.get('serial', '')
     for k, v in char_data.get('attrs', {}).items():
@@ -2631,8 +2995,12 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         for si, sk in enumerate(tmpl.get('skills', []), 1):
             char.set_str(f"{prefix}技能{si}", sk)
 
-    for si, spell in enumerate(char_data.get('spells', []), 1):
+    for spell in char_data.get('spells', []):
+        if spell.get('_disabled', False):
+            continue
+        si = spell['skill_index']
         prefix = f"技能{CN_NUMS[si]}"
+        char.set_str(f"{prefix}skill_id", spell['skill_id'])
         char.set_str(f"{prefix}名称", spell['name'])
         char.set_str(f"{prefix}时机", spell.get('timing', '2'))
         char.set_attr(f"{prefix}类别", spell.get('category', 1))
@@ -2809,7 +3177,9 @@ _SUMMON_TEMPLATES = None
 
 
 def _summon_skill_mp_cost(skill):
-    """Ordinary attacks are free; every named summon ability costs at least 1 MP."""
+    """Honor explicit free attacks; other named summon abilities cost at least 1 MP."""
+    if 'mp_cost' in skill and skill.get('mp_cost') == 0:
+        return 0
     if skill.get('name', '') in ('', '攻击', '普通攻击', '斗殴'):
         return 0
     return max(1, int(skill.get('mp_cost', 0) or 0))
@@ -3851,7 +4221,9 @@ class CombatEngine:
             e.get('sourceUserId') == uid and e.get('spellIndex') in (11, 12))])
         char._y14_mode = mode
         index = 11 if mode == 'swift' else 12
-        spell = next(s for s in self.load_spells(uid) if s['index'] == index)
+        spell = next((s for s in self.load_spells(uid) if s['index'] == index), None)
+        if not spell:
+            return
         for i, eff in enumerate(spell['effects']):
             self._apply_target_effect(uid, uid, eff, spell, False, i)
 
@@ -4810,37 +5182,38 @@ class CombatEngine:
                 spell = spells.get(index)
                 if not spell:
                     continue
+                kind = self._y17_spell_kind(uid, spell)
                 options = self._y17_ai_options(uid, spell)
-                if index == 3 and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
+                if kind == 'guard' and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
                     score = 65 if distance <= 10 else 8
-                elif index == 5 and acts.get('附加', 0) > 0:
+                elif kind == 'blade' and acts.get('附加', 0) > 0:
                     score = 60 if not self._y17_blade(uid) else (50 if options['form'] == 'sword' and blood >= 600 else 12)
-                elif index == 7 and options.get('target'):
+                elif kind == 'store' and options.get('target'):
                     target = options['target']
                     cap = self.get_char(target).get_attr('体力上限')
                     missing = cap - self._hp_safe(target)
                     if acts.get('附加', 0) > 0 and missing >= rules.get('ball_heal', 1) and self._hp_safe(target) <= cap * .8:
                         score = 75 if self._hp_safe(target) <= cap * .65 else 35
-                elif index == 10 and mp < 8 and blood >= rules['cape_ml'] + 500 and acts.get('附加', 0) > 0:
+                elif kind == 'cape' and mp < 8 and blood >= rules['cape_ml'] + 500 and acts.get('附加', 0) > 0:
                     score = 70
-                elif base == 'SKILL_12_THROW':
+                elif kind == 'spear' and base.endswith('_THROW'):
                     spears = self._y17_spears(uid)
                     if spears and (spears[0] <= 1 or target_hp <= 16 or distance > 2):
                         score = avg_damage(rules['spear_throw']) * char.get_attr('弓术', 0) / 100
-                elif index == 12 and not self._y17_spears(uid) and acts.get('附加', 0) > 0 and distance <= 2 and blood >= rules['spear_ml'] + 500:
+                elif kind == 'spear' and not self._y17_spears(uid) and acts.get('附加', 0) > 0 and distance <= 2 and blood >= rules['spear_ml'] + 500:
                     score = 40
-                elif index == 11:
+                elif kind == 'slash':
                     segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
                     phase_damage = avg_damage(rules['moon_phases'][options['moon'] - 1][1])
                     healing = min(max_hp - hp, phase_damage) if options['moon'] in (1, 2, 7, 8) else 0
                     score = (phase_damage + healing * .7) * .8 * segments
-                elif index == 6 and hp > max(8, max_hp * .3):
+                elif kind == 'war' and hp > max(8, max_hp * .3):
                     score = 13 * min(3, len(enemies))
-                elif index == 2 and hp >= max_hp * .45:
+                elif kind == 'arcana' and hp >= max_hp * .45:
                     # Three actions, paid once; compare against immediate attacks.
                     plan = self._y17_plan(uid, None, dict(spell, _blood_options=options), ai=True)
                     score = min(plan['spell']['_actual_mp_cost'] * 4, target_hp) * .8 / 3 - plan['hp'] * .25
-                elif index == 4 and hp <= max_hp * .3:
+                elif kind == 'sacrifice' and hp <= max_hp * .3:
                     score = max_hp * .9 / 2
             scores.append((score, action))
         if not scores:
@@ -6859,6 +7232,8 @@ class CombatEngine:
                 if current_wpn != wpn_req:
                     continue
             spell = {'index': i, 'name': name, 'effects': []}
+            spell['skill_id'] = char.get_str(f"{prefix}skill_id") or f'{char.serial or uid}-S{i:03}'
+            spell['skill_index'] = i
             for k in ['级别','类别','消耗mp','消耗san','熟练度','里程碑','吟唱回合','默认延续性']:
                 v = char.get_attr(f"{prefix}{k}")
                 if not v:
@@ -8418,15 +8793,15 @@ class CombatEngine:
             # 夜诏明 s2: max(25% maxMP, 50% curMP)
             max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
             cur_mp_raw = char.get_attr('魔力', 0) or 0
-            pct_max = max(1, max_mp * 25 // 100)
-            pct_cur = max(1, cur_mp_raw * 50 // 100)
+            pct_max = max_mp * 25 // 100
+            pct_cur = cur_mp_raw * 50 // 100
             mp_cost = max(pct_max, pct_cur)
             spell['_actual_mp_cost'] = mp_cost  # Store for damage calculation
         else:
             mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
 
         if not spell.get('_registration_only') and not deferred_phase_cost:
-            mp_cost = max(1, mp_cost)
+            mp_cost = max(0, mp_cost)
 
         san_cost_raw = 0 if deferred_phase_cost else spell.get('消耗san', 0)
         if isinstance(san_cost_raw, str) and 'd' in str(san_cost_raw).lower():
@@ -8556,7 +8931,7 @@ class CombatEngine:
         mp_pct_max = spell.get('cost_mp_pct_max', 0) or 0
         if mp_pct_max > 0:
             max_mp = char.get_attr('魔力上限', char.get_attr('魔力', 26)) or 26
-            mp_cost_pct = max(1, max_mp * mp_pct_max // 100)
+            mp_cost_pct = max(0, max_mp * mp_pct_max // 100)
             # Use the larger of dice cost and percentage cost
             mp_cost = max(mp_cost, mp_cost_pct)
 
@@ -8564,14 +8939,14 @@ class CombatEngine:
         mp_pct_cur = spell.get('cost_mp_pct_current', 0) or 0
         if mp_pct_cur > 0:
             cur_mp_for_pct = char.get_attr('魔力', 0) or 0
-            mp_cost_cur = max(1, cur_mp_for_pct * mp_pct_cur // 100)
+            mp_cost_cur = max(0, cur_mp_for_pct * mp_pct_cur // 100)
             mp_cost = max(mp_cost, mp_cost_cur)
 
         # AUX 9/10: MP cost modifiers
         if mp_cost > 0:
-            mp_cost = max(1, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
+            mp_cost = max(0, int(mp_cost * self._get_buff_mp_cost_pct(caster_id)))
             mp_cost += self._get_buff_mp_cost_flat(caster_id)  # AUX code 10
-            mp_cost = max(1, mp_cost)
+            mp_cost = max(0, mp_cost)
 
         if any(self._get_counter(caster_id, kind) < amount for kind, amount in deferred_counters.items()):
             return ActionExecutionResult(f'{char.name} 资源不足。\n', False, 'spell_rejected')
@@ -10193,10 +10568,12 @@ class CombatEngine:
         self._move_to_attack_range(uid, target, 1)
         if not self._in_range_of(uid, target, 1):
             return ['小雪人移动接近目标']
+        # Older saved template snapshots inherit the current data definition.
+        melee = template.get('frost_melee') or _get_summon_template('小雪人')['frost_melee']
         if hasattr(self, '_fast_coc7_attack'):
-            result = self._fast_coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)
+            result = self._fast_coc7_attack(uid, target, '斗殴', melee['success'], melee['dice'], 0, 0)
             return [result[-1]]
-        return self._coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)[-1]
+        return self._coc7_attack(uid, target, '斗殴', melee['success'], melee['dice'], 0, 0)[-1]
 
     # ---- Tick-down (unified) ----
     def _tick_down(self):
@@ -13539,6 +13916,7 @@ def encode_state(engine, uid):
     # Spells
     spells = char.spells or engine.load_spells(uid)
 
+
     # Dim 7: n_skills (available active skills, capped at 4)
     n_skills = min(len([s for s in spells
                         if has_timing(s.get('时机','2'), '2')
@@ -13950,8 +14328,11 @@ def get_available_actions(engine, uid):
         phase_key += '_' + (char.get_str('_weapon_name') or 'staff')
     spells = char.spells or engine.load_spells(uid)
 
+    # Re-enabled or reordered definitions must not reuse stale AI candidates.
+    phase_key = (phase_key, tuple((s['index'], s.get('skill_id'), s['name'], str(s.get('时机', '2'))) for s in spells))
+
     if uid in getattr(engine, '_summon_members', {}):
-        phase_key += repr([(sp['index'], sp['name']) for sp in spells])
+        phase_key += (tuple((sp['index'], sp['name']) for sp in spells),)
 
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
 
@@ -14089,9 +14470,9 @@ def get_available_actions(engine, uid):
         filtered.append((ak, an))
 
     if engine._is_y17(uid) and engine._y17_spears(uid) and not engine._y17_chant(uid):
-        spear = next((s for s in spells if s['index'] == 12), None)
+        spear = next((s for s in spells if engine._y17_spell_kind(uid, s) == 'spear'), None)
         if spear and not engine._y17_preflight(uid, dict(spear, _blood_options={'mode': 'throw'}), ai=True):
-            filtered.append(('SKILL_12_THROW__T0', '投掷血枪'))
+            filtered.append((f'SKILL_{spear["index"]}_THROW__T0', '投掷血枪'))
 
     # ── 射程过滤: 仅对敌方伤害动作检查可达性 ──
     my_entry = next((e for e in il if e['userId'] == uid), None)
@@ -14196,7 +14577,7 @@ def action_slot_for(engine, uid, action_key):
     - Everything else uses a main action.
     """
     base, _ = parse_action(action_key)
-    if base == 'SKILL_12_THROW':
+    if base.startswith('SKILL_') and base.endswith('_THROW'):
         return '主动'
     if base in ('EAT_CAKE', 'GIVE_CAKE', 'MOVE_TOWARD'):
         return '附加'
@@ -14509,7 +14890,7 @@ def execute_action(engine, uid, action_key):
         spells = engine.load_spells(uid)
         spell = next((s for s in spells if s['index'] == skill_num), None)
         if spell:
-            if base == 'SKILL_12_THROW':
+            if base.endswith('_THROW'):
                 return engine._execute_spell(uid, tid, dict(spell, _blood_options={'mode': 'throw'}))
             if engine._is_y17(uid):
                 options = engine._y17_ai_options(uid, spell)
@@ -15817,8 +16198,8 @@ class AIController:
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a give {target}' if target else '.i end'
         if base_ak == 'END_TURN': return '.i end'
-        if base_ak == 'SKILL_12_THROW':
-            return '.s12 mode=throw'
+        if base_ak.startswith('SKILL_') and base_ak.endswith('_THROW'):
+            return f'.s{int(base_ak.split("_")[1])} mode=throw'
         if base_ak.startswith('SKILL_'):
             skill_num = int(base_ak.split('_')[1])
             spells = engine.load_spells(user_id) or []

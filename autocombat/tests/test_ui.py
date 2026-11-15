@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests.test_battle_execution import http_module
+import characters_data as cd
 
 
 class BrowserUITests(unittest.TestCase):
@@ -72,9 +73,16 @@ class BrowserUITests(unittest.TestCase):
         self.eng._set_initiative(il)
 
     def test_catalog_and_built_page(self):
-        data = self.client.get('/api/ui/catalog').get_json()['characters']
+        response_data = self.client.get('/api/ui/catalog').get_json()
+        data = response_data['characters']
         self.assertGreaterEqual(len(data), 12)
         self.assertTrue(all(c['spells'] and c['attrs'] and c['portrait'] for c in data))
+        self.assertIn('小雪人', response_data['summon_templates'])
+        self.assertIn('蛋糕HP', response_data['item_templates'])
+        by_serial = {card['serial']: card for card in data}
+        self.assertEqual(by_serial['Y6']['passive_rules'], cd.XUEREN['passive_rules'])
+        self.assertEqual(by_serial['Y17']['blood_rules'], cd.YEZHAOMING['blood_rules'])
+        self.assertEqual(by_serial['Y17']['初始血液'], cd.YEZHAOMING['初始血液'])
         response = self.client.get('/ui/')
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'<!doctype html>', response.data)
@@ -282,6 +290,20 @@ class BrowserUITests(unittest.TestCase):
         final = rows[-1]['result']
         self.assertEqual(final['wins_a']+final['wins_b'],2)
         self.assertAlmostEqual(final['rate_a']+final['rate_b'],1)
+
+    def test_matrix_csv_export_labels_win_direction_and_average_rounds(self):
+        job = dict(id='matrix-test', owner=self.me, status='completed', result={
+            'teams': ['甲队', '乙队'],
+            'matrix': [[0.5, 0.75], [0.25, 0.5]],
+            'average_rounds': [8.26, 11.0],
+        })
+        self.ext['store'].put('task', job)
+
+        response = self.client.get('/api/ui/simulations/matrix-test/export?format=csv')
+        text = response.data.decode('utf-8-sig')
+        self.assertIn('行队伍战胜列队伍的概率', text)
+        self.assertIn('8.3回合,0.7500', text)
+        self.assertIn('0.2500,11.0回合', text)
 
     def test_http_simulation_job_and_private_exports(self):
         params = dict(team_a=['Y1'],team_b=['Y1'],map_size='10x10',n=2,seed=123,season=50)

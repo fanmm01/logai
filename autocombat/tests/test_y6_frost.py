@@ -343,6 +343,20 @@ class FrostTests(unittest.TestCase):
             eng._reconcile_summon_groups()
             self.assertIsNotNone(eng._create_summon('snow', '小雪人'))
 
+    def test_summon_melee_values_follow_template(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            eng = setup(cls)
+            sid = eng._create_summon('snow', '小雪人')
+            eng._set_summon_entry_fields(sid, summon_mp=0)
+            template = copy.deepcopy(eng._snow_summon_template(sid))
+            template['frost_melee'] = {'success': 83, 'dice': '3d7'}
+            attack_name = '_fast_coc7_attack' if cls == be.FastBattleEngine else '_coc7_attack'
+            result = (sid, 'enemy', 1, 'hit') if cls == be.FastBattleEngine else (sid, 'enemy', ['hit'])
+            with patch.object(eng, '_snow_summon_template', return_value=template), \
+                 patch.object(eng, attack_name, return_value=result) as attack:
+                eng._snow_summon_action(sid)
+            self.assertEqual(attack.call_args.args[2:5], ('斗殴', 83, '3d7'))
+
     def test_data_loading_and_new_battle_reset(self):
         eng = setup()
         cd.load_character_to_engine(eng, cd.XUEREN, 'snow')

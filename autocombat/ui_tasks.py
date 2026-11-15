@@ -231,9 +231,14 @@ class Tasks:
             writer = csv.writer(buf)
             result = job['result']
             if 'matrix' in result:
-                writer.writerow([''] + result['teams'])
-                for name, row in zip(result['teams'], result['matrix']):
-                    writer.writerow([name] + row)
+                average_rounds = result.get('average_rounds', [])
+                writer.writerow(['行队伍战胜列队伍的概率；对角线为该队伍参与的所有对局平均回合数'] + result['teams'])
+                for i, (name, row) in enumerate(zip(result['teams'], result['matrix'])):
+                    cells = [f'{value:.4f}' if value is not None else '' for value in row]
+                    if i < len(cells):
+                        avg = average_rounds[i] if i < len(average_rounds) else None
+                        cells[i] = f'{avg:.1f}回合' if avg is not None else ''
+                    writer.writerow([name] + cells)
             else:
                 writer.writerow(['field', 'value'])
                 for k, v in result.items():

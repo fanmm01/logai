@@ -243,6 +243,73 @@ class ManagementTests(unittest.TestCase):
         saved['characters'][0]['spells'][0]['effects'][0]['_disabled'] = False
         self.assertEqual(self.client.post('/api/ui/data/save', json=saved).status_code, 400)
 
+    def test_skill_identities_survive_disable_reorder_and_reenable_for_all_characters(self):
+        from battle_engine import FullBattleEngine
+        data = self.client.get('/api/ui/data').get_json()
+        expected = {ch['serial']: {s['skill_id']: s['skill_index'] for s in ch['spells']} for ch in data['characters']}
+        for ch in data['characters']:
+            if ch['spells']:
+                ch['spells'][0]['_disabled'] = True
+                ch['spells'].reverse()
+        saved = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        data = self.client.get('/api/ui/data').get_json()
+        for ch in data['characters']:
+            self.assertEqual({s['skill_id']: s['skill_index'] for s in ch['spells']}, expected[ch['serial']])
+            for spell in ch['spells']:
+                spell['_disabled'] = False
+        saved = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        data = self.client.get('/api/ui/data').get_json()
+        for ch in data['characters']:
+            engine = FullBattleEngine()
+            self.module.load_character_to_engine(engine, ch, 'actor')
+            for spell in engine.load_spells('actor'):
+                self.assertEqual(spell['index'], expected[ch['serial']][spell['skill_id']])
+
+    def test_deleted_skill_slot_is_not_assigned_to_new_skill(self):
+        data = self.client.get('/api/ui/data').get_json()
+        ch = data['characters'][0]
+        deleted = ch['spells'].pop()
+        self.assertEqual(self.client.post('/api/ui/data/save', json=data).status_code, 200)
+        data = self.client.get('/api/ui/data').get_json()
+        ch = data['characters'][0]
+        ch['spells'].append(dict(name='new skill', timing='2', category=1, effects=[]))
+        saved = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        new = self.client.get('/api/ui/data').get_json()['characters'][0]['spells'][-1]
+        self.assertGreater(new['skill_index'], deleted['skill_index'])
+        self.assertNotEqual(new['skill_id'], deleted['skill_id'])
+
+    def test_duplicate_and_modified_skill_ids_are_rejected_atomically(self):
+        data = self.client.get('/api/ui/data').get_json()
+        original = (self.root/'characters_data.py').read_bytes()
+        for mode in ('duplicate_id', 'duplicate_slot', 'modified_id', 'modified_slot', 'cross_character'):
+            with self.subTest(mode=mode):
+                changed = copy.deepcopy(data)
+                first, second = changed['characters'][0]['spells'][:2]
+                second['_disabled'] = True
+                if mode == 'duplicate_id': second['skill_id'] = first['skill_id']
+                elif mode == 'duplicate_slot': second['skill_index'] = first['skill_index']
+                elif mode == 'modified_id': second['skill_id'] = 'modified'
+                elif mode == 'modified_slot': second['skill_index'] = 29
+                else: changed['characters'][1]['spells'][0]['skill_id'] = first['skill_id']
+                self.assertEqual(self.client.post('/api/ui/data/save', json=changed).status_code, 400)
+                self.assertEqual((self.root/'characters_data.py').read_bytes(), original)
+
+    def test_legacy_clients_recover_existing_skill_identity(self):
+        data = self.client.get('/api/ui/data').get_json()
+        expected = {ch['serial']: [(s['skill_id'], s['skill_index']) for s in ch['spells']] for ch in data['characters']}
+        for ch in data['characters']:
+            ch.pop('next_skill_index', None)
+            for spell in ch['spells']:
+                spell.pop('skill_id', None)
+                spell.pop('skill_index', None)
+        saved = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        for ch in self.client.get('/api/ui/data').get_json()['characters']:
+            self.assertEqual([(s['skill_id'], s['skill_index']) for s in ch['spells']], expected[ch['serial']])
+
     def test_disabled_effect_delete_and_backup_restore_remain_distinct(self):
         baseline_comments = (self.root/'characters_data.py').read_text(encoding='utf-8').count(START)
         data = self.client.get('/api/ui/data').get_json()

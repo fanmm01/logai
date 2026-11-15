@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { TermText } from './KnowledgeUI';
+import { resolveEncyclopediaValues, type EncyclopediaData } from './encyclopediaValues';
 import './encyclopedia.css';
 
 // Older articles store section titles as plain array entries.
@@ -27,8 +28,8 @@ function parameter(text: string) {
   return { label: match[1], value: match[2] };
 }
 
-export function EncyclopediaProse({ content, sourceKey }: { content: string | string[]; sourceKey?:string }) {
-  const lines = (Array.isArray(content) ? content : [content]).flatMap(text => text.split(/\r?\n/));
+export function EncyclopediaProse({ content, sourceKey, data }: { content: string | string[]; sourceKey?:string; data?: EncyclopediaData }) {
+  const lines = (Array.isArray(content) ? content : [content]).map(text => data ? resolveEncyclopediaValues(text, data) : text).flatMap(text => text.split(/\r?\n/));
   const blocks = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();

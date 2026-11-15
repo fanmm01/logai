@@ -4,11 +4,11 @@ const path=require('node:path');
 const React=require('react');
 const {renderToStaticMarkup}=require('react-dom/server');
 const {loadTs}=require('./load-ts.cjs');
-const {buildDefinitions,termsFor,splitTerms,mechanicsSections,overview}=loadTs(path.resolve(__dirname,'../src/knowledge.ts'));
-const {KnowledgeProvider,TermText,HelpPage}=loadTs(path.resolve(__dirname,'../src/KnowledgeUI.tsx'));
+const {buildDefinitions,definitionHelpAnchor,termsFor,splitTerms,mechanicsSections,mechanicsDefinitions,specialistDefinitions,overview}=loadTs(path.resolve(__dirname,'../src/knowledge.ts'));
+const {KnowledgeProvider,DefinitionPanel,TermText,HelpPage}=loadTs(path.resolve(__dirname,'../src/KnowledgeUI.tsx'));
 const {pageFromPath,pageUrl,pages}=loadTs(path.resolve(__dirname,'../src/navigation.ts'));
 const profiles=require('../src/data/encyclopedia.json');
-const catalog=Object.entries(profiles).map(([serial,profile])=>({...profile,serial,name:serial,attrs:{},spells:[],portrait:'',avatar:''}));
+const {catalog}=require('./catalog-fixture.cjs');
 const definitions=buildDefinitions(catalog);
 const {definitionIsNearby,isOwnDefinition}=loadTs(path.resolve(__dirname,'../src/definitionVisibility.ts'));
 test('self references are excluded by definition ownership independently of viewport and collapse',()=>{
@@ -48,9 +48,69 @@ test('all UI paths resolve, including legacy root and invalid paths',()=>{
 test('mechanics use the actual eight document sections and all definition targets exist',()=>{
   assert.equal(mechanicsSections.length,8);
   assert.match(mechanicsSections[1].content,/普通闪避/);
-  assert.match(mechanicsSections[1].content,/1 MP/);
+  assert.match(mechanicsSections[1].content,/最终最低为 0 MP/);
+  assert.doesNotMatch(mechanicsSections[1].content,/技能最低消耗.*1 MP|费用修正后仍至少为 1 MP/);
   assert.equal(new Set(definitions.map(d=>d.id)).size,definitions.length);
   for(const d of definitions){assert.ok(d.text,d.id);for(const section of d.sections)assert.ok(mechanicsSections.some(s=>s.id===section),d.id);}
+});
+
+test('card definitions preserve full worked rules and shared aliases instead of keyword-only sentences',()=>{
+  const rule=name=>mechanicsDefinitions.find(d=>d.name===name).text;
+  assert.match(rule('闪避'),/攻击极难 3、闪避困难 2/);
+  assert.match(rule('闪避'),/原攻击为普通失败 -1 时加 2/);
+  assert.match(rule('格挡'),/超出的伤害仍可扣 HP/);
+  assert.match(rule('急救'),/治疗恰好为 3 时仍未脱离濒死/);
+  assert.match(rule('主动作'),/0–8、9–13、14–18、19–23/);
+  assert.match(rule('大失败'),/技能值不大于 0/);
+  assert.match(rule('贯穿'),/不表示忽略护盾/);
+  assert.match(rule('伤害上限'),/未统一应用/);
+  assert.equal(rule('HP'),rule('体力'));
+  assert.equal(rule('急救'),rule('濒死溢出伤害'));
+  for(const section of mechanicsSections)for(const entry of section.entries)for(const name of entry.names){
+    const definition=definitions.find(d=>d.id==='rule-'+name);
+    assert.equal(definition.text,entry.content, name+' must keep every paragraph');
+    assert.deepEqual(definition.sections,[section.id]);
+  }
+});
+
+test('definition help links resolve aliases to rendered entries and preserve the selected section',()=>{
+  const render=element=>renderToStaticMarkup(React.createElement(KnowledgeProvider,{catalog,serial:'Y2',openCharacter(){},openTerm(){}},element));
+  const help=render(React.createElement(HelpPage,{tab:'mechanics',catalog,navigate(){}}));
+  for(const definition of mechanicsDefinitions){
+    assert.ok(help.includes(`id="${definitionHelpAnchor(definition)}"`),definition.name);
+  }
+  const magic=definitions.find(d=>d.id==='rule-魔力');
+  assert.equal(definitionHelpAnchor(magic),'rule-MP');
+  assert.equal(definitionHelpAnchor(magic,'mechanics-2'),'mechanics-2');
+  const panel=render(React.createElement(DefinitionPanel,{id:magic.id,onClose(){},onOpen(){},onHelp(){}}));
+  assert.match(panel,/href="\/ui\/help\/mechanics#rule-MP"/);
+  assert.match(panel,/在帮助中查看/);
+});
+
+test('help deep links render exact local traits and skills even outside the default specialist index',()=>{
+  for(const id of ['Y6-term-冰冻','Y9-trait-变身','Y2-skill-火球术']){
+    const html=renderToStaticMarkup(React.createElement(HelpPage,{tab:'mechanics',catalog,navigate(){},anchor:encodeURIComponent(id)}));
+    assert.ok(html.includes(`id="${id}"`),id);
+  }
+});
+
+test('specialist index retains named resources and expands local traits without replacing character rules',()=>{
+  const y14=specialistDefinitions(definitions,'Y14');
+  assert.ok(y14.some(d=>d.name==='极限槽'));
+  const blood=specialistDefinitions(definitions,'Y17');
+  assert.match(blood.find(d=>d.name==='人血').text,/召唤物不提供血液/);
+  const dodge=termsFor(definitions,'Y7').find(d=>d.name==='沉默');
+  assert.match(dodge.text,/战意/);
+  const flight=definitions.find(d=>d.serial==='Y5'&&d.name==='吸血');
+  assert.match(flight.text,/MP/);
+  const near=definitions.find(d=>d.id==='Y3-trait-近战');
+  assert.match(near.text,/### 通用规则/);
+  assert.match(near.text,/斜向相邻也为 1 格/);
+  const form=definitions.find(d=>d.id==='Y9-trait-变身');
+  assert.match(form.text,/阶段转换 · 专属规则/);
+  assert.doesNotMatch(form.text,/### 通用规则/);
+  assert.match(definitions.find(d=>d.id==='Y13-trait-魔躯').text,/魔力护体 · 专属规则/);
+  assert.ok(specialistDefinitions(definitions,'Y17').some(d=>d.name==='血刃'));
 });
 test('all skill and trait names resolve inside their character, with both phases preserved',()=>{
   for(const c of catalog){
@@ -94,4 +154,7 @@ test('character help is only parallel character links; mechanics have stable sec
   const characters=render('characters');assert.equal((characters.match(/class="knowledge-link"/g)||[]).length,catalog.length);
   assert.ok(!characters.includes('character-card'));assert.ok(!characters.includes('preview-paragraph'));
   const mechanics=render('mechanics');for(const section of mechanicsSections)assert.ok(mechanics.includes(`id="${section.id}"`));
+  assert.match(mechanics,/搜索术语或机制/);
+  assert.match(mechanics,/id="mechanics-character-terms"/);
+  assert.match(mechanics,/id="rule-闪避"/);
 });

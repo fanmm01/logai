@@ -420,8 +420,8 @@ class AIController:
             target = self._select_cake_target(engine, user_id, ak.split('__')[1] if '__' in ak else 'T0')
             return f'.a give {target}' if target else '.i end'
         if base_ak == 'END_TURN': return '.i end'
-        if base_ak == 'SKILL_12_THROW':
-            return '.s12 mode=throw'
+        if base_ak.startswith('SKILL_') and base_ak.endswith('_THROW'):
+            return f'.s{int(base_ak.split("_")[1])} mode=throw'
         if base_ak.startswith('SKILL_'):
             skill_num = int(base_ak.split('_')[1])
             spells = engine.load_spells(user_id) or []

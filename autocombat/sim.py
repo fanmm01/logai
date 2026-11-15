@@ -359,17 +359,40 @@ def parallel_pairs(t, team_a, team_b, map_size, count, season, workers, seed):
             yield future.result()[3]
 
 
-def compute_matrix(t, teams, count, map_size, season_status=None, progress=None):
-    """Shared CLI/browser matrix; each unordered matchup is simulated once."""
-    matrix = [[0.5 if i == j else None for j in range(len(teams))] for i in range(len(teams))]
+def compute_matrix_with_rounds(t, teams, count, map_size, season_status=None, progress=None):
+    """Return row-vs-column win rates and each team's average battle rounds."""
+    n = len(teams)
+    matrix = [[0.5 if i == j else None for j in range(n)] for i in range(n)]
+    total_rounds = [0.0] * n
+    battle_counts = [0] * n
     done = 0
-    for i in range(len(teams)):
-        for j in range(i + 1, len(teams)):
-            a, b, _, _, _ = run_battle_pair(t, teams[i], teams[j], map_size, count, season_status=season_status)
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b, avg_rounds, _, _ = run_battle_pair(
+                t, teams[i], teams[j], map_size, count, season_status=season_status)
             matrix[i][j], matrix[j][i] = a / count, b / count
+            total_rounds[i] += avg_rounds * count
+            total_rounds[j] += avg_rounds * count
+            battle_counts[i] += count
+            battle_counts[j] += count
             done += 1
             if progress:
-                progress(done, matrix)
+                averages = [total / battles if battles == (n - 1) * count else None
+                            for total, battles in zip(total_rounds, battle_counts)]
+                progress(done, matrix, averages)
+    average_rounds = [total / battles if battles else None
+                      for total, battles in zip(total_rounds, battle_counts)]
+    return matrix, average_rounds
+
+
+def compute_matrix(t, teams, count, map_size, season_status=None, progress=None):
+    """Compatibility wrapper returning only the win-rate matrix."""
+    def report(done, matrix, _average_rounds):
+        if progress:
+            progress(done, matrix)
+
+    matrix, _ = compute_matrix_with_rounds(
+        t, teams, count, map_size, season_status, report if progress else None)
     return matrix
 
 
@@ -577,28 +600,28 @@ def mode_table(argv):
     print(f'胜率矩阵: {fmt}  {n}×{n}  每格{N}场 [{map_size}]  seed={seed}', flush=True)
     print(f'  赛季状态: {status_str}', flush=True)
 
-    # Compute matrix
-    matrix = [[0.0] * n for _ in range(n)]
-    total = n * (n - 1)
-    done = 0
     t0 = time.time()
 
-    matrix = compute_matrix(t, teams, N, map_size, char_season)
+    matrix, average_rounds = compute_matrix_with_rounds(t, teams, N, map_size, char_season)
 
     elapsed = time.time() - t0
 
-    # ASCII table
+    # Each cell is the row team's win probability against the column team.
+    print('单元格含义：行队伍战胜列队伍的概率；对角线为该队伍参加全部对局的平均回合数。')
     print(f'\n{"="*80}')
     print(f'胜率矩阵: {fmt}  {n}队  每格{N}场 [{map_size}]  seed={seed}')
     print(f'{"="*80}')
-    header = '          ' + ''.join(f'{tname:>10s}' for tname in team_names)
+    header = '队伍（行胜率）' + ''.join(f'{tname:>18s}' for tname in team_names)
     print(header)
     print('-' * len(header))
     for i in range(n):
-        row = f'{team_names[i]:>10s}'
+        row = f'{team_names[i]:>14s}'
         for j in range(n):
-            if i == j: row += f'     {"—":>5s}'
-            else: row += f'  {matrix[i][j]*100:>7.1f}%'
+            if i == j:
+                cell = f'{average_rounds[i]:.1f}回合' if average_rounds[i] is not None else '无数据'
+                row += f'{cell:>18s}'
+            else:
+                row += f'{matrix[i][j]*100:>17.1f}%'
         print(row)
     print(f'{"="*80}')
 
@@ -606,9 +629,11 @@ def mode_table(argv):
     csv_path = f'sim_matrix_{fmt}.csv'
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
-        w.writerow([''] + team_names)
+        w.writerow(['行队伍战胜列队伍的概率；对角线为该队伍参加全部对局的平均回合数'] + team_names)
         for i in range(n):
-            w.writerow([team_names[i]] + [f'{matrix[i][j]:.4f}' if i != j else '—' for j in range(n)])
+            w.writerow([team_names[i]] + [f'{matrix[i][j]:.4f}' if i != j else
+                                          (f'{average_rounds[i]:.1f}回合' if average_rounds[i] is not None else '')
+                                          for j in range(n)])
     print(f'\nCSV: {csv_path}')
 
     # JSON output
@@ -616,8 +641,11 @@ def mode_table(argv):
     json_data = {
         'format': fmt, 'teams': team_names, 'n_per_cell': N,
         'map_size': map_size, 'seed': seed, 'elapsed_s': round(elapsed, 1),
+        'matrix_semantics': 'matrix[行队伍][列队伍]表示行队伍战胜列队伍的概率',
         'matrix': {team_names[i]: {team_names[j]: round(matrix[i][j], 4)
-                   for j in range(n) if i != j} for i in range(n)}
+                   for j in range(n) if i != j} for i in range(n)},
+        'average_rounds': {team_names[i]: round(average_rounds[i], 2) if average_rounds[i] is not None else None
+                           for i in range(n)},
     }
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)

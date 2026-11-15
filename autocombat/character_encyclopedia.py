@@ -74,7 +74,7 @@ ARTICLES = {('Y2', '火球术', 0): '向同一目标连续发射{count}枚火球
  ('Y12', '空间压缩', 0): '压缩空间攻击单个敌人；不能闪避、不能反击，且伤害不能贯穿。',
  ('Y12', '空间扩张', 0): '对己方施加限时攻击奖励骰。',
  ('Y12', '空间引入', 0): '从玄武、朱雀、龙虎中抽取召唤物，同一施法者按唯一抽取规则管理。三类齐备时按合体规则形成三合一；并非从所有召唤模板任意抽取。',
- ('Y13', '魔力永驻', 0): '将魔力消耗百分比降低到零；按引擎的费用下限规则结算，不应把所有正费用技能理解为绝对免费。',
+ ('Y13', '魔力永驻', 0): '支付本技能费用后，将技能魔力消耗降低 100%，后续技能费用可降至 0 MP；魔力护体代替生命损失的魔力支出不受减免。',
  ('Y13', '飞行', 0): '常驻飞行并提高自身行动力。地面单位近战交互遵循飞行规则。',
  ('Y13', '斗殴精通', 0): '常驻攻击奖励骰。',
  ('Y13', '魔力护体', 0): '把生命损耗转为魔力消耗；魔力不足时仍受实际结算规则限制。',
@@ -116,7 +116,7 @@ ARTICLES = {('Y2', '火球术', 0): '向同一目标连续发射{count}枚火球
  ('Y16', '月光王座全额率输出', 0): '剑专属终结技。需要存活且月能超过门槛的虚假之月；消耗月亮，以月能倍率形成伤害。占位伤害骰不是实际伤害。',
  ('Y15', '爆破圈', 0): '受攻击时触发的反应技，每场限一次。发动爆破并附加持续灼烧，不占普通主动技的使用入口。',
  ('Y15', '瞬爆', 0): '发动火焰爆击，命中后留下数轮灼烧。',
- ('Y15', '余烬', 0): '一次动作发动三段火焰攻击，分别检定并结算。',
+ ('Y15', '余烬', 0): '一次动作发动两段火焰攻击，分别检定并结算。',
  ('Y15', '燃梦孤灯·自身', 99): '保留的非战斗技能：恢复自身生命与理智，当前战斗阶段不开放。',
  ('Y15', '燃梦孤灯·他人', 99): '保留的非战斗技能：恢复附近其他友方的生命与理智，当前战斗阶段不开放。',
  ('Y15', '葬火流光', 0): '先创建随身火焰领域，再发动一次敌方群体直接攻击。领域在后续轮次继续造成伤害，直接攻击与领域各自按声明顺序结算。',
@@ -338,6 +338,7 @@ EFFECT_LABELS = {
  'letter': '效果标记', 'exclude': '排除项', 'ally_safe': '己方安全设置',
 }
 SPELL_LABELS = {
+ 'skill_id': '技能唯一编号', 'skill_index': '固定技能编号',
  'name': '技能名称', 'category': '技能类别', 'timing': '使用时机', 'phase': '可用阶段',
  '消耗mp': '基础魔力消耗', '消耗san': '基础理智消耗', 'default_persist': '默认延续性',
  'cooldown_rounds': '技能冷却', '_once_per_battle': '每场限一次',
@@ -511,7 +512,7 @@ def template_details(spell, summons, items, character):
             if k in TEMPLATE_LABELS:
                 value = ratio(v) if k == 'shield_block_rate' else text_value(v)
                 rows.append(row(TEMPLATE_LABELS[k], value, k))
-            elif k not in ('skills', 'spells', 'options', '_meta', 'unique_per_caster', 'frost_zone', 'frost_ball'):
+            elif k not in ('skills', 'spells', 'options', '_meta', 'unique_per_caster', 'frost_zone', 'frost_ball', 'frost_melee'):
                 rows.append(row(f'尚未核实的模板字段 {k}', text_value(v), k))
         if t.get('_meta'):
             notes.append('召唤池：' + '、'.join(t.get('options', [])) + '。')
@@ -536,7 +537,7 @@ def template_details(spell, summons, items, character):
             notes.append('继承主人当前法术、剑、闪避、八维中的力量/敏捷/体质/体型/意志/幸运、魔力及魔力上限、移动与普攻伤害；继承项会覆盖对应模板基础值。')
         if t.get('protect_allies_on_hit'):
             notes.append('当前普通攻击入口在开始处理克隆被攻击时，给主人和其他具有此特性的克隆各授予一次伤害免疫；不能扩写为任意友方在所有伤害入口都受保护。')
-        for key, label in [('frost_zone', '小雪带'), ('frost_ball', '雪球')]:
+        for key, label in [('frost_zone', '小雪带'), ('frost_ball', '雪球'), ('frost_melee', '近战攻击')]:
             if key in t:
                 labels = {'dice':'伤害', 'mp_cost':'魔力消耗', 'range':'射程', 'success':'技能值',
                           'duration':'持续轮数', 'radius':'作用半径', 'stacks':'每轮冰冻层数'}
@@ -563,7 +564,7 @@ def template_details(spell, summons, items, character):
 def spell_costs(s, c):
     kind = s.get('blood_kind'); costs = []
     for key, label, unit in [('消耗mp', '魔力', 'MP'), ('消耗san', '理智', 'SAN')]:
-        value = (s.get(key) or 1) if key == '消耗mp' else s.get(key)
+        value = s.get(key, 0) if key == '消耗mp' else s.get(key)
         costs.append(row(label, quantity(value, unit) if value is not None else '无', key if key in s else None))
     if s.get('_mp_formula'):
         formulas = {'summon_count_ceil_half': 'MP＝ceil(本次获准召唤数量÷2)，先截断名额，再计算费用',
@@ -599,7 +600,7 @@ def spell_costs(s, c):
         costs.append(row('声明血液费用', quantity(s['cost_blood_ml'], 'ml'), 'cost_blood_ml'))
     if 'cost_hp_dice' in s and kind != 'war': costs.append(row('生命', quantity(s['cost_hp_dice'], 'HP')))
     for key, resource in [('cost_hp_pct_current','当前生命'), ('cost_mp_pct_max','最大魔力'), ('cost_mp_pct_current','当前魔力')]:
-        if key in s and kind != 'war': costs.append(row('比例费用', f"{resource}的{percent(s[key])}；通用执行路径向下取整、正费用至少1", key))
+        if key in s and kind != 'war': costs.append(row('比例费用', f"{resource}的{percent(s[key])}；通用执行路径向下取整，最低为0", key))
     if s.get('counter_required'):
         name, amount = s['counter_required']
         costs.append(row('资源门槛并消耗', f"需要{amount} {COUNTERS.get(name,name)}；当前引擎在成功提交施放时也会扣除此数量，并非只检查不扣除。", 'counter_required'))
@@ -721,7 +722,7 @@ def settlement_steps(s, c):
             steps.append('结算命中后的收血、击杀奖励、回复或连锁；具体条件与上限见特殊规则。')
     else:
         steps = ['检查技能时机、阶段/武器、冷却、可用目标、召唤或领域名额以及次数限制。',
-                 '按当前骰式/公式和费用修正支付资源；正魔力费用经减免后仍至少支付1 MP，零费用不凭空变成正费用。']
+                 '按当前骰式/公式和费用修正支付资源；通用魔力费用经减免后最低为0 MP，血术等专属费用下限见技能说明。']
         if s.get('吟唱回合'):
             steps.append('支付后登记吟唱，当前不立即执行效果；由轮次推进释放保存的效果。')
         else:

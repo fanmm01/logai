@@ -119,6 +119,22 @@ class SummonRulesTests(unittest.TestCase):
 
         self.assertAlmostEqual(updates[0][4], 0.02 + tr.SUMMON_OWNER_CREDIT * 0.4)
 
+    def test_y12_08_zero_mp_random_summons_keep_free_attack_actions(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            for template in ('朱雀', '玄武'):
+                with self.subTest(engine=cls.__name__, template=template):
+                    en = setup(cls)
+                    uid = en._create_summon('actor', template)
+                    actions = tr.get_summon_actions(en, uid)
+                    self.assertTrue(any(key.startswith('SUMMON_SKILL_') for key, _ in actions))
+                    self.assertEqual(en._get_summon_entry(uid)['summon_mp'], 0)
+
+                    with patch.object(en, '_coc7_attack', return_value=('enemy', uid, ['hit'])) as attack:
+                        en._summon_attack(uid)
+
+                    attack.assert_called_once()
+                    self.assertEqual(en._get_summon_entry(uid)['summon_mp'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

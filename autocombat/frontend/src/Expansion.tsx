@@ -11,6 +11,7 @@ const rid = requestId;
 const labels: Record<string, string> = { dodge: '闪避', counter: '反击', block: '格挡', name: '名称', serial: '编号',
   attrs: '数值属性', str_attrs: '字符串属性', spells: '技能', effects: '技能效果', inventory: '初始物品',
   timing: '发动时机', category: '技能类别', phase: '阶段', type: '效果类型', pre_transformed: '特殊初始变身状态',
+  skill_id: '技能唯一编号', skill_index: '固定技能编号',
   default_persist: '默认持续', cooldown_rounds: '冷却回合', _once_per_battle: '每场限一次' };
 Object.assign(labels, { GLOBAL_RANGE_OVERRIDE:'全局攻击射程覆盖', _mp_formula:'特殊魔力费用公式',
   _mp_formula_transformed:'变身后魔力费用骰式', initial_phase:'初始阶段', cost_blood_ml:'消耗血液（毫升）',
@@ -100,25 +101,25 @@ function AddField({ add, suggestions }: { add: (key: string) => void; suggestion
     <button type="button" className="button subtle" disabled={!key.trim() || key.trim() === '_disabled'} onClick={() => { add(key.trim()); setKey(''); }}>添加属性</button></div>;
 }
 
-function Fields({ value, change, name = '', enums, samples }: {
+export function Fields({ value, change, name = '', enums, samples }: {
   value: any; change: (v: any) => void; name?: string; enums: EnumMap; samples: Record<string, any>;
 }) {
-  if (Array.isArray(value)) return <div className="field-list">{value.map((v, i) => <details className={'editor-block ' + (['effects', 'spells'].includes(name) && v?._disabled ? 'disabled-effect' : '')} key={i} open>
-    <summary>{labels[name] || name} {i + 1}{v?.name ? ` · ${v.name}` : ''}{['effects', 'spells'].includes(name) && v?._disabled && ' · 已禁用'}</summary>
+  if (Array.isArray(value)) return <div className="field-list">{value.map((v, i) => <details className={'editor-block ' + (['effects', 'spells'].includes(name) && v?._disabled ? 'disabled-effect' : '')} key={v?.skill_id || i} open>
+    <summary>{labels[name] || name} {name === 'spells' ? v?.skill_index ?? '待分配' : i + 1}{v?.name ? ` · ${v.name}` : ''}{['effects', 'spells'].includes(name) && v?._disabled && ' · 已禁用'}</summary>
     {name === 'effects' && <div className="effect-enable"><label><input type="checkbox" aria-label={`启用效果 ${i + 1}`} checked={!v?._disabled} onChange={e => change(value.map((x, j) => j === i ? {...x, _disabled: !e.target.checked} : x))}/>启用此效果</label><small>保存后生效；禁用效果以注释保留在 Python 文件中，可继续编辑和重新启用。</small></div>}
     <Fields name={name === 'spells' ? 'spell' : name === 'effects' ? 'effect' : 'entry'} value={v} change={next => change(value.map((x, j) => j === i ? next : x))} enums={enums} samples={samples}/>
     <button className="text-button danger-text" onClick={() => change(value.filter((_, j) => j !== i))}>删除{labels[name] || '此项'}</button>
     {name === 'spells' && <button className="text-button" style={{ marginLeft: 16 }} onClick={() => change(value.map((x, j) => j === i ? { ...x, _disabled: !x._disabled } : x))}>{v?._disabled ? '启用技能' : '禁用技能'}</button>}
   </details>)}<button className="button subtle" onClick={() => change([...value, name === 'spells' ? defaultSpell() : name === 'effects' ? defaultEffect() : name === 'inventory' ? { item: '蛋糕HP', count: 1 } : {}])}>新增{labels[name] || '条目'}</button></div>;
   const choices = samples.__byType?.[name] || samples;
-  if (value && typeof value === 'object') return <div className="field-table"><div className="field-table-heading"><span>属性</span><span>值</span></div>{Object.entries(value).filter(([key]) => key !== '_disabled').map(([key, v]) => <div className="field-row" key={key}>
-    <div><label>{labels[key] || key}</label><button aria-label={'删除属性 ' + key} className="field-remove" onClick={() => { const next = { ...value }; delete next[key]; change(next); }}>×</button></div>
-    {v !== null && typeof v === 'object' ? <details open={['spells', 'effects'].includes(key)}><summary>{Array.isArray(v) ? `${v.length} 项` : `${Object.keys(v).length} 个属性`}</summary><Fields value={v} name={key} change={next => change({ ...value, [key]: next })} enums={enums} samples={samples}/></details>
+  if (value && typeof value === 'object') return <div className="field-table"><div className="field-table-heading"><span>属性</span><span>值</span></div>{Object.entries(value).filter(([key]) => !['_disabled', 'next_skill_index'].includes(key)).map(([key, v]) => <div className="field-row" key={key}>
+    <div><label>{labels[key] || key}</label>{!['skill_id', 'skill_index'].includes(key) && <button aria-label={'删除属性 ' + key} className="field-remove" onClick={() => { const next = { ...value }; delete next[key]; change(next); }}>×</button>}</div>
+    {['skill_id', 'skill_index'].includes(key) ? <output aria-label={labels[key]}>{String(v)}</output> : v !== null && typeof v === 'object' ? <details open={['spells', 'effects'].includes(key)}><summary>{Array.isArray(v) ? `${v.length} 项` : `${Object.keys(v).length} 个属性`}</summary><Fields value={v} name={key} change={next => change({ ...value, [key]: next })} enums={enums} samples={samples}/></details>
       : enums[key] ? <select aria-label={labels[key] || key} value={String(v)} onChange={e => change(name === 'effect' && key === 'type' ? switchEffectType(value, Number(e.target.value), samples) : { ...value, [key]: typeof v === 'number' ? (/^-?\d+$/.test(e.target.value) ? Number(e.target.value) : e.target.value) : e.target.value })}>
         {!Object.hasOwn(enums[key], String(v)) && <option value={String(v)}>{String(v)}</option>}{Object.entries(enums[key]).map(([k, text]) => <option key={k} value={k}>{text} ({k})</option>)}</select>
         : typeof v === 'boolean' ? <input aria-label={labels[key] || key} type="checkbox" checked={v} onChange={e => change({ ...value, [key]: e.target.checked })}/>
           : <input aria-label={labels[key] || key} type={typeof v === 'number' ? 'number' : 'text'} step="any" value={v == null ? '' : String(v)} onChange={e => change({ ...value, [key]: typeof v === 'number' ? Number(e.target.value) : e.target.value })}/>}
-  </div>)}<AddField suggestions={Object.keys(choices).filter(k => !(k in value) && !k.startsWith('__') && k !== '_disabled')} add={key => change({ ...value, [key]: structuredClone(choices[key] ?? (name === 'attrs' ? 0 : '')) })}/></div>;
+  </div>)}<AddField suggestions={Object.keys(choices).filter(k => !(k in value) && !k.startsWith('__') && !['_disabled', 'skill_id', 'skill_index', 'next_skill_index'].includes(k))} add={key => change({ ...value, [key]: structuredClone(choices[key] ?? (name === 'attrs' ? 0 : '')) })}/></div>;
   return <input value={String(value ?? '')} onChange={e => change(typeof value === 'number' ? Number(e.target.value) : e.target.value)}/>;
 }
 
@@ -302,7 +303,7 @@ export function SimulationPanel({ teamA, teamB, catalog, onError }: Feedback & {
   </div>
     {mode === 'table' && <details><summary>选择参赛小队（留空使用该赛制全部预设）</summary><div className="preset-choices">{choices.map((p, i) => <label key={i}><input type="checkbox" disabled={!p.valid} checked={selectedTeams.includes(p.team.join('+'))} onChange={e => setSelectedTeams(old => e.target.checked ? [...old, p.team.join('+')] : old.filter(t => t !== p.team.join('+')))}/>{teamNames(p.team)}{!p.valid && '（角色已禁用或已删除）'}</label>)}</div><button className="text-button" onClick={() => setSelectedTeams([...new Set([teamA.join('+'), teamB.join('+')])])}>使用当前编队双方</button></details>}
     {job && <div className="task-results"><p role="status">{job.status} · 已完成 {job.completed}{job.message && ' · ' + job.message}</p>
-      {result?.matrix ? <><div className="table-scroll"><table><thead><tr><th>胜率</th>{result.teams.map((t: string, i: number) => <th key={i}>{t}</th>)}</tr></thead><tbody>{result.matrix.map((row: (number | null)[], i: number) => <tr key={i}><th>{result.teams[i]}</th>{row.map((v, j) => <td key={j}>{i === j ? '—' : v == null ? '待模拟' : (v * 100).toFixed(1) + '%'}</td>)}</tr>)}</tbody></table></div><RankingResults result={result}/></>
+      {result?.matrix ? <><p>非对角单元格表示“行队伍战胜列队伍”的概率；对角线显示该队伍参与的所有对局平均回合数。</p><div className="table-scroll"><table><thead><tr><th>行队伍 ↓ / 列队伍 →</th>{result.teams.map((t: string, i: number) => <th key={i}>{t}</th>)}</tr></thead><tbody>{result.matrix.map((row: (number | null)[], i: number) => <tr key={i}><th>{result.teams[i]}</th>{row.map((v, j) => <td key={j}>{i === j ? result.average_rounds?.[i] == null ? '无数据' : `${result.average_rounds[i].toFixed(1)} 回合` : v == null ? '待模拟' : (v * 100).toFixed(1) + '%'}</td>)}</tr>)}</tbody></table></div><RankingResults result={result}/></>
         : result?.rankings ? <RankingResults result={result}/>
           : result?.rate_a != null ? <div className="result-metrics"><div>星辉胜率<strong>{(result.rate_a * 100).toFixed(1)}%</strong></div><div>晨曦胜率<strong>{(result.rate_b * 100).toFixed(1)}%</strong></div><div>平均回合<strong>{result.average_rounds.toFixed(1)}</strong></div></div>
             : result && <p>胜方 {result.winner} · {result.rounds} 回合</p>}

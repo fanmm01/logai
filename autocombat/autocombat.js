@@ -6602,7 +6602,7 @@ function executeSpell(ctx, mctx, spell, gid, actionType) {
   let mpCost = spell['消耗mp'] || 0;
   const sanCost = spell['消耗san'] || 0;
   // AUX 9/10: MP cost modifier
-  if (mpCost > 0) mpCost = Math.max(1, Math.floor(mpCost * getBuffMpCostPct(gid, ctx.player.userId)));
+  if (mpCost > 0) mpCost = Math.max(0, Math.floor(mpCost * getBuffMpCostPct(gid, ctx.player.userId)));
   if (mpCost > 0) {
     const curMP = getAttr(ctx, '魔力', 0) || getAttr(ctx, 'mp', 0);
     if (curMP < mpCost) {

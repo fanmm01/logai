@@ -17,13 +17,11 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     // Keep character fixtures deterministic even when the user's enabled roster changes.
     const live=await (await context.request.get(base+'/api/ui/catalog')).json();
     const names=new Map(live.characters.map(c=>[c.serial,c.name]));
-    const characters=Object.entries(profiles).map(([serial,p])=>({
-      serial,name:names.get(serial)||serial,attrs:{体力:30,体力上限:30,魔力:30,魔力上限:30,斗殴:60,闪避:40,行动力:8,敏捷:60},
-      portrait:'',avatar:'',spells:p.skills.map(s=>({name:s.name,phase:s.phase})),
-    }));
+    const { rawCatalog, summons, items } = require('../catalog-fixture.cjs');
+    const characters=rawCatalog.map(card=>({...card,name:names.get(card.serial)||card.name,portrait:'',avatar:''}));
     const tournament={id:'ui-preview-fixture',format:'1v1',phase:'regular',status:'paused',revision:1,teams:[['Y1','Y2'],['Y3']],
       standings:[{id:0,points:1,wins:1,battles:1},{id:1,points:0,wins:0,battles:1}],schedule:[],completed:0,series:[],results:[]};
-    await page.route('**/api/ui/catalog',route=>route.fulfill({json:{characters}}));
+    await page.route('**/api/ui/catalog',route=>route.fulfill({json:{characters,summon_templates:summons,item_templates:items}}));
     await page.route('**/api/ui/tournaments',route=>route.request().method()==='GET'?route.fulfill({json:{tournaments:[tournament]}}):route.abort());
     await page.route('**/api/ui/session',route=>route.fulfill({json:{id:'ui-preview-test'}}));
     await page.goto(base+'/ui/home');
@@ -53,6 +51,10 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     await term.hover();await pause(1100);await page.locator('.term-preview').waitFor();
     await page.keyboard.press('Escape');assert.ok(await modal.isVisible());
     await term.click();await modal.locator('.definition-panel').waitFor();
+    assert.match(await modal.locator('.definition-panel').innerText(),/召唤物使用自身 MP/);
+    await modal.locator('.profile-stats .knowledge-link').filter({hasText:/^闪避$/}).click();
+    assert.match(await modal.locator('.definition-panel').innerText(),/攻击极难 3、闪避困难 2/);
+    assert.match(await modal.locator('.definition-panel').innerText(),/原攻击为普通失败 -1 时加 2/);
     await modal.locator('.definition-related').first().click();
     await modal.getByRole('button',{name:'← 返回',exact:true}).click();
     if(artifacts){fs.mkdirSync(artifacts,{recursive:true});await page.screenshot({path:path.join(artifacts,'definition-desktop.png')});}
@@ -62,6 +64,31 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     await page.goForward();await modal.waitFor();
     await page.reload();await modal.waitFor();await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});
     checks.push('delayed previews, pointer transfer, no nested glossary, definition panel and history');
+
+    // The footer follows the displayed definition/section and preserves back navigation.
+    await page.goto(base+'/ui/library?character=Y2&term='+encodeURIComponent('rule-魔力'));
+    await modal.locator('.definition-help').click();
+    await page.waitForURL('**/ui/help/mechanics#rule-MP');
+    await modal.waitFor({state:'hidden'});
+    assert.ok(await page.locator('[id="rule-MP"]').isVisible());
+    assert.ok((await page.locator('[id="rule-MP"]').boundingBox()).y<150);
+    await page.goBack();await modal.locator('.definition-help').waitFor();
+    assert.match(await modal.locator('.definition-panel').innerText(),/魔力/);
+    await modal.locator('.definition-related').first().click();
+    await modal.locator('.definition-help').click();
+    await page.waitForURL('**/ui/help/mechanics#mechanics-2');
+    assert.ok((await page.locator('#mechanics-2').boundingBox()).y<150);
+    for(const [serial,id] of [['Y6','Y6-term-冰冻'],['Y2','Y2-skill-火球术']]){
+      await page.goto(base+'/ui/library?character='+serial+'&term='+encodeURIComponent(id));
+      await modal.locator('.definition-help').click();
+      await page.waitForURL(url=>url.pathname==='/ui/help/mechanics'&&decodeURIComponent(url.hash.slice(1))===id);
+      const entry=page.locator('[id="'+id+'"]');await entry.waitFor({state:'visible'});
+      assert.ok(await entry.evaluate(el=>el.closest('details').open));
+      assert.ok((await entry.boundingBox()).y<150);
+      await page.reload();await entry.waitFor({state:'visible'});
+      assert.ok((await entry.boundingBox()).y<150);
+    }
+    checks.push('definition footer targets canonical terms, selected sections and expanded local entries; back and reload restore context');
 
     await page.getByRole('button',{name:'自由对战',exact:true}).click();
     const selectable=page.locator('.selection-grid .character-card').first();
@@ -73,6 +100,29 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     await page.getByRole('button',{name:'帮助',exact:true}).click();
     await page.waitForURL('**/ui/help/mechanics');assert.equal(await page.locator('.mechanics-article>section').count(),8);
+    const search=page.getByRole('searchbox',{name:'搜索术语或机制'});
+    await search.fill('闪避');
+    await page.locator('[id="rule-闪避"]').waitFor();
+    assert.match(await page.locator('[id="rule-闪避"]').innerText(),/攻击极难 3、闪避困难 2/);
+    await page.locator('nav[aria-label="机制目录"]').getByRole('link',{name:'防御与多段攻击',exact:true}).click();
+    assert.ok(page.url().endsWith('#mechanics-4'));
+    await search.fill('y17');
+    assert.equal(await page.locator('.mechanics-article>section').count(),0);
+    assert.equal(await page.locator('.mechanics-character').count(),1);
+    assert.equal(await page.locator('.mechanics-character[open]').count(),1);
+    assert.match(await page.locator('.mechanics-character').innerText(),/召唤物不提供血液/);
+    await search.fill('no-matching-mechanics-term');await page.getByText('没有找到相关条目，请尝试其他术语、角色名或编号。').waitFor();
+    await page.getByRole('button',{name:'清除搜索',exact:true}).click();
+    assert.equal(await page.locator('.mechanics-article>section').count(),8);
+    assert.equal(await page.locator('.mechanics-character[open]').count(),0);
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:width===390?844:1000});
+      const size=await page.locator('.mechanics-article').evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth}));
+      assert.ok(size.scroll<=size.client+1,`mechanics at ${width}: ${JSON.stringify(size)}`);
+      if(artifacts)await page.screenshot({path:path.join(artifacts,`mechanics-${width}.png`)});
+    }
+    await page.setViewportSize({width:1440,height:1000});
+    checks.push('complete glossary entries, category anchors, case-insensitive specialist search, empty state and responsive help');
     await page.getByRole('button',{name:'角色卡帮助',exact:true}).click();assert.equal(await page.locator('.help-character-list a').count(),characters.length);
     assert.equal(await page.locator('.help-character-list .character-card').count(),0);
     assert.equal(await page.getByTitle('界面设置',{exact:true}).count(),0);
@@ -165,6 +215,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.setViewportSize({width,height:width===390?844:1000});
       for(const serial of Object.keys(profiles)){
         await page.goto(base+'/ui/library?character='+serial);await modal.locator('.skill-meta').first().waitFor();
+        assert.doesNotMatch(await modal.innerText(), /\{\{|未配置/, `${serial}: every reference resolves in the browser`);
         await modal.locator('.knowledge-link').filter({hasText:'MP'}).first().click();
         await modal.locator('.definition-panel').waitFor();
         if(width===390) {

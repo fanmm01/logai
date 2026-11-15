@@ -69,6 +69,9 @@ def register_ui(app, ns):
     def catalog():
         return [dict(serial=c['serial'], name=c['name'], attrs=c.get('attrs', {}), str_attrs=c.get('str_attrs', {}),
                      spells=c.get('spells', []),
+                     passive_rules=c.get('passive_rules', {}), blood_rules=c.get('blood_rules', {}),
+                     inventory=c.get('inventory', []), initial_phase=c.get('initial_phase', 0),
+                     initial_weapon=c.get('initial_weapon', ''), 初始血液=c.get('初始血液', 0),
                      portrait=f"/ui/portraits/{c['serial']}.webp",
                      avatar=f"/ui/portraits/{c['serial']}-avatar.webp")
                 for c in ns['characters_data_pvp'].ALL_CHARACTERS]
@@ -162,7 +165,7 @@ def register_ui(app, ns):
         for eff in s.get('effects', []):
             if eff.get('type') == 19:
                 cands.extend(g['uid'] for g in eng._revive_candidates(uid, eff))
-        return dict(index=s['index'], name=s['name'], command=command, timing=timing,
+        return dict(index=s['index'], skill_id=s.get('skill_id', ''), name=s['name'], command=command, timing=timing,
                     mp_cost=cost, san_cost=s.get('消耗san', 0), formula=s.get('_mp_formula', ''),
                     effects=s.get('effects', []), available=not reason, reason=reason,
                     cooldown=eng._get_cooldown(uid, s['index']), revive_candidates=cands,
@@ -340,7 +343,10 @@ def register_ui(app, ns):
 
     @bp.get('/api/ui/catalog')
     def get_catalog():
-        return jsonify(characters=clean(catalog()))
+        data = ns['characters_data_pvp']
+        return jsonify(characters=clean(catalog()),
+                       summon_templates=clean(data.SUMMON_TEMPLATES),
+                       item_templates=clean(data.ITEM_TEMPLATES))
 
     @bp.get('/api/ui/presets')
     def get_presets():

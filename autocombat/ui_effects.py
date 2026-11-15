@@ -4,6 +4,7 @@ import copy
 import io
 import pprint
 import tokenize
+from skill_identity import identify_skills
 
 START = '# autocombat:disabled-effect'
 END = '# autocombat:end-disabled-effect'
@@ -19,7 +20,7 @@ def field(node, key):
 
 
 def runtime_character(character):
-    result = copy.deepcopy(character)
+    result = identify_skills(character)
     result['spells'] = [{key: value for key, value in spell.items() if key != '_disabled'}
                         for spell in result.get('spells', []) if not spell.get('_disabled', False)]
     for spell in result.get('spells', []):
@@ -105,6 +106,7 @@ class EffectComments:
 
 
 def format_character(name, character):
+    character = identify_skills(character)
     source = name + ' = ' + pprint.pformat(runtime_character(character), width=110, sort_dicts=False) + '\n'
     spells = field(ast.parse(source).body[0].value, 'spells')
     if not isinstance(spells, ast.List):

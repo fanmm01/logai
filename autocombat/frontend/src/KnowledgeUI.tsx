@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character } from './types';
-import { buildDefinitions, mechanicsSections, overview, splitTerms, termsFor, type Definition } from './knowledge';
+import { buildDefinitions, definitionHelpAnchor, mechanicsSections, overview, specialistDefinitions, splitTerms, termsFor, type Definition } from './knowledge';
+import { pageUrl } from './navigation';
 import { EncyclopediaProse } from './EncyclopediaProse';
 import './knowledge.css';
 import { definitionIsNearby, interveningSkills, isOwnDefinition } from './definitionVisibility';
@@ -109,13 +110,14 @@ function DefinitionTerm({definition:part}:{definition:Definition}) {
   const reference=useRef<HTMLSpanElement>(null);
   const local=part.serial===knowledge.serial;
   const plain=local&&(knowledge.nearby==null||!!reference.current&&knowledge.nearby.has(reference.current));
+  const preview=part.text.replace(/^#{1,6}\s*|^[-*+]\s+/gm,'').replace(/\*\*|`/g,'');
   return <span ref={reference} data-local-term={local?part.id:undefined}>{plain?part.name:<HoverPreview label={part.name+'释义'} onOpen={()=>knowledge.openTerm(part.id)}
-    content={<><strong>{part.name}</strong><span className="preview-paragraph">{part.text.slice(0,260)}{part.text.length>260?'…':''}</span>{part.sections.slice(0,1).map(id=><span className="preview-paragraph" key={id}>相关规则：{mechanicsSections.find(s=>s.id===id)?.content.split('\n')[0].replace(/^- /,'')}</span>)}</>}>
+    content={<><strong>{part.name}</strong><span className="preview-paragraph">{preview.slice(0,260)}{preview.length>260?'…':''}</span>{part.sections.slice(0,1).map(id=><span className="preview-paragraph" key={id}>相关机制：{mechanicsSections.find(s=>s.id===id)?.title}</span>)}</>}>
     <a className="knowledge-link" href={'?character='+knowledge.serial+'&term='+encodeURIComponent(part.id)} onClick={e=>{e.preventDefault();e.stopPropagation();knowledge.openTerm(part.id);}}>{part.name}</a>
   </HoverPreview>}</span>;
 }
 
-export function DefinitionPanel({id,onClose,onOpen}:{id:string;onClose:()=>void;onOpen:(id:string)=>void}) {
+export function DefinitionPanel({id,onClose,onOpen,onHelp}:{id:string;onClose:()=>void;onOpen:(id:string)=>void;onHelp:(anchor:string)=>void}) {
   const knowledge=useContext(Context);
   const definition=knowledge?.definitions.find(d=>d.id===id);
   const [stack,setStack]=useState<string[]>([]);
@@ -126,7 +128,12 @@ export function DefinitionPanel({id,onClose,onOpen}:{id:string;onClose:()=>void;
     setSection(null);
   },[id]);
   if(!definition)return <aside className="definition-panel"><button onClick={onClose}>关闭释义</button><p>此定义不存在或已更新。</p></aside>;
-  const related=termsFor(knowledge!.definitions,knowledge?.serial).filter(d=>!d.serial&&d.id!==id&&definition.text.includes(d.name)).slice(0,10);
+  const seen=new Set([definition.text]);
+  const related=termsFor(knowledge!.definitions,knowledge?.serial).filter(d=>{
+    if(d.serial||d.id===id||seen.has(d.text)||!definition.text.includes(d.name))return false;
+    seen.add(d.text);return true;
+  }).slice(0,10);
+  const helpAnchor=definitionHelpAnchor(definition,section);
   return <aside className="definition-panel" aria-label="名词定义"><div className="definition-toolbar">
     <button className="text-button" disabled={!stack.length&&!section} onClick={()=>{if(section)setSection(null);else{const next=[...stack];goingBack.current=true;onOpen(next.pop()!);setStack(next);}}}>← 返回</button>
     <button className="text-button" onClick={onClose}>关闭释义 ×</button></div>
@@ -135,14 +142,46 @@ export function DefinitionPanel({id,onClose,onOpen}:{id:string;onClose:()=>void;
     {!section&&<><h4>相关机制</h4>{definition.sections.length?definition.sections.map(key=><button className="definition-related" key={key} onClick={()=>setSection(key)}>{mechanicsSections.find(s=>s.id===key)?.title}</button>):<p className="muted">此名词适用角色条目中的专属说明。</p>}
       {!!related.length&&<><h4>相关名词</h4>{related.map(d=><button className="definition-related" key={d.id} onClick={()=>onOpen(d.id)}>{d.name}</button>)}</>}
     </>}
+    <a className="button definition-help" href={pageUrl('help/mechanics')+'#'+encodeURIComponent(helpAnchor)} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onHelp(helpAnchor);}}>在帮助中查看 →</a>
   </aside>;
 }
 
-export function HelpPage({tab,catalog,navigate}:{tab:string;catalog:Character[];navigate:(page:string)=>void}) {
+export function HelpPage({tab,catalog,navigate,anchor=''}:{tab:string;catalog:Character[];navigate:(page:string)=>void;anchor?:string}) {
+  const [search,setSearch]=useState('');
+  let target='';try{target=decodeURIComponent(anchor);}catch{target=anchor;}
+  const query=search.trim().toLocaleLowerCase();
+  const definitions=useMemo(()=>buildDefinitions(catalog),[catalog]);
+  const linked=definitions.find(d=>d.serial&&d.id===target);
+  useEffect(()=>setSearch(''),[anchor]);
+  useEffect(()=>{
+    if(tab!=='mechanics'||!target||query)return;
+    const frame=requestAnimationFrame(()=>{
+      const node=document.getElementById(target);if(!node)return;
+      for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;
+      node.scrollIntoView({block:'start'});
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[target,tab,catalog,query]);
+  const matches=(text:string)=>text.toLocaleLowerCase().includes(query);
+  const sections=mechanicsSections.map(s=>({...s,entries:s.entries.filter(entry=>matches(s.title+' '+entry.names.join(' ')+' '+entry.content))})).filter(s=>s.entries.length);
+  const characters=[...catalog].sort((a,b)=>a.serial.localeCompare(b.serial,undefined,{numeric:true}));
+  const local=characters.map(c=>{
+    const terms=specialistDefinitions(definitions,c.serial);
+    if(linked?.serial===c.serial&&!terms.some(d=>d.id===linked.id))terms.push(linked);
+    return {character:c,terms:terms.filter(d=>matches(c.name+' '+c.serial+' '+d.name+' '+d.text))};
+  }).filter(c=>c.terms.length);
+  const count=sections.reduce((sum,s)=>sum+s.entries.length,0);
   return <div className="page help-page"><h1>帮助</h1><div className="tabs"><button className={tab==='mechanics'?'active':''} onClick={()=>navigate('help/mechanics')}>机制说明</button><button className={tab==='characters'?'active':''} onClick={()=>navigate('help/characters')}>角色卡帮助</button></div>
-    {tab==='characters'?<div className="help-character-list">{[...catalog].sort((a,b)=>a.serial.localeCompare(b.serial,undefined,{numeric:true})).map(c=><CharacterLink key={c.serial} character={c}/>)}</div>:
-    <article className="panel mechanics-article"><h2>游戏总机制</h2><p>角色条目明确写出的例外优先。</p><nav aria-label="机制目录">{mechanicsSections.map(s=><a key={s.id} href={'#'+s.id}>{s.title}</a>)}</nav>
-      {mechanicsSections.map(s=><section key={s.id} id={s.id}><h3>{s.title}</h3><EncyclopediaProse content={s.content}/></section>)}
+    {tab==='characters'?<div className="help-character-list">{characters.map(c=><CharacterLink key={c.serial} character={c}/>)}</div>:
+    <article className="panel mechanics-article"><h2>游戏总机制</h2><p>按战斗流程查阅定义、结算步骤与例外。角色卡的释义与本页共用完整条目；专属数值和限制以当前角色百科为准。</p>
+      <div className="mechanics-search"><label htmlFor="mechanics-search">搜索术语或机制</label><div><input id="mechanics-search" type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="例如：闪避、濒死、月能、Y17"/>{search&&<button className="text-button" onClick={()=>setSearch('')}>清除搜索</button>}</div></div>
+      <p className="muted mechanics-result" role="status">{query?'搜索结果：':'共 '}{count} 个通用条目，{local.reduce((sum,c)=>sum+c.terms.length,0)} 个角色专属条目</p>
+      <nav aria-label="机制目录">{sections.map(s=><a key={s.id} href={'#'+s.id}>{s.title}</a>)}{!!local.length&&<a href="#mechanics-character-terms">角色专属机制</a>}</nav>
+      {!count&&!local.length&&<p className="mechanics-empty">没有找到相关条目，请尝试其他术语、角色名或编号。</p>}
+      {sections.map(s=><section key={s.id} id={s.id}><h3>{s.title}</h3>{s.entries.map(entry=><div className="mechanics-entry" key={entry.names[0]} id={'rule-'+entry.names[0]}><h4>{entry.names.join(' / ')}</h4><EncyclopediaProse content={entry.content}/></div>)}</section>)}
+      {!!local.length&&<div className="mechanics-special" id="mechanics-character-terms"><h3>角色专属机制</h3><p>展开角色可查专属资源、状态与能力简称。点击角色名查看完整技能、当前数值和使用条件。</p>
+        {local.map(({character:c,terms})=><details className="mechanics-character" key={c.serial} open={query?true:undefined}><summary>{c.name} · {c.serial}<span>{terms.length} 个条目</span></summary><p><CharacterLink character={c}/></p>{terms.map(d=><div className="mechanics-entry" key={d.id} id={d.id}><h4>{d.name}</h4><EncyclopediaProse content={d.text}/></div>)}</details>)}
+      </div>}
     </article>}
   </div>;
 }

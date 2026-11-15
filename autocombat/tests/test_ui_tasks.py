@@ -48,7 +48,30 @@ class WorkerTests(unittest.TestCase):
         names = result['teams']
         self.assertEqual(result['matrix'][0][1], matrix[names[0]][names[1]])
         self.assertAlmostEqual(result['matrix'][0][1] + result['matrix'][1][0], 1)
+        self.assertEqual(len(result['average_rounds']), 2)
+        self.assertTrue(all(isinstance(value, (int, float)) for value in result['average_rounds']))
         self.assertTrue(result['rankings'])
+        self.assertIn('average_rounds', json.loads((self.root/'sim_matrix_2v2.json').read_text(encoding='utf-8')))
+        table_csv = (self.root/'sim_matrix_2v2.csv').read_text(encoding='utf-8')
+        self.assertIn('行队伍战胜列队伍的概率', table_csv)
+        self.assertIn('回合', table_csv)
+
+    def test_matrix_direction_and_team_average_rounds(self):
+        from unittest.mock import patch
+        from sim import compute_matrix_with_rounds
+
+        battles = iter([(7, 3, 4.0, 0, 0), (2, 8, 10.0, 0, 0), (6, 4, 16.0, 0, 0)])
+        with patch('sim.run_battle_pair', side_effect=lambda *args, **kwargs: next(battles)):
+            matrix, average_rounds = compute_matrix_with_rounds(
+                object(), [['Y1'], ['Y2'], ['Y3']], 10, '10x10')
+
+        self.assertEqual(matrix[0][1], .7)
+        self.assertEqual(matrix[1][0], .3)
+        self.assertEqual(matrix[0][2], .2)
+        self.assertEqual(matrix[2][0], .8)
+        self.assertEqual(matrix[1][2], .6)
+        self.assertEqual(matrix[2][1], .4)
+        self.assertEqual(average_rounds, [7.0, 10.0, 13.0])
 
     def test_balanced_matrix_contribution_excludes_diagonal(self):
         from sim import compute_contribution_from_matrix
