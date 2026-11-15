@@ -67,7 +67,7 @@ def main(params=None, wire=None):
         mode = params.get('mode', 'single')
         if mode == 'train':
             import ai_trainer
-            roster = ai_trainer.main(expected_serials=params.get('enabled_serials'))
+            roster = ai_trainer.main(expected_serials=params.get('enabled_serials'), target_serials=params.get('target_serials'))
             report(completed=1, result={'message': '训练完成', **roster})
             return
         t = ab.Tournament()

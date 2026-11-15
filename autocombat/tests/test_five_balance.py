@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+import copy
 
 import battle_engine as be
 import characters_data as cd
@@ -40,6 +41,11 @@ class FiveBalanceTests(unittest.TestCase):
         before = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(before)
         originals = {c['serial']: c for c in before.ALL_CHARACTERS}
+        # This global fee revision also applies to the historical balance roster.
+        for card in originals.values():
+            for spell in card['spells']:
+                if not spell.get('消耗mp'):
+                    spell['消耗mp'] = 1
         for c in cd.ALL_CHARACTERS:
             old = originals[c['serial']]
             attrs = {k: v for k, v in c['attrs'].items()
@@ -50,7 +56,20 @@ class FiveBalanceTests(unittest.TestCase):
             self.assertEqual(c['str_attrs'], old['str_attrs'], c['serial'])
             if c['serial'] not in {'Y6', 'Y7', 'Y9', 'Y10', 'Y11'}:
                 self.assertEqual(c, old, c['serial'])
-        self.assertEqual({k: v for k, v in cd.SUMMON_TEMPLATES.items() if k != '小雪人'}, before.SUMMON_TEMPLATES)
+        from ai_trainer import _parse_summon_skills
+        for name, old in before.SUMMON_TEMPLATES.items():
+            actual = copy.deepcopy(cd.SUMMON_TEMPLATES[name])
+            expected = copy.deepcopy(old)
+            for template in (actual, expected):
+                for spell in template.get('spells', []):
+                    if not spell.get('消耗mp'):
+                        spell['消耗mp'] = 1
+                if 'skills' in template:
+                    skills = _parse_summon_skills(template)
+                    for skill in skills:
+                        skill.pop('mp_cost', None)
+                    template['skills'] = skills
+            self.assertEqual(actual, expected, name)
 
     def test_character_spirit_tiers_do_not_remove_or_damage_character(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):

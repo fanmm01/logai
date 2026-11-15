@@ -472,6 +472,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                         bp_suffix = 'p'
                 self._y17_weapon_used(atk_uid)
 
+        lines.extend(self._received_attack_reactions(atk_uid, def_uid))
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
@@ -979,7 +980,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 atk_rank=state.get('atk_rank', 1),
                 atk_roll=state.get('atk_roll', 0),
                 spell=spell,
-                moon_drain=eff.get('_moon_drain', 0))
+                moon_drain=eff.get('_moon_drain', 0), damage_effect=eff)
             if dmg_out:
                 lines.append(dmg_out.rstrip('\n'))
 
@@ -1557,7 +1558,7 @@ def _ai_decide_action(engine, uid: str, Q=None):
                                     return (f'.s{sn}', ak)
                             # Invalid for main action → fall through to random fallback
         except Exception:
-            pass
+            logging.getLogger(__name__).exception('HTTP AI policy failed; explicitly falling back to random commands')
 
     # Fallback: random among available (no Q-table, so no action_key)
     cmd = random.choice(available)

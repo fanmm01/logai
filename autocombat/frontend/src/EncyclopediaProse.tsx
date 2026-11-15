@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { TermText } from './KnowledgeUI';
 import './encyclopedia.css';
 
 // Older articles store section titles as plain array entries.
@@ -6,9 +7,9 @@ const sectionTitles = new Set(['施放要求', '技能效果', '冰冻来源', '
 
 function Inline({ text }: { text: string }) {
   return <>{text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) =>
-    part.startsWith('**') && part.endsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong>
-      : part.startsWith('`') && part.endsWith('`') ? <code key={i}>{part.slice(1, -1)}</code>
-        : <Fragment key={i}>{part}</Fragment>)}</>;
+    part.startsWith('**') && part.endsWith('**') ? <strong key={i}><TermText text={part.slice(2, -2)}/></strong>
+      : part.startsWith('`') && part.endsWith('`') ? <code key={i}><TermText text={part.slice(1, -1)}/></code>
+        : <Fragment key={i}><TermText text={part}/></Fragment>)}</>;
 }
 
 function RuleText({ text }: { text: string }) {

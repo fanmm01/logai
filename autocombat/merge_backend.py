@@ -54,7 +54,7 @@ def process_file(filepath):
         result.append(line)
     return result
 
-def main():
+def render_backend():
     output_lines = []
     output_lines.append('#!/usr/bin/env python3\n')
     output_lines.append('"""autocombat_backend.py — 集成后端 v1.4.0\n')
@@ -106,7 +106,8 @@ def main():
                  'parse_coord','format_coord','avg_damage','success_rank','rank_text',
                  'max_damage','AUX_NAME_TO_CODE','_get_attack_range','chebyshev_dist','_resolve_db',
                  '_get_db_str','_calc_net_bp','season_status_roll','_parse_bp_token',
-                 '_format_bp','_parse_attr_mods','SpellInterrupted','ActionExecutionResult','action_committed']:
+                 '_format_bp','_parse_attr_mods','SpellInterrupted','ActionExecutionResult','action_committed',
+                 '_summon_skill_mp_cost']:
         output_lines.append(f'if \"{_sym}\" in dir():_bem.{_sym} = {_sym}\n')
     output_lines.append('sys.modules[\'battle_engine\'] = _bem\n')
 
@@ -156,10 +157,27 @@ def main():
         tcp_forwarder.server_close()
 """)
 
-    output_path = os.path.join(BASE, 'autocombat_backend.py')
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.writelines(output_lines)
-    print(f'Written {len(output_lines)} lines to {output_path}')
+    return ''.join(output_lines)
+
+
+def main(argv=None):
+    import argparse
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true', help='Compare generated source without writing files')
+    args = parser.parse_args(argv)
+    rendered = render_backend()
+    output_path = Path(BASE) / 'autocombat_backend.py'
+    if args.check:
+        if not output_path.exists() or output_path.read_text(encoding='utf-8') != rendered:
+            print('autocombat_backend.py is out of date; run python merge_backend.py')
+            return 1
+        print('autocombat_backend.py is up to date')
+        return 0
+    output_path.write_text(rendered, encoding='utf-8')
+    print(f'Written {len(rendered.splitlines())} lines to {output_path}')
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

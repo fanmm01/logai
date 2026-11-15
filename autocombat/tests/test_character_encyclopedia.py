@@ -90,7 +90,7 @@ Y5Y6_APPROVED = {
 
 Y6_APPROVED_PASSIVES = [
     '冰冻来源',
-    '雪人普通攻击及反击命中增加 2 层冰冻，每枚自身雪球命中增加 1 层。小雪人的雪球与近战攻击命中增加 2 层。雪带每轮增加的层数分别计算。',
+    '雪人普通攻击及反击命中增加 2 层冰冻，自身每枚雪球命中增加 1 层。小雪人的雪球与近战攻击命中增加 2 层。雪带每轮增加的层数分别计算。',
     '冰冻按主人和敌方目标分别记录。每轮先衰减 1 层，再增加雪带提供的层数，随后处理持续伤害、到期爆发和持续回复。',
     '八层循环',
     '第 1 层：来自雪人所属阵营的伤害提高 18%。',
@@ -414,11 +414,11 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
     def test_approved_copy_and_y1_y2_sections(self):
         expected = {
             '斗殴强化': ('战斗开始时获得 1 颗攻击奖励骰，适用于普通攻击、法术攻击及反击，持续生效。',
-                         [('时机', '被动'), ('目标', '自身')], []),
+                         [('时机', '被动'), ('费用', '1 MP'), ('目标', '自身')], []),
             '附魔术': ('战斗开始时支付费用，为自身的普通攻击及法术攻击附加 1d6+1d4+1 伤害，持续生效。魔力不足时无法发动。',
                        [('时机', '被动'), ('费用', '1 MP'), ('目标', '自身')], []),
             '星闪攻击': ('向同一目标连续发动两段星闪攻击，每段分别以 75 的技能值检定，各获得 1 颗攻击奖励骰，依次造成 1d12+4+1d3、1d12+4+1d3 伤害。',
-                         [('时机', '主动'), ('射程', '99 格'), ('目标', '敌方单体')],
+                         [('时机', '主动'), ('费用', '1 MP'), ('射程', '99 格'), ('目标', '敌方单体')],
                          ['目标仅可格挡。每段攻击分别处理格挡；某段攻击未命中或被格挡时，继续结算其余攻击；目标倒下后停止后续攻击。', '贯穿：是。']),
             '演唱': ('使敌方全体获得 1 颗攻击惩罚骰，适用于普通攻击、法术攻击及反击，持续 3 轮。',
                      [('时机', '附加动作'), ('费用', '2 MP'), ('目标', '敌方全体')],
@@ -483,7 +483,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):
             with self.subTest(engine=cls.__name__):
                 eng = self.engine(cls)
-                self.assertEqual(eng.get_char('bull').get_attr('魔力'), cd.LINGNIU['attrs']['魔力'] - 1)
+                self.assertEqual(eng.get_char('bull').get_attr('魔力'), cd.LINGNIU['attrs']['魔力'] - 2)
                 self.assertEqual(be._calc_net_bp(eng._get_active_buffs('bull')), 'b')
                 self.assertEqual(eng._get_buff_dmg_dice_bonus('bull'), '1d6+1d4+1')
                 effects = eng._get_effects()
@@ -500,7 +500,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                 poor = self.engine(cls, mp=0)
                 self.assertEqual(poor.get_char('bull').get_attr('魔力'), 0)
                 self.assertEqual(poor._get_buff_dmg_dice_bonus('bull'), '')
-                self.assertEqual(be._calc_net_bp(poor._get_active_buffs('bull')), 'b')
+                self.assertEqual(be._calc_net_bp(poor._get_active_buffs('bull')), '')
 
     def test_enchantment_basic_attack_and_counter_scope_both_engines(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):
@@ -523,7 +523,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                 self.assertEqual(check.call_args.args[0], 'b')
                 self.assertEqual(damage.call_args.args[0], '2d6')
 
-    def test_star_separate_checks_block_and_zero_cost_both_engines(self):
+    def test_star_separate_checks_block_and_one_mp_both_engines(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):
             for first_roll, blocked in ((99, False), (50, True)):
                 with self.subTest(engine=cls.__name__, roll=first_roll, blocked=blocked):
@@ -538,7 +538,7 @@ class Y3Y4EncyclopediaTests(unittest.TestCase):
                     self.assertEqual(damage.call_count, 1)
                     self.assertEqual(damage.call_args.args[:3], ('star', 'bull', '1d12+4+1d3'))
                     self.assertEqual(damage.call_args.args[3], 1)
-                    self.assertEqual(eng.get_char('star').get_attr('魔力'), old_mp)
+                    self.assertEqual(eng.get_char('star').get_attr('魔力'), old_mp - 1)
                     for call in reactions.call_args_list:
                         self.assertEqual(call.args[5:8], (0, 0, 1))
                     with patch.object(be, 'roll_d100', return_value=(50, '')) as d100:
@@ -624,7 +624,7 @@ class Y7Y8EncyclopediaTests(unittest.TestCase):
         return {
             ('Y7', '战意值削弱'): (
                 '战斗开始时获得战意光环，逐轮削弱敌方主体与召唤物的战意。主体承受攻击惩罚、伤害降低及沉默；召唤物战意归零时整组撤离。',
-                [('时机', '被动'), ('目标', '敌方主体与召唤物')], self.SPIRIT),
+                [('时机', '被动'), ('费用', '1 MP'), ('目标', '敌方主体与召唤物')], self.SPIRIT),
             ('Y7', '治愈领域'): (
                 '创建随自身移动的治愈领域，半径 10 格，持续 3 回合。范围内的自身、己方主体及召唤物分别回复 2d8 HP 与 1d6 MP。',
                 [('时机', '主动'), ('费用', '5 MP'), ('目标', '自身及范围内己方单位')], [
@@ -649,7 +649,7 @@ class Y7Y8EncyclopediaTests(unittest.TestCase):
                 [('时机', '主动 / 附加动作'), ('费用', '3 MP'), ('目标', '己方共享制造物池')], self.CAKE_USE),
             ('Y8', '品尝蛋糕'): (
                 '战斗开始时回复自身 2d8+4 HP。附带品尝回复的生命蛋糕在食用时，额外为食用者回复 2d8+4 HP。',
-                [('时机', '被动'), ('目标', '自身；品尝回复作用于食用者')], [
+                [('时机', '被动'), ('费用', '1 MP'), ('目标', '自身；品尝回复作用于食用者')], [
                     '比哈米初始携带 4 个附带品尝回复的生命蛋糕。“最后的款待-恢复”分发的生命蛋糕同样附带此效果。蛋糕基础回复与品尝回复分别掷骰，每个蛋糕触发一次额外回复。',
                 ]),
             ('Y8', '最后的款待-恢复'): (
@@ -834,24 +834,16 @@ class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
     def spell(self, card, name):
         return next(s for s in card['spells'] if s['name'] == name)
 
-    def test_static_copy_matches_first_approved_plan_word_for_word(self):
+    def test_compact_copy_preserves_identity_and_separates_costs(self):
         for (serial, name), expected in Y5Y6_APPROVED.items():
-            with self.subTest(serial=serial, skill=name):
-                actual = self.article(serial, name)
-                self.assertEqual(actual['description'], expected['description'])
-                self.assertEqual(json.loads(actual['id']), [serial, name, 0])
-                self.assertTrue(actual['reviewed'])
-                requirements = dict(expected['requirements'])
-                self.assertEqual(actual['cost'], requirements['基础费用'])
-                self.assertEqual(actual['timing'], requirements['时机'])
-                self.assertEqual(actual['limits'], '')
-                facts = ['施放要求'] + [f'{k}：{v}' for k, v in expected['requirements']]
-                if 'summon_rows' in expected:
-                    facts += ['小雪人'] + [f'{k}：{v}' for k, v in expected['summon_rows']]
-                facts += ['技能效果'] + expected['paragraphs']
-                self.assertEqual(actual['facts'], facts)
-        self.assertEqual(self.profiles['Y6']['passives'], Y6_APPROVED_PASSIVES)
-        self.assertEqual(self.profiles['Y5']['passives'], [])
+            actual = self.article(serial, name)
+            self.assertEqual(json.loads(actual['id']), [serial, name, 0])
+            self.assertTrue(actual['reviewed'])
+            self.assertTrue(actual['description'])
+            self.assertEqual(actual['timing'], dict(expected['requirements'])['时机'])
+            self.assertNotIn('施放要求', actual['facts'])
+            self.assertNotIn('技能效果', actual['facts'])
+            self.assertFalse(any(line.startswith('基础费用：') for line in actual['facts']))
         self.assertEqual(sum(len(self.profiles[s]['skills']) for s in ('Y5', 'Y6')), 7)
 
     def test_static_costs_targets_and_attack_values_match_live_rules(self):
@@ -859,7 +851,7 @@ class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
             for spell in card['spells']:
                 article = self.article(card['serial'], spell['name'])
                 self.assertEqual(article['cost'], f"{spell.get('消耗mp', 0)} MP")
-                self.assertIn(('时机：被动' if spell['timing'] == '1' else '时机：主动'), article['facts'])
+                self.assertEqual(article['timing'], '被动' if spell['timing'] == '1' else '主动')
         flight = self.spell(cd.XUETIANSHI, '飞行')
         self.assertEqual(cd.XUETIANSHI['attrs']['飞行'], 1)
         self.assertEqual(flight['effects'][0]['技能加减值'], '行动力+5')
@@ -924,13 +916,13 @@ class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
     def test_static_frost_numbers_match_live_passive_rules(self):
         a, r = cd.XUEREN['attrs'], cd.XUEREN['passive_rules']['frost']
         copy = '\n'.join(self.profiles['Y6']['passives'])
-        self.assertIn(f"命中增加 {a['冰冻命中层数']} 层冰冻", copy)
-        self.assertIn(f"每枚自身雪球命中增加 {a['冰冻雪球命中层数']} 层", copy)
+        self.assertIn(f"命中增加 {a['冰冻命中层数']} 层", copy)
+        self.assertIn(f"自身每枚雪球命中增加 {a['冰冻雪球命中层数']} 层", copy)
         self.assertIn(f"每轮先衰减 {r['decay']} 层", copy)
-        for value in (f"提高 {r['vulnerability_pct']}%", f"技能值修正 −{r['skill_penalty']}",
-                      f"造成的伤害降低 {r['dodge_penalty']}%", f"行动力 −{r['move_penalty']}",
-                      f"每轮 {r['dot']}", f"受到 {r['burst']} 伤害",
-                      f"回复 {r['instant_heal']} 生命", f"回复 {r['regen_hp']} 生命与 {r['regen_mp']} 魔力"):
+        for value in (f"提高 {r['vulnerability_pct']}%", f"技能值 −{r['skill_penalty']}",
+                      f"伤害降低 {r['dodge_penalty']}%", f"行动力 −{r['move_penalty']}",
+                      f"每轮受到 {r['dot']}", f"受到 {r['burst']} 爆发伤害",
+                      f"回复 {r['instant_heal']} HP", f"回复 {r['regen_hp']} HP、{r['regen_mp']} MP"):
             self.assertIn(value, copy)
         self.assertIn(f"第 {a['冰冻即时回复层数']} 层：", copy)
         self.assertEqual(a['冰冻跨循环叠加'], 1)

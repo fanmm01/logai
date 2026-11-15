@@ -155,7 +155,7 @@ def register_ui(app, ns):
             reason = '本场已使用'
         else:
             reason = eng._revive_preflight(uid, s)
-        cost = s.get('消耗mp', 0)
+        cost = s.get('消耗mp', 1) or 1
         if not reason and isinstance(cost, (int, float)) and eng.get_char(uid).get_attr('魔力', 0) < cost:
             reason = '魔力不足'
         cands = []

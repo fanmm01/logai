@@ -88,6 +88,15 @@ class BrowserUITests(unittest.TestCase):
         # Unknown API paths keep the legacy JSON 404 contract.
         self.assertEqual(self.client.get('/api/nope').status_code, 404)
 
+    def test_ui_deep_links_serve_the_same_application(self):
+        for page in ('home', 'setup', 'battle', 'sim', 'library', 'editor',
+                     'tournament', 'settings', 'help/mechanics', 'help/characters'):
+            with self.subTest(page=page):
+                response = self.client.get('/ui/' + page + '?character=Y1')
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b'<!doctype html>', response.data)
+                response.close()
+
     def test_disabled_roster_blocks_new_operations_but_preserves_existing_room(self):
         self.create()
         self.control(op='start')

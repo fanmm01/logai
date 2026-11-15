@@ -430,14 +430,14 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
          'react_block': 50,
          'shield_block': 50,
          'shield_block_rate': 0.7,
-         'skills': [{'dice': '1d4+3d6+4', 'name': '盾击', 'val': 70},
-                    {'dice': '2d6+6', 'name': '爪击', 'val': 75},
+         'skills': [{'dice': '1d4+3d6+4', 'name': '盾击', 'val': 70, 'mp_cost': 1},
+                    {'dice': '2d6+6', 'name': '爪击', 'val': 75, 'mp_cost': 1},
                     {'dice': '1d4+2d6+2',
                      'hits': 2,
                      'name': '水火弹',
                      'on_whiff_aoe_dmg': '4d10',
                      'on_whiff_mp_cost': 10,
-                     'val': 70}],
+                     'val': 70, 'mp_cost': 1}],
          '可反击': 1,
          '可反应': 1,
          '可格挡': 1,
@@ -481,7 +481,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'max_total_spawned': 1,
         'merge_group': 'trinity',
         'merge_result': '三合一',
-        'skills': ['爪击:75 2d6+4', '俯冲:70 2d8+1d6+4'],
+        'skills': [{'name': '爪击', 'val': 75, 'dice': '2d6+4', 'mp_cost': 1}, {'name': '俯冲', 'val': 70, 'dice': '2d8+1d6+4', 'mp_cost': 1}],
         'spells': [{'category': 1,
                     'effects': [{'type': 1,
                                  '伤害骰': '2d8+1d6+4',
@@ -495,7 +495,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
                     'index': 1,
                     'name': '俯冲',
                     'phase': 1,
-                    'timing': '2'}],
+                    'timing': '2', '消耗mp': 1}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 85,
@@ -523,7 +523,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'shield_block': 100,
         'shield_block_rate': 0.75,
         'size_2x2': True,
-        'skills': ['盾击:50 1d4+3d6+3', '盾牌冲撞:50 3d6+3'],
+        'skills': [{'name': '盾击', 'val': 50, 'dice': '1d4+3d6+3', 'mp_cost': 1}, {'name': '盾牌冲撞', 'val': 50, 'dice': '3d6+3', 'mp_cost': 1}],
         'spells': [{'category': 1,
                     'effects': [{'type': 1,
                                  '伤害骰': '3d6',
@@ -537,7 +537,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
                     'index': 1,
                     'name': '盾牌冲撞',
                     'phase': 1,
-                    'timing': '2'}],
+                    'timing': '2', '消耗mp': 1}],
         '可反击': 1,
         '可反应': 1,
         '可格挡': 1,
@@ -579,7 +579,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'max_simultaneous': 2,
         'max_total_spawned': 3,
         'permanent_statuses': ['禁锢'],
-        'skills': ['鞭:60 1d8+1d6'],
+        'skills': [{'name': '鞭', 'val': 60, 'dice': '1d8+1d6', 'mp_cost': 1}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 7,
@@ -599,7 +599,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'flying': True,
         'max_simultaneous': 12,
         'max_total_spawned': None,
-        'skills': ['爪击:65 1d4+1d4'],
+        'skills': [{'name': '爪击', 'val': 65, 'dice': '1d4+1d4', 'mp_cost': 1}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 65,
@@ -635,7 +635,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
                     'index': 1,
                     'name': '水火弹',
                     'phase': 1,
-                    'timing': '2'},
+                    'timing': '2', '消耗mp': 1},
                    {'category': 8,
                     'effects': [{'cooldown_rounds': 3,
                                  'type': 8,
@@ -646,7 +646,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
                     'index': 2,
                     'name': '治愈领域',
                     'phase': 1,
-                    'timing': '2'}],
+                    'timing': '2', '消耗mp': 1}],
         '可反击': 1,
         '可反应': 1,
         '闪避': 40,
@@ -698,7 +698,7 @@ YANYAN = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴精通',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 1,
              'default_persist': 1,
              'effects': [{'type': 1,
@@ -798,7 +798,7 @@ LINGNIU = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴强化',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6+1d4+1'}],
@@ -855,7 +855,7 @@ XINGSHAN = {'attrs': {'伤害贯穿': 1,
                           '成功率': 75,
                           '成功率奖惩骰': 1}],
              'name': '星闪攻击',
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 5, '持续回合': 3, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'p'}],
              'name': '演唱',
@@ -910,7 +910,7 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
                           '客体': 4,
                           '射程': 2}],
              'name': '吸血',
-             'timing': '2'}],
+             'timing': '2', '消耗mp': 1}],
  'str_attrs': {'伤害值': '2d3+1d4'}}
 
 # ============================================================
@@ -987,7 +987,7 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 4, '客体': 13, '持续回合': 5, '默认延续性': 0, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6'},
                          {'type': 2, '客体': 13, '护盾值': '1d8+4', '持续回合': 5}],
              'name': '雪之法杖',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 5,
              'cooldown_rounds': 4,
              'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '小雪人', '客体': 1, '持续回合': 999}],
@@ -1013,7 +1013,7 @@ SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
  'frost_zone': {'duration': 4, 'mp_cost': 3, 'radius': 3, 'stacks': 2},
  'max_simultaneous': 1,
  'max_total_spawned': None,
- 'skills': [{'dice': '1d8+2', 'name': '发送雪球', 'val': 65}],
+ 'skills': [{'dice': '1d8+2', 'name': '发送雪球', 'val': 65, 'mp_cost': 1}],
  '可反击': 0,
  '可反应': 1,
  '闪避': 35,
@@ -1073,7 +1073,7 @@ HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
                           '战意惩罚骰上限': 2,
                           '持续回合': 99}],
              'name': '战意值削弱',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8,
@@ -1147,7 +1147,7 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
             {'category': 3,
              'effects': [{'type': 3, '回复hp': '2d8+4', '客体': 1}],
              'name': '品尝蛋糕',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 6,
              'effects': [{'tasteBonusOwnerSerial': 'Y8',
                           'type': 6,
@@ -1256,7 +1256,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 5, '召唤个数': '2d4+4', '召唤物模板': '生灵', '客体': 1, '持续回合': 99}],
              'name': '召唤生灵',
              'phase': 1,
-             'timing': '23'},
+             'timing': '23', '消耗mp': 1},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
              'effects': [{'type': 1,
@@ -1277,7 +1277,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
                           '敌方延迟回复回合': 3}],
              'name': '生之矛',
              'phase': 1,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8, '作用半径': 20, '回复hp': '1d8', '客体': 13, '持续回合': 3, '领域中心跟随': 1},
@@ -1297,7 +1297,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'name': '阶段转换',
              'phase': 1,
              'timing': '1',
-             '消耗san': '2d6'},
+             '消耗san': '2d6', '消耗mp': 1},
             {'_mp_formula': 'summon_count_ceil_half',
              'category': 5,
              'effects': [{'ignite': True,
@@ -1310,7 +1310,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
                           '持续回合': 99}],
              'name': '召唤生灵',
              'phase': 2,
-             'timing': '23'},
+             'timing': '23', '消耗mp': 1},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
              'effects': [{'type': 1,
@@ -1323,7 +1323,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
                           '成功率': 85}],
              'name': '死之矛',
              'phase': 2,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 8,
              'default_persist': 0,
              'effects': [{'type': 8, '作用半径': 20, '客体': 135, '持续回合': 99, '每回合伤害骰': '2d4', '领域中心跟随': 1},
@@ -1453,7 +1453,7 @@ LAN = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+2d3'}],
              'name': '镰刃余势',
-             'timing': '1'}],
+             'timing': '1', '消耗mp': 1}],
  'str_attrs': {'伤害值': '2d4+4'}}
 
 # ============================================================
@@ -1555,22 +1555,22 @@ GELIYA = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '魔能消耗百分比', '辅助效果值': '-100'}],
              'name': '魔力永驻',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99}],
              'name': '飞行',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
              'name': '斗殴精通',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '消耗hp转为消耗mp', '辅助效果值': '1'}],
              'name': '魔力护体',
-             'timing': '1'}],
+             'timing': '1', '消耗mp': 1}],
  'str_attrs': {'伤害值': '1d6+1d4'}}
 
 # ============================================================
@@ -1607,7 +1607,7 @@ SUMMON_TEMPLATES['虚假之月'] = {'APP': 1,
              'index': 1,
              'name': '月能馈赠',
              'phase': 0,
-             'timing': '1'}],
+             'timing': '1', '消耗mp': 1}],
  'unlimited_mp': True,
  '不可指定': 1,
  '可反击': 0,
@@ -1719,7 +1719,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 6, '成功率': 70}],
              'name': '像素射击',
              'phase': 1,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 8, '成功率': 70},
                          {'type': 1, '伤害骰': '2d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 8, '成功率': 70},
@@ -1764,7 +1764,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 1, '伤害骰': '1d8+1d6+db', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 2, '成功率': 70}],
              'name': '重剑·迅捷',
              'phase': 2,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '1d8+1d6+4+db',
@@ -1775,7 +1775,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
                           '成功率': 70}],
              'name': '重剑·勇气',
              'phase': 2,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+5', '持续回合': 99},
                          {'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'}],
@@ -1795,7 +1795,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'effects': [{'counter_type': 'limit_gauge', 'max_value': 5, 'type': 14, '客体': 1, '持续回合': 999}],
              'name': '极限槽',
              'phase': 2,
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '1d8+2+1d4+db',
@@ -1835,12 +1835,12 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
              'effects': [{'counter_type': 'rings', 'max_value': 3, 'type': 14, '客体': 1, '持续回合': 999}],
              'name': '金环',
              'phase': 3,
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d4+2+db', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 2, '成功率': 70}],
              'name': '回旋踢',
              'phase': 3,
-             'timing': '2'},
+             'timing': '2', '消耗mp': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+4', '持续回合': 1},
                          {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
@@ -1925,7 +1925,7 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
                           '持续回合': 3,
                           '每回合伤害骰': '1d3'}],
              'name': '爆破圈',
-             'timing': '4'},
+             'timing': '4', '消耗mp': 1},
             {'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '2d6+1d4',
@@ -1968,13 +1968,13 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
              'default_persist': 1,
              'effects': [{'type': 12, 'variant': 'fire_rat_cloak', '客体': 1, '持续回合': 999, '消耗mp_per_hit': 1}],
              'name': '火鼠裘',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '飞行', '辅助效果值': '1'},
                          {'type': 4, '客体': 1, '技能加减值': '行动力-3', '持续回合': 99}],
              'name': '焰动力·悬浮',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '技能加减值': '行动力+3', '持续回合': 1},
                          {'type': 4, '客体': 1, '持续回合': 1, '辅助效果': '伤害成功率奖励惩罚', '辅助效果值': 'b'},
@@ -2052,12 +2052,12 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
                           '辅助效果': '免疫一次伤害',
                           '辅助效果值': '1'}],
              'name': '辉月女神的祝福',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6'}],
              'name': '幻造兵武',
-             'timing': '1'},
+             'timing': '1', '消耗mp': 1},
             {'category': 1,
              'effects': [{'bow_volley': 3,
                           'charge_moon': 2,
@@ -2215,7 +2215,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '猩红眼眸',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'blood_kind': 'arcana',
              'category': 1,
              'cost_blood_ml': 100,
@@ -2232,13 +2232,13 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'mp_cost_formula': 'max_25pct_cur_50pct',
              'name': '阿瑞卡纳律动',
              'timing': '2',
-             '吟唱回合': 3},
+             '吟唱回合': 3, '消耗mp': 1},
             {'blood_kind': 'guard',
              'category': 4,
              'effects': [{'type': 4, '客体': 1, '持续回合': 10, '辅助效果': '受到伤害加值', '辅助效果值': '-1'}],
              'name': '凝血式-守',
              'timing': '3',
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'blood_kind': 'sacrifice',
              'category': 1,
              'chant_interrupt_hp_pct': 90,
@@ -2256,14 +2256,14 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '祭炼式-破',
              'timing': '2',
              '吟唱回合': 2,
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'blood_kind': 'blade',
              'category': 4,
              'cost_blood_ml': 100,
              'effects': [{'type': 4, '客体': 1, '持续回合': 10}],
              'name': '凝血式-幻',
              'timing': '3',
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'blood_kind': 'war',
              'category': 1,
              'chain_on_blood_ml': 3000,
@@ -2282,7 +2282,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'on_kill_heal_san': 1,
              'radius_per_extra_mp': 10,
              'timing': '2',
-             '消耗san': '1d8'},
+             '消耗san': '1d8', '消耗mp': 1},
             {'blood_kind': 'store',
              'category': 3,
              'cost_blood_ml': 500,
@@ -2297,7 +2297,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'name': '凝血式-浮',
              'phase': 99,
              'timing': '2',
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'category': 4,
              'effects': [{'type': 4, '客体': 1, '持续回合': 1}],
              'name': '等价交换',
@@ -2310,7 +2310,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 3, '回复mp': '4', '客体': 1}],
              'name': '血染披风',
              'timing': '3',
-             '消耗mp': 0},
+             '消耗mp': 1},
             {'blood_kind': 'slash',
              'category': 1,
              'cost_blood_ml': 500,
@@ -2331,7 +2331,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
              'effects': [{'type': 4, '客体': 1}],
              'name': '血色突刺',
              'timing': '23',
-             '消耗mp': 0}],
+             '消耗mp': 1}],
  'str_attrs': {'damage_suffix_map': {'剑': 'a', '弓术': 'b'}, 'db': '-2', '伤害值': '1d6+db', '伤害值b': '1d6+db/2'},
  '初始血液': 2000}
 
@@ -2759,6 +2759,13 @@ def _engine_debug_log(msg: str):
 
 # Overridable by trainers to inject correct SUMMON_TEMPLATES for PvP vs PvE
 _SUMMON_TEMPLATES = None
+
+
+def _summon_skill_mp_cost(skill):
+    """Ordinary attacks are free; every named summon ability costs at least 1 MP."""
+    if skill.get('name', '') in ('', '攻击', '普通攻击', '斗殴'):
+        return 0
+    return max(1, int(skill.get('mp_cost', 0) or 0))
 
 
 def _get_summon_template(tmpl_name):
@@ -3800,7 +3807,7 @@ class CombatEngine:
             exists = any(e.get('sourceUserId') == uid and e.get('spellIndex') == index
                          and e.get('remainingRounds', 0) > 0 for e in self._get_effects())
             if spell and not exists and not (index == 8 and getattr(char, '_y14_substitute_used', False)):
-                self._execute_misc_effect(uid, uid, spell['effects'][0], spell, True)
+                self._execute_spell(uid, uid, spell)
         if phase == 2 and not any(e.get('sourceUserId') == uid and e.get('spellIndex') in (11, 12)
                                   for e in self._get_effects()):
             self._y14_set_mode(uid, 'swift')
@@ -4455,6 +4462,7 @@ class CombatEngine:
                 bc = rules['spear_ml']
         else:
             raise ValueError('该能力为场外能力')
+        mc = max(1, mc)
         if mc:
             mc = max(1, int(mc * self._get_buff_mp_cost_pct(uid)))
             mc = max(1, mc + self._get_buff_mp_cost_flat(uid))
@@ -6698,6 +6706,9 @@ class CombatEngine:
             for k in ['级别','类别','消耗mp','消耗san','吟唱回合','默认延续性']:
                 if k not in spell: spell[k] = 0
             spell.setdefault('级别',1); spell.setdefault('时机','2')
+            # Ordinary attacks and defensive reactions bypass spell execution.
+            if not spell.get('消耗mp'):
+                spell['消耗mp'] = 1
             # Read _mp_formula
             mpf = char.get_str(f"{prefix}_mp_formula")
             if mpf: spell['_mp_formula'] = mpf
@@ -7361,7 +7372,7 @@ class CombatEngine:
         for s in spells:
             timing = s.get('时机', '2')
             name = s.get('name', '?')
-            mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
+            mp_cost = s.get('消耗mp', 1) or 1
             cd_eff = [e for e in effects if e.get('type') == 'cooldown'
                       and e.get('sourceUserId') == uid
                       and e.get('spellIndex') == s.get('index')
@@ -7376,7 +7387,7 @@ class CombatEngine:
             status = ""
             if cd_remaining > 0:
                 status = f" [CD:{cd_remaining}回合]"
-            elif mp_cost > mp:
+            elif isinstance(mp_cost, (int, float)) and mp_cost > mp:
                 status = f" [MP不足({mp}/{mp_cost})]"
             elif has_timing(timing, '2') and acts.get('主动', 0) <= 0:
                 status = " [主动作不足]"
@@ -7984,6 +7995,40 @@ class CombatEngine:
         return out
 
     # ---- Unified _execute_spell (all 8 categories, all fixes applied) ----
+    def _received_attack_reactions(self, atk_uid, def_uid):
+        """Named reaction spells pay their own fee; ordinary defenses stay free."""
+        dchar = self.get_char(def_uid)
+        dname = dchar.name
+        lines = []
+        # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
+        def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
+        if def_spells is None:
+            def_spells = self.load_spells(def_uid)
+        for ds in (def_spells or []):
+            if has_timing(ds.get('时机', '2'), '4'):
+                # Check _once_per_battle
+                if ds.get('_once_per_battle'):
+                    consumed = getattr(dchar, '_once_consumed', set())
+                    if ds['name'] in consumed:
+                        continue
+                # Check _once_per_round
+                if ds.get('_once_per_round'):
+                    consumed_round = getattr(dchar, '_round_consumed', set())
+                    if ds['name'] in consumed_round:
+                        continue
+                # Auto-trigger the reaction spell (self-target or at attacker)
+                react_target = atk_uid if any(
+                    str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')
+                    for e in ds.get('effects', []) if e.get('type') == 1
+                ) else def_uid
+                react_out = self._execute_spell(def_uid, react_target, ds)
+                if action_committed(react_out) and ds.get('_once_per_round'):
+                    consumed_round = getattr(dchar, '_round_consumed', set())
+                    consumed_round.add(ds['name'])
+                    dchar._round_consumed = consumed_round
+                lines.append(f'  [{dname} 反应] {react_out.strip()}')
+        return lines
+
     def _execute_spell(self, caster_id, target_id, spell):
         reason = self._y16_preflight(caster_id, spell)
         if reason:
@@ -8008,7 +8053,7 @@ class CombatEngine:
                     if getattr(self.get_char(caster_id), '_y14_substitute_used', False):
                         return ActionExecutionResult('残机替身已消耗', False, 'spell_rejected')
                     # Registration is free; the lethal trigger pays 8 MP.
-                    spell = dict(spell, 消耗mp=0)
+                    spell = dict(spell, 消耗mp=0, _registration_only=True)
         # Duration dice are rolled on cast, never when merely listing skills.
         if any(isinstance(e.get('持续回合'), str) or isinstance(e.get('吟唱回合'), str) for e in spell.get('effects', [])):
             spell = dict(spell, effects=[dict(e) for e in spell['effects']])
@@ -8152,6 +8197,9 @@ class CombatEngine:
         else:
             mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
 
+        if not spell.get('_registration_only'):
+            mp_cost = max(1, mp_cost)
+
         san_cost_raw = spell.get('消耗san', 0)
         if isinstance(san_cost_raw, str) and 'd' in str(san_cost_raw).lower():
             san_cost = roll_dice(str(san_cost_raw))
@@ -8213,24 +8261,21 @@ class CombatEngine:
                 self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
 
-        # prep_free spells: skip all costs during preparation phase
+        # Preparation may waive other resources, but never the skill's MP cost.
         is_prep = False
         state = self._get_state()
         if state and state.get('phase') == 'preparation':
             is_prep = True
         prep_free = spell.get('prep_free', False)
         if is_prep and prep_free:
-            out += f'  （准备阶段免消耗）\n'
+            out += f'  （准备阶段仅免除非MP资源消耗）\n'
             blood_cost = 0
-            mp_cost = 0
             san_cost = 0
-            # skip HP%, HP dice, MP% costs too
+            # Keep MP percentage costs; only waive non-MP resources.
             spell = dict(spell)  # shallow copy so we don't mutate original
             spell['cost_blood_ml'] = 0
             spell['cost_hp_pct_current'] = 0
             spell['cost_hp_dice'] = ''
-            spell['cost_mp_pct_max'] = 0
-            spell['cost_mp_pct_current'] = 0
 
         # Blood cost (cost_blood_ml): consumed before MP; HP fallback if insufficient
         if self._is_y17(caster_id):
@@ -10804,33 +10849,7 @@ class FullBattleEngine(CombatEngine):
                 else:
                     lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}')
 
-        # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
-        def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
-        if def_spells is None:
-            def_spells = self.load_spells(def_uid)
-        for ds in (def_spells or []):
-            if has_timing(ds.get('时机', '2'), '4'):
-                # Check _once_per_battle
-                if ds.get('_once_per_battle'):
-                    consumed = getattr(dchar, '_once_consumed', set())
-                    if ds['name'] in consumed:
-                        continue
-                    consumed.add(ds['name'])
-                    dchar._once_consumed = consumed
-                # Check _once_per_round
-                if ds.get('_once_per_round'):
-                    consumed_round = getattr(dchar, '_round_consumed', set())
-                    if ds['name'] in consumed_round:
-                        continue
-                    consumed_round.add(ds['name'])
-                    dchar._round_consumed = consumed_round
-                # Auto-trigger the reaction spell (self-target or at attacker)
-                react_target = atk_uid if any(
-                    str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')
-                    for e in ds.get('effects', []) if e.get('type') == 1
-                ) else def_uid
-                react_out = self._execute_spell(def_uid, react_target, ds)
-                lines.append(f'  [{dname} 反应] {react_out.strip()}')
+        lines.extend(self._received_attack_reactions(atk_uid, def_uid))
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         # 行动力优势合并到攻击BP（不再字符串拼接，统一净额结算）
@@ -11810,7 +11829,7 @@ class FullBattleEngine(CombatEngine):
                     "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
                     "zone_radius": sk_raw.get("zone_radius", 0),
                     "zone_duration": sk_raw.get("zone_duration", 0),
-                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "mp_cost": _summon_skill_mp_cost(sk_raw),
                     "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
@@ -11819,6 +11838,7 @@ class FullBattleEngine(CombatEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
         owner_base = self._resolve_uid(caster_id)
         self._reconcile_summon_groups()
         existing_rep = self._find_summon_group_by(owner_base, template_name)
@@ -12146,7 +12166,11 @@ class FullBattleEngine(CombatEngine):
         enemies = self._enemy_target_entries(summon_id)
         if not enemies: return ["无可用目标"]
         tid = enemies[0]["userId"]
-        skills = entry.get("skills",[])
+        declared_skills = entry.get("skills", [])
+        skills = [sk for sk in declared_skills if sk.get('skill_type', 'attack') == 'attack'
+                  and sk.get('mp_cost', 0) <= entry.get('summon_mp', 0)]
+        if declared_skills and not skills:
+            return [f'{sname} 魔力不足，无法施放技能']
         sk_name = ""
         if skills:
             best_score = -1; best = skills[0]
@@ -12158,6 +12182,9 @@ class FullBattleEngine(CombatEngine):
             hits = best.get("hits", 1)
             on_whiff_aoe = best.get("on_whiff_aoe_dmg", "")
             on_whiff_mp = best.get("on_whiff_mp_cost", 0)
+            cost = best.get('mp_cost', 0)
+            if cost:
+                self._set_summon_entry_fields(summon_id, summon_mp=entry.get('summon_mp', 0) - cost)
         else:
             sv = entry.get("skill_val",50); dmg_dice = entry.get("dmg_dice","1d4")
             hits = 1
@@ -12416,11 +12443,13 @@ class FullBattleEngine(CombatEngine):
                         "hits": sk_raw.get("hits", 1),
                         "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                         "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                        "mp_cost": _summon_skill_mp_cost(sk_raw),
                     })
                 else:
                     parts = str(sk_raw).split(); nv = parts[0].split(":")
                     parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
                                    "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
             merged["skills"] = parsed
             if parsed:
                 merged["skill_name"] = parsed[0]["name"]
@@ -12589,7 +12618,7 @@ class FastBattleEngine(FullBattleEngine):
                     "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
                     "zone_radius": sk_raw.get("zone_radius", 0),
                     "zone_duration": sk_raw.get("zone_duration", 0),
-                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "mp_cost": _summon_skill_mp_cost(sk_raw),
                     "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
@@ -12598,6 +12627,7 @@ class FastBattleEngine(FullBattleEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
         owner_base = self._resolve_uid(caster_id)
         self._reconcile_summon_groups()
         existing_rep = self._find_summon_group_by(owner_base, template_name)
@@ -12980,11 +13010,13 @@ class FastBattleEngine(FullBattleEngine):
                         "hits": sk_raw.get("hits", 1),
                         "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                         "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                        "mp_cost": _summon_skill_mp_cost(sk_raw),
                     })
                 else:
                     parts = str(sk_raw).split(); nv = parts[0].split(":")
                     parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
                                    "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
             merged["skills"] = parsed
             if parsed:
                 merged["skill_name"] = parsed[0]["name"]
@@ -13375,7 +13407,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # [INLINED] from battle_engine import (CombatEngine, FastBattleEngine, roll_dice, roll_d100,
 # [INLINED]     is_in_melee_range, has_timing, parse_coord, format_coord, avg_damage,
 # [INLINED]     success_rank, rank_text, _get_attack_range, chebyshev_dist, _resolve_db, _get_db_str,
-# [INLINED]     ActionExecutionResult, action_committed)
+# [INLINED]     ActionExecutionResult, action_committed, _summon_skill_mp_cost)
 # [INLINED] from characters_data import ALL_CHARACTERS, load_character_to_engine, SUMMON_TEMPLATES
 import battle_engine
 battle_engine._SUMMON_TEMPLATES = SUMMON_TEMPLATES
@@ -14421,6 +14453,8 @@ def get_summon_actions(engine, uid):
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
     actions = []
     for i, sk in enumerate(skills):
+        if sk.get('mp_cost', 0) > entry.get('summon_mp', 0):
+            continue
         if sk.get("skill_type") == "zone_heal":
             # Zone skills don't target enemies — single cast action
             actions.append((f'SUMMON_ZONE_{i}', f'{sk["name"]}（领域）'))
@@ -14492,9 +14526,15 @@ def execute_summon_action(engine, uid, action_key):
     if sk.get("skill_type") == "zone_heal":
         return engine._summon_attack(uid)
 
+    mp_cost = sk.get('mp_cost', 0)
+    if entry.get('summon_mp', 0) < mp_cost:
+        return [f'{sname} 魔力不足，无法施放技能']
+
     # Select target by strategy (enemy_entries统一包含隐藏的组成员)
     tid = select_target_by_strategy(engine, uid, target_strat, enemy_entries)
     if not tid: tid = enemy_entries[0]['userId']
+    if mp_cost:
+        engine._set_summon_entry_fields(uid, summon_mp=entry.get('summon_mp', 0) - mp_cost)
     tname = next((e.get('name', tid) for e in enemy_entries if e['userId'] == tid), tid)
 
     sv = sk['val']; dmg_dice = sk['dice']
@@ -14663,7 +14703,7 @@ def _parse_summon_skills(tmpl):
                 "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
                 "zone_radius": sk_raw.get("zone_radius", 0),
                 "zone_duration": sk_raw.get("zone_duration", 0),
-                "mp_cost": sk_raw.get("mp_cost", 0),
+                "mp_cost": _summon_skill_mp_cost(sk_raw),
                 "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
             })
         else:
@@ -14676,7 +14716,7 @@ def _parse_summon_skills(tmpl):
                 "skill_type": "attack", "zone_heal_hp": "", "zone_radius": 0,
                 "zone_duration": 0, "mp_cost": 0, "cooldown_rounds": 0,
             })
-    return parsed
+    return [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
 
 
 # ============================================================
@@ -14845,6 +14885,31 @@ def merge_untrained_tables(previous, trained, characters, summons):
     return result
 
 
+def normalize_training_targets(target_serials, enabled_serials):
+    if target_serials is None:
+        return None
+    if (not isinstance(target_serials, list) or not target_serials
+            or any(not isinstance(s, str) or s not in enabled_serials for s in target_serials)):
+        raise ValueError('请选择至少一名已启用角色，训练名单必须为角色编号列表')
+    return [s for s in enabled_serials if s in target_serials]
+
+
+def character_battle_specs(singles, targets, count, offset=0):
+    specs = []
+    for i in range(count):
+        size = 2 if random.random() < 0.7 else 6
+        if targets is None:
+            chosen = random.sample(singles, size)
+        else:
+            anchor = targets[(offset + i) % len(targets)]
+            chosen = [anchor] + random.sample([s for s in singles if s != anchor], size - 1)
+            random.shuffle(chosen)
+        half = size // 2
+        maps = ['6x6', '8x8', '10x10'] if size == 2 else ['10x10', '20x20']
+        specs.append((chosen[:half], chosen[half:], random.choice(maps)))
+    return specs
+
+
 class QTrainer:
     def __init__(self):
         self.Q_solo = defaultdict(lambda: defaultdict(float))   # 单人/最后一人 Q[char_id][(state, action)]
@@ -14854,6 +14919,8 @@ class QTrainer:
         self.characters = []
         self.summon_templates = {}
         self.training_summons = []
+        self.summon_pool = []
+        self.target_serials = None
         self.preserved_characters = []
         self.preserved_summons = []
         self.win_counts = defaultdict(int)
@@ -14862,11 +14929,12 @@ class QTrainer:
         self._react_cw = defaultdict(lambda: 50)  # Trainable counter weight
         self._react_bw = defaultdict(lambda: 0)   # Trainable block weight
 
-    def init_characters(self):
+    def init_characters(self, target_serials=None):
         # Resolve the live canonical module at training start. A from-imported
         # ALL_CHARACTERS list becomes stale after browser saves rebind it.
         import characters_data as data
         self.characters = copy.deepcopy(data.ALL_CHARACTERS)
+        self.target_serials = normalize_training_targets(target_serials, [c['serial'] for c in self.characters])
         self.summon_templates = copy.deepcopy(data.SUMMON_TEMPLATES)
         self.char_map.clear()
         referenced = set()
@@ -14883,8 +14951,12 @@ class QTrainer:
                     collect(nested)
 
         collect(self.characters)
-        self.training_summons = [name for name, template in self.summon_templates.items()
-                                 if name in referenced and not template.get('_meta')]
+        self.summon_pool = [name for name, template in self.summon_templates.items()
+                            if name in referenced and not template.get('_meta')]
+        if self.target_serials is not None:
+            referenced.clear()
+            collect([c for c in self.characters if c['serial'] in self.target_serials])
+        self.training_summons = [name for name in self.summon_pool if name in referenced]
         engine = CombatEngine()
         engine._summon_templates_snapshot = self.summon_templates
         for c in self.characters:
@@ -15155,9 +15227,11 @@ class QTrainer:
         log(f'Alpha={ALPHA}, Gamma={GAMMA}, Temperature=1.0')
         log('')
         singles = list(self.char_map.keys())
+        targets = self.target_serials if self.target_serials is not None else singles
         if len(singles) < 6:
             raise ValueError('默认训练包含 3 对 3 抽样，需要至少启用 6 名角色')
-        log(f'Training characters: {singles}')
+        log(f'Training characters: {targets}')
+        log(f'Participant pool: {singles}')
         log(f'Training summons: {self.training_summons}')
         weight_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_FILE)
         previous = {}
@@ -15166,7 +15240,7 @@ class QTrainer:
                 previous = json.load(saved)
             if not isinstance(previous, dict):
                 raise ValueError('原权重文件不是有效训练表')
-        preserved = merge_untrained_tables(previous, {'Q_solo': {}, 'Q_team': {}, 'Q_summon': {}}, singles, self.training_summons)
+        preserved = merge_untrained_tables(previous, {'Q_solo': {}, 'Q_team': {}, 'Q_summon': {}}, targets, self.training_summons)
         self.preserved_characters = sorted(set(preserved['Q_solo']) | set(preserved['Q_team']))
         self.preserved_summons = sorted(preserved['Q_summon'])
         log(f'Preserved character tables (not trained): {self.preserved_characters}')
@@ -15177,29 +15251,33 @@ class QTrainer:
         all_char_data = self.characters
         char_map_dict = dict(self.char_map)
         _ACTION_CACHE.clear()
+        updated_characters = set()
         for gen in range(1, GENERATIONS + 1):
             gen_battles = 0
             total_reward = 0.0
             # Build all character battle specs
-            specs = []
-            for _ in range(BATTLES_PER_GEN):
-                if random.random() < 0.7:  # 70% 1v1 for better solo Q-learning
-                    a,b = random.sample(singles,2)
-                    specs.append(([a],[b],random.choice(['6x6','8x8','10x10'])))
-                else:
-                    ch = random.sample(singles,6)
-                    specs.append((ch[:3],ch[3:],random.choice(['10x10','20x20'])))
+            specs = character_battle_specs(singles, self.target_serials, BATTLES_PER_GEN,
+                                           (gen - 1) * BATTLES_PER_GEN)
             # Build summon-only battle specs (1v1 / 2v2 independent summon fights)
-            summon_pool = self.training_summons
+            summon_pool = self.summon_pool
             NUM_SUMMON_BATTLES = BATTLES_PER_GEN // 2
             summon_specs = []
-            for _ in range(NUM_SUMMON_BATTLES if summon_pool else 0):
+            for i in range(NUM_SUMMON_BATTLES if self.training_summons else 0):
                 if len(summon_pool) < 4 or random.random() < 0.5:
                     a,b = random.sample(summon_pool, 2) if len(summon_pool) >= 2 else summon_pool * 2
                     summon_specs.append(([a],[b],random.choice(['6x6','8x8','10x10'])))
                 else:
                     ch = random.sample(summon_pool,4)
                     summon_specs.append((ch[:2],ch[2:],random.choice(['10x10','20x20'])))
+                if self.target_serials is not None:
+                    ta, tb, ms = summon_specs[-1]
+                    anchor = self.training_summons[((gen - 1) * NUM_SUMMON_BATTLES + i) % len(self.training_summons)]
+                    members = ta + tb
+                    if anchor not in members:
+                        members[0] = anchor
+                    random.shuffle(members)
+                    half = len(members) // 2
+                    summon_specs[-1] = (members[:half], members[half:], ms)
             # Submit ALL battles at once — no waiting between batches
             all_ups = []
             char_tasks = [(ta,tb,ms,all_char_data,char_map_dict,self.summon_templates) for ta,tb,ms in specs]
@@ -15233,6 +15311,12 @@ class QTrainer:
             # Update format: (table_type, ck, st, ak, reward, next_st)
             # table_type: 'solo' | 'team' | 'summon'
             for table_type, ck, st, ak, reward, next_st in all_ups:
+                if self.target_serials is not None:
+                    allowed = self.training_summons if table_type == 'summon' else targets
+                    if ck not in allowed:
+                        continue
+                if table_type != 'summon' and isinstance(st, tuple):
+                    updated_characters.add(ck)
                 if table_type == 'summon':
                     tbl = self.Q_summon
                 elif table_type == 'solo':
@@ -15261,16 +15345,19 @@ class QTrainer:
                 result[ck] = {'|'.join(str(x) for x in s) + '__' + ak: v
                               for (s, ak), v in qd.items() if isinstance(s, tuple)}
             return result
-        q_solo = serialize_q(self.Q_solo, self.char_map)
-        q_team = serialize_q(self.Q_team, self.char_map)
+        if self.target_serials is not None and set(targets) - updated_characters:
+            raise ValueError('所选角色未获得有效训练更新，原权重未替换：' + '、'.join(sorted(set(targets) - updated_characters)))
+        q_solo = serialize_q(self.Q_solo, targets)
+        q_team = serialize_q(self.Q_team, targets)
         q_summon = serialize_q(self.Q_summon, self.training_summons)
-        tables = merge_untrained_tables(previous, {'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon}, singles, self.training_summons)
+        tables = merge_untrained_tables(previous, {'Q_solo': q_solo, 'Q_team': q_team, 'Q_summon': q_summon}, targets, self.training_summons)
         pending_path = weight_path + '.tmp'
         with open(pending_path, 'w', encoding='utf-8') as f:
             json.dump({**tables,
                        'stats': stats_log, 'params': {
                 'generations': GENERATIONS, 'battles_per_gen': BATTLES_PER_GEN,
-                'characters': singles, 'summons': self.training_summons,
+                'characters': targets, 'participant_serials': singles, 'target_serials': self.target_serials,
+                'summons': self.training_summons,
                 'preserved_characters': self.preserved_characters, 'preserved_summons': self.preserved_summons,
                 'alpha': ALPHA, 'gamma': GAMMA, 'temperature': 1.0
             }}, f, ensure_ascii=False, indent=2)
@@ -15328,16 +15415,32 @@ def load_q_table(path=None):
         return None
     return result
 
-def main(expected_serials=None):
+def main(expected_serials=None, target_serials=None):
     random.seed(42)
     trainer = QTrainer()
-    trainer.init_characters()
+    trainer.init_characters(target_serials=target_serials)
     if expected_serials is not None and list(trainer.char_map) != expected_serials:
         raise ValueError('训练角色名单与启用角色快照不一致，请重新启动训练')
     print(f'Characters loaded: {list(trainer.char_map.keys())}', flush=True)
     trainer.train()
-    return {'characters': list(trainer.char_map), 'summons': trainer.training_summons,
+    return {'characters': trainer.target_serials if trainer.target_serials is not None else list(trainer.char_map),
+            'participant_serials': list(trainer.char_map), 'target_serials': trainer.target_serials,
+            'summons': trainer.training_summons,
             'preserved_characters': trainer.preserved_characters, 'preserved_summons': trainer.preserved_summons}
+
+def cli():
+    import argparse
+    parser = argparse.ArgumentParser(description='重新训练全部启用角色，或指定一个或多个已启用角色及关联召唤物')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--characters', nargs='+', metavar='Y编号')
+    group.add_argument('--character', metavar='Y编号')
+    args = parser.parse_args()
+    targets = args.characters if args.character is None else [args.character]
+    try:
+        return main(target_serials=targets)
+    except ValueError as exc:
+        parser.error(str(exc))
+
 
 # [STRIPPED __main__] if __name__ == '__main__':
 
@@ -18455,6 +18558,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                         bp_suffix = 'p'
                 self._y17_weapon_used(atk_uid)
 
+        lines.extend(self._received_attack_reactions(atk_uid, def_uid))
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         eff_bp = _calc_net_bp(atk_buffs, bp_suffix, skill_name)
@@ -24473,6 +24577,7 @@ if "_parse_attr_mods" in dir():_bem._parse_attr_mods = _parse_attr_mods
 if "SpellInterrupted" in dir():_bem.SpellInterrupted = SpellInterrupted
 if "ActionExecutionResult" in dir():_bem.ActionExecutionResult = ActionExecutionResult
 if "action_committed" in dir():_bem.action_committed = action_committed
+if "_summon_skill_mp_cost" in dir():_bem._summon_skill_mp_cost = _summon_skill_mp_cost
 sys.modules['battle_engine'] = _bem
 
 # Main entry

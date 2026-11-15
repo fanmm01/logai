@@ -125,6 +125,37 @@ class WorkerTests(unittest.TestCase):
                     self.assertNotIn(sentinel, weights['Q_solo'].get('Y2', {}))
         self.assertEqual((ROOT/'ai_weights.json').read_bytes(), before)
 
+    def test_targeted_training_real_worker_preserves_unselected_tables(self):
+        trainer = self.root/'ai_trainer.py'
+        trainer.write_text(trainer.read_text(encoding='utf-8').replace('GENERATIONS = 50', 'GENERATIONS = 1')
+                           .replace('BATTLES_PER_GEN = 100', 'BATTLES_PER_GEN = 4')
+                           .replace('NUM_WORKERS = 12', 'NUM_WORKERS = 1'), encoding='utf-8')
+        import characters_data
+        enabled = [ch['serial'] for ch in characters_data.ALL_CHARACTERS]
+        targets = enabled[:2]
+        original = (ROOT/'ai_weights.json').read_bytes()
+        path = self.root/'ai_weights.json'
+        before = json.loads(path.read_text(encoding='utf-8'))
+        for kind in ('Q_solo', 'Q_team'):
+            for serial in enabled:
+                before.setdefault(kind, {})[serial] = {'0__sentinel': 123}
+        path.write_text(json.dumps(before), encoding='utf-8')
+        rows = self.run_worker({'mode': 'train', 'seed': 42, 'enabled_serials': enabled, 'target_serials': targets})
+        saved = json.loads(path.read_text(encoding='utf-8'))
+        result = rows[-1]['result']
+        self.assertEqual(result['target_serials'], targets)
+        self.assertEqual(result['participant_serials'], enabled)
+        for kind in ('Q_solo', 'Q_team'):
+            for serial in enabled:
+                if serial in targets:
+                    self.assertNotIn('0__sentinel', saved[kind].get(serial, {}))
+                else:
+                    self.assertEqual(saved[kind][serial], before[kind][serial])
+        for name, table in before.get('Q_summon', {}).items():
+            if name not in result['summons']:
+                self.assertEqual(saved['Q_summon'][name], table)
+        self.assertEqual((ROOT/'ai_weights.json').read_bytes(), original)
+
     def test_imported_trainer_reads_live_roster_and_freezes_each_run(self):
         import ai_trainer
         import characters_data as data

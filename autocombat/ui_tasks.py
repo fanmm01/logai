@@ -76,10 +76,8 @@ class Tasks:
                 if type(workers) is not int or not 1 <= workers <= 32:
                     raise BadRequest('并发数应为 1–32')
                 params.update(formats=formats, workers=workers)
-        fast = data.get('fast', False)
-        if type(fast) is not bool:
-            raise BadRequest('极速开关必须为布尔值')
-        params['fast'] = fast
+        # Ignore the retired UI option sent by older browser pages.
+        params['fast'] = False
         if mode == 'single':
             workers = data.get('workers', min(8, os.cpu_count() or 1))
             if type(workers) is not int or not 1 <= workers <= 32:
@@ -96,9 +94,15 @@ class Tasks:
     def launch(self, params):
         with self.lock, self.management.lock:
             if params['mode'] == 'train':
+                from ai_trainer import normalize_training_targets
+                enabled = [ch['serial'] for ch in self.management.module().ALL_CHARACTERS]
+                try:
+                    targets = normalize_training_targets(params.get('target_serials'), enabled)
+                except ValueError as exc:
+                    raise BadRequest(str(exc)) from exc
                 if len(self.management.module().ALL_CHARACTERS) < 6:
                     raise BadRequest('默认训练包含 3 对 3 抽样，需要至少启用 6 名角色')
-                params = {**params, 'enabled_serials': [ch['serial'] for ch in self.management.module().ALL_CHARACTERS]}
+                params = {**params, 'enabled_serials': enabled, 'target_serials': targets}
             else:
                 params = self.params(params)
             params = {**params, 'settings': settings_snapshot()}
@@ -173,7 +177,7 @@ class Tasks:
         with self.management.lock, self.c['guard'], self.c['ns']['_lock']:
             self.management.make_backup('before training weights')
             atomic_write(self.management.root/'ai_weights.json', weights)
-            if job['data_version'] == digest((self.management.root/'characters_data.py').read_bytes()):
+            if job['params'].get('target_serials') is None and job['data_version'] == digest((self.management.root/'characters_data.py').read_bytes()):
                 self.management.runtime.joinpath('needs-training').unlink(missing_ok=True)
             # Engines already hold their pinned Q-table; new rooms reload it.
             for name in ('_Q_TABLE_PVP_CACHE',):
@@ -209,8 +213,10 @@ class Tasks:
 
     def train(self):
         self.management.require_local()
-        self.c['body']()
-        return jsonify(self.launch({'mode': 'train', 'seed': 42}))
+        data = self.c['body']()
+        if 'target_serials' in data and data['target_serials'] is None:
+            raise BadRequest('训练名单必须为非空角色编号列表')
+        return jsonify(self.launch({'mode': 'train', 'seed': 42, **({'target_serials': data['target_serials']} if 'target_serials' in data else {})}))
 
     def training_status(self):
         self.management.require_local()

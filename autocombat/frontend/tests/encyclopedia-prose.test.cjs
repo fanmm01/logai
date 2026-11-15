@@ -2,18 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRequire } = require('node:module');
-const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
-const filename = path.resolve(__dirname, '../src/EncyclopediaProse.tsx');
-const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-}).outputText;
-const loaded = { exports: {} };
-const localRequire = createRequire(filename);
-new Function('require', 'module', 'exports', compiled)(
-  name => name.endsWith('.css') ? {} : localRequire(name), loaded, loaded.exports);
+const { loadTs } = require('./load-ts.cjs');
+const loaded = { exports: loadTs(path.resolve(__dirname, '../src/EncyclopediaProse.tsx')) };
 const render = content => renderToStaticMarkup(React.createElement(loaded.exports.EncyclopediaProse, { content }));
 
 test('existing snowman rules become headings and a contiguous eight-level list without losing text', () => {
@@ -21,9 +13,9 @@ test('existing snowman rules become headings and a contiguous eight-level list w
   const html = render(Y6.passives);
   assert.match(html, /<h5>八层循环<\/h5><ul class="prose-levels">/);
   assert.equal((html.match(/<li>/g) || []).length, 8);
-  assert.match(html, /<\/ul><h5>叠加与衰减<\/h5>/);
+  assert.match(html, /<\/ul><h5>循环与衰减<\/h5>/);
   for (const line of Y6.passives) {
-    assert.ok(html.replace(/<[^>]+>/g, '').includes(line), line);
+    assert.ok(html.replace(/<[^>]+>/g, '').includes(line.replace(/^#{1,6}\s+/, '')), line);
   }
 });
 

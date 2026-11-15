@@ -163,7 +163,7 @@ class Y17BattleStateTests(unittest.TestCase):
         self.assertIsNone(engine._y17_chant("blood"))
         self.assertEqual(engine.get_char("blood").get_attr("_blood_severe"), 1)
         self.assertEqual(engine._get_combat_hp("blood"), 1)
-        self.assertEqual(engine.get_char("blood").get_attr("魔力"), 40)
+        self.assertEqual(engine.get_char("blood").get_attr("魔力"), 39)
 
     def test_sacrifice_death_followup_is_consumed_once(self):
         engine = _setup(be.FullBattleEngine)

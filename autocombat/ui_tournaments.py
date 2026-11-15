@@ -79,6 +79,9 @@ class Tournaments:
         self.c, self.management, self.store = context, management, store
         self.lock, self.threads, self.workers = threading.RLock(), set(), {}
         for t in store.list('tournament'):
+            if 'fast' in t:
+                t.pop('fast')
+                self.save(t)
             if 'settings' not in t:
                 t['settings'] = settings_snapshot()
                 self.save(t)
@@ -194,12 +197,6 @@ class Tournaments:
             sid = self.c['session_id']()
             request_key = sid + ':' + rid
             if request_key in t['requests'] or (rid in t['requests'] and t.get('owner') == sid):
-                return jsonify(self.public(t))
-            if op == 'fast':
-                if type(data.get('fast')) is not bool:
-                    raise BadRequest('极速开关必须为布尔值')
-                t['fast'] = data['fast']
-                self.save(t)
                 return jsonify(self.public(t))
             if op == 'speed':
                 speed = data.get('speed')
@@ -356,7 +353,7 @@ class Tournaments:
         import ai_battle as ab
         folder = self.management.runtime/'jobs'/tid
         params = dict(settings=cfg, mode='game', team_a=t['teams'][match['a']], team_b=t['teams'][match['b']],
-                      map_size=match['map_size'], seed=match['seed'], char_season=t['char_season'], verbose=verbose, fast=t.get('fast', False),
+                      map_size=match['map_size'], seed=match['seed'], char_season=t['char_season'], verbose=verbose, fast=False,
                       max_rounds=cfg['MAX_ROUNDS_PRELIM_BY_FORMAT'].get(t['format'], cfg['MAX_ROUNDS_PRELIM']) if t['phase'] == 'regular' else cfg['MAX_ROUNDS_KNOCKOUT'])
         result = None
         replay = []
@@ -392,8 +389,7 @@ class Tournaments:
                     current['current']['replay'] = list(replay)
                     self.save(current)
                 speed = self.store.get('tournament', tid).get('speed', 1)
-                if not self.store.get('tournament', tid).get('fast', False):
-                    time.sleep(setting('TOURNAMENT_EVENT_DELAY', live=True) / speed)
+                time.sleep(setting('TOURNAMENT_EVENT_DELAY', live=True) / speed)
             if verbose and ('log' in row or 'logs' in row):
                 logs.extend(row.get('logs', [row['log']] if 'log' in row else []))
                 with self.lock:

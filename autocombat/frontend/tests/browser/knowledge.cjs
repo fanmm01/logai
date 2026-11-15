@@ -1,0 +1,150 @@
+// Run against a local built UI. Writes are intercepted; no character or tournament data is changed.
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const base = process.env.UI_BASE_URL || 'http://127.0.0.1:8890';
+const profiles = require('../../src/data/encyclopedia.json');
+const artifacts = process.env.UI_TEST_ARTIFACTS;
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+(async()=>{
+  const browser=await chromium.launch({channel:process.env.UI_BROWSER_CHANNEL || 'msedge',headless:true});
+  try {
+    const context=await browser.newContext({viewport:{width:1440,height:1000}});
+    const page=await context.newPage(),errors=[],checks=[];
+    page.on('pageerror',error=>errors.push(String(error)));
+    // Keep character fixtures deterministic even when the user's enabled roster changes.
+    const live=await (await context.request.get(base+'/api/ui/catalog')).json();
+    const names=new Map(live.characters.map(c=>[c.serial,c.name]));
+    const characters=Object.entries(profiles).map(([serial,p])=>({
+      serial,name:names.get(serial)||serial,attrs:{体力:30,体力上限:30,魔力:30,魔力上限:30,斗殴:60,闪避:40,行动力:8,敏捷:60},
+      portrait:'',avatar:'',spells:p.skills.map(s=>({name:s.name,phase:s.phase})),
+    }));
+    const tournament={id:'ui-preview-fixture',format:'1v1',phase:'regular',status:'paused',revision:1,teams:[['Y1','Y2'],['Y3']],
+      standings:[{id:0,points:1,wins:1,battles:1},{id:1,points:0,wins:0,battles:1}],schedule:[],completed:0,series:[],results:[]};
+    await page.route('**/api/ui/catalog',route=>route.fulfill({json:{characters}}));
+    await page.route('**/api/ui/tournaments',route=>route.request().method()==='GET'?route.fulfill({json:{tournaments:[tournament]}}):route.abort());
+    await page.route('**/api/ui/session',route=>route.fulfill({json:{id:'ui-preview-test'}}));
+    await page.goto(base+'/ui/home');
+    await page.locator('.home-roster .character-card').first().waitFor();
+    await page.getByRole('button',{name:'进入锦标赛',exact:true}).click();
+    await page.waitForURL('**/ui/tournament');
+    const rankLinks=page.locator('.tournament-layout table .knowledge-link');
+    assert.equal(await rankLinks.count(),3);
+    await rankLinks.first().hover();await pause(1100);await page.locator('.character-preview').waitFor();
+    await page.locator('.character-preview .preview-body').click();
+    await page.locator('.encyclopedia-modal').waitFor();await page.keyboard.press('Escape');
+    await page.locator('.encyclopedia-modal').waitFor({state:'hidden'});
+    checks.push('launcher and individual tournament character links');
+
+    await page.getByRole('button',{name:'角色图鉴',exact:true}).click();
+    const card=page.locator('.library-grid .character-card').first();
+    await card.hover();await pause(500);assert.equal(await page.locator('.character-preview').count(),0);
+    await page.mouse.move(1400,80);await pause(650);assert.equal(await page.locator('.character-preview').count(),0);
+    await card.hover();await pause(1100);await page.locator('.character-preview').waitFor();
+    await page.locator('.character-preview').hover();await pause(250);
+    assert.equal(await page.locator('.character-preview .knowledge-link').count(),0);
+    const bounds=await page.locator('.character-preview').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=1440);
+    await page.locator('.character-preview .preview-body').click();
+    const modal=page.locator('.encyclopedia-modal');await modal.waitFor();
+    const term=modal.locator('.knowledge-link').filter({hasText:'MP'}).first();
+    await term.hover();await pause(1100);await page.locator('.term-preview').waitFor();
+    await page.keyboard.press('Escape');assert.ok(await modal.isVisible());
+    await term.click();await modal.locator('.definition-panel').waitFor();
+    await modal.locator('.definition-related').first().click();
+    await modal.getByRole('button',{name:'← 返回',exact:true}).click();
+    if(artifacts){fs.mkdirSync(artifacts,{recursive:true});await page.screenshot({path:path.join(artifacts,'definition-desktop.png')});}
+    await page.keyboard.press('Escape');assert.equal(await modal.locator('.definition-panel').count(),0);
+    await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});
+    assert.ok(!page.url().includes('character='));
+    await page.goForward();await modal.waitFor();
+    await page.reload();await modal.waitFor();await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});
+    checks.push('delayed previews, pointer transfer, no nested glossary, definition panel and history');
+
+    await page.getByRole('button',{name:'自由对战',exact:true}).click();
+    const selectable=page.locator('.selection-grid .character-card').first();
+    const selected=await selectable.getAttribute('class');await selectable.click();
+    assert.notEqual(await selectable.getAttribute('class'),selected);
+    await page.locator('.selection-grid .card-info').first().click();await modal.waitFor();
+    await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});
+    checks.push('team selection remains intact and independent info opens details');
+
+    await page.getByRole('button',{name:'帮助',exact:true}).click();
+    await page.waitForURL('**/ui/help/mechanics');assert.equal(await page.locator('.mechanics-article>section').count(),8);
+    await page.getByRole('button',{name:'角色卡帮助',exact:true}).click();assert.equal(await page.locator('.help-character-list a').count(),characters.length);
+    assert.equal(await page.locator('.help-character-list .character-card').count(),0);
+    assert.equal(await page.getByTitle('界面设置',{exact:true}).count(),0);
+    await page.getByRole('button',{name:'设置',exact:true}).click();
+    await page.locator('.settings-content input').first().fill('preview-unsaved-name');
+    page.once('dialog',dialog=>dialog.dismiss());await page.goBack();await pause(200);
+    assert.ok(page.url().includes('/ui/settings'));
+    assert.equal(await page.locator('.settings-content input').first().inputValue(),'preview-unsaved-name');
+    page.once('dialog',dialog=>dialog.accept());await page.goBack();await page.waitForURL('**/ui/help/characters');
+    checks.push('help routes, simplified settings and cancel/accept browser back with unsaved settings');
+
+    // Editor saves use an isolated in-memory API response and never reach the real save endpoints.
+    const fixture={version:'preview-version',characters:characters.map(c=>({...c,inventory:[],str_attrs:{}})),
+      enabled_serials:characters.map(c=>c.serial),reserved:[],summons:{},items:{},fields:{},enums:{},settings:{}};
+    let data=structuredClone(fixture),saves=0,fail=false,allowlist=['127.0.0.1'],accessSaves=0;
+    await page.route('**/api/ui/data',route=>route.fulfill({json:data}));
+    await page.route('**/api/ui/backups',route=>route.fulfill({json:{backups:[]}}));
+    await page.route('**/api/ui/training',route=>route.fulfill({json:{jobs:[]}}));
+    await page.route('**/api/ui/data/save',async route=>{
+      saves++;await pause(200);
+      if(fail)return route.fulfill({status:400,json:{message:'preview-save-failed'}});
+      data=route.request().postDataJSON();return route.fulfill({json:{backup:'preview',version:data.version}});
+    });
+    await page.route('**/api/ui/allowlist',route=>{
+      if(route.request().method()==='POST'){accessSaves++;allowlist=route.request().postDataJSON().allowlist.split('\n');}
+      return route.fulfill({json:{allowlist}});
+    });
+    await page.getByRole('button',{name:'角色管理',exact:true}).click();
+    const input=page.locator('.editor-content input[aria-label="名称"]').first();await input.waitFor();
+    await page.keyboard.press('Control+s');await pause(100);assert.equal(saves,0);
+    await input.fill('preview-renamed');await page.keyboard.press('Control+s');await page.keyboard.press('Control+s');
+    await page.getByText('已保存，并自动备份：preview',{exact:true}).waitFor();assert.equal(saves,1);
+    assert.equal(await input.inputValue(),'preview-renamed');
+    fail=true;await input.fill('preview-failure-draft');await page.keyboard.press('Control+s');
+    await page.getByText('preview-save-failed',{exact:true}).waitFor();assert.equal(await input.inputValue(),'preview-failure-draft');
+    await page.getByRole('button',{name:'访问白名单',exact:true}).click();
+    await page.locator('.allowlist-editor textarea').fill('127.0.0.1\n192.168.1.0/24');await page.keyboard.press('Control+s');
+    await page.getByText('访问白名单已保存',{exact:true}).waitFor();assert.equal(accessSaves,1);assert.equal(saves,2);
+    await page.keyboard.press('Control+s');await pause(150);assert.equal(accessSaves,1);
+    checks.push('Ctrl+S with focused input, no changes, duplicate save, failure retention and allowlist');
+
+    const layout=[];
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:width===390?844:1000});
+      for(const serial of Object.keys(profiles)){
+        await page.goto(base+'/ui/library?character='+serial);await modal.locator('.skill-meta').first().waitFor();
+        await modal.locator('.knowledge-link').filter({hasText:'MP'}).first().click();
+        await modal.locator('.definition-panel').waitFor();
+        if(width===390) {
+          await pause(100);
+          const bounds=await modal.locator('.definition-panel').boundingBox();
+          assert.ok(bounds.y>=0&&bounds.y<700,`${serial}: definition must appear in the mobile viewport`);
+        }
+        const sizes=await modal.evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth,panel:el.querySelector('.definition-panel').getBoundingClientRect().width}));
+        assert.ok(sizes.scroll<=sizes.client+1,`${serial} at ${width}: ${JSON.stringify(sizes)}`);
+        assert.ok(sizes.panel>150);
+        layout.push({serial,width,...sizes});
+        if(artifacts&&['Y6','Y14','Y16'].includes(serial))await page.screenshot({path:path.join(artifacts,`${serial}-${width}.png`)});
+      }
+    }
+    // A saved room may restore in the background without overriding an explicit page.
+    const room={code:'PREV01',name:'preview',host:'ui-preview-test',members:[],revision:1,history:[],local:true,
+      running:false,speed:1,controls:{},invite_urls:[],snapshot:{state:{phase:'preparation',round:0,activeIndex:0},
+        map:{width:8,height:8,obstacles:{},occupants:{}},units:[],initiative:[],turn:null,effects:[],graveyard:[],reaction:null,result:null,revision:1}};
+    await page.route('**/api/ui/rooms/PREV01',route=>route.fulfill({json:room}));
+    await page.route('**/api/ui/rooms/PREV01/events*',route=>route.fulfill({contentType:'text/event-stream',body:': preview\n\n'}));
+    await page.goto(base+'/ui/library?room=PREV01');await page.locator('.library-grid').waitFor();await pause(250);
+    assert.ok(page.url().includes('/ui/library'));
+    await page.goto(base+'/ui/?room=PREV01');await page.waitForURL('**/ui/battle?room=PREV01');
+    checks.push('background room restoration and legacy invitation routing');
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({checks,layoutCases:layout.length,errors},null,2));
+    if(artifacts)fs.writeFileSync(path.join(artifacts,'report.json'),JSON.stringify({checks,layout,errors},null,2));
+    await context.close();
+  }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

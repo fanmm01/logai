@@ -5,7 +5,10 @@ import { api, requestId, type BattleEvent, type Character, type Effect, type Roo
 import './styles.css';
 import { characterStats } from './characterStats';
 import { withEncyclopedia, type CatalogCharacter } from './encyclopedia';
+import { EncyclopediaSkill } from './EncyclopediaSkill';
 import { EncyclopediaProse } from './EncyclopediaProse';
+import { CharacterPreview, CardInfo, DefinitionPanel, HelpPage, KnowledgeProvider, TermText } from './KnowledgeUI';
+import { pageFromPath, pageUrl } from './navigation';
 import './expansion.css';
 import { CombatControls, BonusSelect } from './CombatControls';
 import { AutoReactionControls, DataEditor, SimulationPanel, TournamentPanel } from './Expansion';
@@ -31,15 +34,15 @@ function Sigil({ character, compact = false }: { character?: Character; compact?
     {character && <img src={character.portrait} alt="" className="portrait" onError={e => { e.currentTarget.style.display = 'none'; }}/>} 
   </div>;
 }
-function CharacterCard({ character: c, selected = false, onClick, small = false }: { character: Character; selected?: boolean; onClick?: () => void; small?: boolean }) { return <button className={'character-card ' + (selected ? 'selected ' : '') + (small ? 'small' : '')} style={styleColor(c.color)} onClick={onClick} aria-label={c.name + (selected ? '，已选择' : '')}><div className="card-top"><span>{c.serial}</span><Diamond size={12}/></div><Sigil character={c}/><div className="card-name"><span className="role-traits">{c.traits.map(t=><span key={t.name} title={t.description}>{t.name}</span>)}</span><h3>{c.name}</h3><div className="card-bottom"><span>MAGICAL GIRL</span>{selected ? <Check size={16}/> : <ArrowUpRight/>}</div></div></button>; }
+function CharacterCard({ character: c, selected = false, onClick, small = false }: { character: Character; selected?: boolean; onClick?: () => void; small?: boolean }) { return <div className="card-with-info"><CharacterPreview character={c}><button className={'character-card ' + (selected ? 'selected ' : '') + (small ? 'small' : '')} style={styleColor(c.color)} onClick={onClick} aria-label={c.name + (selected ? '，已选择' : '')}><div className="card-top"><span>{c.serial}</span><Diamond size={12}/></div><Sigil character={c}/><div className="card-name"><span className="role-traits">{c.traits.map(t=><span key={t.name} title={t.description}>{t.name}</span>)}</span><h3>{c.name}</h3><div className="card-bottom"><span>MAGICAL GIRL</span>{selected ? <Check size={16}/> : <ArrowUpRight/>}</div></div></button></CharacterPreview>{small&&<CardInfo character={c}/>}</div>; }
 function ArrowUpRight() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M4 4H12V12" stroke="currentColor" strokeWidth="1.5"/></svg>; }
 function Resource({ label, value, max, kind = 'hp' }: { label: string; value: number; max: number; kind?: string }) { return <div className={'resource ' + kind}><div><span>{label}</span><strong>{value}<small> / {max}</small></strong></div><i><b style={{ width: Math.max(0, Math.min(100, value / Math.max(1,max) * 100)) + '%' }}/></i></div>; }
 function CharacterStats({ character }: { character: Character }) {
-  const stats = characterStats(character.attrs, character.serial, character.str_attrs);
+  const stats = characterStats(character.attrs, character.serial, character.str_attrs, character.spells);
   return <section className="profile-stats"><table>
     <caption>角色数值表</caption>
     <thead><tr><th scope="col">属性</th><th scope="col">变身前</th><th scope="col">变身后</th></tr></thead>
-    <tbody>{stats.map(stat => <tr key={stat.label}><th scope="row">{stat.label}</th><td>{stat.before ?? '—'}</td><td>{stat.after ?? '—'}</td></tr>)}</tbody>
+    <tbody>{stats.map(stat => <tr key={stat.label}><th scope="row"><TermText text={stat.label}/></th><td>{stat.before ?? '—'}</td><td>{stat.after ?? '—'}</td></tr>)}</tbody>
   </table><p>体力、魔力为满值；攻击次数按每轮主动作数计算。不含技能、被动与状态加成。</p></section>;
 }
 function coordPoint(coord: string) { const m = /^([A-Z])(\d+)$/.exec(coord); return m ? [m[1].charCodeAt(0)-65, Number(m[2])-1] : [-1,-1]; }
@@ -49,7 +52,7 @@ function App() {
   const updateRoom = (r: Room) => setRoom(old => old?.code === r.code && r.revision >= old.revision ? r : old);
   const reloadCatalog = () => { api<{characters:CatalogCharacter[]}>('/catalog').then(x=>{setCatalog(x.characters.map(withEncyclopedia));const valid=new Set(x.characters.map(c=>c.serial));setTeamA(old=>old.filter(s=>valid.has(s)));setTeamB(old=>old.filter(s=>valid.has(s)));}); api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)); };
   useEffect(()=>{ api<{presets:Effect[]}>('/presets').then(x=>setPresets(x.presets)).catch(()=>{}); },[]);
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState(() => pageFromPath(location.pathname));
   const [name, setName] = useState(readPreferences().name);
   const [defaults, setDefaults] = useState<SettingsValues | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -70,7 +73,43 @@ function App() {
   const [aiSlots, setAiSlots] = useState<string[]>([]);
   const [mapSize, setMapSize] = useState('');
   const [filter, setFilter] = useState('');
-  const [detail, setDetail] = useState<Character | null>(null);
+  const [detailSerial, setDetailSerial] = useState(() => new URLSearchParams(location.search).get('character'));
+  const detail = catalog.find(c => c.serial === detailSerial) || null;
+  const [term, setTerm] = useState(() => new URLSearchParams(location.search).get('term'));
+  const detailOrigin = useRef<string | null>(null);
+  const detailScroll = useRef(0);
+  const definitionOriginScroll = useRef(0);
+  const pageScroll = useRef<Record<string,number>>({});
+  const routeRef = useRef({page,settingsDirty,url:location.pathname+location.search+location.hash});
+  routeRef.current={page,settingsDirty,url:location.pathname+location.search+location.hash};
+  const navigationIndex=useRef<number>(window.history.state?.navigationIndex || 0);
+  const undoPop=useRef(false);
+  const commitUrl = (url: string, replace = false) => {
+    window.history.replaceState({...window.history.state,navigationIndex:navigationIndex.current,scroll:window.scrollY},'',location.href);
+    if(!replace)navigationIndex.current++;
+    window.history[replace?'replaceState':'pushState']({navigationIndex:navigationIndex.current,scroll:window.scrollY},'',url);
+  };
+  const setDetail = (character: Character | null) => {
+    if (character && !detailSerial) detailOrigin.current=location.pathname+location.search+location.hash;
+    if (character && detail?.serial!==character.serial) detailScroll.current=0;
+    const url=new URL(location.href);
+    if(character) url.searchParams.set('character',character.serial); else url.searchParams.delete('character');
+    url.searchParams.delete('term');
+    if(!character&&detailOrigin.current) {
+      window.history.back(); detailOrigin.current=null; return;
+    }
+    commitUrl(url.pathname+url.search+url.hash);
+    setDetailSerial(character?.serial || null); setTerm(null);
+  };
+  const openTerm = (id: string) => {
+    if(!term)definitionOriginScroll.current=document.querySelector('.encyclopedia-modal')?.scrollTop || 0;
+    const url=new URL(location.href); url.searchParams.set('term',id);
+    commitUrl(url.pathname+url.search+url.hash,true);setTerm(id);
+  };
+  const closeTerm = () => {
+    const url=new URL(location.href);url.searchParams.delete('term');commitUrl(url.pathname+url.search+url.hash,true);setTerm(null);
+    requestAnimationFrame(()=>document.querySelector('.encyclopedia-modal')?.scrollTo({top:definitionOriginScroll.current,behavior:'instant'}));
+  };
   const [selected, setSelected] = useState('');
   const [bonus, setBonus] = useState('');
   const [timing, setTiming] = useState(0);
@@ -85,7 +124,46 @@ function App() {
   const [logFilter, setLogFilter] = useState('');
   const [toast, setToast] = useState('');
   const restored = useRef(false);
-  const navigate = (next: string) => { if (page !== next && page === 'settings' && settingsDirty && !confirm('放弃未保存的设置修改？')) return; setSettingsDirty(false); setPage(next); };
+  const legacyInvite=useRef(/^\/ui\/?$/.test(location.pathname)&&new URLSearchParams(location.search).has('room'));
+  const navigate = (next: string, replace = false) => {
+    if(next===page&&!detailSerial)return;
+    if (page !== next && page === 'settings' && settingsDirty && !confirm('放弃未保存的设置修改？')) return;
+    pageScroll.current[page]=window.scrollY;
+    const params=new URLSearchParams(location.search); params.delete('character');params.delete('term');
+    commitUrl(pageUrl(next,params.size?'?'+params:''),replace);
+    setDetailSerial(null);setTerm(null);detailOrigin.current=null;
+    setSettingsDirty(false);setPage(next);
+    requestAnimationFrame(()=>window.scrollTo(0,pageScroll.current[next]||0));
+  };
+  useEffect(()=>{
+    const normalized=pageFromPath(location.pathname);
+    window.history.replaceState({...window.history.state,navigationIndex:navigationIndex.current,scroll:window.scrollY},'',pageUrl(normalized,location.search)+location.hash);
+    const pop=(event:PopStateEvent)=>{
+      if(undoPop.current){undoPop.current=false;return;}
+      const next=pageFromPath(location.pathname),current=routeRef.current;
+      if(next!==current.page&&current.page==='settings'&&current.settingsDirty&&!confirm('放弃未保存的设置修改？')) {
+        const delta=navigationIndex.current-(event.state?.navigationIndex ?? navigationIndex.current);
+        if(delta){undoPop.current=true;window.history.go(delta);}else window.history.pushState({navigationIndex:navigationIndex.current},'',current.url);return;
+      }
+      navigationIndex.current=event.state?.navigationIndex ?? navigationIndex.current;
+      setPage(next);if(next!==current.page)setSettingsDirty(false);
+      const params=new URLSearchParams(location.search);setDetailSerial(params.get('character'));setTerm(params.get('term'));
+      requestAnimationFrame(()=>window.scrollTo(0,event.state?.scroll||0));
+    };
+    window.addEventListener('popstate',pop);return()=>window.removeEventListener('popstate',pop);
+  },[]);
+  useEffect(()=>{
+    if(!detail)return;
+    const modal=document.querySelector('.encyclopedia-modal');if(modal)modal.scrollTop=detailScroll.current;
+    const reveal=term&&innerWidth<=1100?requestAnimationFrame(()=>{
+      const panel=document.querySelector('.definition-panel');
+      if(modal&&panel)modal.scrollTo({top:modal.scrollTop+panel.getBoundingClientRect().top-modal.getBoundingClientRect().top-16,behavior:'instant'});
+    }):undefined;
+    const remember=()=>{if(modal)detailScroll.current=modal.scrollTop;};modal?.addEventListener('scroll',remember);
+    const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){if(term)closeTerm();else setDetail(null);}};
+    window.addEventListener('keydown',escape);
+    return()=>{if(reveal)cancelAnimationFrame(reveal);modal?.removeEventListener('scroll',remember);window.removeEventListener('keydown',escape);};
+  },[detail?.serial,term]);
   const updatePreferences = async (prefs: Preferences) => { const cleaned = {...prefs, name: prefs.name.trim()}; if (!cleaned.name) throw new Error('请填写你的称呼'); await api('/session', {name: cleaned.name}); savePreferences(cleaned); setName(cleaned.name); setReduced(cleaned.reduced); };
   const ch = (serial: string) => catalog.find(c=>c.serial===serial);
   const view = replay >= 0 ? history[replay]?.snapshot || room?.snapshot : room?.snapshot;
@@ -97,12 +175,12 @@ function App() {
   const notice = (message: string) => { setToast(message); setTimeout(()=>setToast(''),3000); };
   const act = async (fn: () => Promise<void>) => { setBusy(true); setError(''); try { await fn(); } catch(e) { setError((e as Error).message); } finally { setBusy(false); } };
 
-  function acceptRoom(r: Room) {
+  function acceptRoom(r: Room, foreground = true) {
     setRoom(old=>!old||r.code!==old.code||r.revision>=old.revision?r:old);
     if (r.history.length) setHistory(r.history);
-    setPage('battle'); setDialog(''); setReplay(-1);
+    if(foreground) navigate('battle'); setDialog(''); setReplay(-1);
     localStorage.setItem('combat-room',r.code);
-    const url = new URL(location.href); url.searchParams.set('room',r.code); window.history.replaceState({},'',url);
+    const url = new URL(location.href); url.searchParams.set('room',r.code); window.history.replaceState(window.history.state,'',url);
   }
   useEffect(()=>{
     Promise.all([api<{characters: CatalogCharacter[]}>('/catalog'),api<{id:string}>('/session',{name}),api<SettingsResponse>('/settings')]).then(([c,s,config])=>{setCatalog(c.characters.map(withEncyclopedia));setSession(s.id);setDefaults(config.values);setMapSize(config.values.DEFAULT_MAP_SIZE);setTiming(config.values.DEFAULT_RESTIM_MODE);setFailedReaction(config.values.ALLOW_FAILED_REACTION);setConnected(true);}).catch(e=>setError(e.message));
@@ -111,7 +189,7 @@ function App() {
     if (!session || restored.current) return;
     restored.current = true;
     const code = new URLSearchParams(location.search).get('room') || localStorage.getItem('combat-room');
-    if (code) api<Room>('/rooms/'+code).then(acceptRoom).catch(()=>{ setJoinCode(code); setDialog('join'); localStorage.removeItem('combat-room'); });
+    if (code) { const foreground=location.pathname==='/ui/battle'||legacyInvite.current; api<Room>('/rooms/'+code).then(r=>acceptRoom(r,foreground)).catch(()=>{ setJoinCode(code); if(foreground)setDialog('join'); localStorage.removeItem('combat-room'); }); }
   },[session]);
   useEffect(()=>{
     document.documentElement.dataset.reduced = String(reduced);
@@ -141,7 +219,7 @@ function App() {
     api<{cells:string[];targets:string[]}>(`/rooms/${room.code}/options`,{command,actor,revision:room.revision}).then(data=>{if(!cancelled)setOptions(data);}).catch(e=>{if(!cancelled)setError(e.message);});
     return ()=>{cancelled=true;};
   },[room?.code,room?.revision,moveMode,giveMode,skill?.command,isPrep?selectedUnit?.uid:activeUnit?.uid,replay]);
-  useEffect(()=>{const handler=(e:KeyboardEvent)=>{if(e.key==='Escape'){setDraft(null);setSkill(null);setMoveMode(false);setGiveMode(false);setDialog('');setDetail(null);}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);},[]);
+  useEffect(()=>{const handler=(e:KeyboardEvent)=>{if(e.key==='Escape'){setDraft(null);setSkill(null);setMoveMode(false);setGiveMode(false);setDialog('');}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);},[]);
 
   const control = (data: Effect) => act(async()=>{if(!room)return;const r=await api<Room>(`/rooms/${room.code}/control`,data);setRoom(old=>!old||r.code!==old.code||r.revision>=old.revision?r:old);});
   const create = () => act(async()=>{
@@ -169,7 +247,7 @@ function App() {
   const selectUnit = (u:Unit) => {setSelected(u.uid);if(!skill&&!giveMode)setLogTab('unit');if(skill&&options.targets.includes(u.uid))preview(skill.command,u.uid,skill.name);else if(giveMode&&options.targets.includes(u.uid))preview('.a give',u.uid,'给予蛋糕');};
   const selectCell = (coord:string) => {if(moveMode&&options.cells.includes(coord))preview('.a m '+coord,'','移动至 '+coord,isPrep?selectedUnit?.uid:activeUnit?.uid);};
   const copyLink = async()=>{if(['127.0.0.1','localhost'].includes(location.hostname)){setDialog('invite');return;}try{await navigator.clipboard.writeText(location.href);notice('邀请链接已复制');}catch{setDialog('invite');}};
-  const leave = ()=>act(async()=>{if(room)await api(`/rooms/${room.code}/control`,{op:'leave'});setRoom(null);setHistory([]);setPage('home');setDialog('');localStorage.removeItem('combat-room');const u=new URL(location.href);u.search='';window.history.replaceState({},'',u);});
+  const leave = ()=>act(async()=>{if(room)await api(`/rooms/${room.code}/control`,{op:'leave'});setRoom(null);setHistory([]);navigate('home');setDialog('');localStorage.removeItem('combat-room');const u=new URL(location.href);u.search='';window.history.replaceState(window.history.state,'',u);});
 
   function TeamEditor({ sim = false }: {sim?:boolean}) {return <div className="team-editor"><div className="section-heading"><div><span className="eyebrow">BUILD YOUR CONSTELLATION</span><h2>{sim?'模拟阵容':'选择你的星光阵容'}</h2></div><span className="muted">每队 1–6 人 · 支持镜像对决</span></div><div className="preset-bar"><label>预设小队<select aria-label="预设小队" value="" onChange={e=>{const p=presets[Number(e.target.value)];if(p)(editTeam==='Y'?setTeamA:setTeamB)(p.team);}}><option value="">选择预设，替换当前编队</option>{presets.map((p,i)=><option key={i} value={i} disabled={!p.valid}>{p.format} · {p.team.map((s:string)=>ch(s)?.name||s).join(' + ')}{!p.valid?'（角色已禁用或已删除）':''}</option>)}</select></label></div><div className="formation-teams">{[['Y',teamA],['X',teamB]].map(([team,raw])=>{const list=raw as string[];return <section key={team as string} className={'formation-team '+(editTeam===team?'editing':'')}><button className="team-title" onClick={()=>setEditTeam(team as string)}><span className={'team-dot '+(team==='X'?'orange':'')}/><strong>{team==='Y'?'星辉小队':'晨曦小队'}</strong><Tag>{list.length} / 6</Tag>{editTeam===team&&<span className="selecting">正在编队</span>}</button><div className="formation-slots">{list.map(serial=>{const c=ch(serial);return c&&<div className="formation-slot" key={serial} style={styleColor(c.color)}><span className="mini-avatar"><Emblem name={c.emblem} size={24}/></span><div><strong>{c.name}</strong><small>{c.role}</small></div><IconButton title={'移除'+c.name} onClick={()=>{(team==='Y'?setTeamA:setTeamB)(list.filter(s=>s!==serial));}}><X size={14}/></IconButton>{!sim&&mode!=='watch'&&<AiCheckbox checked={aiSlots.includes(team+':'+serial)} label={`${team} ? ${c.name} AI`} onChange={checked=>setAiSlots(old=>checked?[...old,team+':'+serial]:old.filter(x=>x!==team+':'+serial))}/>}</div>;})}<button className="empty-slot" onClick={()=>setEditTeam(team as string)}><Plus size={20}/><span>选择角色加入</span></button></div></section>;})}</div><div className="pool-heading"><div className="tabs"><button className={!filter?'active':''} onClick={()=>setFilter('')}>全部角色 <span>{catalog.length}</span></button><button className={filter==='支援'?'active':''} onClick={()=>setFilter('支援')}>治疗与支援</button><button className={filter==='召唤'?'active':''} onClick={()=>setFilter('召唤')}>召唤与策略</button></div><span className="muted">点击卡牌，加入{editTeam==='Y'?'星辉':'晨曦'}小队</span></div><div className="character-grid selection-grid">{catalog.filter(c=>!filter||c.role.includes(filter)||(filter==='支援'&&/治疗|增益|辅助/.test(c.role))).map(c=><CharacterCard key={c.serial} character={c} selected={(editTeam==='Y'?teamA:teamB).includes(c.serial)} onClick={()=>toggleTeam(c.serial)} small/>)}</div></div>;}
 
@@ -198,12 +276,12 @@ function App() {
     </div>;
   }
 
-  return <RuntimeSettings.Provider value={defaults || {}}><div className="app-shell">
-    <aside className="sidebar"><button className="brand-mark" aria-label="星序首页" onClick={()=>navigate('home')}><Sparkles size={29} strokeWidth={1.4}/></button><div className="nav-stack">{[{id:'home',label:'战术大厅',icon:Home},{id:'setup',label:'自由对战',icon:Swords},{id:'battle',label:'当前房间',icon:Users},{id:'sim',label:'模拟实验室',icon:BarChart3},{id:'library',label:'角色图鉴',icon:BookOpen},{id:'editor',label:'角色管理',icon:Settings2},{id:'tournament',label:'锦标赛',icon:Star},{id:'settings',label:'设置',icon:Settings2}].map(n=><button key={n.id} title={n.label} aria-label={n.label} className={'nav-item '+(page===n.id?'active':'')} onClick={()=>n.id==='battle'&&!room?setDialog('join'):n.id==='setup'?prepare('local'):(setFilter(''),navigate(n.id))}><n.icon size={21} strokeWidth={1.6}/><span>{n.label}</span></button>)}</div><div className="sidebar-bottom"><IconButton title="使用说明" onClick={()=>setDialog('help')}><CircleHelp size={21}/></IconButton><IconButton title="界面设置" onClick={()=>navigate('settings')}><Settings2 size={21}/></IconButton><div className="user-avatar">{name.slice(0,1)}</div></div></aside>
-    <main className="main-shell"><header className="topbar"><div className="breadcrumb"><span>星序 <small>ASTRAL TACTICS</small></span><ChevronRight size={14}/><strong>{{home:'战术大厅',setup:'作战准备',battle:'战术室',sim:'模拟实验室',library:'角色图鉴',editor:'角色管理',tournament:'锦标赛',settings:'设置'}[page]}</strong></div><div className="topbar-actions"><span className={'connection '+(connected?'online':'')}><i/>{connected?'引擎已连接':'连接恢复中'}</span><span className="topbar-divider"/><IconButton title="界面设置" onClick={()=>navigate('settings')}><Settings2 size={18}/></IconButton><button className="profile" onClick={()=>navigate('settings')}><span>{name.slice(0,1)}</span>{name}<ChevronDown size={13}/></button></div></header>
+  return <RuntimeSettings.Provider value={defaults || {}}><KnowledgeProvider catalog={catalog} serial={detail?.serial} openCharacter={setDetail} openTerm={openTerm}><div className="app-shell">
+    <aside className="sidebar"><button className="brand-mark" aria-label="星序首页" onClick={()=>navigate('home')}><Sparkles size={29} strokeWidth={1.4}/></button><div className="nav-stack">{[{id:'home',label:'战术大厅',icon:Home},{id:'setup',label:'自由对战',icon:Swords},{id:'battle',label:'当前房间',icon:Users},{id:'sim',label:'模拟实验室',icon:BarChart3},{id:'library',label:'角色图鉴',icon:BookOpen},{id:'editor',label:'角色管理',icon:Settings2},{id:'tournament',label:'锦标赛',icon:Star},{id:'settings',label:'设置',icon:Settings2}].map(n=><button key={n.id} title={n.label} aria-label={n.label} className={'nav-item '+(page===n.id?'active':'')} onClick={()=>n.id==='battle'&&!room?setDialog('join'):n.id==='setup'?prepare('local'):(setFilter(''),navigate(n.id))}><n.icon size={21} strokeWidth={1.6}/><span>{n.label}</span></button>)}</div><div className="sidebar-bottom"><IconButton title="帮助" onClick={()=>navigate('help/mechanics')}><CircleHelp size={21}/></IconButton><div className="user-avatar">{name.slice(0,1)}</div></div></aside>
+    <main className="main-shell"><header className="topbar"><div className="breadcrumb"><span>星序 <small>ASTRAL TACTICS</small></span><ChevronRight size={14}/><strong>{{home:'战术大厅',setup:'作战准备',battle:'战术室',sim:'模拟实验室',library:'角色图鉴',editor:'角色管理',tournament:'锦标赛',settings:'设置','help/mechanics':'机制说明','help/characters':'角色卡帮助'}[page]}</strong></div><div className="topbar-actions"><span className={'connection '+(connected?'online':'')}><i/>{connected?'引擎已连接':'连接恢复中'}</span><span className="topbar-divider"/><button className="profile" onClick={()=>navigate('settings')}><span>{name.slice(0,1)}</span>{name}<ChevronDown size={13}/></button></div></header>
     {error&&<div className="error-banner" role="alert"><Shield size={17}/><span>{error}</span><button onClick={()=>setError('')} aria-label="关闭错误"><X size={16}/></button></div>}
     {!catalog.length || !defaults?<div className="loading-state"><LoaderCircle size={28} className="spin"/><h2>正在连接星序引擎</h2><p>请确认 Python 后端已启动</p><button className="button" onClick={()=>location.reload()}>重新连接</button></div>:<>
-    {page==='home'&&<div className="page home-page"><div className="page-intro"><div><div className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</div><h1>欢迎回来，{name}<span className="heading-star">✧</span></h1><p>集结伙伴，让下一场战斗成为闪耀的故事。</p></div><span className="date-badge"><Sun size={16}/> 星光常伴 · 战术大厅</span></div><section className="home-hero"><div className="hero-copy"><Tag><span className="tiny-spark">✧</span> 魔法少女 · 战术演习</Tag><h2>每一次抉择，<br/>都闪耀着魔法<span>。</span></h2><p>编织你的阵容，在星光交汇的战场上，<br/>找到属于你们的胜利方式。</p><button className="button primary" onClick={()=>prepare('local')}>开始新的演习 <ArrowRight size={17}/></button><small><Diamond size={11}/> CoC 规则驱动 · 自由组队 · 回合制策略</small></div><div className="hero-art" aria-hidden="true"><div className="orbital orbit-one"/><div className="orbital orbit-two"/><span className="hero-star star-one">✦</span><span className="hero-star star-two">✧</span><span className="hero-star star-three">✦</span><div className="hero-card hero-card-back"><Sigil character={ch('Y7')}/><strong>环花暖</strong><small>FLOWER OF REBIRTH</small></div><div className="hero-card hero-card-front"><div className="hero-card-label"><span>VIII</span><Sparkles size={15}/></div><Sigil character={ch('Y8')}/><strong>比哈米</strong><small>A LITTLE SWEET MAGIC</small><div className="hero-card-stars">✧ &nbsp; ✧ &nbsp; ✧</div></div><span className="art-caption">A constellation of possibilities.</span></div></section>
+    {page==='home'&&<div className="page home-page"><div className="page-intro"><div><div className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</div><h1>欢迎回来，{name}<span className="heading-star">✧</span></h1><p>集结伙伴，让下一场战斗成为闪耀的故事。</p></div><span className="date-badge"><Sun size={16}/> 星光常伴 · 战术大厅</span></div><section className="home-hero"><div className="hero-copy"><Tag><span className="tiny-spark">✧</span> 魔法少女 · 战术演习</Tag><h2>每一次抉择，<br/>都闪耀着魔法<span>。</span></h2><p>编织你的阵容，在星光交汇的战场上，<br/>找到属于你们的胜利方式。</p><button className="button primary" onClick={()=>navigate('tournament')}>进入锦标赛 <ArrowRight size={17}/></button><small><Diamond size={11}/> CoC 规则驱动 · 自由组队 · 回合制策略</small></div><div className="hero-art" aria-hidden="true"><div className="orbital orbit-one"/><div className="orbital orbit-two"/><span className="hero-star star-one">✦</span><span className="hero-star star-two">✧</span><span className="hero-star star-three">✦</span><div className="hero-card hero-card-back"><Sigil character={ch('Y7')}/><strong>环花暖</strong><small>FLOWER OF REBIRTH</small></div><div className="hero-card hero-card-front"><div className="hero-card-label"><span>VIII</span><Sparkles size={15}/></div><Sigil character={ch('Y8')}/><strong>比哈米</strong><small>A LITTLE SWEET MAGIC</small><div className="hero-card-stars">✧ &nbsp; ✧ &nbsp; ✧</div></div><span className="art-caption">A constellation of possibilities.</span></div></section>
       <div className="mode-grid">{[{title:'自由对战',en:'FREE BATTLE',desc:'由你掌控双方，每一步都由你决定。',icon:Swords,color:'violet',click:()=>prepare('local')},{title:'与伙伴同行',en:'PLAY TOGETHER',desc:'创建局域网房间，邀请好友并肩作战。',icon:Users,color:'peach',click:()=>prepare('lan')},{title:'星光观战席',en:'AI SPECTATOR',desc:'让 AI 自由交锋，发现阵容的无限可能。',icon:Eye,color:'sage',click:()=>prepare('watch')}].map(m=><button key={m.en} className={'mode-card '+m.color} onClick={m.click}><span className="mode-icon"><m.icon size={24} strokeWidth={1.5}/></span><div><small>{m.en}</small><h3>{m.title}</h3><p>{m.desc}</p></div><ArrowRight size={18}/></button>)}</div>
       <section className="roster-section"><div className="section-heading"><div><span className="eyebrow">MEET YOUR COMPANIONS</span><h2>与你并肩的星光 <span className="count">{catalog.length}</span></h2></div><button className="text-button" onClick={()=>navigate('library')}>浏览角色图鉴 <ArrowRight size={16}/></button></div><div className="character-grid home-roster">{['Y1','Y4','Y7','Y8','Y9','Y12'].map(s=>ch(s)).filter(Boolean).map(c=><CharacterCard key={c!.serial} character={c!} onClick={()=>setDetail(c!)}/>)}</div></section><footer className="page-footer"><span><Sparkles size={13}/> 星序 · 让策略与故事相遇</span><button onClick={()=>setDialog('join')}>已有房间码？加入好友 <ArrowRight size={13}/></button></footer></div>}
 
@@ -227,40 +305,40 @@ function App() {
     {page==='sim'&&<div className="page sim-page"><SimulationPanel teamA={teamA} teamB={teamB} catalog={catalog} onError={setError}/><TeamEditor sim/></div>}
     {page==='editor'&&<DataEditor onError={setError} onSaved={reloadCatalog}/>}
     {page==='settings'&&<SettingsPage preferences={{name,reduced}} onPreferences={updatePreferences} onSaved={setDefaults} onDirty={setSettingsDirty} catalog={catalog} onError={setError}/>}
-    {page==='tournament'&&<TournamentPanel catalog={catalog} onError={setError} onWatch={acceptRoom}/>}
+    {page.startsWith('help/')&&<HelpPage tab={page.split('/')[1]} catalog={catalog} navigate={navigate}/>}
+    {page==='battle'&&!room&&<div className="page"><h1>尚未加入战术室</h1><p className="muted">输入房间码加入已有房间，或创建一场自由对战。</p><div className="modal-actions"><button className="button" onClick={()=>setDialog('join')}>输入房间码</button><button className="button primary" onClick={()=>prepare('local')}>自由对战</button></div></div>}
+    {page==='tournament'&&<TournamentPanel catalog={catalog} onError={setError} onWatch={r=>acceptRoom(r)}/>}
     </>}
     </main>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
     {draft&&<Modal title="确认本次行动" onClose={()=>setDraft(null)}><div className="confirmation-art"><Sparkles size={32}/></div><h3 className="confirmation-title">{draft.label}</h3><p className="confirmation-target">作用目标：{draft.targetName}</p><p className="muted confirmation-target">{draft.cost!=null?'基础消耗 '+draft.cost+' MP · ':''}随机费用与骰点在执行时结算</p><div className="modal-note"><Shield size={17}/>确认后执行行动，并同步给房间内所有玩家。</div>{room?.revision!==draft.revision&&<p className="error-text">战况已更新，请取消后重新选择行动。</p>}<div className="modal-actions"><button className="button" onClick={()=>setDraft(null)}>取消</button><button className="button primary" disabled={busy||room?.revision!==draft.revision} onClick={send}>{busy?<LoaderCircle className="spin" size={16}/>:<Check size={16}/>}确认行动</button></div></Modal>}
     {detail&&<Modal title="角色百科" onClose={()=>setDetail(null)} wide className="encyclopedia-modal">
-      <div className="character-profile" style={styleColor(detail.color)}>
+      <div className={"character-profile"+(term?" with-definition":"")} style={styleColor(detail.color)}>
         <div className="profile-sidebar">
-          <div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p>{detail.role}</p></div>
+          <div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p><TermText text={detail.role}/></p></div>
           <CharacterStats character={detail}/>
         </div>
         <div className="profile-skills"><span className="eyebrow">CHARACTER ENCYCLOPEDIA</span><h3>技能百科</h3>
-          <div className="base-stats">{characterStats(detail.attrs).slice(0,3).map(stat=><div key={stat.label}><small>{stat.label} · 变身后</small><strong>{stat.after??'—'}</strong></div>)}</div>
           <section><h4 className="encyclopedia-section-title">角色特性与普通攻击</h4>
-            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name}><h5>{t.name}</h5><EncyclopediaProse content={t.description}/></div>)}</div>
+            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name}><h5><TermText text={t.name}/></h5><EncyclopediaProse content={t.description}/></div>)}</div>
             <EncyclopediaProse content={detail.basic}/>
           </section>
           {detail.passives.length>0&&<section className="encyclopedia-passives"><h4 className="encyclopedia-section-title">角色被动与专属规则</h4><EncyclopediaProse content={detail.passives}/></section>}
-          <h4 className="encyclopedia-section-title">技能详解</h4>
+          <h4 className="encyclopedia-section-title">技能</h4>
           {detail.skills.map(s=><details key={s.id} open>
-            <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong>{s.name}</strong><Tag>{s.timing}</Tag><ChevronDown size={15}/></summary>
-            <div className="skill-meta"><span><b>费用 / 条件</b>{s.cost}</span>{s.limits&&<span><b>范围 / 限制</b>{s.limits}</span>}</div>
-            <EncyclopediaProse content={s.description}/>
-            {s.facts.length>0&&<div className="skill-facts"><EncyclopediaProse content={s.facts}/></div>}
+            <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong><TermText text={s.name}/></strong><Tag><TermText text={s.timing}/></Tag><ChevronDown size={15}/></summary>
+            <EncyclopediaSkill skill={s}/>
           </details>)}
         </div>
+        {term&&<DefinitionPanel id={term} onClose={closeTerm} onOpen={openTerm}/>}
       </div>
     </Modal>}
     {dialog==='join'&&<Modal title="加入好友的战术室" onClose={()=>setDialog('')}><p className="muted">连接同一局域网，并使用房主的 IP 地址打开此页面。</p><label className="field">你的称呼<input value={name} maxLength={20} onChange={e=>setName(e.target.value)}/></label><label className="field">房间码<input className="code-input" placeholder="例如 A3B8C2" maxLength={6} value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())}/></label><label className="checkbox"><input type="checkbox" checked={spectator} onChange={e=>setSpectator(e.target.checked)}/><Eye size={16}/>以观众身份加入</label><div className="modal-actions"><button className="button primary" disabled={busy||joinCode.trim().length!==6} onClick={join}>加入战术室 <ArrowRight size={16}/></button></div></Modal>}
     {dialog==='room'&&room&&<Modal title={'房间 · '+room.code} onClose={()=>setDialog('')} wide><div className="room-members">{room.members.map(m=><div key={m.id}><span className="user-avatar">{m.name[0]}</span><strong>{m.name}</strong><Tag>{m.id===room.host?'房主':m.spectator?'观众':'玩家'}</Tag><span className={m.ready?'ready-state':'muted'}>{m.ready?'已准备':'未准备'}</span></div>)}</div><h3>角色控制权</h3><p className="muted">房主可将角色交给玩家或 AI。进行中的防御反应处理完毕后才能调整。</p><div className="assignment-list">{room.snapshot.units.filter(u=>!u.summon||u.uid===u.representative).map(u=><label key={u.uid}><span className={'team-dot '+(u.team==='X'?'orange':'')}/><strong>{u.name}</strong><span>{u.team} 队 · {u.serial}</span><select disabled={!host||busy||!!room.snapshot.reaction} value={u.controller} onChange={e=>control({op:'assign',uid:u.uid,controller:e.target.value})}><option value="ai">AI 控制</option>{room.members.filter(m=>!m.spectator).map(m=><option value={m.id} key={m.id}>{m.name}</option>)}</select></label>)}</div><div className="modal-actions">{!room.local&&<button className="button" onClick={copyLink}><Copy size={15}/>复制邀请链接</button>}<button className="button primary" onClick={()=>setDialog('')}>完成 <Check size={15}/></button></div></Modal>}
-    {dialog==='help'&&<Modal title="欢迎来到星序战术室" onClose={()=>setDialog('')}><div className="help-list"><p><b>01 · 编队</b>选择双方角色，可按角色设置玩家或 AI 控制。</p><p><b>02 · 准备</b>在房间面板分配控制权，选择角色后调整站位，再开始演习。</p><p><b>03 · 行动</b>点击技能后选择棋子，再确认行动。规则允许的目标由后端验证；不指定时可使用默认目标。</p><p><b>04 · 应对</b>受到攻击时，通过防御面板选择闪避、反击或格挡。请先处理反应再继续行动。</p><p><b>05 · 回顾</b>拖动底部事件时间线回顾战况，点击“回到实时”继续操作。AI 播放控制仅房主可用。</p><p><b>06 · 联机</b>好友访问 http://房主局域网IP:8889/ui/ 后输入房间码。服务重启后需重建房间。</p></div></Modal>}
+
     {dialog==='leave'&&<Modal title="离开本次演习？" onClose={()=>setDialog('')}><p>房主离开会暂停 AI 推进；其他玩家离开后，其角色交由房主接管。服务运行期间可通过原房间码重新加入。</p><div className="modal-actions"><button className="button" onClick={()=>setDialog('')}>留在这里</button><button className="button primary" onClick={leave}>离开房间 <ArrowRight size={16}/></button></div></Modal>}
     {dialog==='invite'&&<Modal title="邀请好友" onClose={()=>setDialog('')}><p>请选择好友能够访问的局域网地址。多网卡或 VPN 环境下，请选择与好友处于同一网络的地址。</p><div className="invite-links">{room?.invite_urls?.map(url=><label key={url}><input readOnly aria-label="局域网邀请地址" value={url}/><button className="icon-button" title="复制地址" onClick={async()=>{try{await navigator.clipboard.writeText(url);notice('邀请链接已复制');}catch{notice('请选中地址并手动复制');}}}><Copy size={15}/></button></label>)}</div><label className="field">房间码<input readOnly value={room?.code||''}/></label></Modal>}
-  </div></RuntimeSettings.Provider>;
+  </div></KnowledgeProvider></RuntimeSettings.Provider>;
 }
 
 createRoot(document.getElementById('root')!).render(<App/>);

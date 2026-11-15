@@ -353,7 +353,7 @@ SPELL_LABELS = {
  'on_kill_heal_hp': '击杀生命回复', 'on_kill_heal_san': '击杀理智回复',
  'on_kill_blood_ml': '击杀收血', 'blood_per_hit_ml': '命中收血',
  'radius_per_extra_mp': '声明的追加魔力扩张系数', 'heal_limit_not_dying': '禁止对濒死者使用',
- 'extra_attack_per_blood': '声明的额外斩击血液间隔', 'prep_free': '准备阶段免消耗',
+ 'extra_attack_per_blood': '声明的额外斩击血液间隔', 'prep_free': '准备阶段免除非MP资源消耗',
  'charge_moon': '施放后月能充能', 'same_target_multiplier': '同目标伤害倍率',
  'blood_ml_per_hp': '血液生命换算', 'index': '技能编号',
 }
@@ -563,7 +563,8 @@ def template_details(spell, summons, items, character):
 def spell_costs(s, c):
     kind = s.get('blood_kind'); costs = []
     for key, label, unit in [('消耗mp', '魔力', 'MP'), ('消耗san', '理智', 'SAN')]:
-        costs.append(row(label, quantity(s[key], unit) if key in s else '未单独声明基础费用，依引擎费用规则', key if key in s else None))
+        value = (s.get(key) or 1) if key == '消耗mp' else s.get(key)
+        costs.append(row(label, quantity(value, unit) if value is not None else '无', key if key in s else None))
     if s.get('_mp_formula'):
         formulas = {'summon_count_ceil_half': 'MP＝ceil(本次获准召唤数量÷2)，先截断名额，再计算费用',
                     'ceil_2d6_div_2': 'MP＝ceil(2d6掷骰结果÷2)'}
@@ -1148,11 +1149,10 @@ def skill_article(s, c, summons, items):
         raise ValueError(f'百科正文为空：{identity}')
     activation = [f"使用时机：{timing_text(s.get('timing', '2'))}。"]
     if s.get('phase') == 99: activation.append('当前战斗中不开放，效果声明不构成战斗使用承诺。')
-    else: activation.append('发动前须处于可行动、可施法状态；目标、阶段、武器与专属资源仍须分别满足要求。')
     common = {
       'activation': _section('activation','触发与使用前提', activation),
       'inputs': _section('inputs','施放输入与目标', rows=inputs),
-      'costs': _section('costs','费用与资源来源', ['费用表区分声明费用与专用分支的实际支付。正MP费用经百分比修正向下取整、再加固定修正后仍至少为1；SAN不足通常扣至零，不等同于取消施放。'], costs),
+      'costs': _section('costs','费用', rows=costs),
       'steps': _section('steps','结算顺序', steps, ordered=True),
       'effects': _section('effects','逐效果数值', effects=effects),
       'numbers': _section('numbers','动态公式与资源产出', rows=special_numbers(s,c)),
@@ -1162,9 +1162,9 @@ def skill_article(s, c, summons, items):
       'declared': _section('declared','技能声明补充', rows=field_rows({k:v for k,v in s.items() if k not in ('effects', 'name', 'category', 'timing', 'phase', '_disabled')}, SPELL_LABELS, c['serial'])),
     }
     orders = {
-       'encyclopedia': ['activation','inputs','costs','steps','effects','numbers','templates','limits','rules','declared'],
-       'procedure': ['inputs','activation','costs','steps','numbers','effects','templates','limits','rules','declared'],
-       'reference': ['numbers','effects','costs','limits','inputs','activation','steps','templates','rules','declared'],
+       'encyclopedia': ['activation','inputs','costs','effects','numbers','templates','limits','rules'],
+       'procedure': ['inputs','activation','costs','numbers','effects','templates','limits','rules'],
+       'reference': ['numbers','effects','costs','limits','inputs','activation','templates','rules'],
     }
     # Each version is complete. Editing style changes neither facts nor coverage.
     versions = []
@@ -1212,7 +1212,7 @@ def encyclopedia(character, summons, items):
                 role=' · '.join(t['name'] for t in traits) or character.get('role','自定义 · 魔法'),
                 traits=traits, skills=[skill_article(s,character,summons,items) for s in character.get('spells',[])],
                 versions=deepcopy(VERSIONS), passives=passive_articles(character),
-                basic=f"普通攻击基础骰：{character.get('str_attrs',{}).get('伤害值',DEFAULT)}；斗殴 {character.get('attrs',{}).get('斗殴',DEFAULT)}；基础闪避 {character.get('attrs',{}).get('闪避',DEFAULT)}。db为体格伤害加成；阶段、武器及附魔可改写实际普攻。")
+                basic=f"普通攻击基础骰：{character.get('str_attrs',{}).get('伤害值',DEFAULT)}；斗殴 {character.get('attrs',{}).get('斗殴',DEFAULT)}；基础闪避 {character.get('attrs',{}).get('闪避',DEFAULT)}。")
 
 
 def passive_articles(c):

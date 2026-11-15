@@ -46,6 +46,13 @@ def _engine_debug_log(msg: str):
 _SUMMON_TEMPLATES = None
 
 
+def _summon_skill_mp_cost(skill):
+    """Ordinary attacks are free; every named summon ability costs at least 1 MP."""
+    if skill.get('name', '') in ('', '攻击', '普通攻击', '斗殴'):
+        return 0
+    return max(1, int(skill.get('mp_cost', 0) or 0))
+
+
 def _get_summon_template(tmpl_name):
     """Resolve a summon template dict by template name.
 
@@ -1085,7 +1092,7 @@ class CombatEngine:
             exists = any(e.get('sourceUserId') == uid and e.get('spellIndex') == index
                          and e.get('remainingRounds', 0) > 0 for e in self._get_effects())
             if spell and not exists and not (index == 8 and getattr(char, '_y14_substitute_used', False)):
-                self._execute_misc_effect(uid, uid, spell['effects'][0], spell, True)
+                self._execute_spell(uid, uid, spell)
         if phase == 2 and not any(e.get('sourceUserId') == uid and e.get('spellIndex') in (11, 12)
                                   for e in self._get_effects()):
             self._y14_set_mode(uid, 'swift')
@@ -1740,6 +1747,7 @@ class CombatEngine:
                 bc = rules['spear_ml']
         else:
             raise ValueError('该能力为场外能力')
+        mc = max(1, mc)
         if mc:
             mc = max(1, int(mc * self._get_buff_mp_cost_pct(uid)))
             mc = max(1, mc + self._get_buff_mp_cost_flat(uid))
@@ -3689,7 +3697,7 @@ class CombatEngine:
         rep_entry = reps[0] if reps else None
         if rep_entry and rep_entry.get('coord'):
             coord = rep_entry['coord']
-        return {'userId': base, 'team': mdata.get('team', 'Y'), 'coord': coord,
+        return {**mdata, 'userId': base, 'team': mdata.get('team', 'Y'), 'coord': coord,
                 'isSummon': True, 'ownerId': owner}
 
     def _zone_covers_uid(self, eff, uid, il=None):
@@ -3983,6 +3991,9 @@ class CombatEngine:
             for k in ['级别','类别','消耗mp','消耗san','吟唱回合','默认延续性']:
                 if k not in spell: spell[k] = 0
             spell.setdefault('级别',1); spell.setdefault('时机','2')
+            # Ordinary attacks and defensive reactions bypass spell execution.
+            if not spell.get('消耗mp'):
+                spell['消耗mp'] = 1
             # Read _mp_formula
             mpf = char.get_str(f"{prefix}_mp_formula")
             if mpf: spell['_mp_formula'] = mpf
@@ -4416,6 +4427,7 @@ class CombatEngine:
         active = il[state.get('activeIndex', 0) % len(il)]['userId'] if il else None
         if active and self._resolve_uid(active) == self._resolve_uid(uid):
             self._settle_inspiration(uid)
+            self._battle_spirit_turn_boundary(uid, ending=True)
         previous = getattr(self, '_advancing_turn', False)
         self._advancing_turn = True
         try:
@@ -4479,6 +4491,10 @@ class CombatEngine:
                 self._ensure_group_representative(self._summon_group_key(cur['userId']))
                 break
         self._reconcile_summon_groups()
+        il = self._get_initiative()
+        state = self._get_state() or {}
+        if il:
+            self._battle_spirit_turn_boundary(il[state.get('activeIndex', 0) % len(il)]['userId'])
         return crossed_round
 
     def _check_and_mark_end(self, state):
@@ -4646,7 +4662,7 @@ class CombatEngine:
         for s in spells:
             timing = s.get('时机', '2')
             name = s.get('name', '?')
-            mp_cost = sum(int(e.get('消耗mp', 0) or 0) for e in s.get('effects', []))
+            mp_cost = s.get('消耗mp', 1) or 1
             cd_eff = [e for e in effects if e.get('type') == 'cooldown'
                       and e.get('sourceUserId') == uid
                       and e.get('spellIndex') == s.get('index')
@@ -4661,7 +4677,7 @@ class CombatEngine:
             status = ""
             if cd_remaining > 0:
                 status = f" [CD:{cd_remaining}回合]"
-            elif mp_cost > mp:
+            elif isinstance(mp_cost, (int, float)) and mp_cost > mp:
                 status = f" [MP不足({mp}/{mp_cost})]"
             elif has_timing(timing, '2') and acts.get('主动', 0) <= 0:
                 status = " [主动作不足]"
@@ -5269,6 +5285,40 @@ class CombatEngine:
         return out
 
     # ---- Unified _execute_spell (all 8 categories, all fixes applied) ----
+    def _received_attack_reactions(self, atk_uid, def_uid):
+        """Named reaction spells pay their own fee; ordinary defenses stay free."""
+        dchar = self.get_char(def_uid)
+        dname = dchar.name
+        lines = []
+        # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
+        def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
+        if def_spells is None:
+            def_spells = self.load_spells(def_uid)
+        for ds in (def_spells or []):
+            if has_timing(ds.get('时机', '2'), '4'):
+                # Check _once_per_battle
+                if ds.get('_once_per_battle'):
+                    consumed = getattr(dchar, '_once_consumed', set())
+                    if ds['name'] in consumed:
+                        continue
+                # Check _once_per_round
+                if ds.get('_once_per_round'):
+                    consumed_round = getattr(dchar, '_round_consumed', set())
+                    if ds['name'] in consumed_round:
+                        continue
+                # Auto-trigger the reaction spell (self-target or at attacker)
+                react_target = atk_uid if any(
+                    str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')
+                    for e in ds.get('effects', []) if e.get('type') == 1
+                ) else def_uid
+                react_out = self._execute_spell(def_uid, react_target, ds)
+                if action_committed(react_out) and ds.get('_once_per_round'):
+                    consumed_round = getattr(dchar, '_round_consumed', set())
+                    consumed_round.add(ds['name'])
+                    dchar._round_consumed = consumed_round
+                lines.append(f'  [{dname} 反应] {react_out.strip()}')
+        return lines
+
     def _execute_spell(self, caster_id, target_id, spell):
         reason = self._y16_preflight(caster_id, spell)
         if reason:
@@ -5293,7 +5343,7 @@ class CombatEngine:
                     if getattr(self.get_char(caster_id), '_y14_substitute_used', False):
                         return ActionExecutionResult('残机替身已消耗', False, 'spell_rejected')
                     # Registration is free; the lethal trigger pays 8 MP.
-                    spell = dict(spell, 消耗mp=0)
+                    spell = dict(spell, 消耗mp=0, _registration_only=True)
         # Duration dice are rolled on cast, never when merely listing skills.
         if any(isinstance(e.get('持续回合'), str) or isinstance(e.get('吟唱回合'), str) for e in spell.get('effects', [])):
             spell = dict(spell, effects=[dict(e) for e in spell['effects']])
@@ -5401,7 +5451,8 @@ class CombatEngine:
             return ActionExecutionResult(f'{char.name} 没有符合条件的复活目标！\n', False, 'no_revive_target')
 
         # MP cost: support dice expressions and formulas
-        mp_cost_raw = spell.get('消耗mp', 0)
+        deferred_phase_cost = any(e.get('type') == 9 for e in spell.get('effects', []))
+        mp_cost_raw = 0 if deferred_phase_cost else spell.get('消耗mp', 0)
         mp_formula = spell.get('_mp_formula', '')
         if spell.get('_mp_formula_transformed') and getattr(char, 'hs_transformed', False):
             mp_cost = roll_dice(str(spell['_mp_formula_transformed']))
@@ -5437,7 +5488,10 @@ class CombatEngine:
         else:
             mp_cost = int(mp_cost_raw) if mp_cost_raw else 0
 
-        san_cost_raw = spell.get('消耗san', 0)
+        if not spell.get('_registration_only') and not deferred_phase_cost:
+            mp_cost = max(1, mp_cost)
+
+        san_cost_raw = 0 if deferred_phase_cost else spell.get('消耗san', 0)
         if isinstance(san_cost_raw, str) and 'd' in str(san_cost_raw).lower():
             san_cost = roll_dice(str(san_cost_raw))
         else:
@@ -5498,24 +5552,21 @@ class CombatEngine:
                 self._consume_counter(caster_id, cr_type, cr_amount)
             out += f'  消耗 {cr_amount} {cr_type}\n'
 
-        # prep_free spells: skip all costs during preparation phase
+        # Preparation may waive other resources, but never the skill's MP cost.
         is_prep = False
         state = self._get_state()
         if state and state.get('phase') == 'preparation':
             is_prep = True
         prep_free = spell.get('prep_free', False)
         if is_prep and prep_free:
-            out += f'  （准备阶段免消耗）\n'
+            out += f'  （准备阶段仅免除非MP资源消耗）\n'
             blood_cost = 0
-            mp_cost = 0
             san_cost = 0
-            # skip HP%, HP dice, MP% costs too
+            # Keep MP percentage costs; only waive non-MP resources.
             spell = dict(spell)  # shallow copy so we don't mutate original
             spell['cost_blood_ml'] = 0
             spell['cost_hp_pct_current'] = 0
             spell['cost_hp_dice'] = ''
-            spell['cost_mp_pct_max'] = 0
-            spell['cost_mp_pct_current'] = 0
 
         # Blood cost (cost_blood_ml): consumed before MP; HP fallback if insufficient
         if self._is_y17(caster_id):
@@ -5884,28 +5935,7 @@ class CombatEngine:
                     s_char = self.get_char(sid)
                     s_char.set_attr('魔力', mp_cost)
             if ignite and sid:
-                # Mark newly created summon as ignited (check initiative + summon_members)
-                il = self._get_initiative()
-                found = False
-                for e in il:
-                    if e['userId'] == sid:
-                        e['ignited'] = True
-                        e['ignite_dmg_dice'] = ignite_dmg_dice
-                        e['ignite_tick_dmg'] = ignite_tick_dmg
-                        if e.get('skills'):
-                            for s in e['skills']:
-                                s['dice'] = ignite_dmg_dice
-                        e['dmg_dice'] = ignite_dmg_dice
-                        found = True; break
-                if not found and sid in self._summon_members:
-                    self._summon_members[sid]['ignited'] = True
-                    self._summon_members[sid]['ignite_dmg_dice'] = ignite_dmg_dice
-                    self._summon_members[sid]['ignite_tick_dmg'] = ignite_tick_dmg
-                    sm_skills = self._summon_members[sid].get('skills', [])
-                    for s in sm_skills:
-                        s['dice'] = ignite_dmg_dice
-                if found:
-                    self._set_initiative(il)
+                self._ignite_member(sid, ignite_dmg_dice, ignite_tick_dmg)
         # ── Re-sync all initiative slots after batch summon creation ──
         # Each _create_summon calls _ensure_dynamic_slots → _sync_initiative_slots,
         # but re-sorting in each call can interact with cache; a final sync ensures
@@ -6129,7 +6159,7 @@ class CombatEngine:
         elif ct == 9:  # hpTrigger — HP threshold phase transition
             thresholds = eff.get('hp_thresholds', [])
             target_phase = eff.get('target_phase', 2)
-            trigger_san_cost = eff.get('消耗san', '2d6')
+            trigger_san_cost = eff.get('消耗san', spell.get('消耗san', '2d6'))
             effects = self._get_effects()
             effects.append({
                 'type': 'hpTrigger',
@@ -6138,6 +6168,8 @@ class CombatEngine:
                 'thresholds': thresholds,
                 'targetPhase': target_phase,
                 'triggerSanCost': trigger_san_cost,
+                'triggerMpCost': spell.get('消耗mp', 1),
+                'attemptedThresholds': [],
                 'triggered': False,
                 'spellName': spell['name'],
                 'spellIndex': spell['index'],
@@ -6277,7 +6309,7 @@ class CombatEngine:
     def _apply_spell_damage(self, caster_id, target_id, dmg_dice, pen, leth,
                              lifesteal_ratio=0, dot_dice='', dur=0, spell_name='',
                              spell_index=0, atk_rank=1, atk_roll=0, spell=None,
-                             moon_drain=0):
+                             moon_drain=0, damage_effect=None):
         """Apply direct spell damage to target. Shared by base and reaction paths.
         When atk_rank > 1, applies COC7 rank-based damage (rank 2=advantage, rank 3=max/pen, rank 4=×2).
         moon_drain: 月相吸取（moon_phase）— 目标实际受伤后等量治疗施法者（上限 体力上限）。
@@ -6363,6 +6395,11 @@ class CombatEngine:
                 self._y17_note(caster_id, 'friendly_damage', actual_loss)
         out += self._y17_collect_hit(caster_id, target_id,
                                     max(0, old_target_hp - self._hp_safe(target_id, 0)), spell)
+
+        if damage_effect and damage_effect.get('敌方回复') and eff_dmg > 0:
+            recovery = min(eff_dmg // 2, roll_dice(damage_effect.get('敌方回复骰', '2d6')))
+            self._schedule_delayed_heal(caster_id, target_id, recovery,
+                damage_effect.get('敌方延迟回复回合', 3), spell_name, spell_index)
 
         # Lifesteal: heal caster based on damage dealt
         if lifesteal_ratio > 0 and eff_dmg > 0 and self._hp_safe(caster_id, 0) > 0:
@@ -6558,12 +6595,14 @@ class CombatEngine:
                 return out
             out += f'  成功率检定: D100={check_roll}/{sr}{bp_str} {rank_text(atk_rank)}！\n'
 
+        if is_friendly and atk_rank <= 0:
+            return out
         if is_friendly:
             # Friend-target damage: deal friendly damage, schedule delayed heal
             fdmg_dice = eff.get('友方伤害骰', dmg_dice)
             dmg_val, dmg_detail = roll_dice_detailed(fdmg_dice)
             eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
-            cur_hp = self._get_combat_hp(target_id) or 10
+            cur_hp = self._hp_safe(target_id, 0)
             actual_lost = min(cur_hp, eff_dmg)
             cur_hp = cur_hp - actual_lost
             self._set_combat_hp(target_id, cur_hp, source_dmg=actual_lost)
@@ -6590,36 +6629,38 @@ class CombatEngine:
                 self._set_effects(effs)
                 out += f'  延迟回复: 共{heal_total}HP, 每回合{per_round}HP ({heal_rounds}回合)\n'
 
-            # Enemy delayed heal
-            enemy_recovery = eff.get('敌方回复', '')
-            if enemy_recovery and eff_dmg > 0:
-                recovery_dice = eff.get('敌方回复骰', '2d6')
-                heal_rounds_r = eff.get('敌方延迟回复回合', 3)
-                if enemy_recovery == 'min_half':
-                    heal_total_r = min(eff_dmg // 2, roll_dice(recovery_dice))
-                else:
-                    heal_total_r = roll_dice(recovery_dice)
-                if heal_total_r > 0:
-                    per_round_r = max(1, heal_total_r // heal_rounds_r)
-                    effs_r = self._get_effects()
-                    effs_r.append({
-                        'type': 'delayedHeal', 'remainingRounds': heal_rounds_r,
-                        'healPerRound': per_round_r, 'totalHeal': heal_total_r, 'healed': 0,
-                        'sourceUserId': caster_id, 'targetUserId': target_id,
-                        'spellName': spell['name'], 'spellIndex': spell['index'],
-                        'persistent': 0,
-                    })
-                    self._set_effects(effs_r)
-                    tname_h = self.get_char(target_id).name if target_id else '目标'
-                    out += f'  敌方延迟回复: {tname_h} 共{heal_total_r}HP, 每回合{per_round_r}HP ({heal_rounds_r}回合)\n'
         else:
             # Enemy-target damage with rank-based damage
             out += self._apply_spell_damage(caster_id, target_id, dmg_dice, pen, leth,
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
                                             atk_rank=atk_rank, atk_roll=check_roll, spell=spell,
-                                            moon_drain=eff.get('_moon_drain', 0))
+                                            moon_drain=eff.get('_moon_drain', 0), damage_effect=eff)
         return out
+
+    def _schedule_delayed_heal(self, source, target, total, rounds, name, index):
+        if total <= 0 or rounds <= 0:
+            return
+        effects = self._get_effects()
+        effects.append(dict(type='delayedHeal', remainingRounds=rounds,
+            healPerRound=max(1, total // rounds), totalHeal=total, healed=0,
+            sourceUserId=source, targetUserId=target, spellName=name,
+            spellIndex=index, persistent=0))
+        self._set_effects(effects)
+
+    def _battle_spirit_turn_boundary(self, uid, ending=False):
+        uid = self._resolve_uid(uid)
+        effects = self._get_effects()
+        for eff in effects:
+            if eff.get('type') != 'battleSpirit':
+                continue
+            recovery = eff.setdefault('characterRecovery', {})
+            if ending and recovery.get(uid) == 'active':
+                eff.setdefault('characterStacks', {})[uid] = 3
+                recovery.pop(uid, None)
+            elif not ending and recovery.get(uid) == 'pending':
+                recovery[uid] = 'active'
+        self._set_effects(effects)
 
     def _battle_spirit_character_views(self, uid):
         """Read-only suppression: characters never use summon withdrawal logic."""
@@ -6707,6 +6748,8 @@ class CombatEngine:
                         rate = eff.get('战意主体削弱概率', cfg['rate'] if states[uid] > cfg['bonus_threshold'] else cfg['rate_bonus'])
                         if random.randint(1, 100) <= rate:
                             states[uid] -= 1
+                            if states[uid] == 0:
+                                eff.setdefault('characterRecovery', {})[uid] = 'pending'
                             msgs.append(f"战意值: {self.get_char(uid).name} 削弱至 {states[uid]} 层（主体不退场）")
                 self._set_effects(self._get_effects())
             for key in list(self._summon_groups):
@@ -6811,21 +6854,27 @@ class CombatEngine:
             uid = eff.get('targetUserId')
             if not uid: continue
             cur_hp = self._get_combat_hp(uid)
-            if cur_hp is None: continue
+            if cur_hp is None or cur_hp <= 0: continue
             char = self.get_char(uid)
             if not char: continue
             max_hp = char.get_attr('体力上限', cur_hp) or cur_hp
             if max_hp <= 0: continue
             ratio = cur_hp / max_hp
             thresholds = eff.get('thresholds', [])
+            # Y9-01/B, Y9-01a/C: each crossed band once, highest first.
+            if (char.get_attr('魔力', 0) or 0) < eff.get('triggerMpCost', 1):
+                continue
+            attempted = eff.setdefault('attemptedThresholds', [])
             # Check thresholds in descending order (highest ratio first)
             for t in sorted(thresholds, key=lambda x: x['ratio'], reverse=True):
-                if ratio <= t['ratio']:
+                if ratio <= t['ratio'] and t['ratio'] not in attempted:
+                    attempted.append(t['ratio'])
                     # Trigger rate is a probability roll, not a skill check;
                     # D100-check buffs must not perturb it.
                     if random.randint(1, 100) <= t['rate']:
                         eff['triggered'] = True
                         msgs.append(f"HP降至{ratio*100:.0f}%（阈值{t['ratio']*100:.0f}%），触发阶段转换！")
+                        char.set_attr('魔力', (char.get_attr('魔力', 0) or 0) - eff.get('triggerMpCost', 1))
                         # Consume SAN cost
                         san_cost_raw = eff.get('triggerSanCost', '2d6')
                         if isinstance(san_cost_raw, str):
@@ -6850,7 +6899,7 @@ class CombatEngine:
                                 and not re.get('triggered')):
                                 re['triggered'] = True
                                 break
-                    break  # Only trigger the first matching threshold
+                        break  # Failed bands continue until success.
         self._set_effects(effects)
         return msgs
 
@@ -6902,6 +6951,17 @@ class CombatEngine:
 
         return msgs
 
+    def _ignite_member(self, sid, dice, tick):
+        il = self._get_initiative()
+        entry = next((e for e in il if e['userId'] == sid), {})
+        member = self._summon_members.get(sid, {})
+        import copy
+        skills = copy.deepcopy(member.get('skills', entry.get('skills', [])))
+        for skill in skills:
+            skill['dice'] = dice
+        self._set_summon_entry_fields(sid, ignited=True, ignite_dmg_dice=dice,
+                                     ignite_tick_dmg=tick, dmg_dice=dice, skills=skills)
+
     def _ignite_summons(self, owner_uid):
         """Ignite all summons owned by owner_uid (Phase 2 effect). Reads ignite params from chData."""
         msgs = []
@@ -6917,17 +6977,15 @@ class CombatEngine:
                     ignite_dmg_dice = str(eff.get('ignite_dmg_dice', '2d4'))
                     ignite_tick_dmg = int(eff.get('ignite_tick_dmg', 3))
                     break
-        for entry in il:
-            if entry.get('isSummon') and entry.get('ownerId') == owner_uid:
-                entry['ignited'] = True
-                entry['ignite_dmg_dice'] = ignite_dmg_dice
-                entry['ignite_tick_dmg'] = ignite_tick_dmg
-                if entry.get('skills'):
-                    for s in entry['skills']:
-                        s['dice'] = ignite_dmg_dice
-                entry['dmg_dice'] = ignite_dmg_dice
-                msgs.append(f"  {entry.get('name', entry['userId'])} 被点燃！（伤害变为{ignite_dmg_dice}）")
-        self._set_initiative(il)
+        members = set(self._summon_members)
+        members.update(e['userId'] for e in il if e.get('isSummon'))
+        for sid in sorted(members):
+            entry = self._summon_members.get(sid) or self._unit_il_entry(sid, il) or {}
+            if (self._resolve_uid(entry.get('ownerId', '')) != self._resolve_uid(owner_uid)
+                    or (self._get_combat_hp(sid) or 0) <= 0):
+                continue
+            self._ignite_member(sid, ignite_dmg_dice, ignite_tick_dmg)
+            msgs.append(f"  {entry.get('name', sid)} 被点燃！（伤害变为{ignite_dmg_dice}）")
         return msgs
 
     # ---- Snow / frost: JSON-safe, source-owned state shared by both engines ----
@@ -7587,8 +7645,10 @@ class CombatEngine:
                     msgs.append(f'{template_name} 维持消耗 {maint} MP (剩余:{moon_mp})')
 
         # Ignite damage: Phase 2 summons take 3 damage/turn
-        for entry in init_list:
-            if entry.get('ignited') and entry.get('isSummon'):
+        ignite_entries = {e['userId']: e for e in init_list if e.get('isSummon')}
+        ignite_entries.update(self._summon_members)
+        for entry in list(ignite_entries.values()):
+            if entry.get('ignited'):
                 sid = entry['userId']
                 hp = self._get_combat_hp(sid)
                 if hp is not None and hp > 0:
@@ -8089,33 +8149,7 @@ class FullBattleEngine(CombatEngine):
                 else:
                     lines.append(f'  幻造兵武·写作检定: D100={roll}/{writing_val}{bp_note} {w_label}')
 
-        # ── Reaction trigger hook (timing='4'): defender auto-triggers reaction spells ──
-        def_spells = dchar.spells  # 直接复用缓存，避免每次攻击调用 load_spells
-        if def_spells is None:
-            def_spells = self.load_spells(def_uid)
-        for ds in (def_spells or []):
-            if has_timing(ds.get('时机', '2'), '4'):
-                # Check _once_per_battle
-                if ds.get('_once_per_battle'):
-                    consumed = getattr(dchar, '_once_consumed', set())
-                    if ds['name'] in consumed:
-                        continue
-                    consumed.add(ds['name'])
-                    dchar._once_consumed = consumed
-                # Check _once_per_round
-                if ds.get('_once_per_round'):
-                    consumed_round = getattr(dchar, '_round_consumed', set())
-                    if ds['name'] in consumed_round:
-                        continue
-                    consumed_round.add(ds['name'])
-                    dchar._round_consumed = consumed_round
-                # Auto-trigger the reaction spell (self-target or at attacker)
-                react_target = atk_uid if any(
-                    str(e.get('客体', 0)).upper() in ('4', '5', '24', '45', 'R', 'RP')
-                    for e in ds.get('effects', []) if e.get('type') == 1
-                ) else def_uid
-                react_out = self._execute_spell(def_uid, react_target, ds)
-                lines.append(f'  [{dname} 反应] {react_out.strip()}')
+        lines.extend(self._received_attack_reactions(atk_uid, def_uid))
         eff_skill = self._apply_buff_skill_mod(atk_uid, skill_val, skill_name)
         atk_buffs = self._get_active_buffs(atk_uid)
         # 行动力优势合并到攻击BP（不再字符串拼接，统一净额结算）
@@ -8563,12 +8597,14 @@ class FullBattleEngine(CombatEngine):
             else:
                 out += f'  成功率检定: D100={check_roll}/{sr}{bp_str} {rank_text(atk_rank)}！\n'
 
+        if is_friendly and atk_rank <= 0:
+            return out
         if is_friendly:
             # Friend-target damage — no reactions (same as base)
             fdmg_dice = eff.get('友方伤害骰', dmg_dice)
             dmg_val, dmg_detail = roll_dice_detailed(fdmg_dice)
             eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
-            cur_hp = self._get_combat_hp(target_id) or 10
+            cur_hp = self._hp_safe(target_id, 0)
             actual_lost = min(cur_hp, eff_dmg)
             cur_hp = cur_hp - actual_lost
             self._set_combat_hp(target_id, cur_hp, source_dmg=actual_lost)
@@ -8594,28 +8630,6 @@ class FullBattleEngine(CombatEngine):
                 })
                 self._set_effects(effs)
                 out += f'  延迟回复: 共{heal_total}HP, 每回合{per_round}HP ({heal_rounds}回合)\n'
-            # Enemy delayed heal (same as base)
-            enemy_recovery = eff.get('敌方回复', '')
-            if enemy_recovery and eff_dmg > 0:
-                recovery_dice = eff.get('敌方回复骰', '2d6')
-                heal_rounds_r = eff.get('敌方延迟回复回合', 3)
-                if enemy_recovery == 'min_half':
-                    heal_total_r = min(eff_dmg // 2, roll_dice(recovery_dice))
-                else:
-                    heal_total_r = roll_dice(recovery_dice)
-                if heal_total_r > 0:
-                    per_round_r = max(1, heal_total_r // heal_rounds_r)
-                    effs_r = self._get_effects()
-                    effs_r.append({
-                        'type': 'delayedHeal', 'remainingRounds': heal_rounds_r,
-                        'healPerRound': per_round_r, 'totalHeal': heal_total_r, 'healed': 0,
-                        'sourceUserId': caster_id, 'targetUserId': target_id,
-                        'spellName': spell['name'], 'spellIndex': spell['index'],
-                        'persistent': 0,
-                    })
-                    self._set_effects(effs_r)
-                    tname_h = self.get_char(target_id).name if target_id else '目标'
-                    out += f'  敌方延迟回复: {tname_h} 共{heal_total_r}HP, 每回合{per_round_r}HP ({heal_rounds_r}回合)\n'
         else:
             # ── Enemy-target damage: insert reaction if applicable ──
             can_dodge = eff.get('可闪避性', 1)
@@ -8646,7 +8660,7 @@ class FullBattleEngine(CombatEngine):
                                             lifesteal_ratio=ls, dot_dice=dot_dice, dur=dur,
                                             spell_name=spell['name'], spell_index=spell['index'],
                                             atk_rank=atk_rank, atk_roll=check_roll, spell=spell,
-                                            moon_drain=eff.get('_moon_drain', 0))
+                                            moon_drain=eff.get('_moon_drain', 0), damage_effect=eff)
         return out
 
     def _trigger_spell_reaction(self, caster_id, target_id, eff, spell, dmg_dice,
@@ -9095,7 +9109,7 @@ class FullBattleEngine(CombatEngine):
                     "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
                     "zone_radius": sk_raw.get("zone_radius", 0),
                     "zone_duration": sk_raw.get("zone_duration", 0),
-                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "mp_cost": _summon_skill_mp_cost(sk_raw),
                     "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
@@ -9104,6 +9118,7 @@ class FullBattleEngine(CombatEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
         owner_base = self._resolve_uid(caster_id)
         self._reconcile_summon_groups()
         existing_rep = self._find_summon_group_by(owner_base, template_name)
@@ -9431,7 +9446,11 @@ class FullBattleEngine(CombatEngine):
         enemies = self._enemy_target_entries(summon_id)
         if not enemies: return ["无可用目标"]
         tid = enemies[0]["userId"]
-        skills = entry.get("skills",[])
+        declared_skills = entry.get("skills", [])
+        skills = [sk for sk in declared_skills if sk.get('skill_type', 'attack') == 'attack'
+                  and sk.get('mp_cost', 0) <= entry.get('summon_mp', 0)]
+        if declared_skills and not skills:
+            return [f'{sname} 魔力不足，无法施放技能']
         sk_name = ""
         if skills:
             best_score = -1; best = skills[0]
@@ -9443,6 +9462,9 @@ class FullBattleEngine(CombatEngine):
             hits = best.get("hits", 1)
             on_whiff_aoe = best.get("on_whiff_aoe_dmg", "")
             on_whiff_mp = best.get("on_whiff_mp_cost", 0)
+            cost = best.get('mp_cost', 0)
+            if cost:
+                self._set_summon_entry_fields(summon_id, summon_mp=entry.get('summon_mp', 0) - cost)
         else:
             sv = entry.get("skill_val",50); dmg_dice = entry.get("dmg_dice","1d4")
             hits = 1
@@ -9701,11 +9723,13 @@ class FullBattleEngine(CombatEngine):
                         "hits": sk_raw.get("hits", 1),
                         "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                         "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                        "mp_cost": _summon_skill_mp_cost(sk_raw),
                     })
                 else:
                     parts = str(sk_raw).split(); nv = parts[0].split(":")
                     parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
                                    "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
             merged["skills"] = parsed
             if parsed:
                 merged["skill_name"] = parsed[0]["name"]
@@ -9874,7 +9898,7 @@ class FastBattleEngine(FullBattleEngine):
                     "zone_heal_hp": sk_raw.get("zone_heal_hp", ""),
                     "zone_radius": sk_raw.get("zone_radius", 0),
                     "zone_duration": sk_raw.get("zone_duration", 0),
-                    "mp_cost": sk_raw.get("mp_cost", 0),
+                    "mp_cost": _summon_skill_mp_cost(sk_raw),
                     "cooldown_rounds": sk_raw.get("cooldown_rounds", 0),
                 })
             else:
@@ -9883,6 +9907,7 @@ class FastBattleEngine(FullBattleEngine):
                                "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0,
                                "skill_type":"attack","zone_heal_hp":"","zone_radius":0,"zone_duration":0,
                                "mp_cost":0,"cooldown_rounds":0})
+        parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
         owner_base = self._resolve_uid(caster_id)
         self._reconcile_summon_groups()
         existing_rep = self._find_summon_group_by(owner_base, template_name)
@@ -10265,11 +10290,13 @@ class FastBattleEngine(FullBattleEngine):
                         "hits": sk_raw.get("hits", 1),
                         "on_whiff_aoe_dmg": sk_raw.get("on_whiff_aoe_dmg", ""),
                         "on_whiff_mp_cost": sk_raw.get("on_whiff_mp_cost", 0),
+                        "mp_cost": _summon_skill_mp_cost(sk_raw),
                     })
                 else:
                     parts = str(sk_raw).split(); nv = parts[0].split(":")
                     parsed.append({"name":nv[0],"val":int(nv[1]) if len(nv)>1 else 50,"dice":parts[1] if len(parts)>1 else "1d4",
                                    "hits":1,"on_whiff_aoe_dmg":"","on_whiff_mp_cost":0})
+            parsed = [dict(sk, mp_cost=_summon_skill_mp_cost(sk)) for sk in parsed]
             merged["skills"] = parsed
             if parsed:
                 merged["skill_name"] = parsed[0]["name"]

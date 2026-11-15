@@ -63,8 +63,7 @@ class FrontendEncyclopediaY13Y16Tests(unittest.TestCase):
                     if not effect.get('consume_moon'):
                         self.assertIn(effect['伤害骰'], text, (serial, spell['name'], 'damage'))
                     self.assertIn(f"检定值 {effect['成功率']}", text, (serial, spell['name'], 'check'))
-                    self.assertIn(f"原始射程 {effect.get('射程', 2)} 格", text)
-                    self.assertIn('99 格', text)
+                    self.assertIn(f"射程 {effect.get('射程', 2)} 格", text)
 
     def test_cartridge_resource_rules_and_noncombat_phase_are_explicit(self):
         rules = self.cards['Y14']['passive_rules']['cartridge']

@@ -176,14 +176,14 @@ class CartridgeTests(unittest.TestCase):
                 en._coc7_attack('actor', 'enemy', '斗殴', 70, en._get_damage_dice('actor', '斗殴'), 1, 0)
         self.assertEqual(move.call_args.args, ('actor', 'enemy', 6))
 
-    def test_new_phase_passives_are_free_and_idempotent(self):
+    def test_new_phase_passives_pay_once_and_are_idempotent(self):
         en = setup()
         mp = en.get_char('actor').get_attr('魔力')
         en._mod_counter('actor', 'limit_gauge', 3)
         for phase in (1, 3, 2, 3, 2):
             en._transition_phase('actor', phase)
             en._y14_initialize_phase('actor')
-        self.assertEqual(en.get_char('actor').get_attr('魔力'), mp)
+        self.assertEqual(en.get_char('actor').get_attr('魔力'), mp - 1)
         self.assertEqual(en._get_counter('actor', 'limit_gauge'), 3)
         for kind in ('rings', 'limit_gauge'):
             self.assertEqual(sum(e.get('counter_type') == kind for e in en._get_effects()), 1)
@@ -195,7 +195,7 @@ class CartridgeTests(unittest.TestCase):
         en._y14_start_cooldown('actor')
         en._set_combat_hp('actor', -10, source_dmg=200, damage_source='enemy')
         self.assertEqual(en._get_combat_hp('actor'), 1)
-        self.assertEqual(char.get_attr('魔力'), 2)
+        self.assertEqual(char.get_attr('魔力'), 1)
         self.assertEqual(char.phase, 2)
         self.assertTrue(char.get_attr('永久移除阶段') & (1 << 1))
         self.assertTrue(any(e.get('counter_type') == 'limit_gauge' for e in en._get_effects()))

@@ -6,6 +6,8 @@ SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支�
 运行 `python start_ui.py` 后访问 `http://127.0.0.1:8889/ui/`；WebUI HTTP 服务监听 `0.0.0.0:8889`，另有 `0.0.0.0:8892` TCP 字节流转发端口，供 TCP 隧道映射到本机。启动器可用 `--tcp-port` 更改转发端口。
 首次构建需 Node.js 与 npm，详情见 [界面使用说明](frontend/README.md)。
 
+公共战斗规则见 [游戏总机制](docs/游戏总机制.md)；角色百科集中展示技能参数与角色专属规则。
+
 ## Windows 一键重启
 
 双击项目根目录的 `restart_services.bat`，自动构建前端、重新生成集成后端，随后重启 8889 战斗服务、8890 集成服务及 8892 → 8890 TCP 隧道，并检查两个网页及服务接口。服务在后台运行，关闭脚本窗口不会停止服务；日志保存在 `.ui-runtime/restart-端口-时间戳.*.log`。
@@ -234,7 +236,7 @@ python sim.py --mode prelim --format all -n 10 -s 31415 --workers 8
 python sim.py Y1+Y2 vs Y3+Y4 --verbose -s 31415 --fast
 ```
 
-`--fast` 跳过 verbose 播放等待，保留完整日志。网页端“两队批量对战”和“多轮预赛”提供并发数；锦标赛预赛使用创建赛事时的 `PRELIM_WORKERS` 设置。网页 verbose 和锦标赛逐回合模式提供“极速”开关。升级后需重启后端。
+`--fast` 跳过 verbose 播放等待，保留完整日志。网页端“两队批量对战”和“多轮预赛”提供并发数；锦标赛预赛使用创建赛事时的 `PRELIM_WORKERS` 设置。网页 verbose 和锦标赛逐回合模式已移除“极速”开关，使用正常播放速度。升级后需重启后端。
 
 新版按场次分配独立随机种子，跨并发数可复现；相同种子的赛果可能与旧版不同。短任务的收益受进程启动成本影响。实测与兼容检查见 [加速验证报告](artifacts/performance/report.md)。
 

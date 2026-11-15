@@ -66,3 +66,10 @@
     padding:8px 10px;
   }
 }
+.training-selection{min-width:0;border:1px solid var(--line);border-radius:10px;padding:16px;margin:8px 0 16px}
+.training-selection legend{padding:0 6px;font-size:13px;color:var(--purple-dark)}
+.training-targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;padding:8px 0 16px}
+.training-targets label{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;min-width:0}
+.training-targets input{flex-shrink:0}
+.training-selection p{font-size:12px;line-height:1.8;margin-bottom:12px}
+.training-selection .button.primary:hover:not(:disabled){color:#fff}

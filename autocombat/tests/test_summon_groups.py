@@ -333,7 +333,10 @@ class SummonGroupTests(unittest.TestCase):
                                    {'Y10': 'spring', 'Y5': 'blood'}, cd.SUMMON_TEMPLATES))
         self.assertTrue(seen)
         random.seed(7)
-        updates = trainer._mp_run_summon_battle((['藤蔓'], ['蜂鸟'], '10x10', cd.SUMMON_TEMPLATES))
+        templates = copy.deepcopy(cd.SUMMON_TEMPLATES)
+        for name in ('藤蔓', '蜂鸟'):
+            templates[name]['MP'] = 20
+        updates = trainer._mp_run_summon_battle((['藤蔓'], ['蜂鸟'], '10x10', templates))
         self.assertIsInstance(updates, list)
         self.assertTrue(updates)
 
