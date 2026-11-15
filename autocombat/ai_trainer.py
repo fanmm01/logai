@@ -735,6 +735,21 @@ def get_available_actions(engine, uid):
                         continue
                 if engine._revive_preflight(uid, sp):
                     continue
+                snow_zone = char.serial == 'Y6' and any(e.get('冰冻每轮层数') for e in sp.get('effects', []))
+                if snow_zone:
+                    entry = engine._unit_il_entry(uid, il)
+                    eff = next(e for e in sp['effects'] if e.get('冰冻每轮层数'))
+                    proposed = dict(type='zone', sourceUserId=uid,
+                                    center=(entry or {}).get('coord', ''),
+                                    radius=eff.get('作用半径', 0), filter=eff.get('客体', 45))
+                    nearby = [e for e in engine._enemy_target_entries(uid)
+                              if engine._zone_covers_uid(proposed, e['userId'], il)]
+                    own_zones = [e for e in effects if e.get('type') == 'zone'
+                                 and e.get('frostStacks') and e.get('remainingRounds', 0) > 0
+                                 and engine._frost_owner(e.get('sourceUserId')) == engine._resolve_uid(uid)]
+                    if not nearby or all(any(engine._zone_covers_uid(z, e['userId'], il)
+                                             for z in own_zones) for e in nearby):
+                        continue
                 # MP check (including formula-based costs)
                 mp_cost = sp.get('消耗mp', 0)
                 mp_formula = sp.get('_mp_formula', '')
@@ -749,7 +764,10 @@ def get_available_actions(engine, uid):
                     continue
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
-                    if engine._is_y17(uid):
+                    if snow_zone:
+                        if any(e.get('sourceUserId') == uid for e in own_zones):
+                            continue
+                    elif engine._is_y17(uid):
                         if engine._y17_spell_kind(uid, sp) != 'blade' and not (engine._y17_chant(uid) and engine._y17_chant(uid)['spellIndex'] == idx):
                             continue
                     elif engine._is_y16(uid):
@@ -1036,6 +1054,8 @@ def get_summon_actions(engine, uid):
     """Get available actions for a summon entity. Returns list of (action_key, description)."""
     entry = engine._unit_il_entry(uid, engine._get_initiative())
     if not entry: return []
+    if engine._snow_summon_template(uid):
+        return [('SUMMON_SNOW', '小雪人：雪带／雪球')]
     skills = entry.get('skills', [])
     if not skills: return []
 
@@ -1053,6 +1073,8 @@ def get_summon_actions(engine, uid):
 
 def execute_summon_action(engine, uid, action_key):
     """Execute a summon action. Returns list of detail lines for display."""
+    if engine._snow_summon_template(uid):
+        return engine._snow_summon_action(uid)
     init_list = engine._get_initiative()
     entry = engine._unit_il_entry(uid, init_list)
     if not entry: return []

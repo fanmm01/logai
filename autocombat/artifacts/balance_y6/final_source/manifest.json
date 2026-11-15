@@ -1,0 +1,12 @@
+{
+  "characters_data.py": "2befed899f1e4b0e7ab69f5152e933024c99c9a3d9e78a0f17cc4bfe04c65323",
+  "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+  "battle_engine.py": "9506113611b356b2e03fa2dce731d6ed1782d338052138a2a1008e8fc7b944c3",
+  "ai_trainer.py": "92203d8200ece3255d99d08d570526a5b56fc0d636d1901e4577843d8da22183",
+  "ai_battle.py": "9d1b4755fe4db33a18ebb2d17db3e707c3a13d5750c0c4d3281be5927534ce90",
+  "battle_http_server.py": "015b48fd57e8611863c8085e71d8953a8dc2b84e3e404614519705b05350ff61",
+  "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+  "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+  "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+  "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c"
+}

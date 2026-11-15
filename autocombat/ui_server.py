@@ -23,15 +23,9 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, redirect, request, send_from_directory
 from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
 from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, instance_name
+from character_encyclopedia import encyclopedia
 
 ROOT = Path(__file__).resolve().parent
-COLORS = ['#db775a', '#8a78c5', '#5b9b91', '#c88c45', '#c56785', '#6694bc',
-          '#9a80b1', '#cb8b9e', '#658878', '#c29b52', '#688ab6', '#847fc0']
-EMBLEMS = ['flame', 'moon', 'leaf', 'star', 'wing', 'snow', 'flower', 'cake',
-           'sword', 'sun', 'wave', 'gem']
-ROLES = ['近战 · 强化', '法术 · 召唤', '近战 · 增益', '输出 · 辅助', '吸血 · 飞行',
-         '领域 · 控制', '治疗 · 复活', '制造 · 支援', '剑术 · 变身', '输出 · 强化',
-         '法术 · 控制', '召唤 · 策略']
 
 
 def register_ui(app, ns):
@@ -75,12 +69,11 @@ def register_ui(app, ns):
 
     def catalog():
         return [dict(serial=c['serial'], name=c['name'], attrs=c.get('attrs', {}),
-                     spells=c.get('spells', []), color=COLORS[i % len(COLORS)],
-                     emblem=EMBLEMS[i % len(EMBLEMS)], role=c.get('role', ROLES[i] if i < len(ROLES) else '自定义 · 魔法'),
+                     spells=c.get('spells', []), **encyclopedia(c, ns['characters_data_pvp'].SUMMON_TEMPLATES,
+                                                             ns['characters_data_pvp'].ITEM_TEMPLATES),
                      portrait=f"/ui/portraits/{c['serial']}.webp",
                      avatar=f"/ui/portraits/{c['serial']}-avatar.webp")
-                for pos, c in enumerate(ns['characters_data_pvp'].ALL_CHARACTERS)
-                for i in [int(c['serial'][1:])-1 if re.fullmatch(r'Y\d+', c['serial']) else pos]]
+                for c in ns['characters_data_pvp'].ALL_CHARACTERS]
 
     def room_for(code, host=False):
         room = rooms.get(code.upper())
@@ -340,7 +333,7 @@ def register_ui(app, ns):
     @bp.get('/ui/')
     @bp.get('/ui/<path:path>')
     def serve(path='index.html'):
-        if path.startswith('portraits/'):
+        if path.startswith(('portraits/', 'icons/')):
             return send_from_directory(ROOT / 'frontend' / 'public', path)
         dist = ROOT / 'frontend' / 'dist'
         if not (dist / 'index.html').exists():

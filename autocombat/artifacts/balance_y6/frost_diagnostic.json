@@ -1,0 +1,297 @@
+{
+  "purpose": "Supplementary mechanism audit, not acceptance; fixed season 50, 3 games per opponent",
+  "games": 48,
+  "reached_cycle2": 2,
+  "reached_second_layer2": 2,
+  "max_stacks": 17,
+  "rows": [
+    {
+      "opponent": "Y2",
+      "seed": 60020,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y2",
+      "seed": 60021,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y2",
+      "seed": 60022,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y3",
+      "seed": 60030,
+      "peak_stacks": 1,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y3",
+      "seed": 60031,
+      "peak_stacks": 1,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y3",
+      "seed": 60032,
+      "peak_stacks": 1,
+      "frost_additions": 3
+    },
+    {
+      "opponent": "Y4",
+      "seed": 60040,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y4",
+      "seed": 60041,
+      "peak_stacks": 1,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y4",
+      "seed": 60042,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y5",
+      "seed": 60050,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y5",
+      "seed": 60051,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y5",
+      "seed": 60052,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y7",
+      "seed": 60070,
+      "peak_stacks": 10,
+      "frost_additions": 9
+    },
+    {
+      "opponent": "Y7",
+      "seed": 60071,
+      "peak_stacks": 3,
+      "frost_additions": 9
+    },
+    {
+      "opponent": "Y7",
+      "seed": 60072,
+      "peak_stacks": 2,
+      "frost_additions": 7
+    },
+    {
+      "opponent": "Y8",
+      "seed": 60080,
+      "peak_stacks": 2,
+      "frost_additions": 6
+    },
+    {
+      "opponent": "Y8",
+      "seed": 60081,
+      "peak_stacks": 2,
+      "frost_additions": 9
+    },
+    {
+      "opponent": "Y8",
+      "seed": 60082,
+      "peak_stacks": 3,
+      "frost_additions": 10
+    },
+    {
+      "opponent": "Y9",
+      "seed": 60090,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y9",
+      "seed": 60091,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y9",
+      "seed": 60092,
+      "peak_stacks": 2,
+      "frost_additions": 5
+    },
+    {
+      "opponent": "Y10",
+      "seed": 60100,
+      "peak_stacks": 3,
+      "frost_additions": 5
+    },
+    {
+      "opponent": "Y10",
+      "seed": 60101,
+      "peak_stacks": 7,
+      "frost_additions": 13
+    },
+    {
+      "opponent": "Y10",
+      "seed": 60102,
+      "peak_stacks": 1,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y11",
+      "seed": 60110,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y11",
+      "seed": 60111,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y11",
+      "seed": 60112,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y12",
+      "seed": 60120,
+      "peak_stacks": 7,
+      "frost_additions": 7
+    },
+    {
+      "opponent": "Y12",
+      "seed": 60121,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y12",
+      "seed": 60122,
+      "peak_stacks": 1,
+      "frost_additions": 3
+    },
+    {
+      "opponent": "Y13",
+      "seed": 60130,
+      "peak_stacks": 2,
+      "frost_additions": 3
+    },
+    {
+      "opponent": "Y13",
+      "seed": 60131,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y13",
+      "seed": 60132,
+      "peak_stacks": 1,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y1",
+      "seed": 60010,
+      "peak_stacks": 2,
+      "frost_additions": 6
+    },
+    {
+      "opponent": "Y1",
+      "seed": 60011,
+      "peak_stacks": 3,
+      "frost_additions": 4
+    },
+    {
+      "opponent": "Y1",
+      "seed": 60012,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y14",
+      "seed": 60140,
+      "peak_stacks": 17,
+      "frost_additions": 12
+    },
+    {
+      "opponent": "Y14",
+      "seed": 60141,
+      "peak_stacks": 3,
+      "frost_additions": 3
+    },
+    {
+      "opponent": "Y14",
+      "seed": 60142,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y16",
+      "seed": 60160,
+      "peak_stacks": 1,
+      "frost_additions": 1
+    },
+    {
+      "opponent": "Y16",
+      "seed": 60161,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y16",
+      "seed": 60162,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y15",
+      "seed": 60150,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y15",
+      "seed": 60151,
+      "peak_stacks": 2,
+      "frost_additions": 3
+    },
+    {
+      "opponent": "Y15",
+      "seed": 60152,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y17",
+      "seed": 60170,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    },
+    {
+      "opponent": "Y17",
+      "seed": 60171,
+      "peak_stacks": 2,
+      "frost_additions": 2
+    },
+    {
+      "opponent": "Y17",
+      "seed": 60172,
+      "peak_stacks": 0,
+      "frost_additions": 0
+    }
+  ]
+}

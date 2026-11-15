@@ -58,6 +58,12 @@ python autocombat_backend.py --host 127.0.0.1 --port 8889
 
 ## 自定义美术
 
+图鉴的文字统一维护于 `../character_encyclopedia.py`：`PROFILES` 为各角色的两个定位词及释义，`ARTICLES` 为逐技能机制正文，`ARTICLE_ORDER` 绑定技能名称与阶段，避免角色管理重排技能后串文案。费用、射程、伤害、持续时间、召唤物和制造物资料从实时 chData 生成。非战斗技能仍保留百科条目并标明不可用。
+
+角色专属被动参数维护在 `../characters_data.py` 各角色的 `passive_rules` 中；冰冻循环、卡带资源、火鼠裘、写作收益和月能门槛不再散落在引擎计算中。血术月相表归入夜诏明的 `blood_rules.moon_phases`，初始武器使用 `initial_weapon`。这是数据归位，不是一次数值平衡调整。
+
+18 个角色徽记与 106 个技能 SVG 资源位于 `public/icons/`，可用 `python scripts/generate_library_icons.py`（在项目根目录执行）重新生成。新增角色时先补充资料和徽记路径；改动源码后重新构建前端，改动引擎后运行 `python merge_backend.py`，重启服务以载入新的 Python 模块。
+
 在 `public/portraits/` 放置 `Y1.webp` 等竖版图片、`Y1-avatar.webp` 等头像，再重新构建。没有图片时使用统一配色的徽记。推荐 3:4 竖版立绘与方形头像。界面设置可关闭动效。
 
 ## 边界与运行说明

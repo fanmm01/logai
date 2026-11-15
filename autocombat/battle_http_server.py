@@ -158,6 +158,10 @@ def _load_spells_from_chdata(engine, uid: str, ch_data: dict):
     in characters_data_pvp.py."""
     char = engine.get_char(uid)
 
+    if ch_data.get('serial') == 'Y6':
+        for field in ('冰冻命中层数', '冰冻跨循环叠加'):
+            char.set_attr(field, ch_data.get('attrs', {}).get(field, 0))
+
     if ch_data.get('serial') == 'Y17':
         # Keep extended blood fields identical to canonical loading while
         # preserving the player's actual COC attributes supplied by JS.
@@ -704,6 +708,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 lines.append(f"  {aname} HP: {dchp}")
 
                 lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
+                lines.extend(self._frost_on_hit(atk_uid, def_uid).rstrip().splitlines())
                 return (atk_uid, def_uid, lines)
             else:
                 lines.append("  无人得手！")
@@ -747,6 +752,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                    if atk_rank > 0:
+                        lines.extend(self._frost_on_hit(atk_uid, _block_redirect).rstrip().splitlines())
                     lines.append(f"  {rt_name} HP: {cur_hp}")
                     lines.append(f"  {dname} HP: {self._get_combat_hp(def_uid)}")
                     return (def_uid, atk_uid, lines)
@@ -758,6 +765,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                     lines.append(f"  盾牌吸收: {absorbed}点")
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                if atk_rank > 0:
+                    lines.extend(self._frost_on_hit(atk_uid, def_uid).rstrip().splitlines())
                 lines.append(f"  {dname} HP: {cur_hp}")
                 return (def_uid, atk_uid, lines)
             else:
@@ -827,6 +836,8 @@ class PvPFullBattleEngine(FullBattleEngine):
             cur_hp = max(0, cur_hp - eff_dmg)
         lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点")
         self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg, damage_source=winner_uid, is_counter=is_counter)
+        if not is_counter:
+            lines.extend(self._frost_on_hit(winner_uid, loser_uid).rstrip().splitlines())
         lines.append(f"  {loser_name} HP: {cur_hp}")
         return (winner_uid, loser_uid, lines)
 

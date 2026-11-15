@@ -1,0 +1,16 @@
+{
+  "2v2": {
+    "baseline": 0.4092140921409214,
+    "final": 0.518970189701897,
+    "delta_percentage_points": 10.97560975609756,
+    "guard_passed": true,
+    "snow_team_battles": 738
+  },
+  "3v3": {
+    "baseline": 0.7046070460704607,
+    "final": 0.7506775067750677,
+    "delta_percentage_points": 4.607046070460708,
+    "guard_passed": true,
+    "snow_team_battles": 738
+  }
+}

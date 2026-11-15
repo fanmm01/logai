@@ -1,0 +1,11 @@
+{
+  "description": "Complete chData before the Y6 strength changes on 2026-11-15",
+  "source": "artifacts\\balance_y6_boost\\baseline_source",
+  "files": {
+    "characters_data.py": "2befed899f1e4b0e7ab69f5152e933024c99c9a3d9e78a0f17cc4bfe04c65323",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8"
+  },
+  "y6_original_hp": 9,
+  "y6_hit_frost_stacks": 1,
+  "y6_instant_heal_phase": 6
+}

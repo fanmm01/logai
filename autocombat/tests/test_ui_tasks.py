@@ -94,8 +94,8 @@ class WorkerTests(unittest.TestCase):
                         definitions[value.value] = n.targets[0].id
         active = next(n for n in tree.body if isinstance(n, ast.Assign)
                       and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'ALL_CHARACTERS')
-        for enabled, summons in [(['Y1', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7'], []),
-                                 (['Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6'], ['使魔'])]:
+        for enabled, summons in [(['Y1', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7'], ['小雪人']),
+                                 (['Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6'], ['使魔', '小雪人'])]:
             with self.subTest(enabled=enabled):
                 lines = original.splitlines(keepends=True)
                 lines[active.lineno-1:active.end_lineno] = ['ALL_CHARACTERS = [' + ', '.join(definitions[s] for s in enabled) + ']\n']

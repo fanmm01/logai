@@ -20,6 +20,9 @@ chData = {
     'serial': 'Y13',                # str  — 唯一编号 (Y1~Y12已用)
     'pre_transformed': False,       # bool — 是否以"变身前"状态入场 (可选, 默认False)
 
+    # passive_rules: 角色专属被动参数，按 frost/cloak/cartridge/phantom/moon 分区。
+    # initial_weapon: 初始武器 staff/bow/sword；不再由加载器按角色编号指定。
+    # 图鉴文案集中存放在 character_encyclopedia.py；战斗数值只在此维护。
     # ========== 基础属性 attrs (全部 int) ==========
     'attrs': {
         # -- 战斗核心 --
@@ -437,7 +440,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 50,
         'DEX': 90,
         'EDU': 0,
-        'HP': 90,
+        'HP': 75,
         'INT': 30,
         'MOV': 11,
         'MP': 0,
@@ -473,7 +476,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 75,
         'DEX': 30,
         'EDU': 0,
-        'HP': 80,
+        'HP': 160,
         'INT': 20,
         'MOV': 3,
         'MP': 0,
@@ -578,7 +581,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 80,
         'DEX': 60,
         'EDU': 0,
-        'HP': 140,
+        'HP': 125,
         'INT': 30,
         'MOV': 8,
         'MP': 50,
@@ -886,11 +889,15 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
 #  角色6: 雪人 (Y6) — 雪带/雪幕/雪球 + 雪之法杖被动增伤
 # ============================================================
 XUEREN = {'attrs': {'伤害贯穿': 1,
-           '体力': 7,
-           '体力上限': 7,
+           '体力': 10,
+           '体力上限': 10,
            '体型': 55,
            '体格': 0,
            '体质': 50,
+           '冰冻即时回复层数': 3,
+           '冰冻命中层数': 2,
+           '冰冻跨循环叠加': 1,
+           '冰冻雪球命中层数': 1,
            '力量': 45,
            '可反击': 1,
            '外貌': 50,
@@ -910,18 +917,21 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
            '魔力上限': 13,
            '魔法少女序号': 6},
  'inventory': [{'count': 1, 'item': '蛋糕HP'}],
- 'name': '雪人',
+ 'name': '雪人v2',
  'serial': 'Y6',
+ 'passive_rules': {
+     'frost': {'vulnerability_pct': 18,
+               'skill_penalty': 10,
+               'dodge_penalty': 20,
+               'move_penalty': 5,
+               'decay': 1,
+               'dot': '1d4+2',
+               'burst': '1d10+1d6+2',
+               'instant_heal': '2d10',
+               'regen_hp': '1d6+2',
+               'regen_mp': '1d10'}},
  'spells': [{'category': 8,
-             'effects': [{'type': 8,
-                          '作用半径': 5,
-                          '客体': 45,
-                          '属性削减': '行动力-5;斗殴-10',
-                          '持续回合': 6,
-                          '每回合伤害骰': '1d6',
-                          '领域中心跟随': 0,
-                          '领域同时上限': 1},
-                         {'type': 1, '伤害骰': '1d6+1d4', '可反击性': 0, '可闪避性': 1, '客体': 45, '射程': 99, '成功率': 70}],
+             'effects': [{'type': 8, '作用半径': 5, '冰冻每轮层数': 2, '客体': 45, '持续回合': 6, '领域中心跟随': 0, '领域同时上限': 1}],
              'name': '制造雪带',
              'timing': '2',
              '消耗mp': 4},
@@ -939,17 +949,47 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              'timing': '1',
              '消耗mp': 2},
             {'category': 1,
-             'effects': [{'type': 1, '伤害骰': '2d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 75}],
+             'effects': [{'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80},
+                         {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80}],
              'name': '发送雪球',
              'timing': '2',
              '消耗mp': 2},
             {'category': 4,
              'default_persist': 1,
              'effects': [{'type': 4, '客体': 13, '持续回合': 5, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6'},
-                         {'type': 1, '伤害骰': '1d6', '可反击性': 1, '可闪避性': 1, '客体': 4, '射程': 1, '成功率': 70}],
+                         {'type': 2, '客体': 13, '护盾值': '1d8+4', '持续回合': 5}],
              'name': '雪之法杖',
-             'timing': '1'}],
- 'str_attrs': {'伤害值': '1d8+1d4'}}
+             'timing': '1'},
+            {'category': 5,
+             'cooldown_rounds': 4,
+             'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '小雪人', '客体': 1, '持续回合': 999}],
+             'name': '堆雪人',
+             'timing': '2',
+             '消耗mp': 5}],
+ 'str_attrs': {'伤害值': '1d6+1d4'}}
+
+SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
+ 'CON': 50,
+ 'DEX': 50,
+ 'EDU': 30,
+ 'HP': 35,
+ 'INT': 30,
+ 'MOV': 5,
+ 'MP': 12,
+ 'POW': 50,
+ 'SAN': 0,
+ 'SIZ': 50,
+ 'STR': 50,
+ 'frost_ball': {'dice': '1d8+2', 'mp_cost': 1, 'range': 8, 'success': 65},
+ 'frost_summon': True,
+ 'frost_zone': {'duration': 4, 'mp_cost': 3, 'radius': 3, 'stacks': 2},
+ 'max_simultaneous': 1,
+ 'max_total_spawned': None,
+ 'skills': [{'dice': '1d8+2', 'name': '发送雪球', 'val': 65}],
+ '可反击': 0,
+ '可反应': 1,
+ '闪避': 35,
+ '额外行动数': 0}
 
 # ============================================================
 #  角色7: 环花暖 (Y7) — 治愈领域 + 战意值(召唤物撤离、敌方主体压制)
@@ -1156,8 +1196,8 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
 # Phase 1 (木·荣): 召唤生灵(2d4+4), 生之矛(友敌分化+延迟回复), 领域·生(治疗+敏捷+10), 阶段转换(HP阈值)
 # Phase 2 (木·枯): 召唤生灵(点燃), 生之矛(2d8纯伤), 领域·灭(全场伤害+友方敏捷+10+伤害骰优势)
 MULUO = {'attrs': {'伤害贯穿': 1,
-           '体力': 11,
-           '体力上限': 11,
+           '体力': 10,
+           '体力上限': 10,
            '体型': 70,
            '体格': 2,
            '体质': 75,
@@ -1273,8 +1313,8 @@ MULUO = {'attrs': {'伤害贯穿': 1,
 # ============================================================
 CHUNSHANG = {'attrs': {'不可指定': 1,
            '伤害贯穿': 1,
-           '体力': 10,
-           '体力上限': 10,
+           '体力': 11,
+           '体力上限': 11,
            '体型': 55,
            '体格': 0,
            '体质': 55,
@@ -1625,6 +1665,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '余烬',
  'serial': 'Y14',
+ 'passive_rules': {'cartridge': {'cooldown': 3, 'ring_cap': 3, 'limit_cap': 5, 'event_gain': 1, 'dash_distance': 8}},
  'spells': [{'category': 4,
              'cooldown_rounds': 3,
              'effects': [{'target_phase': 1, 'type': 17, '客体': 1, '持续回合': 1}],
@@ -1810,8 +1851,8 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
 #  角色15: 于长风 (Y15) — 火焰魔法 + 爆破圈 + 火鼠裘
 # ============================================================
 YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
-           '体力': 11,
-           '体力上限': 11,
+           '体力': 13,
+           '体力上限': 13,
            '体型': 60,
            '体格': 1,
            '体质': 55,
@@ -1837,6 +1878,12 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '葬火',
  'serial': 'Y15',
+ 'passive_rules': {
+     'cloak': {'mp_per_hit': 1,
+               'immune_max': 3,
+               'middle_below': 7,
+               'middle_damage': 3,
+               'high_multiplier': 0.6}},
  'spells': [{'_once_per_battle': True,
              'category': 1,
              'default_persist': 1,
@@ -1942,6 +1989,10 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '罗杰',
  'serial': 'Y16',
+ 'initial_weapon': 'staff',
+ 'passive_rules': {
+     'phantom': {'4': '2d6', '3': '1d6+6', '2': '1d6', '1': '1d3', '-2': '-1d2'},
+     'moon': {'ultimate_threshold': 20, 'bow_extra_mp': 1}},
  'spells': [{'category': 4,
              'effects': [{'turn_mp_refund': '2d3', 'type': 4, '可叠加': 2, '客体': 13, '持续回合': '2d3'}],
              'name': '灵感大爆发',
@@ -2085,7 +2136,15 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
            '魔力上限': 26,
            '魔法少女序号': 17},
  'blood_ml_per_hp': 500,
- 'blood_rules': {'arcana_base_blood': 100,
+ 'blood_rules': {'moon_phases': [('满月', '1d12+3', True),
+                               ('亏凸月', '1d8', True),
+                               ('弦月', '1d12', False),
+                               ('残月', '1d6+4', False),
+                               ('新月', '1d16+12', False),
+                               ('蛾眉月', '8', False),
+                               ('上弦月', '5', True),
+                               ('盈凸月', '10', True)],
+                 'arcana_base_blood': 100,
                  'arcana_bonus_dice': 1,
                  'arcana_substitute_ml': 500,
                  'armor_cap': 12,
@@ -2121,6 +2180,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '夜诏明',
  'serial': 'Y17',
+ 'initial_weapon': 'bow',
  'spells': [{'category': 4,
              'cost_blood_ml': 100,
              'effects': [{'type': 4, '客体': 1, '持续回合': 3}],
@@ -2383,7 +2443,78 @@ X1 = {'attrs': {'不可指定': 1,
 
 
 
-ALL_CHARACTERS = [DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI, XUEREN, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG, LAN, SIRUITIKA, GELIYA, YANYAN, MAIZHIXIA, LINBAI, YUCHANGFENG, YEZHAOMING]
+
+
+
+# ============================================================
+#  Snowman 1.0 (Y60) - preserved from 0.1.6-fixY17+Accel (9bddc17)
+# ============================================================
+XUEREN_V1 = {'attrs': {'伤害贯穿': 1,
+           '体力': 7,
+           '体力上限': 7,
+           '体型': 55,
+           '体格': 0,
+           '体质': 50,
+           '力量': 45,
+           '可反击': 1,
+           '外貌': 50,
+           '幸运': 50,
+           '意志': 60,
+           '敏捷': 65,
+           '教育': 55,
+           '斗殴': 50,
+           '智力': 60,
+           '状态': 60,
+           '理智': 70,
+           '等级': 6,
+           '行动力': 8,
+           '闪避': 65,
+           '额外行动数': 0,
+           '魔力': 13,
+           '魔力上限': 13,
+           '魔法少女序号': 60},
+ 'inventory': [{'count': 1, 'item': '蛋糕HP'}],
+ 'name': '雪人',
+ 'serial': 'Y60',
+ 'spells': [{'category': 8,
+             'effects': [{'type': 8,
+                          '作用半径': 5,
+                          '客体': 45,
+                          '属性削减': '行动力-5;斗殴-10',
+                          '持续回合': 3,
+                          '每回合伤害骰': '1d6',
+                          '领域中心跟随': 0,
+                          '领域同时上限': 1},
+                         {'type': 1, '伤害骰': '1d6+1d4', '可反击性': 0, '可闪避性': 1, '客体': 45, '射程': 99, '成功率': 70}],
+             'name': '制造雪带',
+             'timing': '2',
+             '消耗mp': 4},
+            {'category': 8,
+             'default_persist': 1,
+             'effects': [{'type': 8,
+                          '作用半径': 5,
+                          '客体': 13,
+                          '持续回合': 999,
+                          '来源存活绑定': 1,
+                          '辅助效果': '受到伤害百分比',
+                          '辅助效果值': '-10',
+                          '领域中心跟随': 1}],
+             'name': '雪幕',
+             'timing': '1',
+             '消耗mp': 2},
+            {'category': 1,
+             'effects': [{'type': 1, '伤害骰': '1d6+1d4+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 75}],
+             'name': '发送雪球',
+             'timing': '2',
+             '消耗mp': 2}],
+ 'str_attrs': {'伤害值': '1d8+1d4'}}
+
+
+
+
+
+
+ALL_CHARACTERS = [DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI, XUEREN, XUEREN_V1, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG, LAN, SIRUITIKA, GELIYA, YANYAN, MAIZHIXIA, LINBAI, YUCHANGFENG, YEZHAOMING]
 
 # ============================================================
 #  加载角色到 CombatEngine
@@ -2398,6 +2529,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         char.set_attr(k, v)
     for k, v in char_data.get('str_attrs', {}).items():
         char.set_str(k, v)
+    # Character-owned passive balance data; JSON survives room save/restore.
+    char.set_str('_passive_rules', json.dumps(char_data.get('passive_rules', {}), ensure_ascii=False))
+    char.set_str('_weapon_name', char_data.get('initial_weapon', ''))
     # Initial phase (for cartridge-based characters like 麦知夏)
     init_phase = char_data.get('initial_phase', 0)
     if init_phase:
@@ -2515,11 +2649,6 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                     char.set_str(f"{prefix_l}{k}", json.dumps(v, ensure_ascii=False))
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
-    # Initialize default weapon (must be before load_spells for weapon_required filtering)
-    if char_data.get('serial') == 'Y16':
-        char.set_str('_weapon_name', 'staff')
-    elif char_data.get('serial') == 'Y17':
-        char.set_str('_weapon_name', 'bow')
     # Initialize blood resource (血液资源)
     char._blood_ml = char_data.get('初始血液', 0) or 0
     char.set_attr('储血ml', char._blood_ml)

@@ -9,10 +9,11 @@ import { AutoReactionControls, DataEditor, SimulationPanel, TournamentPanel } fr
 import { SettingsPage } from './SettingsPage';
 import { RuntimeSettings, readPreferences, savePreferences, type SettingsResponse, type SettingsValues, type Preferences } from './settings';
 
-const emblemIcons: Record<string, typeof Flame> = { flame: Flame, moon: Moon, leaf: Leaf, star: Star, wing: Feather, snow: Snowflake, flower: Flower2, cake: CakeSlice, sword: Sword, sun: Sun, wave: Waves, gem: Gem };
 const accents = ['#db775a', '#8a78c5', '#5b9b91', '#c88c45', '#c56785', '#6694bc', '#9a80b1', '#cb8b9e', '#658878', '#c29b52', '#688ab6', '#847fc0'];
 const styleColor = (color: string): CSSProperties => ({ '--character': color } as CSSProperties);
-function Emblem({ name = 'star', size = 24, ...props }: { name?: string; size?: number; className?: string }) { const Icon = emblemIcons[name] || Star; return <Icon size={size} strokeWidth={1.5} {...props}/>; }
+function Emblem({ name = 'star', size = 24, className = '' }: { name?: string; size?: number; className?: string }) {
+  return <span aria-hidden="true" className={'library-emblem ' + className} style={{ width:size, height:size, maskImage:`url(/ui/icons/${name}.svg)`, WebkitMaskImage:`url(/ui/icons/${name}.svg)` }}/>;
+}
 function IconButton({ title, children, onClick, disabled = false, className = '' }: { title: string; children: ReactNode; onClick?: () => void; disabled?: boolean; className?: string }) { return <button className={'icon-button ' + className} title={title} aria-label={title} onClick={onClick} disabled={disabled}>{children}</button>; }
 function Tag({ children, className = '' }: { children: ReactNode; className?: string }) { return <span className={'tag ' + className}>{children}</span>; }
 function AiCheckbox({ checked, onChange, disabled = false, label, title }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; label: string; title?: string }) {
@@ -27,33 +28,10 @@ function Sigil({ character, compact = false }: { character?: Character; compact?
     {character && <img src={character.portrait} alt="" className="portrait" onError={e => { e.currentTarget.style.display = 'none'; }}/>} 
   </div>;
 }
-function CharacterCard({ character: c, selected = false, onClick, small = false }: { character: Character; selected?: boolean; onClick?: () => void; small?: boolean }) { return <button className={'character-card ' + (selected ? 'selected ' : '') + (small ? 'small' : '')} style={styleColor(c.color)} onClick={onClick} aria-label={c.name + (selected ? '，已选择' : '')}><div className="card-top"><span>{c.serial}</span><Diamond size={12}/></div><Sigil character={c}/><div className="card-name"><span>{c.role}</span><h3>{c.name}</h3><div className="card-bottom"><span>MAGICAL GIRL</span>{selected ? <Check size={16}/> : <ArrowUpRight/>}</div></div></button>; }
+function CharacterCard({ character: c, selected = false, onClick, small = false }: { character: Character; selected?: boolean; onClick?: () => void; small?: boolean }) { return <button className={'character-card ' + (selected ? 'selected ' : '') + (small ? 'small' : '')} style={styleColor(c.color)} onClick={onClick} aria-label={c.name + (selected ? '，已选择' : '')}><div className="card-top"><span>{c.serial}</span><Diamond size={12}/></div><Sigil character={c}/><div className="card-name"><span className="role-traits">{c.traits.map(t=><span key={t.name} title={t.description}>{t.name}</span>)}</span><h3>{c.name}</h3><div className="card-bottom"><span>MAGICAL GIRL</span>{selected ? <Check size={16}/> : <ArrowUpRight/>}</div></div></button>; }
 function ArrowUpRight() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M4 4H12V12" stroke="currentColor" strokeWidth="1.5"/></svg>; }
 function Resource({ label, value, max, kind = 'hp' }: { label: string; value: number; max: number; kind?: string }) { return <div className={'resource ' + kind}><div><span>{label}</span><strong>{value}<small> / {max}</small></strong></div><i><b style={{ width: Math.max(0, Math.min(100, value / Math.max(1,max) * 100)) + '%' }}/></i></div>; }
 function coordPoint(coord: string) { const m = /^([A-Z])(\d+)$/.exec(coord); return m ? [m[1].charCodeAt(0)-65, Number(m[2])-1] : [-1,-1]; }
-function describeEffect(e: Effect) {
-  const targets:Record<string,string>={'1':'自身','2':'其他友方单体','3':'其他友方全体','4':'敌方单体','5':'敌方全体','12':'任意友方','13':'自身与友方','14':'自身与敌方','15':'自身与敌方','24':'友方或敌方','35':'领域内单位','45':'敌方全体','124':'任意单体','135':'全场单位','R':'随机单位','RP':'随机角色'};
-  const parts:string[]=[];
-  if(e['客体']!=null)parts.push(targets[String(e['客体'])]||'按技能规则作用');
-  if(e['伤害骰'])parts.push('伤害 '+e['伤害骰']);
-  if(e['回复hp'])parts.push('回复体力 '+e['回复hp']);
-  if(e['回复mp'])parts.push('回复魔力 '+e['回复mp']);
-  if(e['护盾值'])parts.push('护盾 '+e['护盾值']);
-  if(e['召唤物模板'])parts.push('召唤'+e['召唤物模板']+' × '+(e['召唤个数']||1));
-  if(e['制造物模板'])parts.push('制造'+e['制造物模板']+' × '+(e['制造个数']||1));
-  if(e['每回合伤害骰'])parts.push('每回合伤害 '+e['每回合伤害骰']);
-  if(e['技能加减值'])parts.push(e['技能加减值']);
-  if(e['辅助效果'])parts.push(e['辅助效果']+(e['辅助效果值']?' '+e['辅助效果值']:''));
-  if(e.type===19)parts.push('复活阵亡队友');
-  if(e.type===9)parts.push('满足条件时转换阶段');
-  if(e.type===11)parts.push('削弱敌方召唤组的战意');
-  if(e['作用半径'])parts.push('半径 '+e['作用半径']+' 格');
-  if(e['持续回合']&&e['持续回合']<99)parts.push('持续 '+e['持续回合']+' 回合');
-  if(e['成功率'])parts.push('技能值 '+e['成功率']);
-  return parts.join(' · ')||'依照角色专属机制生效';
-}
-
-
 function App() {
   const [catalog, setCatalog] = useState<Character[]>([]);
   const [presets, setPresets] = useState<Effect[]>([]);
@@ -243,7 +221,23 @@ function App() {
     </main>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
     {draft&&<Modal title="确认本次行动" onClose={()=>setDraft(null)}><div className="confirmation-art"><Sparkles size={32}/></div><h3 className="confirmation-title">{draft.label}</h3><p className="confirmation-target">作用目标：{draft.targetName}</p><p className="muted confirmation-target">{draft.cost!=null?'基础消耗 '+draft.cost+' MP · ':''}随机费用与骰点在执行时结算</p><div className="modal-note"><Shield size={17}/>确认后执行行动，并同步给房间内所有玩家。</div>{room?.revision!==draft.revision&&<p className="error-text">战况已更新，请取消后重新选择行动。</p>}<div className="modal-actions"><button className="button" onClick={()=>setDraft(null)}>取消</button><button className="button primary" disabled={busy||room?.revision!==draft.revision} onClick={send}>{busy?<LoaderCircle className="spin" size={16}/>:<Check size={16}/>}确认行动</button></div></Modal>}
-    {detail&&<Modal title="角色档案" onClose={()=>setDetail(null)} wide><div className="character-profile" style={styleColor(detail.color)}><div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p>{detail.role}</p></div><div className="profile-skills"><span className="eyebrow">MAGICAL ABILITIES</span><h3>魔法与可能性</h3><div className="base-stats">{[['体力',detail.attrs['体力']],['魔力',detail.attrs['魔力']],['行动力',detail.attrs['行动力']]].map(([k,v])=><div key={k}><small>{k}</small><strong>{v||'—'}</strong></div>)}</div>{detail.spells.map((s,i)=><details key={i}><summary><Sparkles size={16}/><strong>{s.name}</strong><Tag>{String(s.timing).includes('1')?'被动':String(s.timing).includes('3')?'附加 / 主动':'主动'}</Tag><ChevronDown size={15}/></summary><p>MP {String(s['消耗mp']||0)} · SAN {String(s['消耗san']||0)}</p>{s.effects?.map((e:Effect,j:number)=><div className="effect-description" key={j}><span>{describeEffect(e)}</span></div>)}</details>)}</div></div></Modal>}
+    {detail&&<Modal title="角色百科" onClose={()=>setDetail(null)} wide>
+      <div className="character-profile" style={styleColor(detail.color)}>
+        <div className="profile-art"><Sigil character={detail}/><span>{detail.serial}</span><h2>{detail.name}</h2><p>{detail.role}</p></div>
+        <div className="profile-skills"><span className="eyebrow">CHARACTER ENCYCLOPEDIA</span><h3>技能百科</h3>
+          <div className="base-stats">{[['体力',detail.attrs['体力']],['魔力',detail.attrs['魔力']],['行动力',detail.attrs['行动力']]].map(([k,v])=><div key={k}><small>{k}</small><strong>{v??'—'}</strong></div>)}</div>
+          <div className="trait-definitions">{detail.traits.map(t=><p key={t.name}><strong>{t.name}</strong> {t.description}</p>)}</div>
+          <p className="encyclopedia-basic">{detail.basic}</p>
+          {detail.passives.length>0&&<section className="encyclopedia-passives"><h4>角色被动与专属规则</h4>{detail.passives.map((p,i)=><p key={i}>{p}</p>)}</section>}
+          {detail.skills.map((s,i)=><details key={i} open>
+            <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong>{s.name}</strong><Tag>{s.timing}</Tag><ChevronDown size={15}/></summary>
+            <p className="skill-cost">{s.cost}{s.limits&&<> · {s.limits}</>}</p>
+            <p className="skill-article">{s.description}</p>
+            {s.facts.map((p,j)=><p className="effect-description" key={j}>{p}</p>)}
+          </details>)}
+        </div>
+      </div>
+    </Modal>}
     {dialog==='join'&&<Modal title="加入好友的战术室" onClose={()=>setDialog('')}><p className="muted">连接同一局域网，并使用房主的 IP 地址打开此页面。</p><label className="field">你的称呼<input value={name} maxLength={20} onChange={e=>setName(e.target.value)}/></label><label className="field">房间码<input className="code-input" placeholder="例如 A3B8C2" maxLength={6} value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())}/></label><label className="checkbox"><input type="checkbox" checked={spectator} onChange={e=>setSpectator(e.target.checked)}/><Eye size={16}/>以观众身份加入</label><div className="modal-actions"><button className="button primary" disabled={busy||joinCode.trim().length!==6} onClick={join}>加入战术室 <ArrowRight size={16}/></button></div></Modal>}
     {dialog==='room'&&room&&<Modal title={'房间 · '+room.code} onClose={()=>setDialog('')} wide><div className="room-members">{room.members.map(m=><div key={m.id}><span className="user-avatar">{m.name[0]}</span><strong>{m.name}</strong><Tag>{m.id===room.host?'房主':m.spectator?'观众':'玩家'}</Tag><span className={m.ready?'ready-state':'muted'}>{m.ready?'已准备':'未准备'}</span></div>)}</div><h3>角色控制权</h3><p className="muted">房主可将角色交给玩家或 AI。进行中的防御反应处理完毕后才能调整。</p><div className="assignment-list">{room.snapshot.units.filter(u=>!u.summon||u.uid===u.representative).map(u=><label key={u.uid}><span className={'team-dot '+(u.team==='X'?'orange':'')}/><strong>{u.name}</strong><span>{u.team} 队 · {u.serial}</span><select disabled={!host||busy||!!room.snapshot.reaction} value={u.controller} onChange={e=>control({op:'assign',uid:u.uid,controller:e.target.value})}><option value="ai">AI 控制</option>{room.members.filter(m=>!m.spectator).map(m=><option value={m.id} key={m.id}>{m.name}</option>)}</select></label>)}</div><div className="modal-actions">{!room.local&&<button className="button" onClick={copyLink}><Copy size={15}/>复制邀请链接</button>}<button className="button primary" onClick={()=>setDialog('')}>完成 <Check size={15}/></button></div></Modal>}
     {dialog==='help'&&<Modal title="欢迎来到星序战术室" onClose={()=>setDialog('')}><div className="help-list"><p><b>01 · 编队</b>选择双方角色，可按角色设置玩家或 AI 控制。</p><p><b>02 · 准备</b>在房间面板分配控制权，选择角色后调整站位，再开始演习。</p><p><b>03 · 行动</b>点击技能后选择棋子，再确认行动。规则允许的目标由后端验证；不指定时可使用默认目标。</p><p><b>04 · 应对</b>受到攻击时，通过防御面板选择闪避、反击或格挡。请先处理反应再继续行动。</p><p><b>05 · 回顾</b>拖动底部事件时间线回顾战况，点击“回到实时”继续操作。AI 播放控制仅房主可用。</p><p><b>06 · 联机</b>好友访问 http://房主局域网IP:8889/ui/ 后输入房间码。服务重启后需重建房间。</p></div></Modal>}

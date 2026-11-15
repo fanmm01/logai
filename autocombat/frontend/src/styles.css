@@ -22,3 +22,10 @@
 .invite-links{display:flex;flex-direction:column;gap:9px;margin-top:20px}.invite-links>label{display:flex;align-items:center;gap:5px}.invite-links input{width:100%;font-size:10px}
 
 .unit-row-select{display:flex;align-items:center;gap:inherit;flex:1;min-width:0;padding:0;text-align:left}.unit-row>.slot-control{flex:none;margin-top:0}
+/* Character library assets and encyclopedia. Text remains selectable on touch. */
+.library-emblem{display:inline-block;flex-shrink:0;background:currentColor;mask-repeat:no-repeat;mask-size:contain;mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:contain;-webkit-mask-position:center;vertical-align:middle}
+.skill-emblem{width:30px;height:30px;color:var(--character)}
+.role-traits{display:flex;gap:10px}.role-traits>span+span:before{content:'·';margin-right:10px}.role-traits>span{cursor:help}
+.trait-definitions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.trait-definitions p{margin:0!important;padding:12px;background:var(--bg,#f8f6f1);border-radius:8px;line-height:1.8!important}.trait-definitions strong{display:block;color:var(--character);font-size:13px}
+.encyclopedia-passives{border-left:3px solid var(--character);padding:2px 14px;margin:18px 0;background:#faf9f6}.encyclopedia-passives h4{font-size:13px}.encyclopedia-passives p,.encyclopedia-basic{font-size:12px;line-height:1.95;color:#625f6a}.profile-skills .skill-article{font-size:13px;line-height:1.9;color:#423f4a}.profile-skills .effect-description{font-size:12px;line-height:1.9;margin:8px 0;padding:0 0 0 12px;border-left:2px solid #e9e5ed}.profile-skills .skill-cost{line-height:1.85;color:#71657f}.profile-skills summary strong{flex:1;min-width:0}.profile-skills summary .tag{flex-shrink:0}.profile-skills details{padding:14px 0}
+@media(max-width:750px){.trait-definitions{grid-template-columns:1fr}.profile-skills summary{flex-wrap:wrap}.profile-skills summary strong{font-size:12px}}

@@ -42,11 +42,15 @@ class FiveBalanceTests(unittest.TestCase):
         originals = {c['serial']: c for c in before.ALL_CHARACTERS}
         for c in cd.ALL_CHARACTERS:
             old = originals[c['serial']]
-            self.assertEqual(c['attrs'], old['attrs'], c['serial'])
+            attrs = {k: v for k, v in c['attrs'].items()
+                     if c['serial'] != 'Y6' or k not in {'冰冻命中层数', '冰冻雪球命中层数', '冰冻跨循环叠加', '冰冻即时回复层数', '体力', '体力上限'}}
+            old_attrs = {k: v for k, v in old['attrs'].items()
+                         if c['serial'] != 'Y6' or k not in {'体力', '体力上限'}}
+            self.assertEqual(attrs, old_attrs, c['serial'])
             self.assertEqual(c['str_attrs'], old['str_attrs'], c['serial'])
             if c['serial'] not in {'Y6', 'Y7', 'Y9', 'Y10', 'Y11'}:
                 self.assertEqual(c, old, c['serial'])
-        self.assertEqual(cd.SUMMON_TEMPLATES, before.SUMMON_TEMPLATES)
+        self.assertEqual({k: v for k, v in cd.SUMMON_TEMPLATES.items() if k != '小雪人'}, before.SUMMON_TEMPLATES)
 
     def test_character_spirit_tiers_do_not_remove_or_damage_character(self):
         for cls in (be.FullBattleEngine, be.FastBattleEngine):

@@ -48,6 +48,9 @@ chData = {
     'serial': 'Y13',                # str  — 唯一编号 (Y1~Y12已用)
     'pre_transformed': False,       # bool — 是否以"变身前"状态入场 (可选, 默认False)
 
+    # passive_rules: 角色专属被动参数，按 frost/cloak/cartridge/phantom/moon 分区。
+    # initial_weapon: 初始武器 staff/bow/sword；不再由加载器按角色编号指定。
+    # 图鉴文案集中存放在 character_encyclopedia.py；战斗数值只在此维护。
     # ========== 基础属性 attrs (全部 int) ==========
     'attrs': {
         # -- 战斗核心 --
@@ -465,7 +468,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 50,
         'DEX': 90,
         'EDU': 0,
-        'HP': 90,
+        'HP': 75,
         'INT': 30,
         'MOV': 11,
         'MP': 0,
@@ -501,7 +504,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 75,
         'DEX': 30,
         'EDU': 0,
-        'HP': 80,
+        'HP': 160,
         'INT': 20,
         'MOV': 3,
         'MP': 0,
@@ -606,7 +609,7 @@ SUMMON_TEMPLATES = {'三合一': {'APP': 40,
         'CON': 80,
         'DEX': 60,
         'EDU': 0,
-        'HP': 140,
+        'HP': 125,
         'INT': 30,
         'MOV': 8,
         'MP': 50,
@@ -914,11 +917,15 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
 #  角色6: 雪人 (Y6) — 雪带/雪幕/雪球 + 雪之法杖被动增伤
 # ============================================================
 XUEREN = {'attrs': {'伤害贯穿': 1,
-           '体力': 7,
-           '体力上限': 7,
+           '体力': 10,
+           '体力上限': 10,
            '体型': 55,
            '体格': 0,
            '体质': 50,
+           '冰冻即时回复层数': 3,
+           '冰冻命中层数': 2,
+           '冰冻跨循环叠加': 1,
+           '冰冻雪球命中层数': 1,
            '力量': 45,
            '可反击': 1,
            '外貌': 50,
@@ -938,18 +945,21 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
            '魔力上限': 13,
            '魔法少女序号': 6},
  'inventory': [{'count': 1, 'item': '蛋糕HP'}],
- 'name': '雪人',
+ 'name': '雪人v2',
  'serial': 'Y6',
+ 'passive_rules': {
+     'frost': {'vulnerability_pct': 18,
+               'skill_penalty': 10,
+               'dodge_penalty': 20,
+               'move_penalty': 5,
+               'decay': 1,
+               'dot': '1d4+2',
+               'burst': '1d10+1d6+2',
+               'instant_heal': '2d10',
+               'regen_hp': '1d6+2',
+               'regen_mp': '1d10'}},
  'spells': [{'category': 8,
-             'effects': [{'type': 8,
-                          '作用半径': 5,
-                          '客体': 45,
-                          '属性削减': '行动力-5;斗殴-10',
-                          '持续回合': 3,
-                          '每回合伤害骰': '1d6',
-                          '领域中心跟随': 0,
-                          '领域同时上限': 1},
-                         {'type': 1, '伤害骰': '1d6+1d4', '可反击性': 0, '可闪避性': 1, '客体': 45, '射程': 99, '成功率': 70}],
+             'effects': [{'type': 8, '作用半径': 5, '冰冻每轮层数': 2, '客体': 45, '持续回合': 6, '领域中心跟随': 0, '领域同时上限': 1}],
              'name': '制造雪带',
              'timing': '2',
              '消耗mp': 4},
@@ -967,17 +977,47 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              'timing': '1',
              '消耗mp': 2},
             {'category': 1,
-             'effects': [{'type': 1, '伤害骰': '2d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 75}],
+             'effects': [{'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80},
+                         {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 80}],
              'name': '发送雪球',
              'timing': '2',
              '消耗mp': 2},
             {'category': 4,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 999,
-                          '辅助效果': '伤害骰加值', '辅助效果值': '+17'}],
-             'name': '雪之法杖',
              'default_persist': 1,
-             'timing': '1'}],
- 'str_attrs': {'伤害值': '1d8+1d4'}}
+             'effects': [{'type': 4, '客体': 13, '持续回合': 5, '辅助效果': '伤害骰加值', '辅助效果值': '+1d6'},
+                         {'type': 2, '客体': 13, '护盾值': '1d8+4', '持续回合': 5}],
+             'name': '雪之法杖',
+             'timing': '1'},
+            {'category': 5,
+             'cooldown_rounds': 4,
+             'effects': [{'type': 5, '召唤个数': 1, '召唤物模板': '小雪人', '客体': 1, '持续回合': 999}],
+             'name': '堆雪人',
+             'timing': '2',
+             '消耗mp': 5}],
+ 'str_attrs': {'伤害值': '1d6+1d4'}}
+
+SUMMON_TEMPLATES['小雪人'] = {'APP': 30,
+ 'CON': 50,
+ 'DEX': 50,
+ 'EDU': 30,
+ 'HP': 35,
+ 'INT': 30,
+ 'MOV': 5,
+ 'MP': 12,
+ 'POW': 50,
+ 'SAN': 0,
+ 'SIZ': 50,
+ 'STR': 50,
+ 'frost_ball': {'dice': '1d8+2', 'mp_cost': 1, 'range': 8, 'success': 65},
+ 'frost_summon': True,
+ 'frost_zone': {'duration': 4, 'mp_cost': 3, 'radius': 3, 'stacks': 2},
+ 'max_simultaneous': 1,
+ 'max_total_spawned': None,
+ 'skills': [{'dice': '1d8+2', 'name': '发送雪球', 'val': 65}],
+ '可反击': 0,
+ '可反应': 1,
+ '闪避': 35,
+ '额外行动数': 0}
 
 # ============================================================
 #  角色7: 环花暖 (Y7) — 治愈领域 + 战意值(召唤物撤离、敌方主体压制)
@@ -1018,16 +1058,16 @@ HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
              'default_persist': 1,
              'effects': [{'type': 11,
                           '客体': 1,
-                          '战意初始层数': 5,
-                          '战意影响主体': 1,
+                          '战意主体减伤百分比': 30,
+                          '战意主体减伤阈值': 1,
                           '战意主体初始层数': 4,
                           '战意主体削弱概率': 65,
-                          '战意主体减伤阈值': 1,
-                          '战意主体减伤百分比': 30,
                           '战意主体沉默阈值': 0,
+                          '战意初始层数': 5,
                           '战意削弱概率': 50,
                           '战意削弱概率奖励层': 50,
                           '战意奖励骰阈值': 3,
+                          '战意影响主体': 1,
                           '战意惩罚1阈值': 4,
                           '战意惩罚2阈值': 2,
                           '战意惩罚骰上限': 2,
@@ -1184,8 +1224,8 @@ BIHAMI = {'attrs': {'伤害贯穿': 0,
 # Phase 1 (木·荣): 召唤生灵(2d4+4), 生之矛(友敌分化+延迟回复), 领域·生(治疗+敏捷+10), 阶段转换(HP阈值)
 # Phase 2 (木·枯): 召唤生灵(点燃), 生之矛(2d8纯伤), 领域·灭(全场伤害+友方敏捷+10+伤害骰优势)
 MULUO = {'attrs': {'伤害贯穿': 1,
-           '体力': 11,
-           '体力上限': 11,
+           '体力': 10,
+           '体力上限': 10,
            '体型': 70,
            '体格': 2,
            '体质': 75,
@@ -1221,7 +1261,6 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'category': 1,
              'effects': [{'type': 1,
                           '伤害骰': '4d6+7',
-                          '吸血比例': '0.25',
                           '友方伤害骰': '2d6',
                           '友方延迟回复公式': 'max_double',
                           '友方延迟回复回合': 3,
@@ -1229,6 +1268,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
                           '友方行为': 'damage_and_heal',
                           '可反击性': 0,
                           '可闪避性': 0,
+                          '吸血比例': '0.25',
                           '客体': 24,
                           '射程': 4,
                           '成功率': 85,
@@ -1273,7 +1313,14 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'timing': '23'},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
-             'effects': [{'type': 1, '伤害骰': '2d8+4', '吸血比例': '0.25', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 4, '成功率': 85}],
+             'effects': [{'type': 1,
+                          '伤害骰': '2d8+4',
+                          '可反击性': 0,
+                          '可闪避性': 0,
+                          '吸血比例': '0.25',
+                          '客体': 4,
+                          '射程': 4,
+                          '成功率': 85}],
              'name': '死之矛',
              'phase': 2,
              'timing': '2'},
@@ -1294,8 +1341,8 @@ MULUO = {'attrs': {'伤害贯穿': 1,
 # ============================================================
 CHUNSHANG = {'attrs': {'不可指定': 1,
            '伤害贯穿': 1,
-           '体力': 10,
-           '体力上限': 10,
+           '体力': 11,
+           '体力上限': 11,
            '体型': 55,
            '体格': 0,
            '体质': 55,
@@ -1403,10 +1450,9 @@ LAN = {'attrs': {'伤害贯穿': 1,
              'timing': '2',
              '消耗mp': 3},
             {'category': 4,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 999,
-                          '辅助效果': '伤害骰加值', '辅助效果值': '+3'}],
-             'name': '镰刃余势',
              'default_persist': 1,
+             'effects': [{'type': 4, '客体': 1, '持续回合': 999, '辅助效果': '伤害骰加值', '辅助效果值': '+3'}],
+             'name': '镰刃余势',
              'timing': '1'}],
  'str_attrs': {'伤害值': '2d4+4'}}
 
@@ -1647,6 +1693,7 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '余烬',
  'serial': 'Y14',
+ 'passive_rules': {'cartridge': {'cooldown': 3, 'ring_cap': 3, 'limit_cap': 5, 'event_gain': 1, 'dash_distance': 8}},
  'spells': [{'category': 4,
              'cooldown_rounds': 3,
              'effects': [{'target_phase': 1, 'type': 17, '客体': 1, '持续回合': 1}],
@@ -1832,8 +1879,8 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
 #  角色15: 于长风 (Y15) — 火焰魔法 + 爆破圈 + 火鼠裘
 # ============================================================
 YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
-           '体力': 11,
-           '体力上限': 11,
+           '体力': 13,
+           '体力上限': 13,
            '体型': 60,
            '体格': 1,
            '体质': 55,
@@ -1859,6 +1906,12 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '葬火',
  'serial': 'Y15',
+ 'passive_rules': {
+     'cloak': {'mp_per_hit': 1,
+               'immune_max': 3,
+               'middle_below': 7,
+               'middle_damage': 3,
+               'high_multiplier': 0.6}},
  'spells': [{'_once_per_battle': True,
              'category': 1,
              'default_persist': 1,
@@ -1964,6 +2017,10 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '罗杰',
  'serial': 'Y16',
+ 'initial_weapon': 'staff',
+ 'passive_rules': {
+     'phantom': {'4': '2d6', '3': '1d6+6', '2': '1d6', '1': '1d3', '-2': '-1d2'},
+     'moon': {'ultimate_threshold': 20, 'bow_extra_mp': 1}},
  'spells': [{'category': 4,
              'effects': [{'turn_mp_refund': '2d3', 'type': 4, '可叠加': 2, '客体': 13, '持续回合': '2d3'}],
              'name': '灵感大爆发',
@@ -2107,7 +2164,15 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
            '魔力上限': 26,
            '魔法少女序号': 17},
  'blood_ml_per_hp': 500,
- 'blood_rules': {'arcana_base_blood': 100,
+ 'blood_rules': {'moon_phases': [('满月', '1d12+3', True),
+                               ('亏凸月', '1d8', True),
+                               ('弦月', '1d12', False),
+                               ('残月', '1d6+4', False),
+                               ('新月', '1d16+12', False),
+                               ('蛾眉月', '8', False),
+                               ('上弦月', '5', True),
+                               ('盈凸月', '10', True)],
+                 'arcana_base_blood': 100,
                  'arcana_bonus_dice': 1,
                  'arcana_substitute_ml': 500,
                  'armor_cap': 12,
@@ -2143,6 +2208,7 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
  'inventory': [],
  'name': '夜诏明',
  'serial': 'Y17',
+ 'initial_weapon': 'bow',
  'spells': [{'category': 4,
              'cost_blood_ml': 100,
              'effects': [{'type': 4, '客体': 1, '持续回合': 3}],
@@ -2403,7 +2469,80 @@ X1 = {'attrs': {'不可指定': 1,
 
 
 
-ALL_CHARACTERS = [DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI, XUEREN, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG, LAN, SIRUITIKA, GELIYA, YANYAN, MAIZHIXIA, LINBAI, YUCHANGFENG, YEZHAOMING]
+
+
+
+
+
+# ============================================================
+#  Snowman 1.0 (Y60) - preserved from 0.1.6-fixY17+Accel (9bddc17)
+# ============================================================
+XUEREN_V1 = {'attrs': {'伤害贯穿': 1,
+           '体力': 7,
+           '体力上限': 7,
+           '体型': 55,
+           '体格': 0,
+           '体质': 50,
+           '力量': 45,
+           '可反击': 1,
+           '外貌': 50,
+           '幸运': 50,
+           '意志': 60,
+           '敏捷': 65,
+           '教育': 55,
+           '斗殴': 50,
+           '智力': 60,
+           '状态': 60,
+           '理智': 70,
+           '等级': 6,
+           '行动力': 8,
+           '闪避': 65,
+           '额外行动数': 0,
+           '魔力': 13,
+           '魔力上限': 13,
+           '魔法少女序号': 60},
+ 'inventory': [{'count': 1, 'item': '蛋糕HP'}],
+ 'name': '雪人',
+ 'serial': 'Y60',
+ 'spells': [{'category': 8,
+             'effects': [{'type': 8,
+                          '作用半径': 5,
+                          '客体': 45,
+                          '属性削减': '行动力-5;斗殴-10',
+                          '持续回合': 3,
+                          '每回合伤害骰': '1d6',
+                          '领域中心跟随': 0,
+                          '领域同时上限': 1},
+                         {'type': 1, '伤害骰': '1d6+1d4', '可反击性': 0, '可闪避性': 1, '客体': 45, '射程': 99, '成功率': 70}],
+             'name': '制造雪带',
+             'timing': '2',
+             '消耗mp': 4},
+            {'category': 8,
+             'default_persist': 1,
+             'effects': [{'type': 8,
+                          '作用半径': 5,
+                          '客体': 13,
+                          '持续回合': 999,
+                          '来源存活绑定': 1,
+                          '辅助效果': '受到伤害百分比',
+                          '辅助效果值': '-10',
+                          '领域中心跟随': 1}],
+             'name': '雪幕',
+             'timing': '1',
+             '消耗mp': 2},
+            {'category': 1,
+             'effects': [{'type': 1, '伤害骰': '1d6+1d4+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 75}],
+             'name': '发送雪球',
+             'timing': '2',
+             '消耗mp': 2}],
+ 'str_attrs': {'伤害值': '1d8+1d4'}}
+
+
+
+
+
+
+ALL_CHARACTERS = [DANIUSI, LINGNIU, XINGSHAN, XUETIANSHI, XUEREN, XUEREN_V1, HUANHUANUAN, BIHAMI, MULUO, CHUNSHANG, LAN, SIRUITIKA, GELIYA, YANYAN, MAIZHIXIA, LINBAI, YUCHANGFENG, YEZHAOMING]
 
 # ============================================================
 #  加载角色到 CombatEngine
@@ -2418,6 +2557,9 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
         char.set_attr(k, v)
     for k, v in char_data.get('str_attrs', {}).items():
         char.set_str(k, v)
+    # Character-owned passive balance data; JSON survives room save/restore.
+    char.set_str('_passive_rules', json.dumps(char_data.get('passive_rules', {}), ensure_ascii=False))
+    char.set_str('_weapon_name', char_data.get('initial_weapon', ''))
     # Initial phase (for cartridge-based characters like 麦知夏)
     init_phase = char_data.get('initial_phase', 0)
     if init_phase:
@@ -2535,11 +2677,6 @@ def load_character_to_engine(engine, char_data: dict, user_id: str):
                     char.set_str(f"{prefix_l}{k}", json.dumps(v, ensure_ascii=False))
                 elif isinstance(v, str):
                     char.set_str(f"{prefix_l}{k}", v)
-    # Initialize default weapon (must be before load_spells for weapon_required filtering)
-    if char_data.get('serial') == 'Y16':
-        char.set_str('_weapon_name', 'staff')
-    elif char_data.get('serial') == 'Y17':
-        char.set_str('_weapon_name', 'bow')
     # Initialize blood resource (血液资源)
     char._blood_ml = char_data.get('初始血液', 0) or 0
     char.set_attr('储血ml', char._blood_ml)
@@ -2817,19 +2954,6 @@ def _resolve_db(dice_expr, build_or_db):
 
 _DICE_TOKEN = re.compile(r'(\d*)d(\d+)', re.IGNORECASE)
 _ARITH_ONLY = re.compile(r'[0-9+\-*/().\s]+$')
-
-# 月相表（Y17 血月斩击 damage_table='moon_phase'）— 规格见 reference/各魔法少女魔法列表.md
-# 每项: (月相名, 伤害骰或固定值, 是否生命吸取)。引擎掷 1d8 选月相。
-_MOON_PHASE_TABLE = [
-    ('满月',   '1d12+3',  True),   # 1 强行吸取 1d12+3 生命
-    ('亏凸月', '1d8',     True),   # 2 造成 1d8 伤害 + 1d8 生命吸取
-    ('弦月',   '1d12',    False),  # 3 造成 1d12 伤害
-    ('残月',   '1d6+4',   False),  # 4 造成 1d6+4 伤害
-    ('新月',   '1d16+12', False),  # 5 造成 d16+12 伤害
-    ('蛾眉月', '8',       False),  # 6 固定 8 点伤害
-    ('上弦月', '5',       True),   # 7 固定 5 点伤害 + 5 点生命吸收
-    ('盈凸月', '10',      True),   # 8 固定 10 点生命偷取
-]
 
 
 def _dice_group_value(cnt, sides, mode):
@@ -3270,6 +3394,29 @@ class CombatEngine:
         registry = getattr(self, '_summon_templates_snapshot', None)
         return registry.get(name) if registry is not None else _get_summon_template(name)
 
+    def _passive_rules(self, uid, section):
+        return json.loads(self.get_char(self._resolve_uid(uid)).get_str('_passive_rules') or '{}').get(section, {})
+
+    def _phantom_rank_bonus(self, uid, rank):
+        dice = self._passive_rules(uid, 'phantom').get(str(min(rank, 4)))
+        return roll_dice(dice) if dice else 0
+
+    def _cloak_damage(self, uid, damage):
+        rules = self._passive_rules(uid, 'cloak')
+        if not rules:
+            return damage
+        char = self.get_char(uid)
+        cost = rules['mp_per_hit']
+        mp = char.get_attr('魔力', 0)
+        if mp < cost:
+            return damage
+        char.set_attr('魔力', mp - cost)
+        if damage <= rules['immune_max']:
+            return 0
+        if damage < rules['middle_below']:
+            return rules['middle_damage']
+        return int(damage * rules['high_multiplier'])
+
     def _is_y16(self, uid):
         return self.get_char(uid).serial == 'Y16'
 
@@ -3278,7 +3425,7 @@ class CombatEngine:
         moons = self._find_summons_by_field(self._battle_team_of(uid), 'replenish_allies')
         energy = moons[0][1].get_attr('魔力', 0) if moons else 0
         return ({'staff': 0, 'bow': 1, 'sword': 2}.get(weapon, 0),
-                int(bool(moons)), 0 if energy <= 0 else (1 if energy <= 20 else 2))
+                int(bool(moons)), 0 if energy <= 0 else (1 if energy <= self._passive_rules(uid, 'moon')['ultimate_threshold'] else 2))
 
     def _y16_preflight(self, uid, spell, *, check_cost=False):
         if not self._is_y16(uid):
@@ -3291,7 +3438,7 @@ class CombatEngine:
             if eff.get('weapon_state') == weapon:
                 return '已经装备该武器'
             if eff.get('consume_moon') and self._y16_resource_state(uid)[2] != 2:
-                return '需要存活的虚假之月且月能超过20'
+                return f"需要存活的虚假之月且月能超过{self._passive_rules(uid, 'moon')['ultimate_threshold']}"
             if eff.get('召唤物模板'):
                 remain, reason = self._get_summon_quota(uid, eff['召唤物模板'])
                 if remain == 0:
@@ -3301,7 +3448,7 @@ class CombatEngine:
             cost = cost or spell.get('消耗mp', 0)
             cost = max_damage(str(cost)) if isinstance(cost, str) else cost
             if weapon == 'bow' and any(e.get('bow_volley') for e in spell.get('effects', [])):
-                cost += 1
+                cost += self._passive_rules(uid, 'moon')['bow_extra_mp']
             if cost > 0:
                 cost = max(1, int(cost * self._get_buff_mp_cost_pct(uid))
                            + self._get_buff_mp_cost_flat(uid))
@@ -3320,7 +3467,7 @@ class CombatEngine:
             for eff in spell['effects']:
                 count = eff.get('bow_volley', 0)
                 if count:
-                    spell['消耗mp'] = int(spell.get('消耗mp', 0)) + 1
+                    spell['消耗mp'] = int(spell.get('消耗mp', 0)) + self._passive_rules(uid, 'moon')['bow_extra_mp']
                     spell['_share_writing'] = True
                     bow_dice = self._get_damage_dice(uid, '弓术')
                     for hit in range(count):
@@ -3398,18 +3545,7 @@ class CombatEngine:
         self._note_inspiration_event(uid)
         roll, detail = roll_d100(_calc_net_bp(buffs, '', '写作'))
         rank = success_rank(roll, self._apply_buff_skill_mod(owner, writing, '写作'))
-        if rank >= 4:
-            bonus = roll_dice('2d6')
-        elif rank == 3:
-            bonus = 6 + roll_dice('1d6')
-        elif rank == 2:
-            bonus = roll_dice('1d6')
-        elif rank == 1:
-            bonus = roll_dice('1d3')
-        elif rank == -2:
-            bonus = -roll_dice('1d2')
-        else:
-            bonus = 0
+        bonus = self._phantom_rank_bonus(owner, rank)
         return bonus, f'  幻造兵武·写作检定: D100={roll}/{writing} {rank_text(rank)} 伤害{bonus:+d}\n'
 
     def _y16_action_q(self, table, state, action):
@@ -3586,7 +3722,7 @@ class CombatEngine:
         for index in (1, 2, 3):
             effects.append(dict(type='cooldown', sourceUserId=uid, targetUserId=uid,
                                 spellIndex=index, spellName='卡带切换',
-                                remainingRounds=3, persistent=0))
+                                remainingRounds=self._passive_rules(uid, 'cartridge')['cooldown'], persistent=0))
         self._set_effects(effects)
 
     @staticmethod
@@ -3625,7 +3761,8 @@ class CombatEngine:
         if ledger.get(key) == round_num:
             return
         char._y14_events = dict(ledger, **{key: round_num})
-        self._mod_counter(uid, kind, 1, 3 if ring_event else 5)
+        rules = self._passive_rules(uid, 'cartridge')
+        self._mod_counter(uid, kind, rules['event_gain'], rules['ring_cap'] if ring_event else rules['limit_cap'])
 
     def _y14_damage(self, source, target, old_hp, *, counter=False):
         """Called after damage resolution, never for HP costs or healing."""
@@ -4289,7 +4426,7 @@ class CombatEngine:
             mc = roll_dice('1d8') if roll else (8 if ai else 1)
             prepared['effects'] = [copy.deepcopy(effects[0]) for _ in range(extra + 1)]
             if 'moon' in options:
-                if not 1 <= options['moon'] <= len(_MOON_PHASE_TABLE):
+                if not 1 <= options['moon'] <= len(self._y17_rules(uid)['moon_phases']):
                     raise ValueError('moon 月相必须为1至8')
                 for effect in prepared['effects']:
                     effect['_blood_moon'] = options['moon']
@@ -4627,7 +4764,7 @@ class CombatEngine:
                     score = 40
                 elif index == 11:
                     segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
-                    phase_damage = avg_damage(_MOON_PHASE_TABLE[options['moon'] - 1][1])
+                    phase_damage = avg_damage(rules['moon_phases'][options['moon'] - 1][1])
                     healing = min(max_hp - hp, phase_damage) if options['moon'] in (1, 2, 7, 8) else 0
                     score = (phase_damage + healing * .7) * .8 * segments
                 elif index == 6 and hp > max(8, max_hp * .3):
@@ -5354,6 +5491,8 @@ class CombatEngine:
         resolved = self._resolve_uid(uid)
         char = self.get_char(resolved)
         # 基础 MOV：召唤物用 MOV 属性，角色用 行动力
+        if self._frost_frozen(resolved):
+            return 0
         base = char.get_attr('MOV', None)
         if base is None:
             base = char.get_attr('行动力', 8)
@@ -5539,7 +5678,7 @@ class CombatEngine:
             char = self.get_char(self._resolve_uid(uid))
             if getattr(char, '_y14_dash_round', None) == (self._get_state() or {}).get('round', 1):
                 char._y14_dash_distance = getattr(char, '_y14_dash_distance', 0) + consumed
-                if char._y14_dash_distance >= 8:
+                if char._y14_dash_distance >= self._passive_rules(uid, 'cartridge')['dash_distance']:
                     self._y14_event(uid, 'dash')
         return consumed
 
@@ -6044,7 +6183,7 @@ class CombatEngine:
         if self._y17_disabled(uid):
             return False
         resolved = self._resolve_uid(uid)
-        if self._has_status(resolved, '禁锢') or self._has_status(resolved, '击晕'):
+        if self._frost_frozen(resolved) or self._has_status(resolved, '禁锢') or self._has_status(resolved, '击晕'):
             return False
         return True
 
@@ -6197,7 +6336,7 @@ class CombatEngine:
         membership depends on the current position, which changes without
         going through `_set_effects`.
         """
-        physical = self._get_physical_buffs(uid)
+        physical = self._get_physical_buffs(uid) + self._frost_views(uid)
         spirit = self._battle_spirit_character_views(uid)
         if spirit:
             physical = physical + spirit
@@ -6366,6 +6505,11 @@ class CombatEngine:
             if b.get('auxCode') == 1:  # 受到伤害百分比
                 try: net_pct += int(b.get('auxVal', '0'))
                 except: pass
+        for effect in self._get_effects():
+            if (effect.get('type') == 'frost'
+                    and effect.get('targetUserId') == self._resolve_uid(defender_uid)
+                    and effect.get('sourceTeam') == self._battle_team_of(attacker_uid)):
+                net_pct += self._passive_rules(effect['sourceUserId'], 'frost')['vulnerability_pct'] * self._frost_components(effect)[0]
         return max(0.01, 1.0 + net_pct / 100.0)
 
     def _get_buff_heal_pct(self, uid, heal_type='hp'):
@@ -6645,7 +6789,7 @@ class CombatEngine:
                           '战意初始层数','战意削弱概率','战意削弱概率奖励层',
                           '战意奖励骰阈值','战意惩罚1阈值','战意惩罚2阈值','战意惩罚骰上限',
                           '战意影响主体','战意主体初始层数','战意主体削弱概率','战意主体减伤阈值','战意主体减伤百分比','战意主体沉默阈值',
-                          '领域立即结算','领域轮首结算次数','领域急救','领域同时上限',
+                          '领域立即结算','领域轮首结算次数','领域急救','领域同时上限','冰冻每轮层数',
                           '死亡轮窗口','复活回复比例','复活主体',
                           '分发自留','分发队友每人','分发给总数上限',
                           '幻造','once_per_transform','persist_through_battle',
@@ -8643,6 +8787,7 @@ class CombatEngine:
                 'on_enter_attr_debuff':eff.get('on_enter_attr_debuff',''),
                 'on_enter_trigger_rate':eff.get('on_enter_trigger_rate',1.0),
                 'sourceBound': int(bool(eff.get('来源存活绑定'))),
+                'frostStacks': int(eff.get('冰冻每轮层数', 0)),
                 'dyingFirstAid': int(bool(eff.get('领域急救'))),
                 'roundPulsesRemaining': int(eff.get('领域轮首结算次数') or dur),
                 'healedTargets': {'hp': {}, 'mp': {}},
@@ -8831,7 +8976,7 @@ class CombatEngine:
         # AUX 30: 月相的庇佑 — 免疫一次伤害
         if self._consume_immunity(target_id):
             out += f'  月相的庇佑：免疫本次伤害！\n'
-            return out
+            return out + self._frost_on_hit(caster_id, target_id, spell_name)
         # Y17 is interrupted only by actual HP loss in _set_combat_hp.
         if not self._is_y17(target_id):
             for m in self._check_chant_interrupt(target_id):
@@ -8869,17 +9014,8 @@ class CombatEngine:
         for e in self._get_effects():
             if e.get('type') == 'damageModifier' and e.get('targetUserId') == target_id \
                and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
-                def_char = self.get_char(target_id)
-                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
-                if cur_mp >= 1:
-                    def_char.set_attr('魔力', cur_mp - 1)
-                    if dmg_val <= 3:
-                        dmg_val = 0
-                    elif dmg_val < 7:
-                        dmg_val = 3
-                    else:
-                        dmg_val = int(dmg_val * 0.6)
-                    out += f'  火鼠裘减免：最终伤害 {dmg_val}\n'
+                dmg_val = self._cloak_damage(target_id, dmg_val)
+                out += f'  火鼠裘减免：最终伤害 {dmg_val}\n'
                 break
         eff_dmg, absorbed, _ = self._absorb_damage_with_shield(target_id, dmg_val)
         old_target_hp = self._hp_safe(target_id, 0)
@@ -8988,6 +9124,8 @@ class CombatEngine:
                     self._add_blood(caster_id, bph)
                     out += f'  汲取血液 +{bph}ml\n'
 
+        out += self._frost_on_hit(caster_id, target_id, spell_name)
+
         # DOT: store recurring damage effect
         if dur > 0 or dot_dice:
             effects = self._get_effects()
@@ -9052,7 +9190,8 @@ class CombatEngine:
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
             phase_index = eff.get('_blood_moon')
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            moon_phases = self._y17_rules(caster_id)['moon_phases']
+            phase_name, phase_dice, phase_drain = moon_phases[phase_index - 1 if phase_index else random.randint(0, len(moon_phases) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)
@@ -9481,12 +9620,272 @@ class CombatEngine:
         self._set_initiative(il)
         return msgs
 
+    # ---- Snow / frost: JSON-safe, source-owned state shared by both engines ----
+    def _frost_owner(self, uid):
+        uid = self._resolve_uid(uid)
+        entry = self._unit_il_entry(uid, self._get_initiative()) or {}
+        if entry.get('isSummon'):
+            template = self._get_summon_template(entry.get('name', '')) or {}
+            if not template.get('frost_summon'):
+                return None
+            uid = self._resolve_uid(entry.get('ownerId', ''))
+        return uid if uid and self.get_char(uid).get_attr('冰冻命中层数', 0) else None
+
+    def _frost_components(self, effect):
+        """Return vulnerability count, DOT/skill count and slow count.
+
+        Cleanup flags survive downward crossings until stacks reach zero.
+        Cycle identities are absolute eight-stack intervals, not hit counts.
+        """
+        n = effect.get('stacks', 0)
+        if n <= 0:
+            return 0, 0, 0
+        stacking = self.get_char(effect['sourceUserId']).get_attr('冰冻跨循环叠加', 0)
+        cleared = set(effect.get('cleared', []))
+        vuln = dots = slows = 0
+        for cycle in range((n - 1) // 8 + 1):
+            phase = min(8, n - cycle * 8)
+            if cycle not in cleared:
+                vuln += int(phase >= 1) + int(phase >= 5)
+            dots += int(phase >= 2) + int(phase >= 7 and cycle not in cleared)
+            slows += int(phase >= 3)
+        if not stacking:
+            # Only the current cycle's extra seventh-layer penalty stacks
+            # with the single retained second-layer baseline.
+            cycle = (n - 1) // 8
+            phase = (n - 1) % 8 + 1
+            dots = int(n >= 2) + int(phase >= 7 and cycle not in cleared)
+            slows = int(n >= 3)
+        return vuln, dots, slows
+
+    def _frost_views(self, uid):
+        uid = self._resolve_uid(uid)
+        views = []
+        for effect in self._get_effects():
+            if effect.get('type') != 'frost' or effect.get('targetUserId') != uid:
+                continue
+            _, dots, slows = self._frost_components(effect)
+            rules = self._passive_rules(effect['sourceUserId'], 'frost')
+            common = dict(type='debuff', targetUserId=uid, sourceUserId=effect['sourceUserId'],
+                          spellName=f'冰冻值 {effect["stacks"]}层', remainingRounds=0, frostStacks=effect['stacks'])
+            views.append(dict(common))
+            if dots:
+                views.append(dict(common, auxCode=15, auxVal=str(-rules['skill_penalty'] * dots)))
+            if slows:
+                views.append(dict(common, auxCode=3, auxVal=str(-rules['dodge_penalty'] * slows), skillMod=f"MOV{-rules['move_penalty'] * slows:+d}"))
+        return views
+
+    def _frost_frozen(self, uid):
+        uid = self._resolve_uid(uid)
+        rnd = int((self._get_state() or {}).get('round', 1))
+        return any(e.get('type') == 'frostBurst' and e.get('targetUserId') == uid
+                   and e.get('dueRound') == rnd for e in self._get_effects())
+
+    def _frost_heal(self, owner, dice):
+        if self._hp_safe(owner, 0) <= 0:
+            return 0
+        old = self._hp_safe(owner, 0)
+        amount = int(roll_dice(dice) * self._get_buff_heal_pct(owner, 'hp'))
+        maximum = self.get_char(owner).get_attr('体力上限', old)
+        self._set_combat_hp(owner, min(maximum, old + amount))
+        self._charge_heal_overflow(owner, max(0, old + amount - maximum))
+        return max(0, self._hp_safe(owner, 0) - old)
+
+    def _add_frost(self, source, target, amount=1):
+        owner = self._frost_owner(source)
+        target = self._resolve_uid(target)
+        if not owner or self._hp_safe(target, 0) <= 0 or self._battle_team_of(owner) == self._battle_team_of(target):
+            return ''
+        old_max = self._calc_main_actions(target, include_zone=False)
+        effects = self._get_effects()
+        effect = next((e for e in effects if e.get('type') == 'frost'
+                       and e.get('sourceUserId') == owner and e.get('targetUserId') == target), None)
+        if effect is None:
+            effect = dict(type='frost', sourceUserId=owner, sourceTeam=self._battle_team_of(owner),
+                          targetUserId=target, stacks=0, triggered=[], cleared=[],
+                          remainingRounds=999999, spellName='冰冻值')
+            effects.append(effect)
+        rnd = int((self._get_state() or {}).get('round', 1))
+        messages = []
+        heal_phase = int(self.get_char(owner).get_attr('冰冻即时回复层数', 6))
+        if not 1 <= heal_phase <= 8:
+            heal_phase = 6
+        for _ in range(max(0, int(amount))):
+            effect['stacks'] += 1
+            n = effect['stacks']; cycle, phase = divmod(n - 1, 8); phase += 1
+            token = f'{cycle}:{phase}'
+            if phase not in (4, 6, 8, heal_phase) or token in effect['triggered']:
+                continue
+            effect['triggered'].append(token)
+            if phase in (4, 8):
+                effects.append(dict(type='frostBurst', sourceUserId=owner, targetUserId=target,
+                                    dueRound=rnd + 1, remainingRounds=999999, spellName='冰冻爆发'))
+                messages.append(f"冰冻爆发：下一轮MOV=0，并受到{self._passive_rules(owner, 'frost')['burst']}不可闪避伤害")
+            if phase == 8:
+                effect['cleared'].append(cycle)
+                messages.append('冰冻第8层：退还本循环第1、5、7层减益')
+            if phase == heal_phase:
+                # Publish state before HP callbacks can add/remove effects.
+                self._set_effects(effects)
+                healed = self._frost_heal(owner, self._passive_rules(owner, 'frost')['instant_heal'])
+                effects = self._get_effects()
+                messages.append(f'冰冻第{heal_phase}层：雪人回复{healed} HP')
+            if phase == 6:
+                regen = next((e for e in effects if e.get('type') == 'frostRegen'
+                              and e.get('sourceUserId') == owner), None)
+                stacking = self.get_char(owner).get_attr('冰冻跨循环叠加', 0)
+                if regen is None:
+                    regen = dict(type='frostRegen', sourceUserId=owner, targetUserId=owner,
+                                 activations=[], remainingRounds=999999, spellName='冰冻回复')
+                    effects.append(regen)
+                if stacking or not regen['activations']:
+                    regen['activations'].append(rnd + 1)
+                messages.append('冰冻第6层：下一轮起持续回复')
+        self._set_effects(effects)
+        new_max = self._calc_main_actions(target, include_zone=False)
+        if new_max != old_max:
+            self._sync_actions_from_mov(target, old_max=old_max, new_max=new_max)
+        messages.insert(0, f'{self.get_char(target).name} 冰冻值→{effect["stacks"]}层')
+        return '\n'.join(messages) + '\n'
+
+    def _frost_on_hit(self, source, target, spell_name=None):
+        if spell_name is not None and spell_name != '发送雪球':
+            return ''
+        owner = self._frost_owner(source)
+        if not owner:
+            return ''
+        layers = self.get_char(owner).get_attr('冰冻命中层数', 1)
+        if spell_name == '发送雪球':
+            # Per-caster override: the owner's two projectiles each add one;
+            # summons retain their existing hit stacks unless configured too.
+            layers = self.get_char(self._resolve_uid(source)).get_attr('冰冻雪球命中层数', layers)
+        return self._add_frost(source, target, layers)
+
+    def _frost_round_start(self):
+        rnd = int((self._get_state() or {}).get('round', 1))
+        marker = f'frost_round_{self.group_id}'
+        if self.get_json(marker) == rnd:
+            return ''
+        self.set_json(marker, rnd)
+        effects = self._get_effects()
+        if not any(e.get('type') in ('frost', 'frostBurst', 'frostRegen') or e.get('frostStacks') for e in effects):
+            return ''
+        messages = []
+        kept = []
+        for effect in effects:
+            if effect.get('type') == 'frost':
+                effect['stacks'] = max(0, effect['stacks'] - self._passive_rules(effect['sourceUserId'], 'frost')['decay'])
+                messages.append(f'{self.get_char(effect["targetUserId"]).name} 冰冻值衰减→{effect["stacks"]}层')
+                if effect['stacks'] == 0 or self._hp_safe(effect['targetUserId'], 0) <= 0:
+                    continue
+            if effect.get('type') == 'frostBurst' and effect['dueRound'] < rnd:
+                continue
+            kept.append(effect)
+        self._set_effects(kept)
+        # Settle before ordinary zone duration decrement: a six-round field
+        # supplies exactly six pulses, with no pulse on its creation action.
+        for zone in list(kept):
+            if zone.get('type') != 'zone' or not zone.get('frostStacks') or zone.get('remainingRounds', 0) <= 0:
+                continue
+            if zone.get('creationRound', 0) >= rnd:
+                continue
+            for entry in self._battle_unit_entries():
+                uid = entry['userId']
+                if self._zone_covers_uid(zone, uid):
+                    text = self._add_frost(zone['sourceUserId'], uid, zone['frostStacks'])
+                    if text:
+                        messages.extend(text.rstrip().splitlines())
+        for effect in list(self._get_effects()):
+            kind = effect.get('type')
+            uid = effect.get('targetUserId')
+            if kind == 'frost':
+                _, dots, _ = self._frost_components(effect)
+                for _ in range(dots):
+                    messages.extend(self._frost_tick_damage(effect, self._passive_rules(effect['sourceUserId'], 'frost')['dot']))
+            elif kind == 'frostBurst' and effect['dueRound'] == rnd and not effect.get('dealt'):
+                effect['dealt'] = True
+                messages.extend(self._frost_tick_damage(effect, self._passive_rules(effect['sourceUserId'], 'frost')['burst']))
+        for effect in list(self._get_effects()):
+            if effect.get('type') != 'frostRegen':
+                continue
+            owner = effect['sourceUserId']
+            if self._hp_safe(owner, 0) <= 0:
+                continue
+            for start in effect['activations']:
+                if start <= rnd:
+                    hp = self._frost_heal(owner, self._passive_rules(owner, 'frost')['regen_hp'])
+                    mp = self._restore_resource(owner, int(roll_dice(self._passive_rules(owner, 'frost')['regen_mp']) * self._get_buff_heal_pct(owner, 'mp')))
+                    messages.append(f'冰冻回复：{self.get_char(owner).name} HP+{hp} MP+{mp}')
+        self._set_effects(self._get_effects())
+        return '\n'.join(messages)
+
+    def _frost_tick_damage(self, effect, dice):
+        uid = effect['targetUserId']
+        if self._hp_safe(uid, 0) <= 0:
+            return []
+        damage = roll_dice(dice)
+        damage = max(0, int(damage * self._get_buff_dmg_mult(effect['sourceUserId'], uid)) + self._get_buff_dmg_flat(uid))
+        if self._consume_immunity(uid):
+            damage = 0
+        remaining, _, rows = self._absorb_damage_with_shield(uid, damage)
+        self._set_combat_hp(uid, self._hp_safe(uid, 0) - remaining,
+                            source_dmg=remaining, damage_source=effect['sourceUserId'])
+        return list(rows) + [f'{effect["spellName"]}→{self.get_char(uid).name} {dice}，伤害{remaining}']
+
+    def _snow_summon_template(self, uid):
+        entry = self._unit_il_entry(uid, self._get_initiative()) or {}
+        template = (self._get_summon_template(entry.get('name', '')) or {}) if entry.get('isSummon') else {}
+        return template if template.get('frost_summon') else None
+
+    def _in_range_of(self, uid, target, radius):
+        il = self._get_initiative()
+        a = self._unit_il_entry(uid, il) or {}
+        b = self._unit_il_entry(target, il) or {}
+        return chebyshev_dist(a.get('coord', ''), b.get('coord', '')) <= radius
+
+    def _snow_summon_action(self, uid):
+        entry = self._get_summon_entry(uid)
+        template = self._snow_summon_template(uid)
+        if not entry or not template or not self._can_cast_active_skill(uid):
+            return []
+        enemies = self._enemy_target_entries(uid)
+        if not enemies:
+            return ['无可用目标']
+        zone = template['frost_zone']; ball = template['frost_ball']
+        mp = entry.get('summon_mp', 0)
+        distance = lambda e: chebyshev_dist(entry.get('coord', ''), e.get('coord', ''))
+        active_zone = any(e.get('type') == 'zone' and e.get('sourceUserId') == uid
+                          and e.get('frostStacks') and e.get('remainingRounds', 0) > 0 for e in self._get_effects())
+        if mp >= zone['mp_cost'] and not active_zone and any(distance(e) <= zone['radius'] for e in enemies):
+            self._set_summon_entry_fields(uid, summon_mp=mp - zone['mp_cost'])
+            eff = {'type': 8, '客体': 45, '作用半径': zone['radius'], '持续回合': zone['duration'],
+                   '冰冻每轮层数': zone['stacks'], '领域同时上限': 1}
+            return [self._execute_misc_effect(uid, uid, eff, {'name': '制造雪带', 'index': -1}, False)]
+        target = min(enemies, key=distance)['userId']
+        if mp >= ball['mp_cost']:
+            self._move_to_attack_range(uid, target, ball['range'])
+            if not self._in_range_of(uid, target, ball['range']):
+                return ['小雪人移动接近目标']
+            self._set_summon_entry_fields(uid, summon_mp=mp - ball['mp_cost'])
+            eff = {'type': 1, '伤害骰': ball['dice'], '成功率': ball['success'], '可闪避性': 1,
+                   '可反击性': 0, '射程': ball['range'], '客体': 4}
+            return [self._handle_spell_damage_effect(uid, target, eff, {'name': '发送雪球', 'index': -1})]
+        self._move_to_attack_range(uid, target, 1)
+        if not self._in_range_of(uid, target, 1):
+            return ['小雪人移动接近目标']
+        if hasattr(self, '_fast_coc7_attack'):
+            result = self._fast_coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)
+            return [result[-1]]
+        return self._coc7_attack(uid, target, '斗殴', 45, '1d4', 0, 0)[-1]
+
     # ---- Tick-down (unified) ----
     def _tick_down(self):
         previous = getattr(self, '_settling_round', False)
         self._settling_round = True
         try:
-            return self._tick_down_effects()
+            frost_text = self._frost_round_start()
+            text = self._tick_down_effects()
+            return '\n'.join(x for x in (frost_text, text) if x)
         finally:
             self._settling_round = previous
 
@@ -9551,6 +9950,9 @@ class CombatEngine:
                     eff['remainingRounds'] = -1
 
         for eff in effects:
+            if eff.get('type') in ('frost', 'frostBurst', 'frostRegen'):
+                new_effects.append(eff)
+                continue
             # Craft countdown
             if eff.get('type')=='create' and eff.get('craftRoundsRemaining',0) > 0:
                 eff['craftRoundsRemaining'] -= 1
@@ -10149,6 +10551,7 @@ class FullBattleEngine(CombatEngine):
         self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"battle_{random.randint(1000,9999)}"
+        self.set_json(f"frost_round_{self.group_id}", None)
         # ── 新战斗重置召唤账本 / 分组 / unique 记录（必须在被动施放之前）──
         self._summon_groups = {}
         self._summon_members = {}
@@ -10341,12 +10744,8 @@ class FullBattleEngine(CombatEngine):
                 bp_str_hz = _calc_net_bp(atk_buffs_hz, '', '写作')
                 roll, bp_detail = roll_d100(bp_str_hz)
                 w_rank = success_rank(roll, self._apply_buff_skill_mod(w_uid, writing_val, '写作'))
-                if w_rank >= 4:      phantom_val = roll_dice('2d6');  w_label = '大成功'
-                elif w_rank == 3:    phantom_val = 6 + roll_dice('1d6'); w_label = '极难成功'
-                elif w_rank == 2:    phantom_val = roll_dice('1d6');  w_label = '困难成功'
-                elif w_rank == 1:    phantom_val = roll_dice('1d3');  w_label = '成功'
-                elif w_rank == -2:   phantom_val = -roll_dice('1d2'); w_label = '大失败'
-                else:                phantom_val = 0;                  w_label = '失败'
+                phantom_val = self._phantom_rank_bonus(w_uid, w_rank)
+                w_label = rank_text(w_rank)
                 bp_note = f', {bp_detail}' if bp_detail else ''
                 if phantom_val != 0:
                     sign = '+' if phantom_val > 0 else ''
@@ -10557,6 +10956,9 @@ class FullBattleEngine(CombatEngine):
                         lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
                     else:
                         lines.append(f"  仅 {aname} 的攻击命中。")
+                    frost_text = self._frost_on_hit(atk_uid, def_uid)
+                    if frost_text:
+                        lines.extend(frost_text.rstrip().splitlines())
                     return (atk_uid, def_uid, lines)
                 else:
                     lines.append("  无人得手！")
@@ -10610,6 +11012,8 @@ class FullBattleEngine(CombatEngine):
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点 (剩余护盾HP: {rt_block_hp - absorbed})")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                    if atk_rank > 0:
+                        lines.extend(self._frost_on_hit(atk_uid, _block_redirect).rstrip().splitlines())
                     if blk_eff > 0:
                         lines.append(f"  {rt_name} 承担穿透伤害: {blk_eff}点, HP: {cur_hp}")
                     else:
@@ -10626,6 +11030,8 @@ class FullBattleEngine(CombatEngine):
                 # 溢出伤害扣HP（不触发致死骰）
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                if atk_rank > 0:
+                    lines.extend(self._frost_on_hit(atk_uid, def_uid).rstrip().splitlines())
                 if blk_eff > 0:
                     lines.append(f"  穿透伤害: {blk_detail} → {blk_eff}点")
                 else:
@@ -10673,17 +11079,8 @@ class FullBattleEngine(CombatEngine):
         for e in self._get_effects():
             if e.get('type') == 'damageModifier' and e.get('targetUserId') == loser_uid \
                and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
-                def_char = self.get_char(loser_uid)
-                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
-                if cur_mp >= 1:
-                    def_char.set_attr('魔力', cur_mp - 1)
-                    if dmg_val <= 3:
-                        dmg_val = 0
-                    elif dmg_val < 7:
-                        dmg_val = 3
-                    else:
-                        dmg_val = int(dmg_val * 0.6)
-                    lines.append(f'  火鼠裘减免：最终伤害 {dmg_val}')
+                dmg_val = self._cloak_damage(loser_uid, dmg_val)
+                lines.append(f'  火鼠裘减免：最终伤害 {dmg_val}')
                 break
         sr = self._absorb_damage_with_shield(loser_uid, dmg_val); eff_dmg = sr[0]
         if sr[1] > 0: lines.append(f"  护盾吸收: {sr[1]}点")
@@ -10716,6 +11113,10 @@ class FullBattleEngine(CombatEngine):
         for m in ci_msgs_ba: lines.append(f"  {m}")
         self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg,
                             damage_source=winner_uid, is_counter=is_counter)
+        if not is_counter:
+            frost_text = self._frost_on_hit(winner_uid, loser_uid)
+            if frost_text:
+                lines.extend(frost_text.rstrip().splitlines())
         lines.append(f"  {loser_name} HP: {max(0, cur_hp)}")
         # Cleanup: if a non-summon character died, remove their summons immediately
         if cur_hp <= 0:
@@ -10764,7 +11165,8 @@ class FullBattleEngine(CombatEngine):
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
             phase_index = eff.get('_blood_moon')
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            moon_phases = self._y17_rules(caster_id)['moon_phases']
+            phase_name, phase_dice, phase_drain = moon_phases[phase_index - 1 if phase_index else random.randint(0, len(moon_phases) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)
@@ -11650,6 +12052,8 @@ class FullBattleEngine(CombatEngine):
         return view
 
     def _summon_attack(self, summon_id):
+        if self._snow_summon_template(summon_id):
+            return self._snow_summon_action(summon_id)
         entry = self._get_summon_entry(summon_id)
         if not entry: return ["未找到召唤物"]
         sname = entry.get("displayName", entry.get("name", summon_id))
@@ -12008,6 +12412,7 @@ class FastBattleEngine(FullBattleEngine):
         self._ai_failed_commands = set()
         w, h = map(int, map_size.split("x"))
         self.group_id = f"fast_{random.randint(10000,99999)}"
+        self.set_json(f"frost_round_{self.group_id}", None)
         # ── 新战斗重置召唤账本 / 分组 / unique 记录 ──
         self._summon_groups = {}
         self._summon_members = {}
@@ -12609,12 +13014,7 @@ class FastBattleEngine(FullBattleEngine):
                     bp_str_hz2 = _calc_net_bp(atk_buffs_hz2, '', '写作')
                     roll2, _ = roll_d100(bp_str_hz2)
                     w_rank2 = success_rank(roll2, self._apply_buff_skill_mod(atk_uid, writing_val2, '写作'))
-                    if w_rank2 >= 4:      phantom_val2 = roll_dice('2d6')
-                    elif w_rank2 == 3:    phantom_val2 = 6 + roll_dice('1d6')
-                    elif w_rank2 == 2:    phantom_val2 = roll_dice('1d6')
-                    elif w_rank2 == 1:    phantom_val2 = roll_dice('1d3')
-                    elif w_rank2 == -2:   phantom_val2 = -roll_dice('1d2')
-                    else:                 phantom_val2 = 0
+                    phantom_val2 = self._phantom_rank_bonus(atk_uid, w_rank2)
                     if phantom_val2 != 0:
                         sign2 = '+' if phantom_val2 > 0 else ''
                         dmg_dice = f"{dmg_dice}{sign2}{phantom_val2}"
@@ -12732,6 +13132,8 @@ class FastBattleEngine(FullBattleEngine):
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff)
                     self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                    if atk_rank > 0:
+                        self._frost_on_hit(atk_uid, _block_redirect)
                     return (def_uid, atk_uid, blk_eff, f"block redirect to {rt_entry.get('name','?')} dmg:{blk_eff}")
                 # ── 标准逻辑 ──
                 if blk_eff > 0 and block_hp > 0:
@@ -12742,6 +13144,8 @@ class FastBattleEngine(FullBattleEngine):
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff)
                 self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                if atk_rank > 0:
+                    self._frost_on_hit(atk_uid, def_uid)
                 return (def_uid, atk_uid, blk_eff, f"block success dmg:{blk_eff}")
             else:
                 # 格挡失败：攻击突破盾牌
@@ -12774,16 +13178,7 @@ class FastBattleEngine(FullBattleEngine):
         for e in self._get_effects():
             if e.get('type') == 'damageModifier' and e.get('targetUserId') == loser_uid \
                and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
-                def_char = self.get_char(loser_uid)
-                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
-                if cur_mp >= 1:
-                    def_char.set_attr('魔力', cur_mp - 1)
-                    if dmg_val <= 3:
-                        dmg_val = 0
-                    elif dmg_val < 7:
-                        dmg_val = 3
-                    else:
-                        dmg_val = int(dmg_val * 0.6)
+                dmg_val = self._cloak_damage(loser_uid, dmg_val)
                 break
         eff_dmg, _, _ = self._absorb_damage_with_shield(loser_uid, dmg_val)
         cur_hp = self._get_combat_hp(loser_uid) or 10
@@ -12809,6 +13204,8 @@ class FastBattleEngine(FullBattleEngine):
         self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg,
                             damage_source=winner_uid, is_counter=is_counter)
 
+        if not is_counter:
+            self._frost_on_hit(winner_uid, loser_uid)
         react_tag = react_choice
         return (winner_uid, loser_uid, eff_dmg, f"rank:{winner_rank} react:{react_tag} dmg:{eff_dmg}")
 
@@ -12859,16 +13256,7 @@ class FastBattleEngine(FullBattleEngine):
         for e in self._get_effects():
             if e.get('type') == 'damageModifier' and e.get('targetUserId') == tid \
                and e.get('variant') == 'fire_rat_cloak' and e.get('remainingRounds', 0) > 0:
-                def_char = self.get_char(tid)
-                cur_mp = def_char.get_attr('魔力', 0) if def_char else 0
-                if cur_mp >= 1:
-                    def_char.set_attr('魔力', cur_mp - 1)
-                    if dmg_val <= 3:
-                        dmg_val = 0
-                    elif dmg_val < 7:
-                        dmg_val = 3
-                    else:
-                        dmg_val = int(dmg_val * 0.6)
+                dmg_val = self._cloak_damage(tid, dmg_val)
                 break
         eff_dmg, _, _ = self._absorb_damage_with_shield(tid, dmg_val)
         eff_dmg = self._apply_shield_block(tid, eff_dmg)
@@ -13650,6 +14038,21 @@ def get_available_actions(engine, uid):
                         continue
                 if engine._revive_preflight(uid, sp):
                     continue
+                snow_zone = char.serial == 'Y6' and any(e.get('冰冻每轮层数') for e in sp.get('effects', []))
+                if snow_zone:
+                    entry = engine._unit_il_entry(uid, il)
+                    eff = next(e for e in sp['effects'] if e.get('冰冻每轮层数'))
+                    proposed = dict(type='zone', sourceUserId=uid,
+                                    center=(entry or {}).get('coord', ''),
+                                    radius=eff.get('作用半径', 0), filter=eff.get('客体', 45))
+                    nearby = [e for e in engine._enemy_target_entries(uid)
+                              if engine._zone_covers_uid(proposed, e['userId'], il)]
+                    own_zones = [e for e in effects if e.get('type') == 'zone'
+                                 and e.get('frostStacks') and e.get('remainingRounds', 0) > 0
+                                 and engine._frost_owner(e.get('sourceUserId')) == engine._resolve_uid(uid)]
+                    if not nearby or all(any(engine._zone_covers_uid(z, e['userId'], il)
+                                             for z in own_zones) for e in nearby):
+                        continue
                 # MP check (including formula-based costs)
                 mp_cost = sp.get('消耗mp', 0)
                 mp_formula = sp.get('_mp_formula', '')
@@ -13664,7 +14067,10 @@ def get_available_actions(engine, uid):
                     continue
                 # Same-name effect still active
                 if sp['name'] in active_spell_names:
-                    if engine._is_y17(uid):
+                    if snow_zone:
+                        if any(e.get('sourceUserId') == uid for e in own_zones):
+                            continue
+                    elif engine._is_y17(uid):
                         if engine._y17_spell_kind(uid, sp) != 'blade' and not (engine._y17_chant(uid) and engine._y17_chant(uid)['spellIndex'] == idx):
                             continue
                     elif engine._is_y16(uid):
@@ -13951,6 +14357,8 @@ def get_summon_actions(engine, uid):
     """Get available actions for a summon entity. Returns list of (action_key, description)."""
     entry = engine._unit_il_entry(uid, engine._get_initiative())
     if not entry: return []
+    if engine._snow_summon_template(uid):
+        return [('SUMMON_SNOW', '小雪人：雪带／雪球')]
     skills = entry.get('skills', [])
     if not skills: return []
 
@@ -13968,6 +14376,8 @@ def get_summon_actions(engine, uid):
 
 def execute_summon_action(engine, uid, action_key):
     """Execute a summon action. Returns list of detail lines for display."""
+    if engine._snow_summon_template(uid):
+        return engine._snow_summon_action(uid)
     init_list = engine._get_initiative()
     entry = engine._unit_il_entry(uid, init_list)
     if not entry: return []
@@ -17675,6 +18085,10 @@ def _load_spells_from_chdata(engine, uid: str, ch_data: dict):
     in characters_data_pvp.py."""
     char = engine.get_char(uid)
 
+    if ch_data.get('serial') == 'Y6':
+        for field in ('冰冻命中层数', '冰冻跨循环叠加'):
+            char.set_attr(field, ch_data.get('attrs', {}).get(field, 0))
+
     if ch_data.get('serial') == 'Y17':
         # Keep extended blood fields identical to canonical loading while
         # preserving the player's actual COC attributes supplied by JS.
@@ -18221,6 +18635,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                 lines.append(f"  {aname} HP: {dchp}")
 
                 lines.append(f"  双方同时命中! ({rank_text(eff_atk)} vs {rank_text(eff_react)})")
+                lines.extend(self._frost_on_hit(atk_uid, def_uid).rstrip().splitlines())
                 return (atk_uid, def_uid, lines)
             else:
                 lines.append("  无人得手！")
@@ -18264,6 +18679,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                         lines.append(f"  {rt_name} 盾牌吸收: {absorbed}点")
                     cur_hp = self._get_combat_hp(_block_redirect) or 10
                     cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(_block_redirect, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                    if atk_rank > 0:
+                        lines.extend(self._frost_on_hit(atk_uid, _block_redirect).rstrip().splitlines())
                     lines.append(f"  {rt_name} HP: {cur_hp}")
                     lines.append(f"  {dname} HP: {self._get_combat_hp(def_uid)}")
                     return (def_uid, atk_uid, lines)
@@ -18275,6 +18692,8 @@ class PvPFullBattleEngine(FullBattleEngine):
                     lines.append(f"  盾牌吸收: {absorbed}点")
                 cur_hp = self._get_combat_hp(def_uid) or 10
                 cur_hp = max(0, cur_hp - blk_eff); self._set_combat_hp(def_uid, cur_hp, source_dmg=blk_eff, damage_source=atk_uid)
+                if atk_rank > 0:
+                    lines.extend(self._frost_on_hit(atk_uid, def_uid).rstrip().splitlines())
                 lines.append(f"  {dname} HP: {cur_hp}")
                 return (def_uid, atk_uid, lines)
             else:
@@ -18344,6 +18763,8 @@ class PvPFullBattleEngine(FullBattleEngine):
             cur_hp = max(0, cur_hp - eff_dmg)
         lines.append(f"  伤害: {dmg_detail} → {eff_dmg}点")
         self._set_combat_hp(loser_uid, cur_hp, source_dmg=eff_dmg, damage_source=winner_uid, is_counter=is_counter)
+        if not is_counter:
+            lines.extend(self._frost_on_hit(winner_uid, loser_uid).rstrip().splitlines())
         lines.append(f"  {loser_name} HP: {cur_hp}")
         return (winner_uid, loser_uid, lines)
 
