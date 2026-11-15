@@ -1,0 +1,16 @@
+{
+  "target_met": true,
+  "unchanged_control_games": 1700,
+  "all_attributes_unchanged": true,
+  "unselected_definitions_unchanged": true,
+  "summon_templates_unchanged": true,
+  "ai_weights_unchanged": true,
+  "accepted_source_matches_workspace": true,
+  "fingerprints": {
+    "characters_data.py": "e4e039fd33cccb8790cbdce916d699800c9866e4ef04f07fb0a90a90fabf582b",
+    "battle_engine.py": "b14162d7e3cb3700d4e7699cbb08d4024506575c6b399dad02008d86d608d766",
+    "ai_battle.py": "9d1b4755fe4db33a18ebb2d17db3e707c3a13d5750c0c4d3281be5927534ce90",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c"
+  }
+}

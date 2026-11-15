@@ -336,8 +336,8 @@ class Y17BattleStateTests(unittest.TestCase):
             engine._execute_spell('blood', 'blood', guard)
             for _ in range(2):
                 hp = engine._hp_safe('blood')
-                engine._apply_spell_damage('enemy', 'blood', '5', 0, 0)
-                self.assertEqual(engine._hp_safe('blood'), hp - 2)
+                engine._apply_spell_damage('enemy', 'blood', '9', 0, 0)
+                self.assertEqual(engine._hp_safe('blood'), hp - 3)
             before = copy.deepcopy((engine.get_char('blood').attrs, engine.get_char('blood').str_attrs, engine._get_effects()))
             self.assertFalse(be.action_committed(engine._execute_spell('blood', 'blood', guard)))
             self.assertEqual((engine.get_char('blood').attrs, engine.get_char('blood').str_attrs, engine._get_effects()), before)
@@ -374,7 +374,8 @@ class Y17BattleStateTests(unittest.TestCase):
         engine = _setup(be.FullBattleEngine)
         engine._execute_spell('blood', 'enemy', _spell(engine, 4))
         _place(engine, {'A1': 'blood', 'N14': 'enemy'})
-        engine._execute_spell('blood', 'enemy', _spell(engine, 4))
+        with patch.object(engine, '_range_override_snapshot', 0, create=True):
+            engine._execute_spell('blood', 'enemy', _spell(engine, 4))
         self.assertIsNone(engine._is_dying('blood'))
         self.assertIsNone(engine._y17_chant('blood'))
 
@@ -520,6 +521,39 @@ class Y17BattleStateTests(unittest.TestCase):
         spell = dict(_spell(engine, 11), blood_kind='slash')
         engine._apply_spell_damage('blood', 'enemy', '100', 0, 0, spell=spell)
         self.assertEqual(json.loads(engine.get_char('blood').get_str('_blood_audit')).get('friendly_damage', 0), 0)
+
+    def test_explicit_moon_phase_selects_damage_or_actual_lifesteal(self):
+        for cls in (be.FullBattleEngine, be.FastBattleEngine):
+            engine = _setup(cls)
+            engine._execute_spell('blood', 'blood', _spell(engine, 5))
+            engine._set_combat_hp('blood', 40)
+            engine._set_combat_hp('enemy', 100)
+            spell = dict(_spell(engine, 11), _blood_options={'moon': 8})
+            spell['effects'] = copy.deepcopy(spell['effects'])
+            spell['effects'][0].update(可闪避性=0, 可反击性=0)
+            with patch.object(engine, '_roll_spell_success_bp', return_value=(20, '')):
+                result = engine._execute_spell('blood', 'enemy', spell)
+            self.assertIn('盈凸月', result)
+            self.assertEqual(engine._hp_safe('enemy'), 90)
+            self.assertEqual(engine._hp_safe('blood'), 50)
+
+    def test_charged_arcana_keeps_bonus_and_cannot_shorten_three_actions(self):
+        engine = _setup(be.FullBattleEngine)
+        max_hp = engine.get_char('blood').get_attr('体力上限')
+        engine._execute_spell('blood', 'enemy', _spell(engine, 2))
+        chant = engine._y17_chant('blood')
+        self.assertEqual(chant['remainingRounds'], 2)
+        self.assertEqual(chant['stored_spell']['effects'][0]['成功率奖惩骰'], 'b')
+        self.assertEqual(engine.get_char('blood').get_attr('体力上限'), max_hp)
+
+    def test_spell_preflight_respects_same_global_range_setting_as_execution(self):
+        engine = _setup(be.FullBattleEngine)
+        engine._execute_spell('blood', 'blood', _spell(engine, 5))
+        _place(engine, {'B7': 'blood', 'H7': 'enemy'})
+        with patch.object(engine, '_range_override_snapshot', 0, create=True):
+            self.assertTrue(engine._y17_preflight('blood', _spell(engine, 11)))
+        with patch.object(engine, '_range_override_snapshot', 1, create=True):
+            self.assertFalse(engine._y17_preflight('blood', _spell(engine, 11)))
 
 
 if __name__ == "__main__":

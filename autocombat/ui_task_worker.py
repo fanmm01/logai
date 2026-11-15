@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import logging
+import os
 import random
 import re
 import sys
@@ -11,10 +12,24 @@ from combat_settings import settings_scope, value as setting, season_statuses
 
 
 def main(params=None, wire=None):
+    os.environ['AUTOCOMBAT_NO_FILE_LOG'] = '1'
     params = params if params is not None else json.loads(sys.stdin.readline())
     wire = wire or sys.stdout
+    if hasattr(wire, 'reconfigure'):
+        wire.reconfigure(encoding='utf-8')
+
+    buffered_logs = []
+    last_log = [time.monotonic()]
+
+    def flush_logs():
+        if buffered_logs:
+            payload = json.dumps({'logs': buffered_logs}, ensure_ascii=False) if params.get('fast') else '\n'.join(json.dumps({'log': line}, ensure_ascii=False) for line in buffered_logs)
+            print(payload, file=wire, flush=True)
+            buffered_logs.clear()
+            last_log[0] = time.monotonic()
 
     def report(**row):
+        flush_logs()
         print(json.dumps(row, ensure_ascii=False), file=wire, flush=True)
 
     class Log(io.TextIOBase):
@@ -25,7 +40,9 @@ def main(params=None, wire=None):
             while '\n' in self.pending:
                 line, self.pending = self.pending.split('\n', 1)
                 if line.strip():
-                    report(log=line)
+                    buffered_logs.append(line)
+                    if len(buffered_logs) >= 128 or time.monotonic() - last_log[0] >= .1:
+                        flush_logs()
             return len(text)
 
         def flush(self):
@@ -36,6 +53,10 @@ def main(params=None, wire=None):
 
     with settings_scope(params.get('settings')), contextlib.redirect_stdout(Log()), contextlib.redirect_stderr(Log()):
         import ai_battle as ab
+        # --server reuses the imported logger, but each request has a new buffer.
+        for handler in ab.logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                handler.setStream(sys.stdout)
         ab._logging_override = logging.DEBUG if params.get('mode') == 'verbose' or params.get('verbose') else None
         if params.get('mode') == 'verbose' or params.get('verbose'):
             for handler in ab.logger.handlers:
@@ -100,11 +121,15 @@ def main(params=None, wire=None):
                     accumulate_prelim_rankings(totals, tournament._rankings_info)
                     report(completed=i+1, result={'rankings': compute_prelim_averages(totals, i+1)})
         else:
+            from sim import parallel_pairs
             a = b = rounds = timeouts = 0
             started = time.monotonic()
             char_season = season_statuses(t.char_map, season)
-            for i in range(params['n']):
-                wa, wb, avg, out, _ = run_battle_pair(t, params['team_a'], params['team_b'], params.get('map_size', setting('DEFAULT_MAP_SIZE')), 1, season_status=char_season)
+            for i, result in enumerate(parallel_pairs(t, params['team_a'], params['team_b'],
+                    params.get('map_size', setting('DEFAULT_MAP_SIZE')), params['n'], char_season,
+                    params.get('workers', min(8, __import__('os').cpu_count() or 1)), params['seed'])):
+                wa = int(result['winner'] == 'Y')
+                wb, avg, out = 1-wa, result.get('rounds', 0), bool(result.get('timeout'))
                 a += wa
                 b += wb
                 rounds += avg

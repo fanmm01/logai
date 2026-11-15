@@ -176,6 +176,26 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual([e['回复hp'] for e in self.module.ALL_CHARACTERS[0]['spells'][-1]['effects']], [42, 2, 3, 4, 5])
         self.assertEqual((self.root/'characters_data.py').read_text(encoding='utf-8').count(START), baseline_comments)
 
+    def test_disabled_whole_spells_round_trip_and_reenable(self):
+        data = self.client.get('/api/ui/data').get_json()
+        spells = data['characters'][0]['spells']
+        original = copy.deepcopy(spells)
+        for spell in spells:
+            spell['_disabled'] = True
+        response = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.module.ALL_CHARACTERS[0]['spells'], [])
+        source = (self.root/'characters_data.py').read_text(encoding='utf-8')
+        self.assertIn('# autocombat:disabled-spell', source)
+        saved = self.client.get('/api/ui/data').get_json()
+        self.assertEqual(saved['characters'][0]['spells'], spells)
+        # Re-enable one skill while preserving the others as complete comments.
+        saved['characters'][0]['spells'][0]['_disabled'] = False
+        self.assertEqual(self.client.post('/api/ui/data/save', json=saved).status_code, 200)
+        self.assertEqual(self.module.ALL_CHARACTERS[0]['spells'][0]['name'], original[0]['name'])
+        latest = self.client.get('/api/ui/data').get_json()['characters'][0]['spells']
+        self.assertEqual(latest[1:], spells[1:])
+
     def test_all_disabled_effects_are_empty_in_engine_and_excluded_from_training(self):
         import ai_trainer
         import characters_data

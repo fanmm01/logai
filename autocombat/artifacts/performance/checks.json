@@ -1,0 +1,6 @@
+{
+  "test_acceleration.py": 0,
+  "test_sim_prelim.py": 0,
+  "test_ui*.py": 1,
+  "test_settings.py": 0
+}

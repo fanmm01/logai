@@ -233,7 +233,8 @@ class Management:
                     fields[group].setdefault(key, value)
             for spell in char.get('spells', []):
                 for key, value in spell.items():
-                    fields['spell'].setdefault(key, value)
+                    if key != '_disabled':
+                        fields['spell'].setdefault(key, value)
                 for effect in spell.get('effects', []):
                     for key, value in effect.items():
                         if key != '_disabled':
@@ -358,9 +359,13 @@ class Management:
             serials.add(ch['serial'])
             if not isinstance(ch.get('attrs'), dict) or any(type(v) not in (int, float, bool) for v in ch['attrs'].values()):
                 raise BadRequest('数值属性必须为数字')
-            if len(ch.get('spells', [])) >= len(CN_NUMS):
+            if len([s for s in ch.get('spells', []) if not s.get('_disabled', False)]) >= len(CN_NUMS):
                 raise BadRequest(f'当前引擎最多支持 {len(CN_NUMS)-1} 个技能')
             for s in ch.get('spells', []):
+                if '_disabled' in s and type(s['_disabled']) is not bool:
+                    raise BadRequest('技能禁用状态必须为布尔值')
+                if s.get('_disabled', False):
+                    continue
                 effects = s.get('effects', [])
                 if not isinstance(effects, list) or any(not isinstance(e, dict) or ('_disabled' in e and type(e['_disabled']) is not bool) for e in effects):
                     raise BadRequest('技能效果必须为列表，禁用状态必须为布尔值')

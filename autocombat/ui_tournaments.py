@@ -172,7 +172,7 @@ class Tournaments:
                 random.shuffle(pool)
                 schedule = [dict(a=p[4], b=p[5], map_size=p[1], seed=random.randrange(2**31)) for p in pool]
                 with settings_scope(cfg):
-                    statuses = season_statuses(valid, season)
+                    statuses = season_statuses(sorted(valid), season)
             finally:
                 random.setstate(state)
             tid = secrets.token_hex(8)
@@ -194,6 +194,12 @@ class Tournaments:
             sid = self.c['session_id']()
             request_key = sid + ':' + rid
             if request_key in t['requests'] or (rid in t['requests'] and t.get('owner') == sid):
+                return jsonify(self.public(t))
+            if op == 'fast':
+                if type(data.get('fast')) is not bool:
+                    raise BadRequest('极速开关必须为布尔值')
+                t['fast'] = data['fast']
+                self.save(t)
                 return jsonify(self.public(t))
             if op == 'speed':
                 speed = data.get('speed')
@@ -254,6 +260,9 @@ class Tournaments:
             t = self.store.get('tournament', tid)
             selected = next((s for s in t['series'] if s['id'] == t.get('selected')), None)
             stage = selected['stage'] if selected else None
+            if t['phase'] == 'regular':
+                self.run_regular(tid)
+                return
             while True:
                 with self.lock:
                     t = self.store.get('tournament', tid)
@@ -298,9 +307,9 @@ class Tournaments:
         finally:
             with self.lock:
                 self.threads.discard(tid)
-                worker = self.workers.pop(tid, None)
-            if worker:
-                proc, err = worker
+                keys = [key for key in self.workers if key == tid or key.startswith(tid + ':')]
+                workers = [self.workers.pop(key) for key in keys]
+            for proc, err in workers:
                 proc.stdin.close()
                 try:
                     proc.wait(timeout=3)
@@ -310,29 +319,63 @@ class Tournaments:
                 proc.stdout.close()
                 err.close()
 
-    def simulate(self, tid, t, match, verbose=False):
+    def run_regular(self, tid):
+        from concurrent.futures import ThreadPoolExecutor
+        t = self.store.get('tournament', tid)
+        count = max(1, min(t['settings'].get('PRELIM_WORKERS', 8), os.cpu_count() or 1))
+        # One persistent isolated subprocess per slot; only a bounded wave is dispatched.
+        folder = self.management.runtime/'jobs'/tid
+        for name in ('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py'):
+            shutil.copyfile(Path(__file__).with_name(name), folder/name)
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            while True:
+                with self.lock:
+                    t = self.store.get('tournament', tid)
+                    if t['status'] != 'running' or t['phase'] != 'regular':
+                        return
+                    matches = t['schedule'][t['completed']:t['completed'] + count]
+                    futures = [pool.submit(self.simulate, tid, t, match, False, f'{tid}:{slot}')
+                               for slot, match in enumerate(matches)]
+                failure = None
+                for match, future in zip(matches, futures):
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        failure = exc
+                        break
+                    with self.lock:
+                        current = self.store.get('tournament', tid)
+                        self.commit(current, match, None, result, False)
+                        self.save(current)
+                if failure:
+                    raise failure
+
+    def simulate(self, tid, t, match, verbose=False, worker_id=None):
+        worker_id = worker_id or tid
         cfg = t['settings']
         import ai_battle as ab
         folder = self.management.runtime/'jobs'/tid
         params = dict(settings=cfg, mode='game', team_a=t['teams'][match['a']], team_b=t['teams'][match['b']],
-                      map_size=match['map_size'], seed=match['seed'], char_season=t['char_season'], verbose=verbose,
+                      map_size=match['map_size'], seed=match['seed'], char_season=t['char_season'], verbose=verbose, fast=t.get('fast', False),
                       max_rounds=cfg['MAX_ROUNDS_PRELIM_BY_FORMAT'].get(t['format'], cfg['MAX_ROUNDS_PRELIM']) if t['phase'] == 'regular' else cfg['MAX_ROUNDS_KNOCKOUT'])
         result = None
         replay = []
         logs = []
-        if tid not in self.workers:
+        if worker_id not in self.workers:
             # Upgrade the display adapter for existing pinned tournaments too.
             # Their engine, character data and weights remain untouched.
-            for name in ('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py'):
-                shutil.copyfile(Path(__file__).with_name(name), folder/name)
-            err = (folder/'game-error.log').open('w', encoding='utf-8')
+            with self.lock:
+                for name in (('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py') if worker_id == tid else ()):
+                    shutil.copyfile(Path(__file__).with_name(name), folder/name)
+            err = (folder/('game-error-' + worker_id.replace(':', '-') + '.log')).open('w', encoding='utf-8')
             proc = subprocess.Popen([sys.executable, '-u', str(folder/'ui_task_worker.py'), '--server'], cwd=folder,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, encoding='utf-8', text=True,
-                env={**os.environ, 'PYTHONIOENCODING': 'utf-8'}, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-            self.workers[tid] = proc, err
-        proc, err = self.workers[tid]
+                env={**os.environ, 'PYTHONIOENCODING': 'utf-8', 'PYTHONHASHSEED': os.environ.get('PYTHONHASHSEED', '0')}, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            self.workers[worker_id] = proc, err
+        proc, err = self.workers[worker_id]
         proc.stdin.write(json.dumps(params)+'\n')
         proc.stdin.flush()
+        last_save = time.monotonic()
         for line in proc.stdout:
             if verbose:
                 while self.store.get('tournament', tid)['status'] == 'paused':
@@ -349,15 +392,18 @@ class Tournaments:
                     current['current']['replay'] = list(replay)
                     self.save(current)
                 speed = self.store.get('tournament', tid).get('speed', 1)
-                time.sleep(setting('TOURNAMENT_EVENT_DELAY', live=True) / speed)
-            if verbose and 'log' in row:
-                logs.append(row['log'])
+                if not self.store.get('tournament', tid).get('fast', False):
+                    time.sleep(setting('TOURNAMENT_EVENT_DELAY', live=True) / speed)
+            if verbose and ('log' in row or 'logs' in row):
+                logs.extend(row.get('logs', [row['log']] if 'log' in row else []))
                 with self.lock:
                     current = self.store.get('tournament', tid)
                     current['logs'] = list(logs)
-                    self.save(current)
+                    if time.monotonic() - last_save >= 1:
+                        self.save(current)
+                        last_save = time.monotonic()
         if result is None:
-            raise RuntimeError((folder/'game-error.log').read_text(encoding='utf-8')[-1000:] or '比赛未完成')
+            raise RuntimeError(Path(err.name).read_text(encoding='utf-8')[-1000:] or '比赛未完成')
         return result
 
     def commit(self, t, match, identifier, result, manual):

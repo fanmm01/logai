@@ -69,6 +69,26 @@ type EnumMap = Record<string, Record<string, string>>;
 const defaultSpell = () => ({ name: '新技能', timing: '2', category: 1, phase: 0, 消耗mp: 0, effects: [defaultEffect()] });
 const defaultEffect = () => ({ type: 1, 客体: 4, 伤害骰: '1d6', 成功率: 70, 射程: 1, 可闪避性: 1, 可反击性: 1 });
 
+// Use type-specific fields immediately when the effect selector changes.
+function switchEffectType(value: Effect, type: number, samples: Record<string, any>): Effect {
+  const defaults: Record<number, Effect> = {
+    1: defaultEffect(),
+    2: { type, 客体: 1, 护盾值: '1d8', 持续回合: 2 },
+    3: { type, 客体: 1, 回复hp: '1d6', 回复mp: 0 },
+    4: { type, 客体: 1, 辅助效果: '伤害骰加值', 辅助效果值: 1, 持续回合: 1 },
+    7: { type, 客体: 1, 引发目标法术: 1, 引发延迟回合: 1 },
+    8: { type, 客体: 35, 作用半径: 1, 持续回合: 3, 伤害骰: '1d6', 领域中心跟随: 1 },
+    10: { type, 客体: 1, 回复总量: 6, 持续回合: 3 },
+  };
+  const template = structuredClone(defaults[type] || samples.__effectTemplates?.[type] || { type, 客体: 1 });
+  for (const key of Object.keys(template)) {
+    if (key !== 'type' && Object.hasOwn(value, key)) template[key] = structuredClone(value[key]);
+  }
+  template.type = type;
+  if (Object.hasOwn(value, '_disabled')) template._disabled = value._disabled;
+  return template;
+}
+
 function AddField({ add, suggestions }: { add: (key: string) => void; suggestions: string[] }) {
   const [key, setKey] = useState('');
   const id = useRef('fields-' + rid());
@@ -80,17 +100,18 @@ function AddField({ add, suggestions }: { add: (key: string) => void; suggestion
 function Fields({ value, change, name = '', enums, samples }: {
   value: any; change: (v: any) => void; name?: string; enums: EnumMap; samples: Record<string, any>;
 }) {
-  if (Array.isArray(value)) return <div className="field-list">{value.map((v, i) => <details className={'editor-block ' + (name === 'effects' && v?._disabled ? 'disabled-effect' : '')} key={i} open>
-    <summary>{labels[name] || name} {i + 1}{v?.name ? ` · ${v.name}` : ''}{name === 'effects' && v?._disabled && ' · 已禁用'}</summary>
+  if (Array.isArray(value)) return <div className="field-list">{value.map((v, i) => <details className={'editor-block ' + (['effects', 'spells'].includes(name) && v?._disabled ? 'disabled-effect' : '')} key={i} open>
+    <summary>{labels[name] || name} {i + 1}{v?.name ? ` · ${v.name}` : ''}{['effects', 'spells'].includes(name) && v?._disabled && ' · 已禁用'}</summary>
     {name === 'effects' && <div className="effect-enable"><label><input type="checkbox" aria-label={`启用效果 ${i + 1}`} checked={!v?._disabled} onChange={e => change(value.map((x, j) => j === i ? {...x, _disabled: !e.target.checked} : x))}/>启用此效果</label><small>保存后生效；禁用效果以注释保留在 Python 文件中，可继续编辑和重新启用。</small></div>}
     <Fields name={name === 'spells' ? 'spell' : name === 'effects' ? 'effect' : 'entry'} value={v} change={next => change(value.map((x, j) => j === i ? next : x))} enums={enums} samples={samples}/>
     <button className="text-button danger-text" onClick={() => change(value.filter((_, j) => j !== i))}>删除{labels[name] || '此项'}</button>
+    {name === 'spells' && <button className="text-button" style={{ marginLeft: 16 }} onClick={() => change(value.map((x, j) => j === i ? { ...x, _disabled: !x._disabled } : x))}>{v?._disabled ? '启用技能' : '禁用技能'}</button>}
   </details>)}<button className="button subtle" onClick={() => change([...value, name === 'spells' ? defaultSpell() : name === 'effects' ? defaultEffect() : name === 'inventory' ? { item: '蛋糕HP', count: 1 } : {}])}>新增{labels[name] || '条目'}</button></div>;
   const choices = samples.__byType?.[name] || samples;
   if (value && typeof value === 'object') return <div className="field-table"><div className="field-table-heading"><span>属性</span><span>值</span></div>{Object.entries(value).filter(([key]) => key !== '_disabled').map(([key, v]) => <div className="field-row" key={key}>
     <div><label>{labels[key] || key}</label><button aria-label={'删除属性 ' + key} className="field-remove" onClick={() => { const next = { ...value }; delete next[key]; change(next); }}>×</button></div>
     {v !== null && typeof v === 'object' ? <details open={['spells', 'effects'].includes(key)}><summary>{Array.isArray(v) ? `${v.length} 项` : `${Object.keys(v).length} 个属性`}</summary><Fields value={v} name={key} change={next => change({ ...value, [key]: next })} enums={enums} samples={samples}/></details>
-      : enums[key] ? <select aria-label={labels[key] || key} value={String(v)} onChange={e => change({ ...value, [key]: typeof v === 'number' ? (/^-?\d+$/.test(e.target.value) ? Number(e.target.value) : e.target.value) : e.target.value })}>
+      : enums[key] ? <select aria-label={labels[key] || key} value={String(v)} onChange={e => change(name === 'effect' && key === 'type' ? switchEffectType(value, Number(e.target.value), samples) : { ...value, [key]: typeof v === 'number' ? (/^-?\d+$/.test(e.target.value) ? Number(e.target.value) : e.target.value) : e.target.value })}>
         {!Object.hasOwn(enums[key], String(v)) && <option value={String(v)}>{String(v)}</option>}{Object.entries(enums[key]).map(([k, text]) => <option key={k} value={k}>{text} ({k})</option>)}</select>
         : typeof v === 'boolean' ? <input aria-label={labels[key] || key} type="checkbox" checked={v} onChange={e => change({ ...value, [key]: e.target.checked })}/>
           : <input aria-label={labels[key] || key} type={typeof v === 'number' ? 'number' : 'text'} step="any" value={v == null ? '' : String(v)} onChange={e => change({ ...value, [key]: typeof v === 'number' ? Number(e.target.value) : e.target.value })}/>}
@@ -133,13 +154,20 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
   const samples: Record<string, any> = {};
   function collect(value: any) { if (Array.isArray(value)) value.forEach(collect); else if (value && typeof value === 'object') Object.entries(value).forEach(([k, v]) => { samples[k] ??= v; collect(v); }); }
   collect(data.characters);
+  samples.__effectTemplates = {};
+  for (const character of data.characters) for (const spell of character.spells || []) for (const effect of spell.effects || []) {
+    const previous = samples.__effectTemplates[effect.type];
+    if (!previous || Object.keys(effect).length < Object.keys(previous).length) {
+      samples.__effectTemplates[effect.type] = Object.fromEntries(Object.entries(effect).filter(([key]) => key !== '_disabled'));
+    }
+  }
   samples.__byType = data.fields;
   const edit = (next: Effect) => { setData(next); setDirty(true); };
   const characters = data.characters as Effect[];
   const enabled = new Set<string>(data.enabled_serials);
   const enabledCount = characters.filter(ch => enabled.has(ch.serial)).length;
   const selectedCharacter = characters[index];
-  const missingTemplates = [...new Set<string>((selectedCharacter?.spells || []).flatMap((s: Effect) => (s.effects || []).filter((e: Effect) => !e._disabled && e['召唤物模板'] && !Object.hasOwn(data.summons, e['召唤物模板'])).map((e: Effect) => e['召唤物模板'])))];
+  const missingTemplates = [...new Set<string>((selectedCharacter?.spells || []).filter((s: Effect) => !s._disabled).flatMap((s: Effect) => (s.effects || []).filter((e: Effect) => !e._disabled && e['召唤物模板'] && !Object.hasOwn(data.summons, e['召唤物模板'])).map((e: Effect) => e['召唤物模板'])))];
   const addCharacter = () => { const reserved = new Set([...data.reserved, ...characters.map(c => c.serial)]); let n = 1; while (reserved.has('Y' + n)) n++; edit({ ...data, enabled_serials: [...data.enabled_serials, 'Y' + n], characters: [...characters, { name: '新角色', serial: 'Y' + n, attrs: { 体力: 10, 体力上限: 10, 魔力: 10, 魔力上限: 10, 敏捷: 50, 闪避: 25, 斗殴: 50, 行动力: 8, 等级: 1 }, str_attrs: { 伤害值: '1d6' }, inventory: [], spells: [defaultSpell()] }] }); setIndex(characters.length); };
   const roster = (active: boolean) => characters.map((ch, i) => enabled.has(ch.serial) === active && <button type="button" className={'roster-character ' + (i === index ? 'active' : '')} key={i} onClick={() => setIndex(i)}>{ch.serial} · {ch.name}{!active && <small>已禁用</small>}</button>);
   const deleteCharacter = () => {
@@ -187,6 +215,7 @@ export function SimulationPanel({ teamA, teamB, catalog, onError }: Feedback & {
   const [formats, setFormats] = useState<string[]>([defaults.SIM_DEFAULT_FORMAT]);
   const modeCount = (m: string) => m === 'verbose' ? 1 : defaults[m === 'table' ? 'SIM_TABLE_COUNT' : m === 'prelim' ? 'SIM_PRELIM_COUNT' : 'SIM_SINGLE_COUNT'];
   const [n, setN] = useState<number>(modeCount(defaults.SIM_DEFAULT_MODE));
+  const [fast, setFast] = useState(false);
   const [seed, setSeed] = useState('');
   const [season, setSeason] = useState('');
   const [workers, setWorkers] = useState<number>(defaults.PRELIM_WORKERS);
@@ -209,8 +238,9 @@ export function SimulationPanel({ teamA, teamB, catalog, onError }: Feedback & {
     <label>地图<select value={map} onChange={e => setMap(e.target.value)}>{Array.from(new Set([map,...[8,10,12,16].map(n=>`${n}x${n}`)])).map(size => <option key={size}>{size}</option>)}</select></label>
     <label>种子（空为随机）<input type="number" min="0" value={seed} onChange={e => setSeed(e.target.value)}/></label>
     <label>赛季状态（空使用设置）<input type="number" min="0" max="100" value={season} onChange={e => setSeason(e.target.value)}/></label>
-    {mode === 'prelim' && <label>并发数<input type="number" min="1" max="32" value={workers} onChange={e => setWorkers(Number(e.target.value))}/></label>}
-    <button className="button primary" disabled={busy || job?.status === 'running' || (mode==='prelim'&&!formats.length)} onClick={async () => { setBusy(true); try { const next = await api<Effect>('/simulations', { mode, format, formats, n, map_size: map, workers, team_a: teamA, team_b: teamB, ...(seed ? { seed: Number(seed) } : {}), ...(season === '' ? {} : {season: Number(season)}), ...(selectedTeams.length ? { teams: selectedTeams.map(t => t.split('+')) } : {}) }); setJob(next); localStorage.setItem('combat-simulation', next.id); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>运行模拟</button>
+    {(mode === 'prelim' || mode === 'single') && <label>并发数<input type="number" min="1" max="32" value={workers} onChange={e => setWorkers(Number(e.target.value))}/></label>}
+    {mode === 'verbose' && <label><input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)}/>极速（保留完整日志）</label>}
+    <button className="button primary" disabled={busy || job?.status === 'running' || (mode==='prelim'&&!formats.length)} onClick={async () => { setBusy(true); try { const next = await api<Effect>('/simulations', { mode, format, formats, n, fast, map_size: map, workers, team_a: teamA, team_b: teamB, ...(seed ? { seed: Number(seed) } : {}), ...(season === '' ? {} : {season: Number(season)}), ...(selectedTeams.length ? { teams: selectedTeams.map(t => t.split('+')) } : {}) }); setJob(next); localStorage.setItem('combat-simulation', next.id); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>运行模拟</button>
     {job?.status === 'running' && <button className="button stop-button" onClick={() => api<Effect>(`/simulations/${job.id}/cancel`, {}).then(setJob).catch(e => onError(e.message))}>取消模拟</button>}
   </div>
     {mode === 'table' && <details><summary>选择参赛小队（留空使用该赛制全部预设）</summary><div className="preset-choices">{choices.map((p, i) => <label key={i}><input type="checkbox" disabled={!p.valid} checked={selectedTeams.includes(p.team.join('+'))} onChange={e => setSelectedTeams(old => e.target.checked ? [...old, p.team.join('+')] : old.filter(t => t !== p.team.join('+')))}/>{teamNames(p.team)}{!p.valid && '（角色已禁用或已删除）'}</label>)}</div><button className="text-button" onClick={() => setSelectedTeams([...new Set([teamA.join('+'), teamB.join('+')])])}>使用当前编队双方</button></details>}
@@ -309,6 +339,7 @@ export function TournamentPanel({ catalog, onError, onWatch }: Feedback & { cata
   }, [t?.id, t?.revision]);
   const team = (idx: number | null | undefined) => idx == null ? '待定' : t?.teams[idx].map((s: string) => catalog.find(c => c.serial === s)?.name || s).join(' + ');
   async function advance(op: string) { if (!t) return; setBusy(true); try { await api(`/tournaments/${t.id}/advance`, { op, series: selected || t.series.find((s: Effect) => s.winner == null && s.team_a != null && s.team_b != null)?.id, revision: t.revision, request_id: rid() }); await load(); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }
+  async function setFast(fast: boolean) { if (!t) return; try { const updated = await api<Effect>(`/tournaments/${t.id}/advance`, { op: 'fast', fast, request_id: rid() }); setTournaments(old => old.map(item => item.id === updated.id ? updated : item)); } catch (e) { onError((e as Error).message); } }
   async function setSpeed(speed: number) { if (!t) return; try { const updated = await api<Effect>(`/tournaments/${t.id}/advance`, { op: 'speed', speed, request_id: rid() }); setTournaments(old => old.map(item => item.id === updated.id ? updated : item)); } catch (e) { onError((e as Error).message); } }
   const buttons = [['round', '模拟本轮'], ['series', '模拟本系列赛'], ['game', '模拟本场'], ['turn_game', '逐回合模拟本场'], ['turn_playoffs', '逐回合模拟季后赛'], ['playoffs', '模拟季后赛']];
   return <div className="page tournament-page"><h1>锦标赛</h1><p className="muted">三种赛制独立推进 · 常规赛结束自动暂停 · 服务重启保留已完成赛果</p><div className="expansion-toolbar panel">
@@ -318,7 +349,7 @@ export function TournamentPanel({ catalog, onError, onWatch }: Feedback & { cata
     <button className="button primary" disabled={busy} onClick={async () => { setBusy(true); try { const result = await api<Effect>('/tournaments', { format, ...(seed ? { seed: Number(seed) } : {}) }); setId(result.id); await load(); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>新建锦标赛</button>
   </div>
     {t && <><p role="status">{t.phase === 'regular' ? '常规赛' : t.phase === 'playoffs' ? '季后赛' : '赛事完成'} · {t.status}{t.current?.series && ' · 当前系列赛 ' + t.current.series} · 常规赛 {t.completed}/{t.schedule.length}{t.message && ' · ' + t.message}</p>
-      <div className="expansion-toolbar"><label>逐回合速度<select aria-label="逐回合速度" value={t.speed ?? 1} onChange={e => setSpeed(Number(e.target.value))}><option value={1}>1× 速度</option><option value={2}>2× 速度</option><option value={4}>4× 速度</option></select></label><button className="button stop-button" disabled={busy || t.status === 'paused'} onClick={() => advance('pause')}>暂停推进</button>
+      <div className="expansion-toolbar"><label><input type="checkbox" checked={!!t.fast} onChange={e => setFast(e.target.checked)}/>极速（保留完整日志）</label><label>逐回合速度<select aria-label="逐回合速度" value={t.speed ?? 1} onChange={e => setSpeed(Number(e.target.value))}><option value={1}>1× 速度</option><option value={2}>2× 速度</option><option value={4}>4× 速度</option></select></label><button className="button stop-button" disabled={busy || t.status === 'paused'} onClick={() => advance('pause')}>暂停推进</button>
         {t.status === 'paused' && t.current && <button className="button primary" disabled={busy} onClick={() => advance('resume')}>继续当前模拟</button>}
         {t.phase === 'regular' ? <button className="button primary" disabled={busy || t.status !== 'paused'} onClick={() => advance('regular')}>模拟常规赛</button> : <>{buttons.map(([op, text]) => <button key={op} className="button" disabled={busy || t.status !== 'paused' || t.phase === 'done' || !!t.current} onClick={() => advance(op)}>{text}</button>)}
           <button className="button primary" disabled={busy || t.phase === 'done' || !['paused', 'watching'].includes(t.status)} onClick={async () => { setBusy(true); try { const result = await api<{ room: Room }>(`/tournaments/${t.id}/watch`, { series: selected || t.series.find((s: Effect) => s.winner == null && s.team_a != null && s.team_b != null)?.id, revision: t.revision }); onWatch(result.room); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>进场观战</button></>}

@@ -67,7 +67,10 @@ logger = logging.getLogger('ai_battle')
 logger.setLevel(logging.DEBUG)
 
 # File handler
-fh = logging.FileHandler(file_path('LOG_FILE'), encoding='utf-8', mode='w')
+import multiprocessing
+fh = (logging.FileHandler(file_path('LOG_FILE'), encoding='utf-8', mode='w')
+      if multiprocessing.current_process().name == 'MainProcess' and not os.environ.get('AUTOCOMBAT_NO_FILE_LOG')
+      else logging.NullHandler())
 fh.setLevel(battle_setting('FILE_LOG_LEVEL'))
 fh._combat_setting = 'FILE_LOG_LEVEL'
 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%H:%M:%S'))
@@ -1638,127 +1641,74 @@ class Tournament:
         v2_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_2v2))}
         v3_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_3v3))}
 
-        use_parallel = battle_setting('PRELIM_WORKERS') > 1
-
-        if use_parallel:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            self._parallel_prelim = True
-            standings_lock = threading.Lock()
-            battle_log('info', f'预赛并行模式: {battle_setting("PRELIM_WORKERS")} workers')
-            # Submit all battles
-            future_map = {}
-            try:
-                with ThreadPoolExecutor(max_workers=battle_setting('PRELIM_WORKERS')) as executor:
-                    for args in full_pool:
-                        phase_tag, label, map_size, ta, tb, i, j = args
-                        fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
-                        fut = executor.submit(self.battle, ta, tb, map_size, label, 1,
-                                              battle_setting('DISPLAY_PRELIM'), battle_setting('DELAY_PRELIM_TURN'), fmt_max_rounds)
-                        future_map[fut] = args
-                        if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
-                            time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
-                    # Collect results
-                    completed = 0
-                    for fut in as_completed(future_map):
-                        completed += 1
-                        phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
-                        try:
-                            winner, loser, rds, result = fut.result()
-                        except Exception as e:
-                            battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
-                            continue
-                        # Process standings (protected by lock for thread-safe dict updates)
-                        with standings_lock:
-                            if phase_tag == '1v1':
-                                w_pts, l_pts = self._calc_points(result)
-                                w_player = winner; l_player = loser
-                                player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
-                                player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
-                                player_wins[w_player] = player_wins.get(w_player, 0) + 1
-                                player_battles[w_player] = player_battles.get(w_player, 0) + 1
-                                player_battles[l_player] = player_battles.get(l_player, 0) + 1
-                            elif phase_tag == '2v2':
-                                w_pts, l_pts = self._calc_points(result)
-                                ws = set(winner.split('+')); ls = set(loser.split('+'))
-                                for idx in [i, j]:
-                                    ts = set(teams_2v2[idx])
-                                    if ts == ws:
-                                        v2_standings[idx]['pts'] += w_pts
-                                        v2_standings[idx]['wins'] += 1
-                                        v2_standings[idx]['battles'] += 1
-                                    elif ts == ls:
-                                        v2_standings[idx]['pts'] += l_pts
-                                        v2_standings[idx]['battles'] += 1
-                            elif phase_tag == '3v3':
-                                w_pts, l_pts = self._calc_points(result)
-                                ws = set(winner.split('+')); ls = set(loser.split('+'))
-                                for idx in [i, j]:
-                                    ts = set(teams_3v3[idx])
-                                    if ts == ws:
-                                        v3_standings[idx]['pts'] += w_pts
-                                        v3_standings[idx]['wins'] += 1
-                                        v3_standings[idx]['battles'] += 1
-                                    elif ts == ls:
-                                        v3_standings[idx]['pts'] += l_pts
-                                        v3_standings[idx]['battles'] += 1
-                        # Record result (parallel path skips append inside battle())
-                        a_name = '+'.join(ta)
-                        b_name = '+'.join(tb)
-                        self.results.append((a_name, b_name, winner, rds, map_size, label, False))
-                        if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
-                            battle_log('info', f'  预赛进度: {completed}/{total_matches}')
-            finally:
-                self._parallel_prelim = False
-        else:
-            completed = 0
-            for phase_tag, label, map_size, ta, tb, i, j in full_pool:
-                completed += 1
-                try:
+        from sim_parallel import Battles
+        self._parallel_prelim = True
+        standings_lock = threading.Lock()
+        battle_log('info', f'预赛并行模式: {battle_setting("PRELIM_WORKERS")} workers')
+        # Submit all battles
+        future_map = {}
+        try:
+            workers = min(battle_setting('PRELIM_WORKERS'), max(1, len(full_pool) // 16))
+            with Battles(workers, {key: battle_setting(key) for key in _SETTING_DEFAULTS}, self.char_season_status) as executor:
+                for args in full_pool:
+                    phase_tag, label, map_size, ta, tb, i, j = args
                     fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
-                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=battle_setting('DISPLAY_PRELIM'), delay=battle_setting('DELAY_PRELIM_TURN'), max_rounds=fmt_max_rounds)
+                    fut = executor.submit(random.getrandbits(63), ta, tb, map_size, label, 1,
+                                          battle_setting('DISPLAY_PRELIM'), battle_setting('DELAY_PRELIM_TURN'), fmt_max_rounds)
+                    future_map[fut] = args
                     if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
                         time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
-                except Exception as e:
-                    battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
-                    import traceback
-                    battle_log('error', traceback.format_exc()[-300:])
-                    continue
-                # 1v1: award points to individual players
-                if phase_tag == '1v1':
-                    w_pts, l_pts = self._calc_points(result)
-                    w_player = winner; l_player = loser
-                    player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
-                    player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
-                    player_wins[w_player] = player_wins.get(w_player, 0) + 1
-                    player_battles[w_player] = player_battles.get(w_player, 0) + 1
-                    player_battles[l_player] = player_battles.get(l_player, 0) + 1
-                # 2v2/3v3: award team-level standings with point system (same as 1v1)
-                elif phase_tag == '2v2':
-                    w_pts, l_pts = self._calc_points(result)
-                    ws = set(winner.split('+')); ls = set(loser.split('+'))
-                    for idx in [i, j]:
-                        ts = set(teams_2v2[idx])
-                        if ts == ws:
-                            v2_standings[idx]['pts'] += w_pts
-                            v2_standings[idx]['wins'] += 1
-                            v2_standings[idx]['battles'] += 1
-                        elif ts == ls:
-                            v2_standings[idx]['pts'] += l_pts
-                            v2_standings[idx]['battles'] += 1
-                elif phase_tag == '3v3':
-                    w_pts, l_pts = self._calc_points(result)
-                    ws = set(winner.split('+')); ls = set(loser.split('+'))
-                    for idx in [i, j]:
-                        ts = set(teams_3v3[idx])
-                        if ts == ws:
-                            v3_standings[idx]['pts'] += w_pts
-                            v3_standings[idx]['wins'] += 1
-                            v3_standings[idx]['battles'] += 1
-                        elif ts == ls:
-                            v3_standings[idx]['pts'] += l_pts
-                            v3_standings[idx]['battles'] += 1
-                if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
-                    battle_log('info', f'  预赛进度: {completed}/{total_matches}')
+                # Collect results
+                completed = 0
+                for fut in future_map:
+                    completed += 1
+                    phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
+                    try:
+                        winner, loser, rds, result = fut.result()
+                    except Exception as e:
+                        raise RuntimeError(f'预赛战斗失败: {label}') from e
+                    # Process standings (protected by lock for thread-safe dict updates)
+                    with standings_lock:
+                        if phase_tag == '1v1':
+                            w_pts, l_pts = self._calc_points(result)
+                            w_player = winner; l_player = loser
+                            player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
+                            player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
+                            player_wins[w_player] = player_wins.get(w_player, 0) + 1
+                            player_battles[w_player] = player_battles.get(w_player, 0) + 1
+                            player_battles[l_player] = player_battles.get(l_player, 0) + 1
+                        elif phase_tag == '2v2':
+                            w_pts, l_pts = self._calc_points(result)
+                            ws = set(winner.split('+')); ls = set(loser.split('+'))
+                            for idx in [i, j]:
+                                ts = set(teams_2v2[idx])
+                                if ts == ws:
+                                    v2_standings[idx]['pts'] += w_pts
+                                    v2_standings[idx]['wins'] += 1
+                                    v2_standings[idx]['battles'] += 1
+                                elif ts == ls:
+                                    v2_standings[idx]['pts'] += l_pts
+                                    v2_standings[idx]['battles'] += 1
+                        elif phase_tag == '3v3':
+                            w_pts, l_pts = self._calc_points(result)
+                            ws = set(winner.split('+')); ls = set(loser.split('+'))
+                            for idx in [i, j]:
+                                ts = set(teams_3v3[idx])
+                                if ts == ws:
+                                    v3_standings[idx]['pts'] += w_pts
+                                    v3_standings[idx]['wins'] += 1
+                                    v3_standings[idx]['battles'] += 1
+                                elif ts == ls:
+                                    v3_standings[idx]['pts'] += l_pts
+                                    v3_standings[idx]['battles'] += 1
+                    # Record result (parallel path skips append inside battle())
+                    a_name = '+'.join(ta)
+                    b_name = '+'.join(tb)
+                    self.results.append((a_name, b_name, winner, rds, map_size, label, False))
+                    if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
+                        battle_log('info', f'  预赛进度: {completed}/{total_matches}')
+        finally:
+            self._parallel_prelim = False
 
         # ---- Display all standings and run all knockouts ----
 

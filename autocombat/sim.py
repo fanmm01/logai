@@ -14,7 +14,8 @@ Options:
   -m WxH       Map size (default 10x10)
   -s SEED      Random seed
   --season S   Season average status 0-100 (default random). Higher = better AI.
-  --workers W  Prelim parallel workers (default 8; 1 = serial)
+  --workers W  Batch/prelim process workers (1-32; 1 = serial)
+  --fast       Skip verbose playback delays and keep all details
   --format F   Prelim mode(s) to run: 1v1, 2v2, 3v3, comma/plus separated,
                or 'all' (default). Also accepts repeated flags.
   --verbose    详细战斗回放模式：只模拟1场，输出每回合掷骰、技能、伤害等完整细节
@@ -48,6 +49,7 @@ PRELIM_MODES = ('1v1', '2v2', '3v3')
 def parse_single_args(argv):
     """Parse single-match args. Returns (team_a, team_b, num, map_size, seed, season_status)."""
     args = ' '.join(argv[1:])
+    args = re.sub(r'--workers\s+\d+|--fast', '', args)
     parts = re.split(r'\s+vs\s+', args, flags=re.IGNORECASE)
     if len(parts) != 2:
         print('Usage: python sim.py TEAM_A vs TEAM_B [-n N] [-m WxH] [-s SEED] [--season S]')
@@ -166,7 +168,9 @@ def prelim_runtime(workers, season_status):
         for name, value in settings.items():
             setattr(ai_battle, name, value)
         ai_battle.logger.setLevel(logging.WARNING)
-        yield
+        from sim_parallel import parallel_session
+        with parallel_session():
+            yield
     finally:
         for name, value in saved.items():
             setattr(ai_battle, name, value)
@@ -341,6 +345,20 @@ def run_battle_pair(t, team_a, team_b, map_size, N, quiet=True, season_status=No
     return wins_a, wins_b, total_rds / N, timeouts, elapsed
 
 
+def parallel_pairs(t, team_a, team_b, map_size, count, season, workers, seed):
+    """Yield ordered independent results, identical across worker counts."""
+    from sim_parallel import Battles
+    from combat_settings import snapshot
+    rng = random.Random(seed)
+    with Battles(workers, snapshot(), season) as pool:
+        pending = []
+        for _ in range(count):
+            pending.append(pool.submit(rng.getrandbits(63), team_a, team_b, map_size,
+                                      display_level=DisplayLevel.WINLOSS, delay=0))
+        for future in pending:
+            yield future.result()[3]
+
+
 def compute_matrix(t, teams, count, map_size, season_status=None, progress=None):
     """Shared CLI/browser matrix; each unordered matchup is simulated once."""
     matrix = [[0.5 if i == j else None for j in range(len(teams))] for i in range(len(teams))]
@@ -474,7 +492,13 @@ def mode_single(argv, verbose=False):
         print(f'\n{"="*60}')
         print(f'  详细战斗回放: {a_disp} v.s. {b_disp}')
         print(f'{"="*60}\n')
-        _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.DEBUG, delay=setting('DELAY_CUSTOM_TURN'))
+        import ai_battle as ab
+        old_override = ab._logging_override
+        ab._logging_override = logging.DEBUG
+        try:
+            _, _, _, r = t.battle(team_a, team_b, map_size, display_level=DisplayLevel.DEBUG, delay=0 if '--fast' in argv else setting('DELAY_CUSTOM_TURN'))
+        finally:
+            ab._logging_override = old_override
         print(f'\n{"="*60}')
         print(f'  结果: {"Y队" if r["winner"]=="Y" else "X队"} 胜 ({r["rounds"]}回合)')
         if r.get('timeout'):
@@ -493,7 +517,16 @@ def mode_single(argv, verbose=False):
     # ── Normal batch mode ──
     print(f'{a_disp} v.s. {b_disp} — {N}场 [{map_size}]  seed={seed}', flush=True)
     print(f'  赛季状态: {status_str}', flush=True)
-    wins_a, wins_b, avg_rds, timeouts, elapsed = run_battle_pair(t, team_a, team_b, map_size, N, quiet=False, season_status=char_season)
+    workers = int(argv[argv.index('--workers') + 1]) if '--workers' in argv else min(8, os.cpu_count() or 1)
+    if not 1 <= workers <= 32:
+        raise ValueError('--workers must be 1-32')
+    started = time.monotonic()
+    results = list(parallel_pairs(t, team_a, team_b, map_size, N, char_season, workers, seed))
+    wins_a = sum(r['winner'] == 'Y' for r in results)
+    wins_b = N - wins_a
+    avg_rds = sum(r.get('rounds', 0) for r in results) / N
+    timeouts = sum(bool(r.get('timeout')) for r in results)
+    elapsed = time.monotonic() - started
     rate_a = wins_a / N * 100; rate_b = wins_b / N * 100
     print(f'\n{"="*55}')
     print(f'  {a_disp}  v.s.  {b_disp}')

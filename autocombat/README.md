@@ -203,6 +203,18 @@ AUX34 `全D100检定奖励骰` 对该单位的所有 D100 检定生效（攻击/
 
 ## 战斗模拟 (.sim)
 
+命令行批量对战和预赛支持多进程，使用 `--workers 1` 可指定单进程：
+
+```powershell
+python sim.py Y1+Y2 vs Y3+Y4 -n 400 -s 31415 --workers 8
+python sim.py --mode prelim --format all -n 10 -s 31415 --workers 8
+python sim.py Y1+Y2 vs Y3+Y4 --verbose -s 31415 --fast
+```
+
+`--fast` 跳过 verbose 播放等待，保留完整日志。网页端“两队批量对战”和“多轮预赛”提供并发数；锦标赛预赛使用创建赛事时的 `PRELIM_WORKERS` 设置。网页 verbose 和锦标赛逐回合模式提供“极速”开关。升级后需重启后端。
+
+新版按场次分配独立随机种子，跨并发数可复现；相同种子的赛果可能与旧版不同。短任务的收益受进程启动成本影响。实测与兼容检查见 [加速验证报告](artifacts/performance/report.md)。
+
 `.sim` 命令运行快速战斗模拟，支持两种模式。所有参数与 `python sim.py` 完全一致，但 `--` 开头的长参数需去掉双横线（如 `--mode` → `mode`）。
 
 ### 单场模式（默认）

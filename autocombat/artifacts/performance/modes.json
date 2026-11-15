@@ -1,0 +1,26 @@
+{
+  "prelim_before": {
+    "seconds": 35.31885020015761,
+    "exit_code": 0
+  },
+  "prelim_after": {
+    "seconds": 9.715696499915794,
+    "exit_code": 0
+  },
+  "verbose_cli_before": {
+    "seconds": 12.16053510014899,
+    "exit_code": 0
+  },
+  "verbose_cli_after": {
+    "seconds": 2.6970693999901414,
+    "exit_code": 0
+  },
+  "tournament_before": {
+    "seconds": 81.04836319992319,
+    "exit_code": 0
+  },
+  "tournament_after": {
+    "seconds": 29.61089579993859,
+    "exit_code": 0
+  }
+}

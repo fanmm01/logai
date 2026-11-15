@@ -1,0 +1,312 @@
+{
+  "source": "D:\\Datastruct\\logai\\autocombat\\.ui-runtime\\y17-current-evaluation",
+  "fingerprints": {
+    "characters_data.py": "9f4dfb48b5690f3434512effefcf1d35693f0957b0b9d46ff4f9792119505219",
+    "characters_data_pvp.py": "7ce238b01cf7be5b8093ecbeff5ed6bb88aaaa138c91373c0540b290fbaeb7e8",
+    "battle_engine.py": "ca767e054dc5bb4a8677a430dd1c9d63816eaf9708f74b2b36cf710de86d0fa2",
+    "ai_trainer.py": "757368518b570b6a685e9a96bb564e1f7eea7fce3617fa787b516a1bbc59c141",
+    "ai_battle.py": "9c06bee04ef0af29b9fbc80d919504fe1dfbbfac0b35e21a39e4c6be1f26b2ad",
+    "battle_http_server.py": "60f1159bab251613e296207fbd3f6973e7f1ec5c99b19b8d1281bd7ccce2b387",
+    "combat_settings.py": "133ba1c60dda006e7de06dc90222ec1a24ceb8a307e5c5b048a266ea8d4f0d03",
+    "combat_defaults.py": "cbc54db702c812f8f0fd6acb23eb7e2d169f9da6c5110f457133f3685e87a90c",
+    "team_tables.py": "382544fb865c482318fc644c7f365efb439cfc860951c3975e840eb4f49bd578",
+    "ai_weights.json": "bd1111225f7bb22a8979e3027698e78e7ccc3179c366192d75fbe8146c785e4c",
+    "settings.json": "3f74228b8cb5f0e0828b0051cc56e4add0edeae7c93b2f267b3c30e06a6f811e"
+  },
+  "y17": {
+    "attrs": {
+      "伤害贯穿": 1,
+      "体力": 9,
+      "体力上限": 9,
+      "体型": 45,
+      "体格": -2,
+      "体质": 35,
+      "力量": 30,
+      "可反击": 1,
+      "外貌": 55,
+      "幸运": 50,
+      "弓术": 61,
+      "意志": 60,
+      "敏捷": 80,
+      "教育": 55,
+      "斗殴": 28,
+      "智力": 60,
+      "状态": 60,
+      "理智": 65,
+      "等级": 6,
+      "行动力": 8,
+      "闪避": 85,
+      "额外行动数": 0,
+      "魔力": 26,
+      "魔力上限": 26,
+      "魔法少女序号": 17
+    },
+    "blood_ml_per_hp": 500,
+    "blood_rules": {
+      "arcana_base_blood": 100,
+      "arcana_bonus_dice": 1,
+      "arcana_substitute_ml": 500,
+      "armor_cap": 12,
+      "armor_ml": 300,
+      "armor_per_unit": 2,
+      "ball_heal": 4,
+      "ball_ml": 500,
+      "blade_damage": "1d8+2",
+      "blade_ml": 100,
+      "bow_damage": "1d8+2",
+      "bow_range": 8,
+      "cape_ml": 1000,
+      "cape_mp": 4,
+      "chain_ml": 3000,
+      "corpse_ml": 300,
+      "duration": 10,
+      "heal_max_units": 4,
+      "hp_to_ml": 200,
+      "slash_base_ml": 500,
+      "slash_extra_ml": 1000,
+      "slash_harvest_cap": 200,
+      "slash_harvest_ml_per_hp": 25,
+      "source_cap": 1000,
+      "spear_cap": 2,
+      "spear_melee": "1d8+6",
+      "spear_ml": 1000,
+      "spear_range": 8,
+      "spear_throw": "1d10+6",
+      "spear_uses": 3,
+      "war_extra_radius": 5,
+      "war_radius": 10
+    },
+    "hp_to_blood_ml": 200,
+    "inventory": [],
+    "name": "夜诏明",
+    "serial": "Y17",
+    "spells": [
+      {
+        "category": 4,
+        "cost_blood_ml": 100,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1,
+            "持续回合": 3
+          }
+        ],
+        "name": "猩红眼眸",
+        "phase": 99,
+        "timing": "2",
+        "消耗mp": 0
+      },
+      {
+        "blood_kind": "arcana",
+        "category": 1,
+        "cost_blood_ml": 100,
+        "effects": [
+          {
+            "damage_mp_multiplier": 4,
+            "type": 1,
+            "伤害骰": "1d1",
+            "作用半径": 10,
+            "可反击性": 0,
+            "可贯穿性": 1,
+            "可闪避性": 1,
+            "客体": 4,
+            "射程": 10,
+            "成功率": 80
+          }
+        ],
+        "mp_cost_formula": "max_25pct_cur_50pct",
+        "name": "阿瑞卡纳律动",
+        "timing": "2",
+        "吟唱回合": 3
+      },
+      {
+        "blood_kind": "guard",
+        "category": 4,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1,
+            "持续回合": 10,
+            "辅助效果": "受到伤害加值",
+            "辅助效果值": "-1"
+          }
+        ],
+        "name": "凝血式-守",
+        "timing": "3",
+        "消耗mp": 0
+      },
+      {
+        "blood_kind": "sacrifice",
+        "category": 1,
+        "chant_interrupt_hp_pct": 90,
+        "chant_interrupt_mp_pct": 50,
+        "chant_interruptible": true,
+        "effects": [
+          {
+            "damage_pct_caster_max_hp": 90,
+            "type": 1,
+            "伤害骰": "1d1",
+            "可反击性": 0,
+            "可贯穿性": 1,
+            "可闪避性": 0,
+            "客体": 4,
+            "射程": 6,
+            "成功率": 100
+          }
+        ],
+        "name": "祭炼式-破",
+        "timing": "2",
+        "吟唱回合": 2,
+        "消耗mp": 0
+      },
+      {
+        "blood_kind": "blade",
+        "category": 4,
+        "cost_blood_ml": 100,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1,
+            "持续回合": 10
+          }
+        ],
+        "name": "凝血式-幻",
+        "timing": "3",
+        "消耗mp": 0
+      },
+      {
+        "blood_kind": "war",
+        "category": 1,
+        "chain_on_blood_ml": 3000,
+        "cost_hp_dice": "1d8",
+        "cost_mp_pct_max": 20,
+        "effects": [
+          {
+            "type": 1,
+            "伤害骰": "2d12",
+            "作用半径": 10,
+            "可反击性": 0,
+            "可闪避性": 1,
+            "客体": 5,
+            "射程": 0,
+            "成功率": 100
+          }
+        ],
+        "name": "污血战争",
+        "on_kill_heal_hp": 1,
+        "on_kill_heal_san": 1,
+        "radius_per_extra_mp": 10,
+        "timing": "2",
+        "消耗san": "1d8"
+      },
+      {
+        "blood_kind": "store",
+        "category": 3,
+        "cost_blood_ml": 500,
+        "effects": [
+          {
+            "type": 3,
+            "作用半径": 5,
+            "回复hp": "1",
+            "客体": 12,
+            "射程": 5
+          }
+        ],
+        "heal_limit_not_dying": 1,
+        "name": "凝血式-存",
+        "timing": "23",
+        "消耗mp": 2,
+        "消耗san": 1
+      },
+      {
+        "category": 4,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1,
+            "持续回合": 60,
+            "辅助效果": "飞行",
+            "辅助效果值": "1"
+          }
+        ],
+        "name": "凝血式-浮",
+        "phase": 99,
+        "timing": "2",
+        "消耗mp": 0
+      },
+      {
+        "category": 4,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1,
+            "持续回合": 1
+          }
+        ],
+        "name": "等价交换",
+        "phase": 99,
+        "timing": "2",
+        "消耗mp": "1d8"
+      },
+      {
+        "blood_kind": "cape",
+        "category": 3,
+        "cost_blood_ml": 1000,
+        "effects": [
+          {
+            "type": 3,
+            "回复mp": "4",
+            "客体": 1
+          }
+        ],
+        "name": "血染披风",
+        "timing": "3",
+        "消耗mp": 0
+      },
+      {
+        "blood_kind": "slash",
+        "category": 1,
+        "cost_blood_ml": 500,
+        "effects": [
+          {
+            "damage_table": "moon_phase",
+            "type": 1,
+            "伤害骰": "1d6+4",
+            "可贯穿性": 1,
+            "客体": 4,
+            "射程": 3,
+            "成功率": 80
+          }
+        ],
+        "extra_attack_per_blood": 1000,
+        "name": "血月斩击",
+        "timing": "2",
+        "消耗mp": "1d8"
+      },
+      {
+        "blood_kind": "spear",
+        "category": 1,
+        "cost_blood_ml": 1000,
+        "effects": [
+          {
+            "type": 4,
+            "客体": 1
+          }
+        ],
+        "name": "血色突刺",
+        "timing": "23",
+        "消耗mp": 0
+      }
+    ],
+    "str_attrs": {
+      "damage_suffix_map": {
+        "剑": "a",
+        "弓术": "b"
+      },
+      "db": "-2",
+      "伤害值": "1d6+db",
+      "伤害值b": "1d6+db/2"
+    },
+    "初始血液": 2000
+  }
+}

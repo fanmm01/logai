@@ -715,8 +715,8 @@ YANYAN = {'attrs': {'伤害贯穿': 1,
 #  角色2: 达尼厄斯 (Y2) — 3火球 + 召唤使魔
 # ============================================================
 DANIUSI = {'attrs': {'伤害贯穿': 1,
-           '体力': 12,
-           '体力上限': 12,
+           '体力': 10,
+           '体力上限': 10,
            '体型': 55,
            '体格': 0,
            '体质': 55,
@@ -731,7 +731,7 @@ DANIUSI = {'attrs': {'伤害贯穿': 1,
            '智力': 55,
            '状态': 60,
            '理智': 59,
-           '等级': 3,
+           '等级': 4,
            '行动力': 8,
            '闪避': 50,
            '额外行动数': 0,
@@ -743,8 +743,8 @@ DANIUSI = {'attrs': {'伤害贯穿': 1,
  'serial': 'Y2',
  'spells': [{'category': 1,
              'effects': [{'type': 1, '伤害骰': '1d8', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
-                         {'type': 1, '伤害骰': '1d8', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
-                         {'type': 1, '伤害骰': '1d8', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90}],
+                         {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90},
+                         {'type': 1, '伤害骰': '1d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 90}],
              'name': '火球术',
              'timing': '2',
              '消耗mp': 3},
@@ -765,8 +765,8 @@ DANIUSI = {'attrs': {'伤害贯穿': 1,
 #  角色3: 灵牛 (Y3) — 斗殴奖励骰 + 附魔(伤害+1d4)
 # ============================================================
 LINGNIU = {'attrs': {'伤害贯穿': 1,
-           '体力': 13,
-           '体力上限': 13,
+           '体力': 14,
+           '体力上限': 14,
            '体型': 60,
            '体格': 1,
            '体质': 60,
@@ -798,7 +798,7 @@ LINGNIU = {'attrs': {'伤害贯穿': 1,
              'timing': '1'},
             {'category': 4,
              'default_persist': 1,
-             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6+2'}],
+             'effects': [{'type': 4, '客体': 1, '持续回合': 99, '辅助效果': '伤害骰加值', '辅助效果值': '1d6+1d4+1'}],
              'name': '附魔术',
              'timing': '1',
              '消耗mp': 1}],
@@ -911,7 +911,7 @@ XUETIANSHI = {'attrs': {'伤害贯穿': 1,
  'str_attrs': {'伤害值': '2d3+1d4'}}
 
 # ============================================================
-#  角色6: 雪人 (Y6) — 制造雪带(领域+DOT+属性削减) + 发送雪球
+#  角色6: 雪人 (Y6) — 雪带/雪幕/雪球 + 雪之法杖被动增伤
 # ============================================================
 XUEREN = {'attrs': {'伤害贯穿': 1,
            '体力': 7,
@@ -967,18 +967,26 @@ XUEREN = {'attrs': {'伤害贯穿': 1,
              'timing': '1',
              '消耗mp': 2},
             {'category': 1,
-             'effects': [{'type': 1, '伤害骰': '1d6+1d4+2', '可反击性': 0, '可闪避性': 1, '客体': 4, '射程': 99, '成功率': 75}],
+             'effects': [{'type': 1, '伤害骰': '2d8+2', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 99, '成功率': 75}],
              'name': '发送雪球',
              'timing': '2',
-             '消耗mp': 2}],
+             '消耗mp': 2},
+            {'category': 4,
+             'effects': [{'type': 4, '客体': 1, '持续回合': 999,
+                          '辅助效果': '伤害骰加值', '辅助效果值': '+17'}],
+             'name': '雪之法杖',
+             'default_persist': 1,
+             'timing': '1'}],
  'str_attrs': {'伤害值': '1d8+1d4'}}
 
 # ============================================================
-#  角色7: 环花暖 (Y7) — 治愈领域(每回合回复HP+MP) + 战意值(敌对召唤物)
+#  角色7: 环花暖 (Y7) — 治愈领域 + 战意值(召唤物撤离、敌方主体压制)
 # ============================================================
 # 战意值：敌方召唤物初始5层，每回合50%概率削弱1层
 #   4层→1惩罚骰, 2层→2惩罚骰, 0层→脱战
 #   削弱至3层后判定增加1奖励骰
+# 敌方主体独立初始4层、每轮65%减1层；4/2层攻击p1/p2，1层伤害-30%，
+#   0层沉默4级但不撤离。来源阵亡/离场/隔离时压制停止，不改主体基础属性。
 HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
            '体力': 10,
            '体力上限': 10,
@@ -1011,6 +1019,12 @@ HUANHUANUAN = {'attrs': {'伤害贯穿': 0,
              'effects': [{'type': 11,
                           '客体': 1,
                           '战意初始层数': 5,
+                          '战意影响主体': 1,
+                          '战意主体初始层数': 4,
+                          '战意主体削弱概率': 65,
+                          '战意主体减伤阈值': 1,
+                          '战意主体减伤百分比': 30,
+                          '战意主体沉默阈值': 0,
                           '战意削弱概率': 50,
                           '战意削弱概率奖励层': 50,
                           '战意奖励骰阈值': 3,
@@ -1206,7 +1220,8 @@ MULUO = {'attrs': {'伤害贯穿': 1,
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '4d6+3',
+                          '伤害骰': '4d6+7',
+                          '吸血比例': '0.25',
                           '友方伤害骰': '2d6',
                           '友方延迟回复公式': 'max_double',
                           '友方延迟回复回合': 3,
@@ -1216,7 +1231,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
                           '可闪避性': 0,
                           '客体': 24,
                           '射程': 4,
-                          '成功率': 70,
+                          '成功率': 85,
                           '敌方回复': 'min_half',
                           '敌方回复骰': '2d6',
                           '敌方延迟回复回合': 3}],
@@ -1258,7 +1273,7 @@ MULUO = {'attrs': {'伤害贯穿': 1,
              'timing': '23'},
             {'_mp_formula': 'ceil_2d6_div_2',
              'category': 1,
-             'effects': [{'type': 1, '伤害骰': '2d8', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 4, '成功率': 70}],
+             'effects': [{'type': 1, '伤害骰': '2d8+4', '吸血比例': '0.25', '可反击性': 0, '可闪避性': 0, '客体': 4, '射程': 4, '成功率': 85}],
              'name': '死之矛',
              'phase': 2,
              'timing': '2'},
@@ -1306,10 +1321,10 @@ CHUNSHANG = {'attrs': {'不可指定': 1,
  'name': '春晌',
  'serial': 'Y10',
  'spells': [{'category': 2,
-             'effects': [{'type': 2, '作用半径': 4, '客体': 13, '护盾值': '2d6+3', '持续回合': 5}],
+             'effects': [{'type': 2, '作用半径': 4, '客体': 13, '护盾值': '3d6+4', '持续回合': 5}],
              'name': '屏障术',
              'timing': '2',
-             '消耗mp': 9},
+             '消耗mp': 8},
             {'category': 3,
              'effects': [{'type': 3, '作用半径': 8, '回复hp': '1d4+2', '客体': 13}],
              'name': '治疗术',
@@ -1359,16 +1374,16 @@ LAN = {'attrs': {'伤害贯穿': 1,
  'serial': 'Y11',
  'spells': [{'category': 1,
              'effects': [{'type': 1,
-                          '伤害骰': '1d10+1d6+2',
+                          '伤害骰': '1d10+1d8+6',
                           '可反击性': 1,
                           '可闪避性': 0,
-                          '吸血比例': '0.35',
+                          '吸血比例': '0.65',
                           '客体': 4,
                           '射程': 2,
                           '成功率': 80,
                           '辅助效果': '反应惩罚骰',
                           '辅助效果值': 'p'},
-                         {'type': 4, '客体': 5, '持续回合': 3, '辅助效果': '致死骰优势', '辅助效果值': 'p'}],
+                         {'type': 4, '客体': 5, '持续回合': 5, '辅助效果': '致死骰优势', '辅助效果值': 'p'}],
              'name': '挥动镰刀',
              'timing': '2',
              '消耗mp': 2},
@@ -1386,7 +1401,13 @@ LAN = {'attrs': {'伤害贯穿': 1,
                          {'type': 4, '客体': 1, '技能加减值': 'MOV+5', '持续回合': 8}],
              'name': '黑雾笼罩',
              'timing': '2',
-             '消耗mp': 3}],
+             '消耗mp': 3},
+            {'category': 4,
+             'effects': [{'type': 4, '客体': 1, '持续回合': 999,
+                          '辅助效果': '伤害骰加值', '辅助效果值': '+3'}],
+             'name': '镰刃余势',
+             'default_persist': 1,
+             'timing': '1'}],
  'str_attrs': {'伤害值': '2d4+4'}}
 
 # ============================================================
@@ -1598,8 +1619,8 @@ SUMMON_TEMPLATES['血液长枪'] = {'APP': 1,
 #  阶段1=魂斗罗, 阶段2=最终幻想, 阶段3=音速索尼克, 阶段4=空白
 # ============================================================
 MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
-           '体力': 14,
-           '体力上限': 14,
+           '体力': 13,
+           '体力上限': 13,
            '体型': 60,
            '体格': 1,
            '体质': 55,
@@ -1811,8 +1832,8 @@ MAIZHIXIA = {'attrs': {'伤害贯穿': 1,
 #  角色15: 于长风 (Y15) — 火焰魔法 + 爆破圈 + 火鼠裘
 # ============================================================
 YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
-           '体力': 13,
-           '体力上限': 13,
+           '体力': 11,
+           '体力上限': 11,
            '体型': 60,
            '体格': 1,
            '体质': 55,
@@ -1827,7 +1848,7 @@ YUCHANGFENG = {'attrs': {'伤害贯穿': 1,
            '智力': 55,
            '状态': 60,
            '理智': 55,
-           '等级': 3,
+           '等级': 4,
            '行动力': 8,
            '闪避': 62,
            '额外行动数': 0,
@@ -2061,8 +2082,8 @@ LINBAI = {'attrs': {'伤害贯穿': 1,
 #  角色17: 夜诏明 (Y17) — 血液魔法使
 # ============================================================
 YEZHAOMING = {'attrs': {'伤害贯穿': 1,
-           '体力': 20,
-           '体力上限': 20,
+           '体力': 9,
+           '体力上限': 9,
            '体型': 45,
            '体格': -2,
            '体质': 35,
@@ -2087,9 +2108,11 @@ YEZHAOMING = {'attrs': {'伤害贯穿': 1,
            '魔法少女序号': 17},
  'blood_ml_per_hp': 500,
  'blood_rules': {'arcana_base_blood': 100,
+                 'arcana_bonus_dice': 1,
                  'arcana_substitute_ml': 500,
                  'armor_cap': 12,
                  'armor_ml': 300,
+                 'armor_per_unit': 2,
                  'ball_heal': 4,
                  'ball_ml': 500,
                  'blade_damage': '1d8+2',
@@ -2331,6 +2354,19 @@ X1 = {'attrs': {'不可指定': 1,
 # ============================================================
 #  所有角色列表
 # ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4045,7 +4081,7 @@ class CombatEngine:
             if '=' not in token:
                 raise ValueError('参数使用 blood=毫升、units=份数、extra_mp=魔力、mode=create/throw、target=用户ID')
             key, value = token.split('=', 1)
-            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target', 'form'):
+            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target', 'form', 'moon'):
                 raise ValueError('未知或重复的血液技能参数')
             if key == 'target':
                 if not value:
@@ -4119,7 +4155,7 @@ class CombatEngine:
         options = spell.get('_blood_options', {})
         allowed = {'guard': {'blood'}, 'blade': {'form'}, 'store': {'units', 'target'}, 'cape': {'units'},
             'arcana': {'mode'}, 'sacrifice': {'mode'},
-            'slash': {'blood'}, 'war': {'extra_mp'}, 'spear': {'mode'}}.get(kind, set())
+            'slash': {'blood', 'moon'}, 'war': {'extra_mp'}, 'spear': {'mode'}}.get(kind, set())
         if set(options) - allowed:
             raise ValueError('该技能不接受此投入参数')
         if not kind:
@@ -4160,9 +4196,9 @@ class CombatEngine:
                 raise ValueError('没有合法攻击目标')
             ent = self._unit_il_entry(uid, self._get_initiative()) or {}
             other = self._unit_il_entry(target, self._get_initiative()) or {}
-            reach = effects[0].get('射程', 2)
+            reach = self._get_attack_range(spell_effect=effects[0])
             if kind == 'spear':
-                reach = rules['spear_range']
+                reach = self._get_attack_range(spell_effect={'射程': rules['spear_range']})
             if chebyshev_dist(ent.get('coord', ''), other.get('coord', '')) > reach:
                 raise ValueError('目标超出射程，请先移动')
         if kind == 'arcana':
@@ -4178,6 +4214,9 @@ class CombatEngine:
             effects[0]['_blood_direction'] = [tp[0] - point[0], tp[1] - point[1]]
             effects[0]['客体'] = 135
             effects[0]['作用半径'] = 0
+            bonus = rules.get('arcana_bonus_dice', 0)
+            if bonus:
+                effects[0]['成功率奖惩骰'] = 'b' if bonus == 1 else f'b{bonus}'
             if ai and (hc >= hp or mc >= mp):
                 raise ValueError('避免反噬死亡或耗尽魔力中断吟唱')
             if ai and any(self._battle_team_of(t) == self._battle_team_of(uid)
@@ -4249,6 +4288,11 @@ class CombatEngine:
                 raise ValueError('月斩血液投入只能为500、1500或2500ml')
             mc = roll_dice('1d8') if roll else (8 if ai else 1)
             prepared['effects'] = [copy.deepcopy(effects[0]) for _ in range(extra + 1)]
+            if 'moon' in options:
+                if not 1 <= options['moon'] <= len(_MOON_PHASE_TABLE):
+                    raise ValueError('moon 月相必须为1至8')
+                for effect in prepared['effects']:
+                    effect['_blood_moon'] = options['moon']
         elif kind == 'war':
             extra = options.get('extra_mp', 0)
             mc = math.ceil(char.get_attr('魔力上限', 26) * .2) + extra
@@ -4407,7 +4451,7 @@ class CombatEngine:
             ent = self._unit_il_entry(uid, self._get_initiative()) or {}
             other = self._unit_il_entry(target, self._get_initiative()) or {}
             if self._hp_safe(target, 0) <= 0 or not other or chebyshev_dist(
-                    ent.get('coord', ''), other.get('coord', '')) > spell['effects'][0].get('射程', 6):
+                    ent.get('coord', ''), other.get('coord', '')) > self._get_attack_range(spell_effect=spell['effects'][0]):
                 self._y17_note(uid, 'sacrifice_chant_fizzled')
                 return '原目标已倒下，祭炼消散。\n'
             self.get_char(uid).set_str('_blood_death_target', target)
@@ -4503,7 +4547,8 @@ class CombatEngine:
                 return {'mode': 'cancel'}
             return {}
         if kind == 'blade':
-            return {'form': 'bow' if distance > 3 else 'sword'}
+            slash_reach = self._get_attack_range(spell_effect={'射程': 3})
+            return {'form': 'bow' if distance > slash_reach else 'sword'}
         if kind == 'guard':
             reserve = 500 + (0 if self._y17_blade(uid) else rules['blade_ml'])
             affordable = max(0, blood - reserve) // rules['armor_ml']
@@ -4522,7 +4567,8 @@ class CombatEngine:
             target_hp = max((self._hp_safe(e['userId']) for e in enemies), default=0)
             extra = min(2, max(0, (blood - rules['slash_base_ml'] - 500) // rules['slash_extra_ml']))
             extra = min(extra, max(0, int(target_hp // 20)))
-            return {'blood': rules['slash_base_ml'] + extra * rules['slash_extra_ml']}
+            moon = 8 if self._hp_safe(uid) <= char.get_attr('体力上限') * .75 else 5
+            return {'blood': rules['slash_base_ml'] + extra * rules['slash_extra_ml'], 'moon': moon}
         return {}
 
     def _y17_ai_priority(self, uid, actions):
@@ -4564,7 +4610,7 @@ class CombatEngine:
                 if index == 3 and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
                     score = 65 if distance <= 10 else 8
                 elif index == 5 and acts.get('附加', 0) > 0:
-                    score = 60 if not self._y17_blade(uid) else 12
+                    score = 60 if not self._y17_blade(uid) else (50 if options['form'] == 'sword' and blood >= 600 else 12)
                 elif index == 7 and options.get('target'):
                     target = options['target']
                     cap = self.get_char(target).get_attr('体力上限')
@@ -4581,7 +4627,9 @@ class CombatEngine:
                     score = 40
                 elif index == 11:
                     segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
-                    score = 12 * .8 * segments
+                    phase_damage = avg_damage(_MOON_PHASE_TABLE[options['moon'] - 1][1])
+                    healing = min(max_hp - hp, phase_damage) if options['moon'] in (1, 2, 7, 8) else 0
+                    score = (phase_damage + healing * .7) * .8 * segments
                 elif index == 6 and hp > max(8, max_hp * .3):
                     score = 13 * min(3, len(enemies))
                 elif index == 2 and hp >= max_hp * .45:
@@ -6143,13 +6191,16 @@ class CombatEngine:
         return result
 
     def _get_active_buffs(self, uid, include_zone=True):
-        """Physical buffs plus a freshly-derived live view from covering zones.
+        """Physical buffs plus live battle-spirit and covering-zone views.
 
         Zone views are never cached and never appended to the physical list:
         membership depends on the current position, which changes without
         going through `_set_effects`.
         """
         physical = self._get_physical_buffs(uid)
+        spirit = self._battle_spirit_character_views(uid)
+        if spirit:
+            physical = physical + spirit
         if not include_zone:
             return physical
         # Cheap gate: most battles have no aura-carrying zone at all, and this
@@ -6593,6 +6644,7 @@ class CombatEngine:
                           'cost_counter_amount','吟唱回合',
                           '战意初始层数','战意削弱概率','战意削弱概率奖励层',
                           '战意奖励骰阈值','战意惩罚1阈值','战意惩罚2阈值','战意惩罚骰上限',
+                          '战意影响主体','战意主体初始层数','战意主体削弱概率','战意主体减伤阈值','战意主体减伤百分比','战意主体沉默阈值',
                           '领域立即结算','领域轮首结算次数','领域急救','领域同时上限',
                           '死亡轮窗口','复活回复比例','复活主体',
                           '分发自留','分发队友每人','分发给总数上限',
@@ -8674,7 +8726,8 @@ class CombatEngine:
             # Per-source tuning lives in the CharacterData effect; only carry keys
             # that were actually declared so the generic defaults stay intact.
             for key in ('战意初始层数', '战意削弱概率', '战意削弱概率奖励层',
-                        '战意奖励骰阈值', '战意惩罚1阈值', '战意惩罚2阈值', '战意惩罚骰上限'):
+                        '战意奖励骰阈值', '战意惩罚1阈值', '战意惩罚2阈值', '战意惩罚骰上限',
+                        '战意影响主体', '战意主体初始层数', '战意主体削弱概率', '战意主体减伤阈值', '战意主体减伤百分比', '战意主体沉默阈值'):
                 val = _eff_get(eff, key)
                 if val not in (None, ''):
                     bs_entry[key] = val
@@ -8998,7 +9051,8 @@ class CombatEngine:
         elif eff.get('damage_table') == 'moon_phase':
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            phase_index = eff.get('_blood_moon')
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)
@@ -9118,9 +9172,48 @@ class CombatEngine:
                                             moon_drain=eff.get('_moon_drain', 0))
         return out
 
+    def _battle_spirit_character_views(self, uid):
+        """Read-only suppression: characters never use summon withdrawal logic."""
+        uid = self._resolve_uid(uid)
+        views = []
+        for eff in self._get_effects():
+            if eff.get('type') != 'battleSpirit' or not eff.get('战意影响主体'):
+                continue
+            src = self._resolve_uid(eff.get('sourceUserId', ''))
+            if (self._get_combat_hp(src) or 0) <= 0 or not self._unit_il_entry(src, self._get_initiative()):
+                continue
+            if any(b.get('auxType') == '隔离' for b in self._get_physical_buffs(src)):
+                continue
+            stacks = eff.get('characterStacks', {}).get(uid)
+            if stacks is None:
+                continue
+            cfg = self._battle_spirit_config(eff)
+            pens = min(cfg['penalty_max'], 2 if stacks <= cfg['penalty2_threshold']
+                       else 1 if stacks <= cfg['penalty1_threshold'] else 0)
+            modifiers = []
+            if pens:
+                modifiers.append(('伤害成功率奖励惩罚', f'p{pens}', 16))
+            if stacks <= eff.get('战意主体减伤阈值', 1):
+                modifiers.append(('造成伤害百分比', str(-abs(eff.get('战意主体减伤百分比', 30))), 3))
+            if stacks <= eff.get('战意主体沉默阈值', 0):
+                modifiers.append(('沉默', '4', 0))
+            for name, value, code in modifiers:
+                # Multiple auras cannot multiply the same suppression tier.
+                existing = next((v for v in views if v['auxType'] == name), None)
+                view = dict(type='debuff', targetUserId=uid, sourceUserId=src,
+                            auxType=name, auxVal=value, auxCode=code, remainingRounds=1,
+                            spellName=eff.get('spellName', ''), sourcePassive=True)
+                if existing is None:
+                    views.append(view)
+                elif name == '造成伤害百分比' and int(value) < int(existing['auxVal']):
+                    views[views.index(existing)] = view
+                elif name == '伤害成功率奖励惩罚' and int(value[1:]) > int(existing['auxVal'][1:]):
+                    views[views.index(existing)] = view
+        return views
+
     # ---- Battle Spirit processing (环花暖 passive) ----
     def _process_battle_spirit(self):
-        """Process 战意值 for enemy summon groups. Called each round from _tick_down.
+        """Process enemy summons and opted-in characters once each round.
 
         State lives on the stable summon group, not on whichever member currently
         holds the initiative slot: representative changes keep their stacks, and
@@ -9147,8 +9240,26 @@ class CombatEngine:
 
         msgs = []
         processed = set()
+        processed_characters = set()
         for src, src_team, eff in sources:
             cfg = self._battle_spirit_config(eff)
+            if eff.get('战意影响主体'):
+                states = eff.setdefault('characterStacks', {})
+                for entry in il:
+                    uid = self._resolve_uid(entry['userId'])
+                    if entry.get('isSummon') or entry.get('team') == src_team or uid in processed_characters:
+                        continue
+                    if (self._get_combat_hp(uid) or 0) <= 0:
+                        continue
+                    processed_characters.add(uid)
+                    if uid not in states:
+                        states[uid] = eff.get('战意主体初始层数', cfg['initial'])
+                    elif states[uid] > 0:
+                        rate = eff.get('战意主体削弱概率', cfg['rate'] if states[uid] > cfg['bonus_threshold'] else cfg['rate_bonus'])
+                        if random.randint(1, 100) <= rate:
+                            states[uid] -= 1
+                            msgs.append(f"战意值: {self.get_char(uid).name} 削弱至 {states[uid]} 层（主体不退场）")
+                self._set_effects(self._get_effects())
             for key in list(self._summon_groups):
                 grp = self._summon_groups.get(key)
                 if not grp or key in processed:
@@ -10652,7 +10763,8 @@ class FullBattleEngine(CombatEngine):
         elif eff.get('damage_table') == 'moon_phase':
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            phase_index = eff.get('_blood_moon')
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)
@@ -14851,7 +14963,10 @@ logger = logging.getLogger('ai_battle')
 logger.setLevel(logging.DEBUG)
 
 # File handler
-fh = logging.FileHandler(file_path('LOG_FILE'), encoding='utf-8', mode='w')
+import multiprocessing
+fh = (logging.FileHandler(file_path('LOG_FILE'), encoding='utf-8', mode='w')
+      if multiprocessing.current_process().name == 'MainProcess' and not os.environ.get('AUTOCOMBAT_NO_FILE_LOG')
+      else logging.NullHandler())
 fh.setLevel(battle_setting('FILE_LOG_LEVEL'))
 fh._combat_setting = 'FILE_LOG_LEVEL'
 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%H:%M:%S'))
@@ -16422,127 +16537,74 @@ class Tournament:
         v2_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_2v2))}
         v3_standings = {i: {'pts': 0.0, 'wins': 0, 'battles': 0} for i in range(len(teams_3v3))}
 
-        use_parallel = battle_setting('PRELIM_WORKERS') > 1
-
-        if use_parallel:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            self._parallel_prelim = True
-            standings_lock = threading.Lock()
-            battle_log('info', f'预赛并行模式: {battle_setting("PRELIM_WORKERS")} workers')
-            # Submit all battles
-            future_map = {}
-            try:
-                with ThreadPoolExecutor(max_workers=battle_setting('PRELIM_WORKERS')) as executor:
-                    for args in full_pool:
-                        phase_tag, label, map_size, ta, tb, i, j = args
-                        fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
-                        fut = executor.submit(self.battle, ta, tb, map_size, label, 1,
-                                              battle_setting('DISPLAY_PRELIM'), battle_setting('DELAY_PRELIM_TURN'), fmt_max_rounds)
-                        future_map[fut] = args
-                        if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
-                            time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
-                    # Collect results
-                    completed = 0
-                    for fut in as_completed(future_map):
-                        completed += 1
-                        phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
-                        try:
-                            winner, loser, rds, result = fut.result()
-                        except Exception as e:
-                            battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
-                            continue
-                        # Process standings (protected by lock for thread-safe dict updates)
-                        with standings_lock:
-                            if phase_tag == '1v1':
-                                w_pts, l_pts = self._calc_points(result)
-                                w_player = winner; l_player = loser
-                                player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
-                                player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
-                                player_wins[w_player] = player_wins.get(w_player, 0) + 1
-                                player_battles[w_player] = player_battles.get(w_player, 0) + 1
-                                player_battles[l_player] = player_battles.get(l_player, 0) + 1
-                            elif phase_tag == '2v2':
-                                w_pts, l_pts = self._calc_points(result)
-                                ws = set(winner.split('+')); ls = set(loser.split('+'))
-                                for idx in [i, j]:
-                                    ts = set(teams_2v2[idx])
-                                    if ts == ws:
-                                        v2_standings[idx]['pts'] += w_pts
-                                        v2_standings[idx]['wins'] += 1
-                                        v2_standings[idx]['battles'] += 1
-                                    elif ts == ls:
-                                        v2_standings[idx]['pts'] += l_pts
-                                        v2_standings[idx]['battles'] += 1
-                            elif phase_tag == '3v3':
-                                w_pts, l_pts = self._calc_points(result)
-                                ws = set(winner.split('+')); ls = set(loser.split('+'))
-                                for idx in [i, j]:
-                                    ts = set(teams_3v3[idx])
-                                    if ts == ws:
-                                        v3_standings[idx]['pts'] += w_pts
-                                        v3_standings[idx]['wins'] += 1
-                                        v3_standings[idx]['battles'] += 1
-                                    elif ts == ls:
-                                        v3_standings[idx]['pts'] += l_pts
-                                        v3_standings[idx]['battles'] += 1
-                        # Record result (parallel path skips append inside battle())
-                        a_name = '+'.join(ta)
-                        b_name = '+'.join(tb)
-                        self.results.append((a_name, b_name, winner, rds, map_size, label, False))
-                        if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
-                            battle_log('info', f'  预赛进度: {completed}/{total_matches}')
-            finally:
-                self._parallel_prelim = False
-        else:
-            completed = 0
-            for phase_tag, label, map_size, ta, tb, i, j in full_pool:
-                completed += 1
-                try:
+        from sim_parallel import Battles
+        self._parallel_prelim = True
+        standings_lock = threading.Lock()
+        battle_log('info', f'预赛并行模式: {battle_setting("PRELIM_WORKERS")} workers')
+        # Submit all battles
+        future_map = {}
+        try:
+            workers = min(battle_setting('PRELIM_WORKERS'), max(1, len(full_pool) // 16))
+            with Battles(workers, {key: battle_setting(key) for key in _SETTING_DEFAULTS}, self.char_season_status) as executor:
+                for args in full_pool:
+                    phase_tag, label, map_size, ta, tb, i, j = args
                     fmt_max_rounds = battle_setting('MAX_ROUNDS_PRELIM_BY_FORMAT').get(phase_tag, battle_setting('MAX_ROUNDS_PRELIM'))
-                    winner, loser, rds, result = self.battle(ta, tb, map_size, label, display_level=battle_setting('DISPLAY_PRELIM'), delay=battle_setting('DELAY_PRELIM_TURN'), max_rounds=fmt_max_rounds)
+                    fut = executor.submit(random.getrandbits(63), ta, tb, map_size, label, 1,
+                                          battle_setting('DISPLAY_PRELIM'), battle_setting('DELAY_PRELIM_TURN'), fmt_max_rounds)
+                    future_map[fut] = args
                     if battle_setting('DELAY_PRELIM_BETWEEN_BATTLES') > 0:
                         time.sleep(battle_setting('DELAY_PRELIM_BETWEEN_BATTLES'))
-                except Exception as e:
-                    battle_log('error', f'  !! 战斗异常跳过: {label} — {e}')
-                    import traceback
-                    battle_log('error', traceback.format_exc()[-300:])
-                    continue
-                # 1v1: award points to individual players
-                if phase_tag == '1v1':
-                    w_pts, l_pts = self._calc_points(result)
-                    w_player = winner; l_player = loser
-                    player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
-                    player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
-                    player_wins[w_player] = player_wins.get(w_player, 0) + 1
-                    player_battles[w_player] = player_battles.get(w_player, 0) + 1
-                    player_battles[l_player] = player_battles.get(l_player, 0) + 1
-                # 2v2/3v3: award team-level standings with point system (same as 1v1)
-                elif phase_tag == '2v2':
-                    w_pts, l_pts = self._calc_points(result)
-                    ws = set(winner.split('+')); ls = set(loser.split('+'))
-                    for idx in [i, j]:
-                        ts = set(teams_2v2[idx])
-                        if ts == ws:
-                            v2_standings[idx]['pts'] += w_pts
-                            v2_standings[idx]['wins'] += 1
-                            v2_standings[idx]['battles'] += 1
-                        elif ts == ls:
-                            v2_standings[idx]['pts'] += l_pts
-                            v2_standings[idx]['battles'] += 1
-                elif phase_tag == '3v3':
-                    w_pts, l_pts = self._calc_points(result)
-                    ws = set(winner.split('+')); ls = set(loser.split('+'))
-                    for idx in [i, j]:
-                        ts = set(teams_3v3[idx])
-                        if ts == ws:
-                            v3_standings[idx]['pts'] += w_pts
-                            v3_standings[idx]['wins'] += 1
-                            v3_standings[idx]['battles'] += 1
-                        elif ts == ls:
-                            v3_standings[idx]['pts'] += l_pts
-                            v3_standings[idx]['battles'] += 1
-                if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
-                    battle_log('info', f'  预赛进度: {completed}/{total_matches}')
+                # Collect results
+                completed = 0
+                for fut in future_map:
+                    completed += 1
+                    phase_tag, label, map_size, ta, tb, i, j = future_map[fut]
+                    try:
+                        winner, loser, rds, result = fut.result()
+                    except Exception as e:
+                        raise RuntimeError(f'预赛战斗失败: {label}') from e
+                    # Process standings (protected by lock for thread-safe dict updates)
+                    with standings_lock:
+                        if phase_tag == '1v1':
+                            w_pts, l_pts = self._calc_points(result)
+                            w_player = winner; l_player = loser
+                            player_pts[w_player] = player_pts.get(w_player, 0) + w_pts
+                            player_pts[l_player] = player_pts.get(l_player, 0) + l_pts
+                            player_wins[w_player] = player_wins.get(w_player, 0) + 1
+                            player_battles[w_player] = player_battles.get(w_player, 0) + 1
+                            player_battles[l_player] = player_battles.get(l_player, 0) + 1
+                        elif phase_tag == '2v2':
+                            w_pts, l_pts = self._calc_points(result)
+                            ws = set(winner.split('+')); ls = set(loser.split('+'))
+                            for idx in [i, j]:
+                                ts = set(teams_2v2[idx])
+                                if ts == ws:
+                                    v2_standings[idx]['pts'] += w_pts
+                                    v2_standings[idx]['wins'] += 1
+                                    v2_standings[idx]['battles'] += 1
+                                elif ts == ls:
+                                    v2_standings[idx]['pts'] += l_pts
+                                    v2_standings[idx]['battles'] += 1
+                        elif phase_tag == '3v3':
+                            w_pts, l_pts = self._calc_points(result)
+                            ws = set(winner.split('+')); ls = set(loser.split('+'))
+                            for idx in [i, j]:
+                                ts = set(teams_3v3[idx])
+                                if ts == ws:
+                                    v3_standings[idx]['pts'] += w_pts
+                                    v3_standings[idx]['wins'] += 1
+                                    v3_standings[idx]['battles'] += 1
+                                elif ts == ls:
+                                    v3_standings[idx]['pts'] += l_pts
+                                    v3_standings[idx]['battles'] += 1
+                    # Record result (parallel path skips append inside battle())
+                    a_name = '+'.join(ta)
+                    b_name = '+'.join(tb)
+                    self.results.append((a_name, b_name, winner, rds, map_size, label, False))
+                    if completed % battle_setting('PRELIM_PROGRESS_INTERVAL') == 0:
+                        battle_log('info', f'  预赛进度: {completed}/{total_matches}')
+        finally:
+            self._parallel_prelim = False
 
         # ---- Display all standings and run all knockouts ----
 

@@ -76,6 +76,15 @@ class Tasks:
                 if type(workers) is not int or not 1 <= workers <= 32:
                     raise BadRequest('并发数应为 1–32')
                 params.update(formats=formats, workers=workers)
+        fast = data.get('fast', False)
+        if type(fast) is not bool:
+            raise BadRequest('极速开关必须为布尔值')
+        params['fast'] = fast
+        if mode == 'single':
+            workers = data.get('workers', min(8, os.cpu_count() or 1))
+            if type(workers) is not int or not 1 <= workers <= 32:
+                raise BadRequest('并发数应为 1–32')
+            params['workers'] = workers
         return params
 
     def start(self):
@@ -111,23 +120,30 @@ class Tasks:
             with error_path.open('w', encoding='utf-8') as err:
                 proc = subprocess.Popen([sys.executable, '-u', str(folder/'ui_task_worker.py')], stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=err, text=True, encoding='utf-8', cwd=folder,
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+                    start_new_session=os.name != 'nt', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
                 with self.lock:
                     self.processes[jid] = proc
                     if self.store.get('task', jid)['status'] == 'cancelled':
                         proc.terminate()
                 proc.stdin.write(json.dumps(job['params']) + '\n')
                 proc.stdin.close()
+                last_save = time.monotonic()
                 for line in proc.stdout:
                     row = json.loads(line)
                     with self.lock:
-                        job = self.store.get('task', jid)
-                        if job['status'] == 'cancelled':
+                        if self.store.get('task', jid)['status'] == 'cancelled':
                             continue
-                        if 'log' in row:
-                            job['logs'] = (job['logs'] + [row['log']])[-3000:]
+                        if 'log' in row or 'logs' in row:
+                            job['logs'].extend(row.get('logs', [row['log']] if 'log' in row else []))
+                            if job['params']['mode'] != 'verbose':
+                                job['logs'] = job['logs'][-3000:]
                         else:
                             job.update(row)
+                        if time.monotonic() - last_save >= 1:
+                            self.store.put('task', job)
+                            last_save = time.monotonic()
+                with self.lock:
+                    if self.store.get('task', jid)['status'] != 'cancelled':
                         self.store.put('task', job)
                 proc.stdout.close()
                 code = proc.wait()
@@ -183,7 +199,12 @@ class Tasks:
                 job['status'] = 'cancelled'
                 self.store.put('task', job)
                 if jid in self.processes:
-                    self.processes[jid].terminate()
+                    proc = self.processes[jid]
+                    if os.name == 'nt':
+                        subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                    else:
+                        import signal
+                        os.killpg(proc.pid, signal.SIGTERM)
             return jsonify(job)
 
     def train(self):

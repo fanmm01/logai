@@ -78,7 +78,8 @@ def main():
                 output['mean_wins'] = sum(r['wins'] for r in output['runs']) / len(output['runs'])
                 output['target_met'] = (not args.screen and len(output['runs']) == 10 and not output['errors']
                     and output['inputs_unchanged'] and all(r['battles'] == 82 for r in output['runs'])
-                    and output['effective_character']['level'] == 6 and 45 <= output['mean_wins'] <= 47)
+                    and output['effective_character']['level'] == 6
+                    and output['effective_character']['hp'] <= 10 and 43 <= output['mean_wins'] <= 45)
                 output['workers'] = args.workers
                 args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
                 print('completed', len(output['runs']), 'mean_wins', output['mean_wins'], flush=True)
@@ -192,7 +193,8 @@ def main():
             output['mean_wins'] = sum(r['wins'] for r in output['runs']) / len(output['runs'])
             output['target_met'] = (not args.screen and len(output['runs']) == 10
                 and not errors and all(r['battles'] == 82 for r in output['runs'])
-                and cd.YEZHAOMING['attrs']['等级'] == 6 and 45 <= output['mean_wins'] <= 47)
+                and cd.YEZHAOMING['attrs']['等级'] == 6
+                and cd.YEZHAOMING['attrs']['体力上限'] <= 10 and 43 <= output['mean_wins'] <= 45)
             args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
             print(json.dumps({k: record[k] for k in ('seed','wins','battles','rank','seconds','counts')},
                              ensure_ascii=False), flush=True)

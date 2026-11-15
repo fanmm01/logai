@@ -1503,7 +1503,7 @@ class CombatEngine:
             if '=' not in token:
                 raise ValueError('参数使用 blood=毫升、units=份数、extra_mp=魔力、mode=create/throw、target=用户ID')
             key, value = token.split('=', 1)
-            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target', 'form'):
+            if key in options or key not in ('blood', 'units', 'extra_mp', 'mode', 'target', 'form', 'moon'):
                 raise ValueError('未知或重复的血液技能参数')
             if key == 'target':
                 if not value:
@@ -1577,7 +1577,7 @@ class CombatEngine:
         options = spell.get('_blood_options', {})
         allowed = {'guard': {'blood'}, 'blade': {'form'}, 'store': {'units', 'target'}, 'cape': {'units'},
             'arcana': {'mode'}, 'sacrifice': {'mode'},
-            'slash': {'blood'}, 'war': {'extra_mp'}, 'spear': {'mode'}}.get(kind, set())
+            'slash': {'blood', 'moon'}, 'war': {'extra_mp'}, 'spear': {'mode'}}.get(kind, set())
         if set(options) - allowed:
             raise ValueError('该技能不接受此投入参数')
         if not kind:
@@ -1618,9 +1618,9 @@ class CombatEngine:
                 raise ValueError('没有合法攻击目标')
             ent = self._unit_il_entry(uid, self._get_initiative()) or {}
             other = self._unit_il_entry(target, self._get_initiative()) or {}
-            reach = effects[0].get('射程', 2)
+            reach = self._get_attack_range(spell_effect=effects[0])
             if kind == 'spear':
-                reach = rules['spear_range']
+                reach = self._get_attack_range(spell_effect={'射程': rules['spear_range']})
             if chebyshev_dist(ent.get('coord', ''), other.get('coord', '')) > reach:
                 raise ValueError('目标超出射程，请先移动')
         if kind == 'arcana':
@@ -1636,6 +1636,9 @@ class CombatEngine:
             effects[0]['_blood_direction'] = [tp[0] - point[0], tp[1] - point[1]]
             effects[0]['客体'] = 135
             effects[0]['作用半径'] = 0
+            bonus = rules.get('arcana_bonus_dice', 0)
+            if bonus:
+                effects[0]['成功率奖惩骰'] = 'b' if bonus == 1 else f'b{bonus}'
             if ai and (hc >= hp or mc >= mp):
                 raise ValueError('避免反噬死亡或耗尽魔力中断吟唱')
             if ai and any(self._battle_team_of(t) == self._battle_team_of(uid)
@@ -1707,6 +1710,11 @@ class CombatEngine:
                 raise ValueError('月斩血液投入只能为500、1500或2500ml')
             mc = roll_dice('1d8') if roll else (8 if ai else 1)
             prepared['effects'] = [copy.deepcopy(effects[0]) for _ in range(extra + 1)]
+            if 'moon' in options:
+                if not 1 <= options['moon'] <= len(_MOON_PHASE_TABLE):
+                    raise ValueError('moon 月相必须为1至8')
+                for effect in prepared['effects']:
+                    effect['_blood_moon'] = options['moon']
         elif kind == 'war':
             extra = options.get('extra_mp', 0)
             mc = math.ceil(char.get_attr('魔力上限', 26) * .2) + extra
@@ -1865,7 +1873,7 @@ class CombatEngine:
             ent = self._unit_il_entry(uid, self._get_initiative()) or {}
             other = self._unit_il_entry(target, self._get_initiative()) or {}
             if self._hp_safe(target, 0) <= 0 or not other or chebyshev_dist(
-                    ent.get('coord', ''), other.get('coord', '')) > spell['effects'][0].get('射程', 6):
+                    ent.get('coord', ''), other.get('coord', '')) > self._get_attack_range(spell_effect=spell['effects'][0]):
                 self._y17_note(uid, 'sacrifice_chant_fizzled')
                 return '原目标已倒下，祭炼消散。\n'
             self.get_char(uid).set_str('_blood_death_target', target)
@@ -1961,7 +1969,8 @@ class CombatEngine:
                 return {'mode': 'cancel'}
             return {}
         if kind == 'blade':
-            return {'form': 'bow' if distance > 3 else 'sword'}
+            slash_reach = self._get_attack_range(spell_effect={'射程': 3})
+            return {'form': 'bow' if distance > slash_reach else 'sword'}
         if kind == 'guard':
             reserve = 500 + (0 if self._y17_blade(uid) else rules['blade_ml'])
             affordable = max(0, blood - reserve) // rules['armor_ml']
@@ -1980,7 +1989,8 @@ class CombatEngine:
             target_hp = max((self._hp_safe(e['userId']) for e in enemies), default=0)
             extra = min(2, max(0, (blood - rules['slash_base_ml'] - 500) // rules['slash_extra_ml']))
             extra = min(extra, max(0, int(target_hp // 20)))
-            return {'blood': rules['slash_base_ml'] + extra * rules['slash_extra_ml']}
+            moon = 8 if self._hp_safe(uid) <= char.get_attr('体力上限') * .75 else 5
+            return {'blood': rules['slash_base_ml'] + extra * rules['slash_extra_ml'], 'moon': moon}
         return {}
 
     def _y17_ai_priority(self, uid, actions):
@@ -2022,7 +2032,7 @@ class CombatEngine:
                 if index == 3 and acts.get('附加', 0) > 0 and blood - options['blood'] >= 500:
                     score = 65 if distance <= 10 else 8
                 elif index == 5 and acts.get('附加', 0) > 0:
-                    score = 60 if not self._y17_blade(uid) else 12
+                    score = 60 if not self._y17_blade(uid) else (50 if options['form'] == 'sword' and blood >= 600 else 12)
                 elif index == 7 and options.get('target'):
                     target = options['target']
                     cap = self.get_char(target).get_attr('体力上限')
@@ -2039,7 +2049,9 @@ class CombatEngine:
                     score = 40
                 elif index == 11:
                     segments = 1 + (options['blood'] - rules['slash_base_ml']) // rules['slash_extra_ml']
-                    score = 12 * .8 * segments
+                    phase_damage = avg_damage(_MOON_PHASE_TABLE[options['moon'] - 1][1])
+                    healing = min(max_hp - hp, phase_damage) if options['moon'] in (1, 2, 7, 8) else 0
+                    score = (phase_damage + healing * .7) * .8 * segments
                 elif index == 6 and hp > max(8, max_hp * .3):
                     score = 13 * min(3, len(enemies))
                 elif index == 2 and hp >= max_hp * .45:
@@ -3601,13 +3613,16 @@ class CombatEngine:
         return result
 
     def _get_active_buffs(self, uid, include_zone=True):
-        """Physical buffs plus a freshly-derived live view from covering zones.
+        """Physical buffs plus live battle-spirit and covering-zone views.
 
         Zone views are never cached and never appended to the physical list:
         membership depends on the current position, which changes without
         going through `_set_effects`.
         """
         physical = self._get_physical_buffs(uid)
+        spirit = self._battle_spirit_character_views(uid)
+        if spirit:
+            physical = physical + spirit
         if not include_zone:
             return physical
         # Cheap gate: most battles have no aura-carrying zone at all, and this
@@ -4051,6 +4066,7 @@ class CombatEngine:
                           'cost_counter_amount','吟唱回合',
                           '战意初始层数','战意削弱概率','战意削弱概率奖励层',
                           '战意奖励骰阈值','战意惩罚1阈值','战意惩罚2阈值','战意惩罚骰上限',
+                          '战意影响主体','战意主体初始层数','战意主体削弱概率','战意主体减伤阈值','战意主体减伤百分比','战意主体沉默阈值',
                           '领域立即结算','领域轮首结算次数','领域急救','领域同时上限',
                           '死亡轮窗口','复活回复比例','复活主体',
                           '分发自留','分发队友每人','分发给总数上限',
@@ -6132,7 +6148,8 @@ class CombatEngine:
             # Per-source tuning lives in the CharacterData effect; only carry keys
             # that were actually declared so the generic defaults stay intact.
             for key in ('战意初始层数', '战意削弱概率', '战意削弱概率奖励层',
-                        '战意奖励骰阈值', '战意惩罚1阈值', '战意惩罚2阈值', '战意惩罚骰上限'):
+                        '战意奖励骰阈值', '战意惩罚1阈值', '战意惩罚2阈值', '战意惩罚骰上限',
+                        '战意影响主体', '战意主体初始层数', '战意主体削弱概率', '战意主体减伤阈值', '战意主体减伤百分比', '战意主体沉默阈值'):
                 val = _eff_get(eff, key)
                 if val not in (None, ''):
                     bs_entry[key] = val
@@ -6456,7 +6473,8 @@ class CombatEngine:
         elif eff.get('damage_table') == 'moon_phase':
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            phase_index = eff.get('_blood_moon')
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)
@@ -6576,9 +6594,48 @@ class CombatEngine:
                                             moon_drain=eff.get('_moon_drain', 0))
         return out
 
+    def _battle_spirit_character_views(self, uid):
+        """Read-only suppression: characters never use summon withdrawal logic."""
+        uid = self._resolve_uid(uid)
+        views = []
+        for eff in self._get_effects():
+            if eff.get('type') != 'battleSpirit' or not eff.get('战意影响主体'):
+                continue
+            src = self._resolve_uid(eff.get('sourceUserId', ''))
+            if (self._get_combat_hp(src) or 0) <= 0 or not self._unit_il_entry(src, self._get_initiative()):
+                continue
+            if any(b.get('auxType') == '隔离' for b in self._get_physical_buffs(src)):
+                continue
+            stacks = eff.get('characterStacks', {}).get(uid)
+            if stacks is None:
+                continue
+            cfg = self._battle_spirit_config(eff)
+            pens = min(cfg['penalty_max'], 2 if stacks <= cfg['penalty2_threshold']
+                       else 1 if stacks <= cfg['penalty1_threshold'] else 0)
+            modifiers = []
+            if pens:
+                modifiers.append(('伤害成功率奖励惩罚', f'p{pens}', 16))
+            if stacks <= eff.get('战意主体减伤阈值', 1):
+                modifiers.append(('造成伤害百分比', str(-abs(eff.get('战意主体减伤百分比', 30))), 3))
+            if stacks <= eff.get('战意主体沉默阈值', 0):
+                modifiers.append(('沉默', '4', 0))
+            for name, value, code in modifiers:
+                # Multiple auras cannot multiply the same suppression tier.
+                existing = next((v for v in views if v['auxType'] == name), None)
+                view = dict(type='debuff', targetUserId=uid, sourceUserId=src,
+                            auxType=name, auxVal=value, auxCode=code, remainingRounds=1,
+                            spellName=eff.get('spellName', ''), sourcePassive=True)
+                if existing is None:
+                    views.append(view)
+                elif name == '造成伤害百分比' and int(value) < int(existing['auxVal']):
+                    views[views.index(existing)] = view
+                elif name == '伤害成功率奖励惩罚' and int(value[1:]) > int(existing['auxVal'][1:]):
+                    views[views.index(existing)] = view
+        return views
+
     # ---- Battle Spirit processing (环花暖 passive) ----
     def _process_battle_spirit(self):
-        """Process 战意值 for enemy summon groups. Called each round from _tick_down.
+        """Process enemy summons and opted-in characters once each round.
 
         State lives on the stable summon group, not on whichever member currently
         holds the initiative slot: representative changes keep their stacks, and
@@ -6605,8 +6662,26 @@ class CombatEngine:
 
         msgs = []
         processed = set()
+        processed_characters = set()
         for src, src_team, eff in sources:
             cfg = self._battle_spirit_config(eff)
+            if eff.get('战意影响主体'):
+                states = eff.setdefault('characterStacks', {})
+                for entry in il:
+                    uid = self._resolve_uid(entry['userId'])
+                    if entry.get('isSummon') or entry.get('team') == src_team or uid in processed_characters:
+                        continue
+                    if (self._get_combat_hp(uid) or 0) <= 0:
+                        continue
+                    processed_characters.add(uid)
+                    if uid not in states:
+                        states[uid] = eff.get('战意主体初始层数', cfg['initial'])
+                    elif states[uid] > 0:
+                        rate = eff.get('战意主体削弱概率', cfg['rate'] if states[uid] > cfg['bonus_threshold'] else cfg['rate_bonus'])
+                        if random.randint(1, 100) <= rate:
+                            states[uid] -= 1
+                            msgs.append(f"战意值: {self.get_char(uid).name} 削弱至 {states[uid]} 层（主体不退场）")
+                self._set_effects(self._get_effects())
             for key in list(self._summon_groups):
                 grp = self._summon_groups.get(key)
                 if not grp or key in processed:
@@ -8110,7 +8185,8 @@ class FullBattleEngine(CombatEngine):
         elif eff.get('damage_table') == 'moon_phase':
             # 血月斩击·月相表：掷 1d8 选月相，吸取月相结算后等量治疗施法者
             # 吸取量暂存 eff['_moon_drain']，随 PvP ReactionNeeded 的 effect 往返存活
-            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
+            phase_index = eff.get('_blood_moon')
+            phase_name, phase_dice, phase_drain = _MOON_PHASE_TABLE[phase_index - 1 if phase_index else random.randint(0, len(_MOON_PHASE_TABLE) - 1)]
             dmg_dice = phase_dice
             eff['_moon_drain'] = (roll_dice('1d8') if phase_name == '亏凸月' else
                 5 if phase_name == '上弦月' else 0)

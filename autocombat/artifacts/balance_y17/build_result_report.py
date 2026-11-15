@@ -12,9 +12,9 @@ def read(name):
 
 def main():
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument('--after', default='level6_final_hp20_tournaments10.json')
-    parser.add_argument('--before', default='level6_baseline4500_tournaments10.json')
-    parser.add_argument('--team', default='level6_hp20_team_validation.json')
+    parser.add_argument('--after', default='level6_final_hp19_tournaments10.json')
+    parser.add_argument('--before', default='level6_baseline5500_tournaments10.json')
+    parser.add_argument('--team', default='level6_hp19_team_validation.json')
     args = parser.parse_args()
     after = read(args.after)
     before = read(args.before)
@@ -67,7 +67,7 @@ def main():
 - 血枪保留 1L、近战 1d8+6、投掷 1d10+6、三次耐久；投掷消耗整枪，成功反击与格挡损坏也计入磨损。
 - 披风保留 1L→4MP；AI 仅在缺少攻击所需魔力时考虑换蓝。
 
-在 6 级约束下，小幅生命、血枪耐久和换蓝倍率候选未稳定达到目标。HP 18 的五次筛查为 46、44、46、47、44 胜，但其独立十次验收平均 44.0 胜，故最终再补足生存预算到上述 HP，并更换种子进行本批验收。未采用试验过的五次血枪耐久、1L→8MP 或双倍护甲；未重训或重写全局权重。
+在 6 级约束下，小幅生命、血枪耐久和换蓝倍率候选未稳定达到目标。HP 18 的五次筛查为 46、44、46、47、44 胜，但其独立十次验收平均 44.0 胜；HP 20 的另一批十次平均 49.4 胜，超过目标上沿。因此收敛到上述 HP，并更换种子进行本批验收。不同批次种子不同，不能把均值差当作单一 HP 参数的精确因果效果。未采用试验过的五次血枪耐久、1L→8MP 或双倍护甲；未重训或重写全局权重。
 
 ## 一、二阶段完成项
 

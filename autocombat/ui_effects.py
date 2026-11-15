@@ -7,6 +7,8 @@ import tokenize
 
 START = '# autocombat:disabled-effect'
 END = '# autocombat:end-disabled-effect'
+SPELL_START = '# autocombat:disabled-spell'
+SPELL_END = '# autocombat:end-disabled-spell'
 
 
 def field(node, key):
@@ -18,6 +20,8 @@ def field(node, key):
 
 def runtime_character(character):
     result = copy.deepcopy(character)
+    result['spells'] = [{key: value for key, value in spell.items() if key != '_disabled'}
+                        for spell in result.get('spells', []) if not spell.get('_disabled', False)]
     for spell in result.get('spells', []):
         spell['effects'] = [{key: value for key, value in effect.items() if key != '_disabled'}
                             for effect in spell.get('effects', []) if not effect.get('_disabled', False)]
@@ -74,6 +78,29 @@ class EffectComments:
             if pending is not None:
                 raise ValueError('禁用效果注释缺少结束标记')
             spell['effects'] = [value for _, value in sorted(entries, key=lambda item: item[0])]
+        entries = [(self.position(node), spell)
+                   for node, spell in zip(spells.elts, result.get('spells', []))]
+        pending, start = None, None
+        for position, comment in self.comments:
+            if not self.position(spells) < position < self.position(spells, True):
+                continue
+            if comment == SPELL_START:
+                if pending is not None:
+                    raise ValueError('禁用技能注释不能嵌套')
+                pending, start = [], position
+            elif comment == SPELL_END:
+                if pending is None:
+                    raise ValueError('禁用技能注释缺少开始标记')
+                value = ast.literal_eval('\n'.join(pending))
+                if not isinstance(value, dict):
+                    raise ValueError('禁用技能注释必须保留完整技能字典')
+                entries.append((start, {**value, '_disabled': True}))
+                pending = None
+            elif pending is not None:
+                pending.append(comment[2:] if comment.startswith('# ') else comment[1:])
+        if pending is not None:
+            raise ValueError('禁用技能注释缺少结束标记')
+        result['spells'] = [value for _, value in sorted(entries, key=lambda item: item[0])]
         return result
 
 
@@ -84,7 +111,7 @@ def format_character(name, character):
         return source
     positions = EffectComments(source)
     edits = []
-    for spell, spell_node in zip(character.get('spells', []), spells.elts):
+    for spell, spell_node in zip((s for s in character.get('spells', []) if not s.get('_disabled', False)), spells.elts):
         if not any(effect.get('_disabled', False) for effect in spell.get('effects', [])):
             continue
         node = field(spell_node, 'effects')
@@ -107,4 +134,25 @@ def format_character(name, character):
     output = source.encode('utf-8')
     for first, last, replacement in sorted(edits, reverse=True):
         output = output[:first] + replacement + output[last:]
-    return output.decode('utf-8')
+    source = output.decode('utf-8')
+    if not any(s.get('_disabled', False) for s in character.get('spells', [])):
+        return source
+    spells = field(ast.parse(source).body[0].value, 'spells')
+    positions = EffectComments(source)
+    active_nodes = iter(spells.elts)
+    indent = len(positions.lines[spells.lineno-1]) - len(positions.lines[spells.lineno-1].lstrip())
+    pad = ' ' * (indent + 4)
+    rows = ['[']
+    for spell in character.get('spells', []):
+        if spell.get('_disabled', False):
+            value = {key: val for key, val in spell.items() if key != '_disabled'}
+            rows.append(pad + SPELL_START)
+            rows.extend(pad + '# ' + line for line in pprint.pformat(value, width=max(30, 110-len(pad)), sort_dicts=False).splitlines())
+            rows.append(pad + SPELL_END)
+        else:
+            node = next(active_nodes)
+            text = output[positions.position(node):positions.position(node, True)].decode('utf-8')
+            rows.append(pad + text + ',')
+    rows.append(' ' * indent + ']')
+    first, last = positions.position(spells), positions.position(spells, True)
+    return (output[:first] + '\n'.join(rows).encode('utf-8') + output[last:]).decode('utf-8')
