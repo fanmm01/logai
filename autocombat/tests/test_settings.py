@@ -91,7 +91,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_team_tables_and_future_tournaments_share_saved_values(self):
         presets = [['Y1','Y2'], ['Y3','Y4'], ['Y5','Y6'], ['Y7','Y8']]
-        self.assertEqual(self.save({'TEAM_TABLES_2V2': presets, 'RR_ROUNDS_2V2': 1, 'RANDOM_BONUS_2V2': 0,
+        self.assertEqual(self.save({'TEAM_TABLES_2V2': presets, 'RR_ROUNDS_2V2': 1, 'TARGET_TEAM_MATCHES': 3, 'RANDOM_BONUS_2V2': 0,
                                    'MAP_SIZES_2V2': ['8x8'], 'BO_N_FINAL': 3}).status_code, 200)
         import team_tables
         self.assertEqual(team_tables.TEAM_TABLES_2V2, presets)
@@ -154,6 +154,11 @@ class SettingsTests(unittest.TestCase):
         self.settings.store.path.write_text(json.dumps({'BO_N_FINAL': 5}), encoding='utf-8')
         self.assertEqual(self.settings.store.read()['BO_N_FINAL'], 5)
         self.assertEqual(self.settings.store.read()['TEAM_TABLES_2V2'], DEFAULTS['TEAM_TABLES_2V2'])
+
+    def test_legacy_settings_scope_backfills_new_defaults(self):
+        legacy = {key: value for key, value in DEFAULTS.items() if key != 'TARGET_TEAM_MATCHES'}
+        with settings_scope(legacy):
+            self.assertEqual(value('TARGET_TEAM_MATCHES'), DEFAULTS['TARGET_TEAM_MATCHES'])
 
     def test_worker_process_receives_rules_without_reading_live_settings(self):
         pinned = {**snapshot(), 'MAX_ROUNDS_PRELIM': 1, 'MAX_ROUNDS_KNOCKOUT': 1, 'DEFAULT_BATTLE_DELAY': 0,

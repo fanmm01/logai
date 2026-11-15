@@ -124,11 +124,28 @@ class ManagementTests(unittest.TestCase):
                 payload = dict(data, enabled_serials=invalid)
                 self.assertEqual(self.client.post('/api/ui/data/save', json=payload).status_code, 400)
                 self.assertEqual((self.root/'characters_data.py').read_bytes(), original)
+        data = self.client.get('/api/ui/data').get_json()
+        y17 = next(ch for ch in data['characters'] if ch['serial'] == 'Y17')
+        draft = {
+            'category': 5,
+            'effects': [{'_disabled': True, 'type': 5, '召唤个数': 1,
+                         '召唤物模板': '不存在的测试模板', '客体': 1, '持续回合': 999}],
+            'name': '启用前模板校验', 'timing': '2', '消耗mp': 1,
+        }
+        y17['spells'].append(draft)
+        saved_draft = self.client.post('/api/ui/data/save', json=data)
+        self.assertEqual(saved_draft.status_code, 200, saved_draft.get_data(as_text=True))
+        data = self.client.get('/api/ui/data').get_json()
+        y17 = next(ch for ch in data['characters'] if ch['serial'] == 'Y17')
+        self.assertTrue(y17['spells'][-1]['effects'][0]['_disabled'])
+        y17['spells'][-1]['effects'][0]['_disabled'] = False
         data['enabled_serials'].append('Y17')
+        before_enable = (self.root/'characters_data.py').read_bytes()
         rejected = self.client.post('/api/ui/data/save', json=data)
         self.assertEqual(rejected.status_code, 400)
         self.assertIn('Y17', rejected.get_data(as_text=True))
-        self.assertEqual((self.root/'characters_data.py').read_bytes(), original)
+        self.assertIn('不存在的测试模板', rejected.get_data(as_text=True))
+        self.assertEqual((self.root/'characters_data.py').read_bytes(), before_enable)
 
     def test_legacy_save_preserves_inactive_definitions_and_modern_delete_removes_them(self):
         data = self.client.get('/api/ui/data').get_json()
@@ -310,9 +327,12 @@ class ManagementTests(unittest.TestCase):
         self.assertIs(namespace['ALL_CHARACTERS'], characters_data.ALL_CHARACTERS)
         self.assertIs(namespace['SUMMON_TEMPLATES'], characters_data.SUMMON_TEMPLATES)
 
-    def tournament(self, fmt='1v1'):
-        response = self.client.post('/api/ui/tournaments', json={'format': fmt, 'seed': 12,
-            'teams': [['Y1'], ['Y2'], ['Y3'], ['Y4']]})
+    def tournament(self, fmt='1v1', season=None):
+        payload = {'format': fmt, 'seed': 12,
+                   'teams': [['Y1'], ['Y2'], ['Y3'], ['Y4']]}
+        if season is not None:
+            payload['season'] = season
+        response = self.client.post('/api/ui/tournaments', json=payload)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         t = response.get_json()
         t.update(phase='playoffs', series=bracket(t), status='paused')
@@ -466,13 +486,13 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(detailed['logs'], ['D100 attack result'])
 
     def test_real_direct_and_step_games_publish_different_live_payloads(self):
-        import ai_battle as ab
         for path in ROOT.glob('*.py'):
             if path.name != 'autocombat_backend.py':
                 shutil.copy2(path, self.root/path.name)
         for operation in ('game', 'turn_game'):
             with self.subTest(operation=operation):
-                t = self.tournament()
+                t = self.tournament(season=50)
+                t['settings']['MAX_ROUNDS_KNOCKOUT'] = 2
                 t.update(status='running', operation=operation, selected='SF1')
                 self.tournaments.save(t)
                 writes = []
@@ -483,7 +503,10 @@ class ManagementTests(unittest.TestCase):
                         writes.append(copy.deepcopy(value))
                     return put(kind, value)
 
-                with patch.object(self.store, 'put', side_effect=capture), patch.object(ab, 'MAX_ROUNDS_KNOCKOUT', 2):
+                from types import SimpleNamespace
+                ticks = iter(range(0, 10000, 2))
+                test_clock = SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None)
+                with patch.object(self.store, 'put', side_effect=capture), patch('ui_tournaments.time', test_clock):
                     self.tournaments.run(t['id'])
                 saved = self.store.get('tournament', t['id'])
                 self.assertEqual(saved['series'][0]['score'][0] + saved['series'][0]['score'][1], 1, saved.get('message'))

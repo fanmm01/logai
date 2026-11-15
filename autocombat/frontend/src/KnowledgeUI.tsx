@@ -4,12 +4,44 @@ import type { Character } from './types';
 import { buildDefinitions, mechanicsSections, overview, splitTerms, termsFor, type Definition } from './knowledge';
 import { EncyclopediaProse } from './EncyclopediaProse';
 import './knowledge.css';
+import { definitionIsNearby, interveningSkills, isOwnDefinition } from './definitionVisibility';
 
-type Knowledge = { definitions: Definition[]; serial?: string; openCharacter: (c: Character) => void; openTerm: (id: string) => void };
+type Knowledge = { definitions: Definition[]; serial?: string; openCharacter: (c: Character) => void; openTerm: (id: string) => void; nearby?:ReadonlySet<Element>|null };
 const Context = createContext<Knowledge | null>(null);
 export function KnowledgeProvider({ catalog, serial, openCharacter, openTerm, children }: Omit<Knowledge,'definitions'> & {catalog:Character[]; children:ReactNode}) {
   const definitions=useMemo(()=>buildDefinitions(catalog),[catalog]);
-  return <Context.Provider value={{definitions,serial,openCharacter,openTerm}}>{children}</Context.Provider>;
+  const [nearby,setNearby]=useState<ReadonlySet<Element>|null>(null);
+  useEffect(()=>{
+    if(!serial)return;
+    let frame=0;
+    const update=()=>{
+      frame=0;
+      const modal=document.querySelector('.encyclopedia-modal');if(!modal)return;
+      const bounds=modal.getBoundingClientRect();
+      const viewport={top:Math.max(0,bounds.top),bottom:Math.min(innerHeight,bounds.bottom),left:Math.max(0,bounds.left),right:Math.min(innerWidth,bounds.right)};
+      const skills=[...modal.querySelectorAll('[data-skill-index]')];
+      const sources=new Map<string,Element[]>();
+      for(const node of modal.querySelectorAll('[data-definition-source]')){
+        if(node.closest('.definition-panel'))continue;
+        const key=node.getAttribute('data-definition-source')!;sources.set(key,[...(sources.get(key)||[]),node]);
+      }
+      const local=new Map(definitions.filter(d=>d.serial===serial).map(d=>[d.id,d]));
+      const next=new Set<Element>();
+      for(const reference of modal.querySelectorAll('[data-local-term]')){
+        const definition=local.get(reference.getAttribute('data-local-term')!);
+        const targets=definition?.sources?.flatMap(key=>sources.get(key)||[])||[];
+        if(targets.some(target=>isOwnDefinition(reference,target)||!target.closest('details:not([open])')&&definitionIsNearby(reference.getBoundingClientRect(),target.getBoundingClientRect(),viewport,interveningSkills(reference,target,skills))))next.add(reference);
+      }
+      setNearby(old=>old&&old.size===next.size&&[...next].every(node=>old.has(node))?old:next);
+    };
+    const schedule=()=>{if(!frame)frame=requestAnimationFrame(update);};
+    const modal=document.querySelector('.encyclopedia-modal');if(!modal)return;
+    const resize=new ResizeObserver(schedule);resize.observe(modal);const profile=modal.querySelector('.character-profile');if(profile)resize.observe(profile);
+    const mutation=new MutationObserver(schedule);mutation.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['open']});
+    window.addEventListener('scroll',schedule,true);window.addEventListener('resize',schedule);schedule();
+    return()=>{cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);};
+  },[serial,definitions]);
+  return <Context.Provider value={{definitions,serial,openCharacter,openTerm,nearby}}>{children}</Context.Provider>;
 }
 
 export function HoverPreview({ children, content, onOpen, label, kind='term' }: {children:ReactNode;content:ReactNode;onOpen:()=>void;label:string;kind?:'term'|'character'}) {
@@ -70,10 +102,17 @@ export function TermText({text}:{text:string}) {
   const knowledge=useContext(Context);
   const terms=useMemo(()=>knowledge?termsFor(knowledge.definitions,knowledge.serial):[],[knowledge?.definitions,knowledge?.serial]);
   if(!knowledge?.serial)return <>{text}</>;
-  return <>{splitTerms(text,terms).map((part,i)=>typeof part==='string'?part:<HoverPreview key={i} label={part.name+'释义'} onOpen={()=>knowledge.openTerm(part.id)}
+  return <>{splitTerms(text,terms).map((part,i)=>typeof part==='string'?part:<DefinitionTerm key={i} definition={part}/>)}</>;
+}
+function DefinitionTerm({definition:part}:{definition:Definition}) {
+  const knowledge=useContext(Context)!;
+  const reference=useRef<HTMLSpanElement>(null);
+  const local=part.serial===knowledge.serial;
+  const plain=local&&(knowledge.nearby==null||!!reference.current&&knowledge.nearby.has(reference.current));
+  return <span ref={reference} data-local-term={local?part.id:undefined}>{plain?part.name:<HoverPreview label={part.name+'释义'} onOpen={()=>knowledge.openTerm(part.id)}
     content={<><strong>{part.name}</strong><span className="preview-paragraph">{part.text.slice(0,260)}{part.text.length>260?'…':''}</span>{part.sections.slice(0,1).map(id=><span className="preview-paragraph" key={id}>相关规则：{mechanicsSections.find(s=>s.id===id)?.content.split('\n')[0].replace(/^- /,'')}</span>)}</>}>
     <a className="knowledge-link" href={'?character='+knowledge.serial+'&term='+encodeURIComponent(part.id)} onClick={e=>{e.preventDefault();e.stopPropagation();knowledge.openTerm(part.id);}}>{part.name}</a>
-  </HoverPreview>)}</>;
+  </HoverPreview>}</span>;
 }
 
 export function DefinitionPanel({id,onClose,onOpen}:{id:string;onClose:()=>void;onOpen:(id:string)=>void}) {
@@ -87,7 +126,7 @@ export function DefinitionPanel({id,onClose,onOpen}:{id:string;onClose:()=>void;
     setSection(null);
   },[id]);
   if(!definition)return <aside className="definition-panel"><button onClick={onClose}>关闭释义</button><p>此定义不存在或已更新。</p></aside>;
-  const related=termsFor(knowledge!.definitions,knowledge?.serial).filter(d=>d.id!==id&&definition.text.includes(d.name)).slice(0,10);
+  const related=termsFor(knowledge!.definitions,knowledge?.serial).filter(d=>!d.serial&&d.id!==id&&definition.text.includes(d.name)).slice(0,10);
   return <aside className="definition-panel" aria-label="名词定义"><div className="definition-toolbar">
     <button className="text-button" disabled={!stack.length&&!section} onClick={()=>{if(section)setSection(null);else{const next=[...stack];goingBack.current=true;onOpen(next.pop()!);setStack(next);}}}>← 返回</button>
     <button className="text-button" onClick={onClose}>关闭释义 ×</button></div>

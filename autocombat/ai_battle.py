@@ -1493,31 +1493,30 @@ class Tournament:
         return allocated
 
     @pinned
-    def _allocate_team_bonus_matches(self, teams, rr_rounds, bonus_count, map_size=None, label='Alloc'):
+    def _allocate_team_bonus_matches(self, teams, rr_rounds, target_matches, map_size=None, label='Alloc', map_count=1):
         map_size = battle_setting('BONUS_MAP_SIZE') if map_size is None else map_size
-        if bonus_count <= 0:
+        if not teams or target_matches <= 0:
             return []
 
         n = len(teams)
-        extra_matches = [0] * n
+        base_matches = rr_rounds * max(0, n - 1) * map_count
+        deficits = [max(0, target_matches - base_matches) for _ in teams]
+        if sum(deficits) % 2:
+            raise ValueError('队伍目标场数无法由成对对局精确调配')
+        import heapq
+        heap = [(-deficit, i) for i, deficit in enumerate(deficits) if deficit]
+        heapq.heapify(heap)
         allocated = []
-        for _ in range(bonus_count):
-            best_pairs = []
-            best_score = None
-            for i in range(n):
-                for j in range(i + 1, n):
-                    score = extra_matches[i] + extra_matches[j]
-                    if best_score is None or score < best_score:
-                        best_score = score
-                        best_pairs = [(i, j)]
-                    elif score == best_score:
-                        best_pairs.append((i, j))
-            if not best_pairs:
-                break
-            i, j = random.choice(best_pairs)
+        while len(heap) >= 2:
+            d1, i = heapq.heappop(heap)
+            d2, j = heapq.heappop(heap)
             allocated.append((label, map_size, teams[i], teams[j], i, j))
-            extra_matches[i] += 1
-            extra_matches[j] += 1
+            d1 += 1
+            d2 += 1
+            if d1 < 0: heapq.heappush(heap, (d1, i))
+            if d2 < 0: heapq.heappush(heap, (d2, j))
+        if heap:
+            raise ValueError('队伍目标场数无法由成对对局精确调配')
         return allocated
 
     @pinned
@@ -1600,11 +1599,14 @@ class Tournament:
         p2_pool = []
         if '2v2' in self.enabled_modes:
             teams_2v2 = [list(team) for team in battle_setting('TEAM_TABLES_2V2') if all(s in self.char_map for s in team)]
-            p2_pool = self._build_rr_pool('2v2', teams_2v2, battle_setting('MAP_SIZES_2V2'), '2v2', rr_rounds=battle_setting('RR_ROUNDS_2V2'))
-            allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, battle_setting('RR_ROUNDS_2V2'), battle_setting('RANDOM_BONUS_2V2'), battle_setting('BONUS_MAP_SIZE'), '2v2 Alloc')
+            maps_2v2 = battle_setting('MAP_SIZES_2V2')
+            target_teams = battle_setting('TARGET_TEAM_MATCHES')
+            rr_2v2 = min(battle_setting('RR_ROUNDS_2V2'), target_teams // (max(1, len(teams_2v2) - 1) * len(maps_2v2)))
+            p2_pool = self._build_rr_pool('2v2', teams_2v2, maps_2v2, '2v2', rr_rounds=rr_2v2)
+            allocated_bonus_2v2 = self._allocate_team_bonus_matches(teams_2v2, rr_2v2, target_teams, battle_setting('BONUS_MAP_SIZE'), '2v2 Alloc', len(maps_2v2))
             p2_pool = allocated_bonus_2v2 + p2_pool
-            rrc = '单' if battle_setting('RR_ROUNDS_2V2')==1 else ('双' if battle_setting('RR_ROUNDS_2V2')==2 else str(battle_setting('RR_ROUNDS_2V2')))
-            battle_log('info', f'[2v2] {len(teams_2v2)}队 {rrc}循环{len(p2_pool)-len(allocated_bonus_2v2)}场 + {len(allocated_bonus_2v2)}场调配 = {len(p2_pool)}场')
+            rrc = '单' if rr_2v2==1 else ('双' if rr_2v2==2 else str(rr_2v2))
+            battle_log('info', f'[2v2] {len(teams_2v2)}队 {rrc}循环{len(p2_pool)-len(allocated_bonus_2v2)}场 + {len(allocated_bonus_2v2)}场调配 = {len(p2_pool)}场 (每队目标{target_teams}场)')
         else:
             battle_log('info', '[2v2] 已跳过（未启用）')
             teams_2v2 = []
@@ -1613,11 +1615,14 @@ class Tournament:
         p3_pool = []
         if '3v3' in self.enabled_modes:
             teams_3v3 = [list(team) for team in battle_setting('TEAM_TABLES_3V3') if all(s in self.char_map for s in team)]
-            p3_pool = self._build_rr_pool('3v3', teams_3v3, battle_setting('MAP_SIZES_3V3'), '3v3', rr_rounds=battle_setting('RR_ROUNDS_3V3'))
-            allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, battle_setting('RR_ROUNDS_3V3'), battle_setting('RANDOM_BONUS_3V3'), battle_setting('BONUS_MAP_SIZE'), '3v3 Alloc')
+            maps_3v3 = battle_setting('MAP_SIZES_3V3')
+            target_teams = battle_setting('TARGET_TEAM_MATCHES')
+            rr_3v3 = min(battle_setting('RR_ROUNDS_3V3'), target_teams // (max(1, len(teams_3v3) - 1) * len(maps_3v3)))
+            p3_pool = self._build_rr_pool('3v3', teams_3v3, maps_3v3, '3v3', rr_rounds=rr_3v3)
+            allocated_bonus_3v3 = self._allocate_team_bonus_matches(teams_3v3, rr_3v3, target_teams, battle_setting('BONUS_MAP_SIZE'), '3v3 Alloc', len(maps_3v3))
             p3_pool = allocated_bonus_3v3 + p3_pool
-            rrc = '单' if battle_setting('RR_ROUNDS_3V3')==1 else ('双' if battle_setting('RR_ROUNDS_3V3')==2 else str(battle_setting('RR_ROUNDS_3V3')))
-            battle_log('info', f'[3v3] {len(teams_3v3)}队 {rrc}循环{len(p3_pool)-len(allocated_bonus_3v3)}场 + {len(allocated_bonus_3v3)}场调配 = {len(p3_pool)}场')
+            rrc = '单' if rr_3v3==1 else ('双' if rr_3v3==2 else str(rr_3v3))
+            battle_log('info', f'[3v3] {len(teams_3v3)}队 {rrc}循环{len(p3_pool)-len(allocated_bonus_3v3)}场 + {len(allocated_bonus_3v3)}场调配 = {len(p3_pool)}场 (每队目标{target_teams}场)')
         else:
             battle_log('info', '[3v3] 已跳过（未启用）')
             teams_3v3 = []

@@ -5,7 +5,7 @@ export const mechanicsSections = mechanics.split(/^## /m).slice(1).map((section,
   id: 'mechanics-' + (i + 1), title: section.split('\n')[0].replace(/^\d+\.\s*/, ''),
   content: section.slice(section.indexOf('\n')).trim(),
 }));
-export type Definition = { id: string; name: string; text: string; serial?: string; sections: string[] };
+export type Definition = { id: string; name: string; text: string; serial?: string; sections: string[]; sources?:string[] };
 const common: [string, number][] = [
   ['主动',1],['附加动作',1],['被动',1],['受击反应',1],['先攻',1],['冷却',1],['阶段',1],
   ['MP',2],['HP',5],['SAN',2],['魔力',2],['理智',2],['准备阶段',2],['技能费用',2],
@@ -48,11 +48,11 @@ export function buildDefinitions(catalog: Character[]): Definition[] {
   definitions.push(...attributeDefinitions.map(([name,text,section])=>({id:'rule-'+name,name,text,sections:['mechanics-'+section]})));
   for (const c of catalog) {
     for (const t of c.traits) definitions.push({id:`${c.serial}-trait-${t.name}`,name:t.name,text:t.description,serial:c.serial,
-      sections:definitions.find(d=>!d.serial&&d.name===t.name)?.sections || []});
+      sections:definitions.find(d=>!d.serial&&d.name===t.name)?.sections || [],sources:['trait:'+t.name]});
     for (const name of new Set(c.skills.map(s=>s.name))) {
       const versions=c.skills.filter(s=>s.name===name);
       definitions.push({id:`${c.serial}-skill-${name}`,name,serial:c.serial,
-        text:versions.map(s=>`${versions.length>1?'阶段 '+s.phase+' · ':''}${s.timing} · ${s.cost}\n${s.limits}\n${s.description}\n${s.facts.join('\n')}`).join('\n\n'),sections:['mechanics-1','mechanics-2']});
+        text:versions.map(s=>`${versions.length>1?'阶段 '+s.phase+' · ':''}${s.timing} · ${s.cost}\n${s.limits}\n${s.description}\n${s.facts.join('\n')}`).join('\n\n'),sections:['mechanics-1','mechanics-2'],sources:versions.map(s=>'skill:'+s.id)});
     }
     const prose = [...c.passives, c.basic, ...c.skills.flatMap(s => [s.description,...s.facts])];
     const headings = [...c.passives,...c.skills.flatMap(s=>s.facts)].filter(line => /^## /.test(line)).map(line => line.replace(/^## /,''));
@@ -68,7 +68,7 @@ export function buildDefinitions(catalog: Character[]): Definition[] {
         }
       }
       if(name==='冰冻'&&c.serial==='Y6')lines.push(...c.passives);
-      if (lines.length) definitions.push({id:`${c.serial}-term-${name}`,name,serial:c.serial,text:clean([...new Set(lines)].join('\n')),sections:(c.serial==='Y17'?[2,8]:c.serial==='Y8'?[8,5]:[6,7]).map(n=>'mechanics-'+n)});
+      if (lines.length) definitions.push({id:`${c.serial}-term-${name}`,name,serial:c.serial,text:clean([...new Set(lines)].join('\n')),sections:(c.serial==='Y17'?[2,8]:c.serial==='Y8'?[8,5]:[6,7]).map(n=>'mechanics-'+n),sources:['prose:'+lines[0]]});
     }
     for(const [name,target] of Object.entries(aliases[c.serial] || {})){
       const original=definitions.find(d=>d.serial===c.serial&&d.name===target);

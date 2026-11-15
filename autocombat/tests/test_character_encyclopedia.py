@@ -26,7 +26,7 @@ Y5Y6_APPROVED = {
     ('Y5', '吸血'): {
         'description': '对敌方单体发动吸血攻击，以自身最佳近战技能检定，造成 2d4+1d6+2 伤害，并按伤害的 100% 回复自身生命。',
         'requirements': [('时机', '主动'), ('基础费用', '0 MP'), ('目标', '敌方单体'),
-                         ('射程', '2 格'), ('防御反应', '反击、格挡')],
+                         ('射程', '基础 2 格；当前全局射程覆盖启用时为 99 格'), ('防御反应', '反击、格挡')],
         'paragraphs': [
             '攻击命中、护盾吸收后仍有伤害，且自身生命大于零时，触发生命回复。回复量以护盾吸收前的修正伤害乘以吸血比例，向下取整，受自身生命上限约束。',
         ],
@@ -861,7 +861,7 @@ class Y5Y6StaticEncyclopediaTests(unittest.TestCase):
         article = self.article('Y5', '吸血')
         self.assertIn(f"造成 {blood['伤害骰']} 伤害", article['description'])
         self.assertIn(f"伤害的 {float(blood['吸血比例'])*100:g}%", article['description'])
-        self.assertIn(f"射程：{blood['射程']} 格", article['facts'])
+        self.assertIn(f"射程：基础 {blood['射程']} 格；当前全局射程覆盖启用时为 99 格", article['facts'])
         self.assertEqual((blood['客体'], blood['可闪避性'], blood['可反击性'], blood.get('可格挡性', 1)), (4, 0, 1, 1))
         balls = self.spell(cd.XUEREN, '发送雪球')['effects']
         self.assertEqual(len(balls), 2)

@@ -696,8 +696,7 @@ class PvPFullBattleEngine(FullBattleEngine):
                         ddmg = dmx + extra
                         ddetail = f"{cdmg}满值{dmx}+{extra}={ddmg}"
                 else:
-                    ddmg = roll_dice(cdmg)
-                    ddetail = f"{cdmg}={ddmg}"
+                    ddmg, ddetail = self._normal_damage_roll(def_uid, cdmg)
                 dsr = self._absorb_damage_with_shield(atk_uid, ddmg)
                 deff = dsr[0]
                 if dsr[1] > 0:
@@ -776,6 +775,11 @@ class PvPFullBattleEngine(FullBattleEngine):
                 winner_rank, winner_uid, loser_uid = eff_atk, atk_uid, def_uid
                 loser_name, winner_name, winner_roll, is_counter = dname, aname, atk_result, False
 
+        if is_counter:
+            dmg_adv, dmg_dis = self._get_buff_dmg_dice_adv_dis(winner_uid)
+        else:
+            buff_adv, buff_dis = self._get_buff_dmg_dice_adv_dis(winner_uid)
+            dmg_adv, dmg_dis = dmg_adv or buff_adv, dmg_dis or buff_dis
         # ── Single-winner damage resolution (parent lines 1293-1321) ──
         mx = max_damage(dmg_dice)
         dmg_val = 0
@@ -2417,6 +2421,8 @@ def _run_ai_turns(engine, player_uid: str = None, Q=None, start_round: int = 0,
                         else:
                             target_id = engine._smart_target(uid, spell)
                     else:
+                        target_id = engine._smart_target(uid, spell)
+                    if any(e.get('type') == 18 for e in spell.get('effects', [])):
                         target_id = engine._smart_target(uid, spell)
                     try:
                         out = engine._execute_spell(uid, target_id, spell)

@@ -1,0 +1,266 @@
+{
+  "checks": [
+    "launcher and individual tournament character links",
+    "delayed previews, pointer transfer, no nested glossary, definition panel and history",
+    "team selection remains intact and independent info opens details",
+    "help routes, simplified settings and cancel/accept browser back with unsaved settings",
+    "Ctrl+S with focused input, no changes, duplicate save, failure retention and allowlist",
+    "local term links update on resize, collapse and distance; self references never link",
+    "background room restoration and legacy invitation routing"
+  ],
+  "layout": [
+    {
+      "serial": "Y2",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y3",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y4",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y5",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y6",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y60",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y7",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y8",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y9",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y10",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y11",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y12",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y13",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y1",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y14",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y16",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y15",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y17",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058,
+      "panel": 280
+    },
+    {
+      "serial": "Y2",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y3",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y4",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y5",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y6",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y60",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y7",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y8",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y9",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y10",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y11",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y12",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y13",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y1",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y14",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y16",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y15",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    },
+    {
+      "serial": "Y17",
+      "width": 390,
+      "client": 356,
+      "scroll": 356,
+      "panel": 316
+    }
+  ],
+  "errors": []
+}

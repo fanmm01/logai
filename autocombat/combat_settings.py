@@ -16,13 +16,15 @@ import threading
 from combat_defaults import DEFAULTS
 
 ALIASES = {'CUSTOM_BATTLE_DELAY': 'DELAY_CUSTOM_TURN'}
-READONLY = {'AI_SERVER_PORT', 'AI_SERVER_HOST', 'LOG_FILE', 'RESULT_FILE', 'BRACKET_FILE', 'RANDOM_BONUS_1V1'}
+READONLY = {'AI_SERVER_PORT', 'AI_SERVER_HOST', 'LOG_FILE', 'RESULT_FILE', 'BRACKET_FILE',
+            'RANDOM_BONUS_1V1', 'RANDOM_BONUS_2V2', 'RANDOM_BONUS_3V3'}
 LIVE = {'TOURNAMENT_EVENT_DELAY', 'ROOM_AI_DELAY', 'LOG_STREAM_INTERVAL', 'TOURNAMENT_PAUSE_POLL',
         'LOG_BUFFER_LIMIT', 'WEB_LOG_LINE_LIMIT', 'CONSOLE_LOG_LEVEL', 'FILE_LOG_LEVEL', 'WEB_LOG_LEVEL'}
 _snapshot = ContextVar('combat_settings_snapshot', default=None)
 _default_store = None
 
 LABELS = {
+    'PLAYOFF_CONFIG': '季后赛赛制与赛图',
     'DELAY_PRELIM_TURN': '预赛行动间隔（秒）', 'DELAY_KNOCKOUT_TURN': '淘汰赛行动间隔（秒）',
     'DELAY_CUSTOM_TURN': '自定义战斗行动间隔（秒）', 'DELAY_PRELIM_BETWEEN_BATTLES': '预赛场间等待（秒）',
     'DELAY_KNOCKOUT_BETWEEN_GAMES': '系列赛局间等待（秒）', 'DELAY_DRAW_DISPLAY': '抽签展示时间（秒）',
@@ -31,12 +33,13 @@ LABELS = {
     'CONSOLE_LOG_LEVEL': '终端日志等级', 'FILE_LOG_LEVEL': '文件日志等级', 'WEB_LOG_LEVEL': 'Web 日志等级',
     'CUSTOM_PREVIEW_BATTLES': '自定义战斗预览场数', 'RR_ROUNDS_1V1': '1v1 循环轮数上限',
     'RR_ROUNDS_2V2': '2v2 循环轮数', 'RR_ROUNDS_3V3': '3v3 循环轮数', 'TARGET_1V1_MATCHES': '1v1 每角色目标场数',
-    'RANDOM_BONUS_1V1': '1v1 随机加赛（已停用）', 'RANDOM_BONUS_2V2': '2v2 额外场数',
-    'RANDOM_BONUS_3V3': '3v3 额外场数', 'MAP_SIZES_2V2': '2v2 循环赛地图', 'MAP_SIZES_3V3': '3v3 循环赛地图',
+    'TARGET_TEAM_MATCHES': '2v2/3v3 每队目标场数',
+    'RANDOM_BONUS_1V1': '1v1 随机加赛（已停用）', 'RANDOM_BONUS_2V2': '2v2 固定额外场数（已停用）',
+    'RANDOM_BONUS_3V3': '3v3 固定额外场数（已停用）', 'MAP_SIZES_2V2': '2v2 循环赛地图', 'MAP_SIZES_3V3': '3v3 循环赛地图',
     'PRELIM_WORKERS': '预赛并发数', 'SEASON_AVG_STATUS': '赛季平均状态', 'MAX_ROUNDS_PRELIM': '预赛默认回合上限',
     'MAX_ROUNDS_KNOCKOUT': '淘汰赛回合上限', 'MAX_ROUNDS_PRELIM_BY_FORMAT': '分赛制预赛回合上限',
-    'KNOCKOUT_DRAW_WEIGHTS': '淘汰赛抽签权重', 'BO_N_PLAYIN': '附加赛 BoN', 'BO_N_QF': '四分之一决赛 BoN',
-    'BO_N_SF': '半决赛 BoN', 'BO_N_BRONZE': '季军赛 BoN', 'BO_N_FINAL': '决赛 BoN',
+    'KNOCKOUT_DRAW_WEIGHTS': '现有 12 进 8 抽签权重', 'BO_N_PLAYIN': '首轮 BO', 'BO_N_QF': '其余轮次 BO',
+    'BO_N_SF': '半决赛／胜败者组决赛 BO', 'BO_N_BRONZE': '旧赛事铜牌赛 BO（兼容）', 'BO_N_FINAL': '总决赛／铜牌赛 BO',
     'TEAM_TABLES_2V2': '2v2 预设队伍', 'TEAM_TABLES_3V3': '3v3 预设队伍',
     'TOURNAMENT_EVENT_DELAY': '锦标赛逐回合基础等待（秒）', 'DEFAULT_MAP_SIZE': '默认对战地图',
     'KNOCKOUT_MAP_SIZE': '淘汰赛地图', 'BONUS_MAP_SIZE': '加赛地图', 'DEFAULT_BATTLE_DELAY': '通用战斗行动间隔（秒）',
@@ -63,6 +66,7 @@ LABELS = {
 
 
 def group(key):
+    if key == 'PLAYOFF_CONFIG' or key.startswith('BO_N') or key == 'KNOCKOUT_DRAW_WEIGHTS': return '季后赛'
     if key.startswith('TEAM_TABLES'): return '队伍表'
     if key in READONLY: return '启动与兼容信息'
     if key.startswith('AI_') or key == 'BATTLE_MAX_STEPS': return 'AI 行为'
@@ -86,7 +90,7 @@ def metadata():
         if key.endswith('LOG_LEVEL'): options = [10, 20, 30, 40, 50]
         result[key] = dict(label=LABELS[key], group=group(key), default=copy.deepcopy(default),
                            readonly=key in READONLY, apply='live' if key in LIVE else 'startup' if key in READONLY else 'new_task',
-                           choices=options, kind='teams' if key.startswith('TEAM_TABLES') else 'matrix' if key == 'KNOCKOUT_DRAW_WEIGHTS'
+                           choices=options, kind='playoff' if key == 'PLAYOFF_CONFIG' else 'teams' if key.startswith('TEAM_TABLES') else 'matrix' if key == 'KNOCKOUT_DRAW_WEIGHTS'
                            else 'season' if key == 'SEASON_AVG_STATUS' else 'json' if isinstance(default, (list, dict)) else
                            'boolean' if type(default) is bool else 'number' if isinstance(default, (int, float)) else 'text')
     return result
@@ -102,7 +106,10 @@ def validate(values, serials=None):
         d, spec = DEFAULTS[key], specs[key]
         error = spec['label'] + '：值无效'
         if spec['choices'] is not None and (type(v) is not type(spec['choices'][0]) or v not in spec['choices']): raise ValueError(error)
-        if key.startswith('TEAM_TABLES'):
+        if key == 'PLAYOFF_CONFIG':
+            from tournament_playoffs import validate_config
+            validate_config(v)
+        elif key.startswith('TEAM_TABLES'):
             if not isinstance(v, list) or len(v) > 256: raise ValueError(error)
             seen = set()
             for team in v:
@@ -221,7 +228,7 @@ def value(key, live=False):
 
 @contextmanager
 def settings_scope(values=None):
-    token = _snapshot.set(values if values is not None else snapshot())
+    token = _snapshot.set({**DEFAULTS, **(values if values is not None else snapshot())})
     try: yield
     finally: _snapshot.reset(token)
 

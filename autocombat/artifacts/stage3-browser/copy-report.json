@@ -1,0 +1,78 @@
+{
+  "status": "candidate pending human approval",
+  "cases": [
+    {
+      "serial": "Y7",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y9",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y12",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y14",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y15",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y16",
+      "width": 1440,
+      "client": 1058,
+      "scroll": 1058
+    },
+    {
+      "serial": "Y7",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    },
+    {
+      "serial": "Y9",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    },
+    {
+      "serial": "Y12",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    },
+    {
+      "serial": "Y14",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    },
+    {
+      "serial": "Y15",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    },
+    {
+      "serial": "Y16",
+      "width": 390,
+      "client": 356,
+      "scroll": 356
+    }
+  ],
+  "errors": []
+}

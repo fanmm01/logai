@@ -6,7 +6,7 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { loadTs } = require('./load-ts.cjs');
 const loaded = { exports: loadTs(path.resolve(__dirname, '../src/EncyclopediaProse.tsx')) };
-const render = content => renderToStaticMarkup(React.createElement(loaded.exports.EncyclopediaProse, { content }));
+const render = content => renderToStaticMarkup(React.createElement(loaded.exports.EncyclopediaProse, { content })).replace(/ data-definition-source="[^"]*"/g, '');
 
 test('existing snowman rules become headings and a contiguous eight-level list without losing text', () => {
   const { Y6 } = require('../src/data/encyclopedia.json');
@@ -71,8 +71,23 @@ test('approved Y9–Y12 prose renders every paragraph and summon section without
   }
   const summon = approved.Y12.skills.find(s => s.name === '空间引入');
   const html = render(summon.facts);
-  assert.equal((html.match(/<table /g) || []).length, 3);
+  // The approved merge-stat paragraph adds a fourth parameter table.
+  assert.equal((html.match(/<table /g) || []).length, 4);
   for (const heading of ['召唤与保护', '玄武', '朱雀', '龙虎', '三合一']) {
     assert.ok(html.includes(`<h5>${heading}</h5>`));
+  }
+});
+
+test('stage-three approved passives and skill paragraphs render without losing text', () => {
+  const approved = require('./fixtures/stage3-approved.json');
+  for (const [serial, profile] of Object.entries(approved)) {
+    const groups = [profile.passives || [], ...(profile.skills || []).map(skill =>
+      [skill.description, ...(skill.facts || [])].filter(Boolean))];
+    for (const lines of groups) {
+      const text = render(lines).replace(/<\/th><td>/g, '：</th><td>').replace(/<[^>]+>/g, '');
+      for (const line of lines) {
+        assert.ok(text.includes(line.replace(/^#{1,6}\s+/, '')), `${serial}: ${line}`);
+      }
+    }
   }
 });

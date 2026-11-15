@@ -121,6 +121,10 @@ class SkillMpTests(unittest.TestCase):
         char.set_attr('魔力', 1)
         with patch.object(be, 'roll_d100', return_value=(99, '')):
             engine._coc7_attack('enemy', 'actor', '斗殴', 50, '1d4', 0, 0)
+        self.assertEqual(char.get_attr('魔力'), 1)
+        self.assertNotIn('爆破圈', getattr(char, '_once_consumed', set()))
+        # Y15-03a=A: the named reaction pays only after actual HP loss.
+        engine._set_combat_hp('actor', engine._get_combat_hp('actor') - 1, damage_source='enemy')
         self.assertEqual(char.get_attr('魔力'), 0)
         self.assertIn('爆破圈', char._once_consumed)
 

@@ -14,8 +14,9 @@
 .encyclopedia-prose>:last-child{margin-bottom:0}
 .encyclopedia-prose strong{font-weight:650;color:#42394f}
 .encyclopedia-prose .prose-label{margin-right:.65em}
-.encyclopedia-prose .prose-parameters{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;line-height:1.8;text-align:left}
-.encyclopedia-prose .prose-parameters th,.encyclopedia-prose .prose-parameters td{padding:9px 12px;border:1px solid var(--line);vertical-align:top}
+.encyclopedia-prose .prose-parameters{width:100%;table-layout:fixed;border-collapse:collapse;margin:14px 0;font-size:13px;line-height:1.8;text-align:left}
+.encyclopedia-prose .prose-parameters th,.encyclopedia-prose .prose-parameters td{padding:9px 12px;border:1px solid var(--line);vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.encyclopedia-prose .prose-parameters thead th:first-child{width:34%}
 .encyclopedia-prose .prose-parameters thead th{background:#f1edf5;color:#645074;font-weight:600}
 .encyclopedia-prose .prose-parameters tbody th{width:34%;font-weight:600;color:#51445f}
 .encyclopedia-prose .prose-parameters tbody tr:nth-child(even){background:#faf9fc}

@@ -307,7 +307,7 @@ function App() {
     {page==='settings'&&<SettingsPage preferences={{name,reduced}} onPreferences={updatePreferences} onSaved={setDefaults} onDirty={setSettingsDirty} catalog={catalog} onError={setError}/>}
     {page.startsWith('help/')&&<HelpPage tab={page.split('/')[1]} catalog={catalog} navigate={navigate}/>}
     {page==='battle'&&!room&&<div className="page"><h1>尚未加入战术室</h1><p className="muted">输入房间码加入已有房间，或创建一场自由对战。</p><div className="modal-actions"><button className="button" onClick={()=>setDialog('join')}>输入房间码</button><button className="button primary" onClick={()=>prepare('local')}>自由对战</button></div></div>}
-    {page==='tournament'&&<TournamentPanel catalog={catalog} onError={setError} onWatch={r=>acceptRoom(r)}/>}
+    {page==='tournament'&&<TournamentPanel catalog={catalog} onError={setError} onWatch={r=>acceptRoom(r)} onSettings={()=>{navigate('settings');location.hash='playoff-settings';}}/>}
     </>}
     </main>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
@@ -320,12 +320,12 @@ function App() {
         </div>
         <div className="profile-skills"><span className="eyebrow">CHARACTER ENCYCLOPEDIA</span><h3>技能百科</h3>
           <section><h4 className="encyclopedia-section-title">角色特性与普通攻击</h4>
-            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name}><h5><TermText text={t.name}/></h5><EncyclopediaProse content={t.description}/></div>)}</div>
+            <div className="trait-definitions">{detail.traits.map(t=><div key={t.name} data-definition-owner={"trait:"+t.name}><h5><TermText text={t.name}/></h5><EncyclopediaProse content={t.description} sourceKey={"trait:"+t.name}/></div>)}</div>
             <EncyclopediaProse content={detail.basic}/>
           </section>
           {detail.passives.length>0&&<section className="encyclopedia-passives"><h4 className="encyclopedia-section-title">角色被动与专属规则</h4><EncyclopediaProse content={detail.passives}/></section>}
           <h4 className="encyclopedia-section-title">技能</h4>
-          {detail.skills.map(s=><details key={s.id} open>
+          {detail.skills.map((s,i)=><details key={s.id} data-skill-index={i} data-definition-owner={"skill:"+s.id} open>
             <summary><span className="library-emblem skill-emblem" aria-hidden="true" style={{maskImage:`url(${s.icon})`,WebkitMaskImage:`url(${s.icon})`}}/><strong><TermText text={s.name}/></strong><Tag><TermText text={s.timing}/></Tag><ChevronDown size={15}/></summary>
             <EncyclopediaSkill skill={s}/>
           </details>)}

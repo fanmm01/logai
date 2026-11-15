@@ -1,0 +1,3718 @@
+{
+  "settings": {
+    "DELAY_PRELIM_TURN": 0,
+    "DELAY_KNOCKOUT_TURN": 0.4,
+    "DELAY_CUSTOM_TURN": 0.4,
+    "DELAY_PRELIM_BETWEEN_BATTLES": 0,
+    "DELAY_KNOCKOUT_BETWEEN_GAMES": 1,
+    "DELAY_DRAW_DISPLAY": 24,
+    "DELAY_STANDINGS_DISPLAY": 40,
+    "DISPLAY_PRELIM": 0,
+    "DISPLAY_KNOCKOUT": 1,
+    "DISPLAY_CUSTOM": 1,
+    "CONSOLE_LOG_LEVEL": 20,
+    "FILE_LOG_LEVEL": 10,
+    "WEB_LOG_LEVEL": 20,
+    "CUSTOM_PREVIEW_BATTLES": 20,
+    "RR_ROUNDS_1V1": 7,
+    "RR_ROUNDS_2V2": 5,
+    "RR_ROUNDS_3V3": 6,
+    "TARGET_1V1_MATCHES": 82,
+    "RANDOM_BONUS_1V1": 0,
+    "RANDOM_BONUS_2V2": 56,
+    "RANDOM_BONUS_3V3": 65,
+    "MAP_SIZES_2V2": [
+      "10x10"
+    ],
+    "MAP_SIZES_3V3": [
+      "10x10"
+    ],
+    "PRELIM_WORKERS": 8,
+    "SEASON_AVG_STATUS": null,
+    "MAX_ROUNDS_PRELIM": 24,
+    "MAX_ROUNDS_KNOCKOUT": 35,
+    "MAX_ROUNDS_PRELIM_BY_FORMAT": {
+      "1v1": 20,
+      "2v2": 30,
+      "3v3": 45
+    },
+    "KNOCKOUT_DRAW_WEIGHTS": [
+      [
+        5,
+        5,
+        6,
+        8
+      ],
+      [
+        6,
+        7,
+        8,
+        7
+      ],
+      [
+        7,
+        8,
+        7,
+        6
+      ],
+      [
+        8,
+        6,
+        5,
+        5
+      ],
+      [
+        5,
+        6,
+        7,
+        8
+      ],
+      [
+        6,
+        5,
+        8,
+        7
+      ],
+      [
+        7,
+        8,
+        6,
+        5
+      ],
+      [
+        8,
+        7,
+        5,
+        6
+      ]
+    ],
+    "BO_N_PLAYIN": 5,
+    "BO_N_QF": 7,
+    "BO_N_SF": 7,
+    "BO_N_BRONZE": 7,
+    "BO_N_FINAL": 7,
+    "TEAM_TABLES_2V2": [
+      [
+        "Y9",
+        "Y2"
+      ],
+      [
+        "Y3",
+        "Y1"
+      ],
+      [
+        "Y12",
+        "Y11"
+      ],
+      [
+        "Y2",
+        "Y11"
+      ],
+      [
+        "Y10",
+        "Y4"
+      ],
+      [
+        "Y2",
+        "Y4"
+      ],
+      [
+        "Y1",
+        "Y4"
+      ],
+      [
+        "Y9",
+        "Y6"
+      ],
+      [
+        "Y5",
+        "Y7"
+      ],
+      [
+        "Y10",
+        "Y6"
+      ],
+      [
+        "Y1",
+        "Y7"
+      ],
+      [
+        "Y3",
+        "Y8"
+      ],
+      [
+        "Y11",
+        "Y7"
+      ],
+      [
+        "Y12",
+        "Y8"
+      ],
+      [
+        "Y5",
+        "Y8"
+      ],
+      [
+        "Y6",
+        "Y7"
+      ]
+    ],
+    "TEAM_TABLES_3V3": [
+      [
+        "Y1",
+        "Y10",
+        "Y11"
+      ],
+      [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      [
+        "Y9",
+        "Y12"
+      ],
+      [
+        "Y2",
+        "Y5",
+        "Y10"
+      ],
+      [
+        "Y2",
+        "Y11",
+        "Y4"
+      ],
+      [
+        "Y8",
+        "Y1",
+        "Y2"
+      ],
+      [
+        "Y3",
+        "Y4",
+        "Y10"
+      ],
+      [
+        "Y11",
+        "Y5",
+        "Y6"
+      ],
+      [
+        "Y7",
+        "Y8",
+        "Y1"
+      ],
+      [
+        "Y12",
+        "Y3",
+        "Y4"
+      ],
+      [
+        "Y9",
+        "Y3"
+      ],
+      [
+        "Y6",
+        "Y2",
+        "Y12"
+      ],
+      [
+        "Y7",
+        "Y9",
+        "Y4"
+      ]
+    ],
+    "TOURNAMENT_EVENT_DELAY": 0.65,
+    "DEFAULT_MAP_SIZE": "10x10",
+    "KNOCKOUT_MAP_SIZE": "10x10",
+    "BONUS_MAP_SIZE": "10x10",
+    "DEFAULT_BATTLE_DELAY": 0.4,
+    "DEFAULT_DISPLAY_LEVEL": 0,
+    "DEFAULT_TOURNAMENT_TYPE": 1,
+    "DEFAULT_RUN_TIMES": 1,
+    "DEFAULT_ENABLED_MODES": [
+      "1v1",
+      "2v2",
+      "3v3"
+    ],
+    "AI_SERVER_PORT": 8888,
+    "AI_SERVER_HOST": "0.0.0.0",
+    "LOG_FILE": "ai_battle.log",
+    "RESULT_FILE": "result.txt",
+    "BRACKET_FILE": "bracket_info.txt",
+    "LOG_BUFFER_LIMIT": 500,
+    "WEB_LOG_LINE_LIMIT": 800,
+    "LOG_STREAM_INTERVAL": 1.0,
+    "AUTO_START_DELAY": 1.0,
+    "CUSTOM_DEFAULT_GAMES": 1,
+    "CUSTOM_MAX_GAMES": 99,
+    "AI_TEMPERATURE": 1.0,
+    "AI_STATE_NOISE": 0.4,
+    "AI_DEFAULT_STATUS": 60,
+    "SEASON_FALLBACK_STATUS": 50,
+    "AI_DODGE_WEIGHT": 50.0,
+    "AI_COUNTER_WEIGHT": 50.0,
+    "AI_REACTION_REWARD": 0.5,
+    "AI_REACTION_PENALTY": 0.1,
+    "AI_REACTION_MIN_WEIGHT": 1.0,
+    "AI_SUPPORT_HP_THRESHOLD": 0.4,
+    "AI_SUPPORT_MP_THRESHOLD": 0.25,
+    "AI_HEAL_HP_THRESHOLD": 0.4,
+    "AI_ITEM_HP_THRESHOLD": 0.6,
+    "AI_ITEM_MP_THRESHOLD": 0.3,
+    "AI_MAX_FAILURES": 5,
+    "BATTLE_MAX_STEPS": 2000,
+    "PRELIM_PROGRESS_INTERVAL": 50,
+    "RESULT_NAME_WIDTH": 18,
+    "TOURNAMENT_PAUSE_POLL": 0.1,
+    "SIM_SINGLE_COUNT": 100,
+    "SIM_TABLE_COUNT": 50,
+    "SIM_PRELIM_COUNT": 10,
+    "SIM_DEFAULT_MODE": "prelim",
+    "SIM_DEFAULT_FORMAT": "1v1",
+    "ROOM_DEFAULT_SPEED": 1,
+    "ROOM_AI_DELAY": 0.85,
+    "ROOM_HISTORY_LIMIT": 1500,
+    "ROOM_IDLE_HOURS": 12,
+    "DEFAULT_RESTIM_MODE": 0,
+    "ALLOW_FAILED_REACTION": true,
+    "AUTO_REACTION_CHOICE": "dodge",
+    "AUTO_REACTION_COUNT": 99,
+    "AI_SUMMON_STATUS_MIN": 40,
+    "AI_SUMMON_STATUS_MAX": 80,
+    "AI_HP_FALLBACK": 10,
+    "CONTRIBUTION_MIN_SAMPLES": 3
+  },
+  "season": {
+    "Y1": 50,
+    "Y2": 50,
+    "Y3": 50,
+    "Y4": 50,
+    "Y5": 50,
+    "Y6": 50,
+    "Y7": 50,
+    "Y8": 50,
+    "Y9": 50,
+    "Y10": 50,
+    "Y11": 50,
+    "Y12": 50,
+    "Y13": 50,
+    "Y14": 50,
+    "Y15": 50,
+    "Y16": 50,
+    "Y17": 50,
+    "Y60": 50
+  },
+  "rows": [
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169100,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169102,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169100,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169104,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169101,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169102,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169103,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169103,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169101,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169105,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169106,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169107,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169104,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169105,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169107,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169109,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169108,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169108,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169106,
+      "win": true,
+      "timeout": false,
+      "rounds": 6
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169111,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169110,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169112,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169111,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169110,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169109,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169112,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169116,
+      "win": false,
+      "timeout": false,
+      "rounds": 1
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169115,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169116,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169114,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169113,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169113,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169115,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169118,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169117,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169119,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169120,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169119,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169114,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169118,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169120,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169123,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169117,
+      "win": true,
+      "timeout": false,
+      "rounds": 6
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169121,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169121,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169125,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169122,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169123,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169124,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169125,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169124,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169126,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169127,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169122,
+      "win": true,
+      "timeout": false,
+      "rounds": 7
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169128,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169129,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169131,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169126,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169130,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169130,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169127,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169129,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169131,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169128,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169133,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169132,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169134,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169133,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169137,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169136,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169135,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169138,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169135,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169139,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169137,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169132,
+      "win": true,
+      "timeout": false,
+      "rounds": 6
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169140,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169134,
+      "win": false,
+      "timeout": false,
+      "rounds": 8
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169141,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169136,
+      "win": true,
+      "timeout": false,
+      "rounds": 11
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169139,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169143,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169141,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169140,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169143,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169138,
+      "win": false,
+      "timeout": false,
+      "rounds": 10
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169146,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169142,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169145,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169146,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169144,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169145,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169142,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169147,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169144,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169148,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169148,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169149,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169200,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y12"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169149,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169200,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169201,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169201,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169202,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169205,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y12"
+      ],
+      "seed": 202611169147,
+      "win": true,
+      "timeout": false,
+      "rounds": 7
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169203,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169203,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169204,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169202,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169204,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169206,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169207,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169206,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169207,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169209,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169208,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169205,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169208,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169209,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169211,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169212,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169210,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169210,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169212,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169211,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169215,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169215,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169214,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169213,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169216,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169214,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169216,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169218,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169218,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169213,
+      "win": true,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169219,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169217,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169217,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169220,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169221,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169222,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169219,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169223,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169222,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169223,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169225,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169220,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169224,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169224,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169225,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169221,
+      "win": false,
+      "timeout": false,
+      "rounds": 5
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169228,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169226,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169227,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169227,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169229,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169226,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169230,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169228,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169229,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169231,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169230,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169232,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169234,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169233,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169234,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169233,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169232,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169231,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169235,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169238,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169237,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169239,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169235,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169236,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169237,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169238,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169240,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169240,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169241,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169236,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169241,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169242,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169243,
+      "win": true,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169242,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169244,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169239,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169245,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169243,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169246,
+      "win": false,
+      "timeout": false,
+      "rounds": 2
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169244,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169247,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169249,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169246,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169248,
+      "win": true,
+      "timeout": false,
+      "rounds": 3
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169245,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "b": [
+        "Y9",
+        "Y3"
+      ],
+      "seed": 202611169247,
+      "win": true,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169249,
+      "win": false,
+      "timeout": false,
+      "rounds": 4
+    },
+    {
+      "format": "3v3",
+      "a": [
+        "Y9",
+        "Y3"
+      ],
+      "b": [
+        "Y5",
+        "Y6",
+        "Y7",
+        "Y8"
+      ],
+      "seed": 202611169248,
+      "win": false,
+      "timeout": false,
+      "rounds": 3
+    }
+  ],
+  "errors": [],
+  "elapsed": 19.673572540283203,
+  "fingerprints": {
+    "ai_battle.py": "9d1b4755fe4db33a18ebb2d17db3e707c3a13d5750c0c4d3281be5927534ce90",
+    "battle_engine.py": "125f3d6db0a4495ac6f7aa4c395f2524d6c20571593319cbbed40891cf47773f",
+    "ai_trainer.py": "4bd2e056955352a093bd135f53657305419839401b1b665027ca357337448510",
+    "characters_data.py": "ff0cb9cc7830d343402e39821f5659b3c32c2dd74926d59c5d123cb15d39a347",
+    "ai_weights.json": "6ca9fe871567feef3b19d71a64d870ab8d25c1eb01903ec8514db255a75b9a32"
+  }
+}

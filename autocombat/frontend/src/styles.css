@@ -26,9 +26,9 @@
 .profile-sidebar{min-width:0;align-self:start;display:flex;flex-direction:column;gap:18px}
 .profile-sidebar>.profile-art{align-self:stretch}
 .profile-stats{border:1px solid var(--line);border-radius:10px;padding:16px;background:#fff}
-.profile-stats table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.6}
+.profile-stats table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;line-height:1.6}
 .profile-stats caption{text-align:left;font-size:14px;font-weight:600;color:var(--character);padding-bottom:12px}
-.profile-stats th,.profile-stats td{padding:7px 8px;border-bottom:1px solid var(--line)}
+.profile-stats th,.profile-stats td{width:33.333333%;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;white-space:normal;overflow-wrap:anywhere}
 .profile-stats th{text-align:left;font-weight:400;color:#625f6a;overflow-wrap:anywhere}
 .profile-stats thead th{font-size:11px;color:#777087;background:#f8f6fa}
 .profile-stats td,.profile-stats thead th:not(:first-child){text-align:right}

@@ -1,0 +1,15 @@
+.playoff-settings { width: 100%; min-width: 0; }
+.playoff-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.playoff-controls label { display: grid; gap: 6px; }
+.playoff-controls .checkbox { display: flex; align-items: center; }
+.playoff-graph { position: relative; overflow: auto; max-height: 740px; padding: 12px; }
+.playoff-graph .bracket-stage { flex-shrink: 0; min-width: 205px; }
+.playoff-graph .series-card { position: relative; z-index: 1; width: 100%; }
+.playoff-list { display: flex; flex-direction: column; gap: 24px; }
+.playoff-list .bracket-stage { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.playoff-list h3 { grid-column: 1 / -1; }
+.playoff-round-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--border, #52616e); margin-top: 12px; border-radius: 10px; }
+.playoff-round-editor input { width: 90px; }
+.playoff-create { margin-bottom: 20px; }
+.playoff-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.setting-field:has(.playoff-settings) { grid-column: 1 / -1; }

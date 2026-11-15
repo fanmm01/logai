@@ -15,6 +15,31 @@ const profiles = require('../src/data/encyclopedia.json');
 const approvedY9Y12 = require('./fixtures/y9-y12-approved.json');
 const raw = (serial, spells) => ({ serial, name: serial, attrs: {}, spells, portrait: '', avatar: '' });
 
+// Approved by the user on 2026-11-16 before updating the page or fixtures.
+// This independent field-level baseline supersedes the earlier wording.
+const approvedStage3 = require('./fixtures/stage3-approved.json');
+test('stage-three approved fields remain exact after spell reordering and combat edits', () => {
+  let count = 0;
+  for (const [serial, approved] of Object.entries(approvedStage3)) {
+    const input = raw(serial, profiles[serial].skills.map(({ name, phase }) => ({
+      name, phase, 消耗mp: 999, effects: [{ type: 1, 伤害骰: '9d99' }],
+    })).reverse());
+    const original = structuredClone(input);
+    const actual = withEncyclopedia(input);
+    if (approved.passives) assert.deepEqual(actual.passives, approved.passives);
+    for (const patch of approved.skills || []) {
+      const article = actual.skills.find(a => a.name === patch.name && a.phase === patch.phase);
+      assert.ok(article, `${serial}: ${patch.name}`);
+      for (const [key, value] of Object.entries(patch)) {
+        assert.deepEqual(article[key], value, `${serial}/${patch.name}: ${key}`);
+      }
+      count++;
+    }
+    assert.deepEqual(input, original);
+  }
+  assert.equal(count, 9);
+});
+
 test('all 106 frontend articles survive reordering and phase matching', () => {
   let count = 0;
   for (const [serial, profile] of Object.entries(profiles)) {

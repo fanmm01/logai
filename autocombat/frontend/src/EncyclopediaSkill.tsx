@@ -19,7 +19,7 @@ export function EncyclopediaSkill({ skill }: { skill: Character['skills'][number
   }
   if (skill.limits) parameters.push({ label: '范围与条件', value: skill.limits });
   return <>
-    <EncyclopediaProse content={skill.description}/>
+    <EncyclopediaProse content={skill.description} sourceKey={'skill:'+skill.id}/>
     <dl className="skill-meta">{parameters.map(({ label, value }, i) =>
       <div key={i}><dt><TermText text={label}/></dt><dd><TermText text={value}/></dd></div>)}</dl>
     {facts.length > 0 && <div className="skill-facts"><EncyclopediaProse content={facts}/></div>}

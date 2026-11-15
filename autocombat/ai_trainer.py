@@ -28,6 +28,7 @@ GENERATIONS = 50
 BATTLES_PER_GEN = 100
 ALPHA = 0.1       # Learning rate
 GAMMA = 0.9       # Discount factor
+SUMMON_OWNER_CREDIT = 0.5
 OUTPUT_FILE = 'ai_weights.json'  # Can be overridden by wrapper
 
 # ============================================================
@@ -76,7 +77,7 @@ def get_character_combat_value(engine, uid):
         basic_avg = 0.0
 
     # Best skill damage
-    spells = char.spells or engine.load_spells(uid)
+    spells = engine.load_spells(uid) if uid in getattr(engine, '_summon_members', {}) else (char.spells or engine.load_spells(uid))
     best_skill_avg = 0.0
     for s in spells:
         if has_timing(s.get('时机', '2'), '2'):
@@ -669,6 +670,9 @@ def get_available_actions(engine, uid):
         phase_key += '_' + (char.get_str('_weapon_name') or 'staff')
     spells = char.spells or engine.load_spells(uid)
 
+    if uid in getattr(engine, '_summon_members', {}):
+        phase_key += repr([(sp['index'], sp['name']) for sp in spells])
+
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
 
     # Build static base cache (spell list + basic attack + move, without MP check)
@@ -733,6 +737,14 @@ def get_available_actions(engine, uid):
                         continue
                     if all(str(e.get('客体', '')) == '1' for e in sp.get('effects', [])) and not ak.endswith('__T0'):
                         continue
+                rescue = next((e for e in sp.get('effects', []) if e.get('type') == 18), None)
+                if rescue and not any(not engine._rescue_landing(uid, ally['userId'], rescue)[1]
+                                      for ally in engine._battle_unit_entries()):
+                    continue
+                if any(e.get('type') == 5 and (engine._get_summon_template(e.get('召唤物模板', '')) or {}).get('_meta')
+                       and not engine._random_summon_candidates(uid, engine._get_summon_template(e['召唤物模板']))
+                       for e in sp.get('effects', [])):
+                    continue
                 if engine._revive_preflight(uid, sp):
                     continue
                 snow_zone = char.serial == 'Y6' and any(e.get('冰冻每轮层数') for e in sp.get('effects', []))
@@ -1060,7 +1072,7 @@ def get_summon_actions(engine, uid):
     if not skills: return []
 
     target_strats = [('T0', '最低HP玩家'), ('T1', '最近'), ('T2', '最高威胁'), ('T3', '最低HP召唤物')]
-    actions = []
+    actions = [(key, name) for key, name in get_available_actions(engine, uid) if key.startswith('SKILL_')]
     for i, sk in enumerate(skills):
         if sk.get('mp_cost', 0) > entry.get('summon_mp', 0):
             continue
@@ -1075,6 +1087,8 @@ def get_summon_actions(engine, uid):
 
 def execute_summon_action(engine, uid, action_key):
     """Execute a summon action. Returns list of detail lines for display."""
+    if action_key.startswith('SKILL_'):
+        return str(execute_action(engine, uid, action_key)).splitlines()
     if engine._snow_summon_template(uid):
         return engine._snow_summon_action(uid)
     init_list = engine._get_initiative()
@@ -1234,6 +1248,8 @@ def execute_action(engine, uid, action_key):
                                             or acts_now.get('附加', 0) > 0):
                 return engine._additional_action(uid, f's{skill_num}')
             target = tid if tid is not None else engine._smart_target(uid, spell)
+            if any(e.get('type') == 18 for e in spell.get('effects', [])):
+                target = engine._smart_target(uid, spell)
             if engine._is_y17(uid) and engine._y17_spell_kind(uid, spell) == 'store':
                 target = engine._y17_heal_target(uid, tid)
                 if not target:
@@ -1494,6 +1510,17 @@ def merge_untrained_tables(previous, trained, characters, summons):
     return result
 
 
+def _credit_summon_owner_action(updates, origins, summon_uid, summon_reward):
+    """Return part of a summon action's reward to the spell that created it."""
+    update_index = origins.get(summon_uid)
+    if update_index is None or not summon_reward:
+        return
+    table_type, character, state, action, reward, next_state = updates[update_index]
+    updates[update_index] = (
+        table_type, character, state, action,
+        reward + SUMMON_OWNER_CREDIT * summon_reward, next_state)
+
+
 def normalize_training_targets(target_serials, enabled_serials):
     if target_serials is None:
         return None
@@ -1603,6 +1630,7 @@ class QTrainer:
         engine._react_cw = {uid: self._react_cw[uid] for uid in a_uids+b_uids}
         engine._react_bw = {uid: self._react_bw[uid] for uid in a_uids+b_uids}
         updates = []; winner = None; rc = 0; sc = 0
+        summon_credit_origins = {}
         while rc < 20 and sc < 200:
             sc += 1; state = engine._get_state()
             if not state or state.get('phase')!='active': break
@@ -1688,6 +1716,7 @@ class QTrainer:
                     cd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
                     reward = (cd-pd)/max(abs(pd),abs(cd),1)
                     reward *= targeting_reward_modifier(engine, m_uid, ak)
+                    _credit_summon_owner_action(updates, summon_credit_origins, m_uid, reward)
                     ns = encode_summon_state(engine, m_uid)
                     if ns is not None:
                         updates.append(('summon', summon_name, st, ak, reward, ns))
@@ -1760,6 +1789,7 @@ class QTrainer:
             idx = random.choices(range(len(av)), weights=probs, k=1)[0]
             ak, an = av[idx]
             pd = engine.hp_diff(mt) - engine.hp_diff('X' if mt=='Y' else 'Y')
+            summons_before = {e['userId'] for e in il if e.get('isSummon')}
             result = execute_training_action(engine, uid, ak)
             if not action_committed(result):
                 continue
@@ -1786,6 +1816,19 @@ class QTrainer:
             ns = encode_state(engine, uid)
             if ns is not None:
                 updates.append((table_type, ck, st, ak, reward, ns))
+                if ak.startswith('SKILL_'):
+                    skill_num = int(ak.split('_')[1])
+                    spell = next((s for s in (char.spells or engine.load_spells(uid))
+                                  if s['index'] == skill_num), None)
+                    if spell and any(e.get('type') == 5 for e in spell.get('effects', [])):
+                        update_index = len(updates) - 1
+                        for summon_entry in engine._get_initiative():
+                            summon_uid = summon_entry['userId']
+                            if (summon_entry.get('isSummon')
+                                    and summon_uid not in summons_before
+                                    and summon_entry.get('ownerId') == uid
+                                    and (engine._get_combat_hp(summon_uid) or 0) > 0):
+                                summon_credit_origins[summon_uid] = update_index
         # Update reaction weights based on outcome
         if winner is None:
             _res = getattr(engine, '_battle_result', None)

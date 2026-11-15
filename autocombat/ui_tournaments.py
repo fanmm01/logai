@@ -15,6 +15,7 @@ import time
 from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 from combat_settings import value as setting, snapshot as settings_snapshot, settings_scope, season_statuses, valid_season
+import tournament_playoffs as playoffs
 
 
 def standings(t):
@@ -22,6 +23,11 @@ def standings(t):
 
 
 def bracket(t):
+    if 'playoff' in t:
+        graph = playoffs.build([row['id'] for row in standings(t)], t['seed'], t['settings'], t['playoff'])
+        t['groups'] = graph['groups']
+        t['nba_halves'] = graph['nba_halves']
+        return graph['series']
     """Same weighted combined play-in/QF draw and SF pairings as Tournament."""
     import ai_battle as ab
     cfg = t.get('settings') or settings_snapshot()
@@ -62,15 +68,15 @@ def bracket(t):
 
 
 def participant(t, source):
-    if isinstance(source, int):
-        return source
-    kind, identifier = source.split(':', 1)
-    s = next(x for x in t['series'] if x['id'] == identifier)
-    return s['winner' if kind == 'W' else 'loser']
+    return playoffs.participant(t, source)
 
 
 def ready(t):
-    return [s for s in t['series'] if s['winner'] is None
+    if t.get('playoff', {}).get('format') == 'nba16':
+        pending = [s for s in t['series'] if s.get('conference') and not playoffs.finished(s)]
+        if pending:
+            return [s for s in pending if participant(t, s['a']) is not None and participant(t, s['b']) is not None]
+    return [s for s in t['series'] if not playoffs.finished(s)
             and participant(t, s['a']) is not None and participant(t, s['b']) is not None]
 
 
@@ -89,6 +95,7 @@ class Tournaments:
                 t.update(status='paused', current=None, message='服务重启，已完成赛果已保留；未完成场次将从场初重新开始')
                 self.save(t)
         for path, name, method in [('/tournaments', 'create', 'POST'), ('/tournaments', 'list', 'GET'),
+                                   ('/tournaments/playoff-preview', 'preview', 'POST'),
                                    ('/tournaments/<tid>', 'get', 'GET'), ('/tournaments/<tid>/advance', 'advance', 'POST'),
                                    ('/tournaments/<tid>/watch', 'watch', 'POST'),
                                    ('/tournaments/<tid>/next', 'next_game', 'POST'),
@@ -110,10 +117,26 @@ class Tournaments:
         result.pop('owner', None)
         result.setdefault('speed', 1)
         result['standings'] = standings(t)
+        result['group_tables'] = playoffs.group_tables(t)
         for s in result['series']:
             s['team_a'] = participant(t, s['a'])
             s['team_b'] = participant(t, s['b'])
         return result
+
+    def preview(self):
+        data = self.c['body']()
+        cfg = settings_snapshot()
+        try:
+            config = playoffs.validate_config(data.get('playoff', cfg['PLAYOFF_CONFIG']))
+            incoming = data.get('bo', {})
+            if not isinstance(incoming, dict) or any(k not in ('BO_N_PLAYIN', 'BO_N_QF', 'BO_N_SF', 'BO_N_FINAL') or type(v) is not int or v < 1 or v % 2 != 1 for k, v in incoming.items()):
+                raise ValueError('BO 必须为正奇数')
+            cfg.update(incoming)
+        except (ValueError, TypeError) as exc:
+            raise BadRequest(str(exc)) from exc
+        preview_size = max(18, playoffs.FORMATS[config['format']][1]) if config['format'] == 'nba16' else playoffs.FORMATS[config['format']][1]
+        graph = playoffs.build(list(range(preview_size)), 0, cfg, config)
+        return jsonify(**graph, formats={k: dict(label=v[0], teams=v[1]) for k, v in playoffs.FORMATS.items()})
 
     def list(self):
         if not self.c['session_id']():
@@ -144,6 +167,10 @@ class Tournaments:
         import ai_battle as ab
         TEAM_TABLES_2V2, TEAM_TABLES_3V3 = setting('TEAM_TABLES_2V2'), setting('TEAM_TABLES_3V3')
         cfg = settings_snapshot()
+        try:
+            playoff = playoffs.validate_config(data.get('playoff', cfg['PLAYOFF_CONFIG']))
+        except (ValueError, TypeError) as exc:
+            raise BadRequest(str(exc)) from exc
         fmt = data.get('format', cfg['SIM_DEFAULT_FORMAT'])
         if fmt not in ('1v1', '2v2', '3v3'):
             raise BadRequest('无效赛制')
@@ -154,6 +181,12 @@ class Tournaments:
             teams = [team for team in teams if all(s in valid for s in team)]
         if len(teams) < 4 or any(not isinstance(team, list) or not team or len(team) != len(set(team)) or any(s not in valid for s in team) for team in teams):
             raise BadRequest('赛事至少需要四支有效队伍，请检查预设引用')
+        # The legacy default continues supporting small custom tournaments.
+        # Explicitly chosen playoff formats require their full qualification field.
+        if len(teams) < playoffs.FORMATS[playoff['format']][1]:
+            if 'playoff' in data or playoff['format'] != 'playin12':
+                raise BadRequest(f"该季后赛赛制至少需要 {playoffs.FORMATS[playoff['format']][1]} 支队伍")
+            playoff = None
         seed, season = data.get('seed', random.randrange(2**31)), data.get('season', cfg['SEASON_AVG_STATUS'])
         if type(seed) is not int or not 0 <= seed < 2**31 or not valid_season(season):
             raise BadRequest('种子或赛季状态无效')
@@ -168,10 +201,11 @@ class Tournaments:
                     pool = tournament._build_rr_pool(fmt, teams, [cfg['DEFAULT_MAP_SIZE']], fmt, rr)
                     pool += tournament._allocate_individual_bonus_matches([x[0] for x in teams], rr, cfg['TARGET_1V1_MATCHES'])
                 else:
-                    rr = cfg['RR_ROUNDS_2V2'] if fmt == '2v2' else cfg['RR_ROUNDS_3V3']
                     maps = cfg['MAP_SIZES_2V2'] if fmt == '2v2' else cfg['MAP_SIZES_3V3']
+                    rr_limit = cfg['RR_ROUNDS_2V2'] if fmt == '2v2' else cfg['RR_ROUNDS_3V3']
+                    rr = min(rr_limit, cfg['TARGET_TEAM_MATCHES'] // (max(1, len(teams)-1) * len(maps)))
                     pool = tournament._build_rr_pool(fmt, teams, maps, fmt, rr)
-                    pool += tournament._allocate_team_bonus_matches(teams, rr, cfg['RANDOM_BONUS_2V2'] if fmt == '2v2' else cfg['RANDOM_BONUS_3V3'])
+                    pool += tournament._allocate_team_bonus_matches(teams, rr, cfg['TARGET_TEAM_MATCHES'], map_count=len(maps))
                 random.shuffle(pool)
                 schedule = [dict(a=p[4], b=p[5], map_size=p[1], seed=random.randrange(2**31)) for p in pool]
                 with settings_scope(cfg):
@@ -184,6 +218,8 @@ class Tournaments:
                      teams=teams, schedule=schedule, completed=0, series=[], phase='regular', status='paused',
                      current=None, revision=0, requests=[], logs=[], results=[], speed=cfg['ROOM_DEFAULT_SPEED'], settings=cfg,
                      standings=[dict(id=i, team=team, points=0, wins=0, battles=0) for i, team in enumerate(teams)])
+            if playoff is not None:
+                t['playoff'] = playoff
             self.save(t)
             return jsonify(self.public(t))
 
@@ -322,7 +358,7 @@ class Tournaments:
         count = max(1, min(t['settings'].get('PRELIM_WORKERS', 8), os.cpu_count() or 1))
         # One persistent isolated subprocess per slot; only a bounded wave is dispatched.
         folder = self.management.runtime/'jobs'/tid
-        for name in ('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py'):
+        for name in ('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py', 'tournament_playoffs.py'):
             shutil.copyfile(Path(__file__).with_name(name), folder/name)
         with ThreadPoolExecutor(max_workers=count) as pool:
             while True:
@@ -362,7 +398,7 @@ class Tournaments:
             # Upgrade the display adapter for existing pinned tournaments too.
             # Their engine, character data and weights remain untouched.
             with self.lock:
-                for name in (('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py') if worker_id == tid else ()):
+                for name in (('ui_task_worker.py', 'combat_settings.py', 'combat_defaults.py', 'tournament_playoffs.py') if worker_id == tid else ()):
                     shutil.copyfile(Path(__file__).with_name(name), folder/name)
             err = (folder/('game-error-' + worker_id.replace(':', '-') + '.log')).open('w', encoding='utf-8')
             proc = subprocess.Popen([sys.executable, '-u', str(folder/'ui_task_worker.py'), '--server'], cwd=folder,
@@ -436,7 +472,8 @@ class Tournaments:
             s['games'].append(record)
             if s['score'][side] > s['best_of']//2:
                 s.update(winner=winner, loser=loser)
-            if all(s['winner'] is not None for s in t['series']):
+            playoffs.settle_reset(t)
+            if all(playoffs.finished(s) for s in t['series']):
                 t.update(phase='done', status='paused', message='锦标赛已完成')
         t['current'] = None
 

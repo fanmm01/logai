@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Redo2, Undo2 } from 'lucide-react';
 import { api, requestId, type Character, type Effect, type Room } from './types';
 import { useRuntimeSettings } from './settings';
 import { linkPaneScrolling } from './paneScrolling';
 import { CharacterLink } from './KnowledgeUI';
+import { PlayoffGraph, defaultPlayoff, playoffLabels, drawLabels } from './Playoffs';
 
 type Feedback = { onError: (message: string) => void };
 const rid = requestId;
@@ -122,6 +124,8 @@ function Fields({ value, change, name = '', enums, samples }: {
 
 export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => void }) {
   const [data, setData] = useState<Effect | null>(null);
+  const undoStack = useRef<Effect[]>([]);
+  const redoStack = useRef<Effect[]>([]);
   const editorLayout = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const [showDisabled, setShowDisabled] = useState(false);
@@ -142,6 +146,7 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
     setIndex(found >= 0 ? found : Math.max(0, d.characters.findIndex((ch: Effect) => d.enabled_serials.includes(ch.serial))));
     if (found >= 0 && !d.enabled_serials.includes(selected)) setShowDisabled(true);
     setData(d); setDirty(false);
+    undoStack.current = []; redoStack.current = [];
     setBackups((await api<{ backups: Effect[] }>('/backups')).backups);
     const access = await api<{ allowlist: string[] }>('/allowlist');
     setAllowlist(access.allowlist.join('\n'));
@@ -169,9 +174,26 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
   };
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
-      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s') {
-        event.preventDefault();if(event.repeat)return;
-        if(tab==='allowlist')void saveAllowlist();else void saveData();
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault(); if (event.repeat) return;
+        if (tab === 'allowlist') void saveAllowlist(); else void saveData();
+        return;
+      }
+      if (!data || tab === 'allowlist') return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+      const key = event.key.toLowerCase();
+      const undo = key === 'z' && !event.shiftKey;
+      const redo = (key === 'y' && !event.shiftKey) || (key === 'z' && event.shiftKey);
+      if (undo && undoStack.current.length) {
+        event.preventDefault();
+        redoStack.current.push(structuredClone(data));
+        setData(undoStack.current.pop()!); setDirty(true);
+      } else if (redo && redoStack.current.length) {
+        event.preventDefault();
+        undoStack.current.push(structuredClone(data));
+        setData(redoStack.current.pop()!); setDirty(true);
       }
     };
     window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);
@@ -188,7 +210,13 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
     }
   }
   samples.__byType = data.fields;
-  const edit = (next: Effect) => { setData(next); setDirty(true); };
+  const edit = (next: Effect) => {
+    if (!data) return;
+    undoStack.current.push(structuredClone(data));
+    if (undoStack.current.length > 100) undoStack.current.shift();
+    redoStack.current = [];
+    setData(next); setDirty(true);
+  };
   const characters = data.characters as Effect[];
   const enabled = new Set<string>(data.enabled_serials);
   const enabledCount = characters.filter(ch => enabled.has(ch.serial)).length;
@@ -205,7 +233,7 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
     if (remaining[nextIndex] && !enabled.has(remaining[nextIndex].serial)) setShowDisabled(true);
   };
   return <div className="page management-page"><div className="section-heading"><div><h1>角色管理</h1><p className="muted">基础版统一数据 · 属性—值编辑 · {dirty ? '有未保存修改' : '已同步'}{data.needs_training ? ' · 权重需要重新训练' : ''}</p></div>
-    <button className="button primary" disabled={busy || !dirty || enabledCount === 0} onClick={saveData}>保存</button></div>
+    <button className="button primary" disabled={busy || !dirty || enabledCount === 0} onClick={saveData}>保存</button><div className="expansion-toolbar management-history"><button className="button" aria-label="&#25764;&#38144;" title="&#25764;&#38144; (Ctrl/&#8984;+Z)" disabled={!undoStack.current.length} onClick={() => { if (!data) return; redoStack.current.push(structuredClone(data)); setData(undoStack.current.pop()!); setDirty(true); }}><Undo2 size={16}/></button><button className="button" aria-label="&#37325;&#20570;" title="&#37325;&#20570; (Ctrl+Y / &#8984;+Shift+Z)" disabled={!redoStack.current.length} onClick={() => { if (!data) return; undoStack.current.push(structuredClone(data)); setData(redoStack.current.pop()!); setDirty(true); }}><Redo2 size={16}/></button></div></div>
     <div className="tabs"><button onClick={() => setTab('characters')}>魔法少女</button><button onClick={() => setTab('summons')}>召唤物模板</button><button onClick={() => setTab('items')}>物品模板</button><button onClick={() => setTab('backups')}>备份与训练</button><button onClick={() => setTab('allowlist')}>访问白名单</button></div>
     {data.settings?.GLOBAL_RANGE_OVERRIDE === 1 && <p className="muted">基础数据当前开启全局射程覆盖（攻击射程为 99）；可在“设置 · 全局规则”中关闭。领域半径仍按各效果计算。</p>}
     {message && <p className="save-message" role="status">{message}</p>}
@@ -329,7 +357,7 @@ function TournamentReplay({ tournament: t, catalog, onError }: Feedback & { tour
   </div>;
 }
 
-export function TournamentPanel({ catalog, onError, onWatch }: Feedback & { catalog: Character[]; onWatch: (room: Room) => void }) {
+export function TournamentPanel({ catalog, onError, onWatch, onSettings }: Feedback & { catalog: Character[]; onWatch: (room: Room) => void; onSettings: () => void }) {
   const defaults = useRuntimeSettings();
   const [format, setFormat] = useState<string>(defaults.SIM_DEFAULT_FORMAT);
   const [tournaments, setTournaments] = useState<Effect[]>([]);
@@ -337,35 +365,14 @@ export function TournamentPanel({ catalog, onError, onWatch }: Feedback & { cata
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
   const [seed, setSeed] = useState('');
-  const bracketRef = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState<{id:string;d:string}[]>([]);
-  const [graphSize, setGraphSize] = useState([0, 0]);
+  const [playoffFormat, setPlayoffFormat] = useState<string>((defaults.PLAYOFF_CONFIG || defaultPlayoff).format);
+  const [display, setDisplay] = useState('');
   const t = tournaments.find(t => t.id === id) || tournaments.find(t => t.format === format);
   const load = () => api<{ tournaments: Effect[] }>('/tournaments').then(x => setTournaments(x.tournaments));
   useEffect(() => { load().catch(e => onError(e.message)); const timer = setInterval(() => load().catch(() => {}), 1000); return () => clearInterval(timer); }, []);
   useEffect(() => {
-    const root = bracketRef.current;
-    if (!root || !t) return;
-    function update() {
-      if (!root) return;
-      const bounds = root.getBoundingClientRect();
-      const paths:{id:string;d:string}[] = [];
-      for (const s of t!.series) for (const field of ['a', 'b']) {
-        if (typeof s[field] !== 'string') continue;
-        const source = root.querySelector<HTMLElement>(`[data-series="${s[field].slice(2)}"]`);
-        const target = root.querySelector<HTMLElement>(`[data-series="${s.id}"]`);
-        if (!source || !target) continue;
-        const a = source.getBoundingClientRect(), b = target.getBoundingClientRect();
-        const x1 = a.right-bounds.left+root.scrollLeft, y1 = a.top+a.height/2-bounds.top+root.scrollTop;
-        const x2 = b.left-bounds.left+root.scrollLeft, y2 = b.top+b.height/2-bounds.top+root.scrollTop;
-        const mid = (x1+x2)/2;
-        paths.push({id:s.id+field,d:`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`});
-      }
-      setEdges(paths); setGraphSize([root.scrollWidth, root.scrollHeight]);
-    }
-    update(); const observer = new ResizeObserver(update); observer.observe(root);
-    return () => observer.disconnect();
-  }, [t?.id, t?.revision]);
+    setDisplay('');
+  }, [t?.id]);
   const team = (idx: number | null | undefined) => idx == null ? '待定' : t?.teams[idx].map((s: string) => catalog.find(c => c.serial === s)?.name || s).join(' + ');
   async function advance(op: string) { if (!t) return; setBusy(true); try { await api(`/tournaments/${t.id}/advance`, { op, series: selected || t.series.find((s: Effect) => s.winner == null && s.team_a != null && s.team_b != null)?.id, revision: t.revision, request_id: rid() }); await load(); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }
   async function setSpeed(speed: number) { if (!t) return; try { const updated = await api<Effect>(`/tournaments/${t.id}/advance`, { op: 'speed', speed, request_id: rid() }); setTournaments(old => old.map(item => item.id === updated.id ? updated : item)); } catch (e) { onError((e as Error).message); } }
@@ -374,15 +381,23 @@ export function TournamentPanel({ catalog, onError, onWatch }: Feedback & { cata
     <label>赛制<select value={format} onChange={e => { setFormat(e.target.value); setId(''); setSelected(''); }}>{['1v1', '2v2', '3v3'].map(f => <option key={f}>{f}</option>)}</select></label>
     <label>历史赛事<select value={t?.id || ''} onChange={e => { setId(e.target.value); setSelected(''); }}><option value="">选择赛事</option>{tournaments.filter(t => t.format === format).map(t => <option key={t.id} value={t.id}>{t.id} · {t.phase}</option>)}</select></label>
     <label>种子（空为随机）<input type="number" min="0" value={seed} onChange={e => setSeed(e.target.value)}/></label>
-    <button className="button primary" disabled={busy} onClick={async () => { setBusy(true); try { const result = await api<Effect>('/tournaments', { format, ...(seed ? { seed: Number(seed) } : {}) }); setId(result.id); await load(); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>新建锦标赛</button>
+    <button className="button primary" disabled={busy} onClick={async () => { setBusy(true); try { const basePlayoff = defaults.PLAYOFF_CONFIG || defaultPlayoff; const playoff = { ...basePlayoff, format: playoffFormat, draw: basePlayoff.draw === 'weighted' && playoffFormat !== 'playin12' ? 'tiered' : basePlayoff.draw }; const result = await api<Effect>('/tournaments', { format, playoff, ...(seed ? { seed: Number(seed) } : {}) }); setId(result.id); await load(); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>新建锦标赛</button>
   </div>
+    <section className="panel playoff-create"><h2>新赛季季后赛赛制</h2><div className="playoff-create-main"><label>季后赛赛制<select aria-label="季后赛赛制" value={playoffFormat} onChange={e => setPlayoffFormat(e.target.value)}>{Object.entries(playoffLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label><button type="button" className="button" onClick={onSettings}>前往设置</button></div></section>
     {t && <><p role="status">{t.phase === 'regular' ? '常规赛' : t.phase === 'playoffs' ? '季后赛' : '赛事完成'} · {t.status}{t.current?.series && ' · 当前系列赛 ' + t.current.series} · 常规赛 {t.completed}/{t.schedule.length}{t.message && ' · ' + t.message}</p>
       <div className="expansion-toolbar"><label>逐回合速度<select aria-label="逐回合速度" value={t.speed ?? 1} onChange={e => setSpeed(Number(e.target.value))}><option value={1}>1× 速度</option><option value={2}>2× 速度</option><option value={4}>4× 速度</option></select></label><button className="button stop-button" disabled={busy || t.status === 'paused'} onClick={() => advance('pause')}>暂停推进</button>
         {t.status === 'paused' && t.current && <button className="button primary" disabled={busy} onClick={() => advance('resume')}>继续当前模拟</button>}
         {t.phase === 'regular' ? <button className="button primary" disabled={busy || t.status !== 'paused'} onClick={() => advance('regular')}>模拟常规赛</button> : <>{buttons.map(([op, text]) => <button key={op} className="button" disabled={busy || t.status !== 'paused' || t.phase === 'done' || !!t.current} onClick={() => advance(op)}>{text}</button>)}
           <button className="button primary" disabled={busy || t.phase === 'done' || !['paused', 'watching'].includes(t.status)} onClick={async () => { setBusy(true); try { const result = await api<{ room: Room }>(`/tournaments/${t.id}/watch`, { series: selected || t.series.find((s: Effect) => s.winner == null && s.team_a != null && s.team_b != null)?.id, revision: t.revision }); onWatch(result.room); } catch (e) { onError((e as Error).message); } finally { setBusy(false); } }}>进场观战</button></>}
       </div><div className="tournament-layout"><section className="panel"><h2>常规赛排名</h2><div className="table-scroll"><table><thead><tr><th>排名</th><th>小队</th><th>积分</th><th>胜／场</th></tr></thead><tbody>{t.standings.map((r: Effect, i: number) => <tr key={r.id}><td>{i + 1}</td><td>{t.teams[r.id]?.map((serial:string,j:number) => { const character=catalog.find(c=>c.serial===serial); return <span key={serial}>{j>0&&' + '}{character?<CharacterLink character={character}/>:serial}</span>; })}</td><td>{r.points.toFixed(2)}</td><td>{r.wins}/{r.battles}</td></tr>)}</tbody></table></div></section>
-        <section className="panel"><h2>季后赛赛图</h2>{!t.series.length ? <p className="muted">常规赛结束后生成，首场季后赛前自动暂停。</p> : <div className="bracket-tree" ref={bracketRef}><svg className="bracket-edges" width={graphSize[0]} height={graphSize[1]} aria-hidden="true">{edges.map(e=><path key={e.id} d={e.d}/>)}</svg>{[...new Set(t.series.map((s: Effect) => s.stage))].map(stage => <div className="bracket-stage" key={String(stage)}><h3>{String(stage)}</h3>{t.series.filter((s: Effect) => s.stage === stage).map((s: Effect) => <button key={s.id} data-series={s.id} className={'series-card ' + (selected === s.id ? 'selected' : '')} onClick={() => setSelected(s.id)}><strong>{s.id} · Bo{s.best_of}</strong><span>{s.team_a==null && typeof s.a==='string' ? s.a.slice(2)+(s.a[0]==='W'?' 胜者':' 负者') : team(s.team_a)} <b>{s.score[0]}</b></span><span>{s.team_b==null && typeof s.b==='string' ? s.b.slice(2)+(s.b[0]==='W'?' 胜者':' 负者') : team(s.team_b)} <b>{s.score[1]}</b></span><small>{s.winner != null ? `${team(s.winner)} 晋级` : s.team_a != null && s.team_b != null ? '可进行' : '等待前序系列赛'}</small>{s.games.some((g: Effect) => g.manual) && <small>含人工接管场次</small>}</button>)}</div>)}</div>}</section></div>
+        <section className="panel"><h2>季后赛赛图</h2>
+          {t.playoff && <p>{playoffLabels[t.playoff.format]} · {drawLabels[t.playoff.draw]}</p>}
+          {!t.series.length ? <p className="muted">常规赛结束后生成，首场季后赛前自动暂停。</p> : <>
+            <label>当前赛图显示<select aria-label="当前赛图显示" value={display || t.playoff?.display || 'graph'} onChange={e => setDisplay(e.target.value)}><option value="graph">晋级关系图</option><option value="list">按轮次列表</option></select></label>
+            {!!t.group_tables?.length && <div className="playoff-groups">{t.group_tables.map((g: Effect) => <div key={g.id}><h3>{g.id} 组{g.complete ? ' · 已结束' : ''}</h3><div className="table-scroll"><table><thead><tr><th>排名</th><th>队伍</th><th>胜／场</th><th>局分</th></tr></thead><tbody>{g.rows.map((r: Effect, i: number) => <tr key={r.id}><td>{i+1}</td><td>{team(r.id)}</td><td>{r.wins}/{r.played}</td><td>{r.game_wins}:{r.game_losses}</td></tr>)}</tbody></table></div></div>)}</div>}
+            <PlayoffGraph series={t.series} display={display || t.playoff?.display || 'graph'} team={team} selected={selected} onSelect={s => setSelected(s.id)}/>
+          </>}
+        </section></div>
       <TournamentReplay key={t.id} tournament={t} catalog={catalog} onError={onError}/>
     </>}
   </div>;

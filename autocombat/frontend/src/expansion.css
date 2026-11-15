@@ -73,3 +73,4 @@
 .training-targets input{flex-shrink:0}
 .training-selection p{font-size:12px;line-height:1.8;margin-bottom:12px}
 .training-selection .button.primary:hover:not(:disabled){color:#fff}
+.management-history{padding:0;gap:6px}

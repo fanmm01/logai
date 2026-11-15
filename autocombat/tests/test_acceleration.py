@@ -74,6 +74,7 @@ class AccelerationTests(unittest.TestCase):
         from combat_defaults import DEFAULTS
         cfg={**DEFAULTS,'MAX_ROUNDS_PRELIM':1,'MAX_ROUNDS_PRELIM_BY_FORMAT':{'1v1':1,'2v2':1,'3v3':1},
              'RR_ROUNDS_1V1':1,'TARGET_1V1_MATCHES':8,'RR_ROUNDS_2V2':1,'RR_ROUNDS_3V3':1,
+             'TARGET_TEAM_MATCHES':1,
              'RANDOM_BONUS_2V2':0,'RANDOM_BONUS_3V3':0,
              'TEAM_TABLES_2V2':[['Y1','Y2'],['Y3','Y4']],
              'TEAM_TABLES_3V3':[['Y1','Y2','Y3'],['Y4','Y5','Y6']]}

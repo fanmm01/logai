@@ -1,0 +1,562 @@
+# 增加锦标赛季后赛赛制选项
+
+> 给锦标赛增加季后赛赛制选项（创建锦标赛的时候调整）：
+> 12进8首轮（也即现在的）
+> 前十六位通过6轮4进2小组赛16进8，然后八强开始；
+> 12位，前八位双败后四位单败；
+> 16强，双败；
+> 16位进入季后赛，随后直接抽签，正常赛制；
+> 前14位直接进入季后赛，15-18进行4进2的小组赛playin；
+>
+> 在一般设置下，首轮的赛制统一与目前12进8这轮的bo数相同，胜者组决赛、败者组决赛、半决赛统一相同，总决赛和铜牌赛也统一相同。其余各轮统一相同。
+> 前18分为3个6队组进行小组赛，取三组的前二和最好的两个小组第三进入八强；
+> 赛制表、其显示、分组/捉对方式（纯随机抽签/分档抽签，按成绩排列）、以及bo数可独立调整：
+> 在设置中，它们成为单独的一栏，赛制表的选项下方会出现赛图预览，可以通过点击某一单独空格来单独设置一轮的bo数，剩下的轮则相互独立。
+
+<details><summary>5 previous messages</summary>
+
+> 我先检查现有锦标赛创建、季后赛编排和设置界面的实现，再把新赛制、抽签方式与逐轮 BO 设置接进去。
+>
+> <details><summary>Ran 5 commands</summary>
+>
+> - Ran `pwd; rg --files -g AGENTS.md -g package.json -g '*tournament*' -g '*Tournament*' -g '*playoff*' -g '*Playoff*' -g '*锦标*'`
+> - Ran `rg --files -g AGENTS.md -g '!artifacts/**'; Get-ChildItem -Name; rg -n 'playoff|季后赛|12进8|bo5|BO5' ui_tournaments.py frontend tests/test_ui_tournaments.py`
+> - Ran `Get-Content ui_tournaments.py -TotalCount 240; Get-Content tests/test_ui_tournaments.py -TotalCount 240; Get-Content frontend/src/Expansion.tsx -TotalCount 150; Get-Content ui_settings.py -TotalCount 160`
+> - Ran `Get-Content -Encoding utf8 frontend/src/Expansion.tsx | Select-Object -Skip 300 -First 105; Get-Content -Encoding utf8 frontend/src/settings.tsx -TotalCount 240; rg -n 'BO_N|KNOCKOUT|def validate|def metadata' combat_settings.py combat_defaults.py; Get-Content -Encoding utf8 ui_tournaments.py | Select-Object -Skip 380 -First 170; git status --short`
+> - Ran `Get-Content -Encoding utf8 combat_settings.py -TotalCount 170; Get-Content -Encoding utf8 frontend/src/SettingsPanel.tsx -TotalCount 230; Get-Content -Encoding utf8 frontend/src/settings.ts -TotalCount 100; Get-Content frontend/package.json; Get-Content -Encoding utf8 ui_tournaments.py | Select-Object -Skip 240 -First 90`
+>
+> </details>
+>
+> 现有季后赛只有固定的 12 进 8 签表。我会把它扩展成独立的季后赛配置，并保留每届赛事创建时的设置快照。四队小组按双循环六轮实现；18 队三组按单循环实现，组内同分依次比较系列赛胜场、净胜局和常规赛排名。
+>
+> <details><summary>Ran 3 commands</summary>
+>
+> - Ran `rg -n 'function.*Settings|field.kind|Object.entries.*fields|groups' frontend/src/*Settings* frontend/src/*.tsx`
+> - Ran `Get-ChildItem frontend/src -Name *Setting*`
+> - Ran `Get-Content -Encoding utf8 frontend/src/SettingsPage.tsx -TotalCount 220`
+>
+> </details>
+>
+> 先只读给方案。
+</details>
+
+先只读给方案，暂不修改代码。已检查现有实现：目前季后赛固定为 12 进 8，赛图由后端生成，前端根据晋级关系连线；每届锦标赛已经保存创建时的设置快照，可以沿用这一机制。
+
+建议按以下方式扩展。
+
+**一、创建锦标赛时选择季后赛赛制**
+
+| 选项 | 晋级和比赛流程 |
+|---|---|
+| 12 进 8（现有） | 前四轮空，第 5–12 名先打附加赛，随后八强单败 |
+| 16 进 8 小组赛 | 前十六分为四个四队组，双循环六轮，每组前二晋级八强 |
+| 12 队混合双败 | 前八进入胜者组，第 9–12 名进入败者组；前八首次失利落入败者组，后四首次失利即淘汰 |
+| 16 强双败 | 十六队进入标准双败签表 |
+| 16 强单败 | 前十六直接抽签，随后十六强、八强、半决赛及奖牌赛 |
+| 14 直进＋附加赛 | 前十四直接晋级，第 15–18 名进行四队双循环六轮小组赛，前二补齐十六强 |
+| 18 队小组赛 | 三个六队组，每组前二及成绩最好的两个小组第三晋级八强 |
+
+上述有两处需要明确写进规则：
+
+- “四队六轮”按双循环理解，每队打六场，每组共十二场；六队组建议采用单循环五轮，每组十五场。
+- 双败总决赛建议默认只有一个系列赛，提供“败者组冠军获胜后重置总决赛”开关。双败第三名自然由败者组决赛产生，无需另打铜牌赛。
+
+**二、设置中新增独立的「季后赛」栏目**
+
+该栏目包含四部分，彼此独立保存：
+
+| 配置 | 可选内容 |
+|---|---|
+| 赛制表 | 上述七种赛制 |
+| 赛图显示 | 按晋级关系展示／按轮次列表展示 |
+| 分组与捉对 | 纯随机抽签／分档抽签／按常规赛成绩排列 |
+| BO 设置 | 一般设置＋赛图中的逐轮覆盖 |
+
+“赛图显示”只改变观看方式，不改变比赛流程。“赛制表”决定晋级关系；抽签方式决定参赛者如何填入签表。
+
+全局设置用于提供默认值，创建锦标赛时可以调整本届配置。创建后保存快照，之后修改全局设置不会影响已有赛事。
+
+**三、抽签规则**
+
+- **纯随机抽签**：在符合该赛制资格的队伍中随机分组或捉对；现有赛制前四轮空等资格仍然保留。
+- **分档抽签**：按常规赛排名分档，小组赛每组从各档抽取对应数量；淘汰赛优先高档对低档。
+- **按成绩排列**：直接按排名填入标准种子签位，采用首尾配对，并让高位种子尽量晚相遇。
+
+小组晋级后的淘汰赛重新使用所选捉对方式。建议首轮尽量回避同组重赛，在预览说明中展示这一规则。
+
+现有 12 进 8 使用加权抽签。为兼容旧行为，建议将它保留为该赛制专属的“现有加权抽签”选项，已有赛事照常运行。
+
+**四、BO 的默认分组与独立调整**
+
+一般设置统一为四项：
+
+| 一般设置 | 适用范围 |
+|---|---|
+| 首轮 BO | 各赛制第一轮，默认沿用目前 12 进 8 附加赛的 BO |
+| 其余轮次 BO | 未归入其他三类的轮次 |
+| 半决赛 BO | 半决赛、胜者组决赛、败者组决赛 |
+| 奖牌赛 BO | 总决赛、铜牌赛；启用重置时也用于重置总决赛 |
+
+赛制选择框下方立即显示空签表预览。点击某轮中的空比赛格，可编辑**该轮** BO；同轮其他格同步显示，其他轮不变。小组赛六轮、胜者组各轮和败者组各轮都分别设置。
+
+每轮显示“继承一般设置”或“独立 BO”，并提供“恢复继承”。这样调整一般设置时，只更新仍在继承的轮次，手动覆盖的轮次保留原值。
+
+**五、赛图与比赛推进**
+
+预览和正式赛图使用同一份签表数据，避免出现预览与实际比赛不同的问题：
+
+- 单败显示晋级连线，双败额外显示落入败者组的连线。
+- 小组赛显示分组、六轮对阵及积分榜，晋级位置连接到淘汰赛签位。
+- 尚未确定的队伍显示“某组第 1”“最佳小组第三”等来源。
+- “模拟本轮”只推进选中的一轮；胜者组、败者组及各小组轮次互不混淆。
+- 小组排名建议依次比较系列赛胜场、净胜局、胜局数、常规赛排名；最佳小组第三使用相同标准。
+
+实施时会主要调整季后赛生成与晋级解析、创建表单和设置页面，并验证七种赛制都能完整结束、没有重复参赛或晋级死锁，以及旧赛事仍能继续推进。
+
+目前没有修改任何文件。
+
+> 6队组也是双循环。其余没有问题了。
+>
+> Response annotation
+>
+> > ，
+
+已确认：六队组也采用双循环，共十轮，每队十场、每组三十场；三组前二及最好的两个小组第三进入八强。:codex-annotation{index="1" id="34111849-bf12-41fa-879b-900d3e3d9c82"}
+
+其余按上一版方案确定。目前仍保持只读，未修改代码。
+
+> 开始实施。
+
+<details><summary>5 previous messages</summary>
+
+> 我按已确认的方案开始实施：先扩展签表与晋级逻辑，再接入创建界面、独立设置栏和可编辑 BO 的赛图预览，最后验证七种赛制及旧赛事兼容性。
+>
+> <details><summary>Created a file, edited 3 files, ran 3 commands</summary>
+>
+> - Ran `Get-Content -Encoding utf8 ui_tournaments.py -TotalCount 90; rg -n 'copyfile|ui_tournaments|combat_defaults' ui_management.py; Get-Content -Encoding utf8 combat_settings.py | Select-Object -Skip 175 -First 55; Get-Content frontend/tsconfig.json; rg -n 'bracket-' frontend/src/styles.css; rg --files -g AGENTS.md D:/Datastruct/logai C:/Users/fanmm/.codex 2>$null`
+> - Ran `rg -n 'snapshot_task|combat_settings.py|glob.*py' ui_management.py ui_tasks.py ui_tournaments.py; Get-Content -Encoding utf8 ui_management.py | Select-Object -Skip 370 -First 65; Get-Content -Encoding utf8 combat_defaults.py -Tail 10; Get-Content -Encoding utf8 ui_tasks.py | Select-Object -Skip 50 -First 30`
+> - Wrote `./tournament_playoffs.py` (+246 -0)
+> - Wrote `./combat_defaults.py` (+2 -1)
+> - Wrote `./combat_settings.py` (+7 -2)
+> - Wrote `./ui_tournaments.py` (+39 -9)
+> - Ran `python -m py_compile tournament_playoffs.py ui_tournaments.py combat_settings.py`
+>
+> </details>
+>
+> 七种签表的后端结构已接入，包括双败落组、可选的总决赛重置，以及六队组的十轮双循环。接下来把预览接到同一套签表生成逻辑，并补上小组晋级后的捉对和组内排名显示。
+>
+> <details><summary>Created 3 files, edited 4 files, ran 6 commands</summary>
+>
+> - Wrote `./frontend/src/Playoffs.tsx` (+98 -0)
+> - Wrote `./frontend/src/playoffs.css` (+15 -0)
+> - Wrote `./combat_settings.py` (+2 -2)
+> - Wrote `./frontend/src/SettingsPage.tsx` (+2 -1)
+> - Wrote `./tournament_playoffs.py` (+18 -0)
+> - Ran `@'
+> from pathlib import Path
+> p = Path('frontend/src/Expansion.tsx')
+> s = p.read_text(encoding='utf-8')
+> s = s.replace("import { CharacterLink } from './KnowledgeUI';", "import { CharacterLink } from './KnowledgeUI';\nimport { PlayoffSettings, PlayoffGraph, defaultPlayoff, playoffLabels, drawLabels, type PlayoffConfig } from './Playoffs';")
+> a = s.index('  const bracketRef = useRef<HTMLDivElement>(null);', s.index('export function TournamentPanel'))
+> b = s.index('  const t = ', a)
+> s = s[:a] + "  const [playoff, setPlayoff] = useState<PlayoffConfig>(() => structuredClone(defaults.PLAYOFF_CONFIG || defaultPlayoff));\n  const [display, setDisplay] = useState('');\n" + s[b:]
+> a = s.index('  useEffect(() => {\n    const root = bracketRef.current;', s.index('export function TournamentPanel'))
+> b = s.index('  const team = ', a)
+> s = s[:a] + s[b:]
+> s = s.replace("{ format, ...(seed ? { seed: Number(seed) } : {}) }", "{ format, playoff, ...(seed ? { seed: Number(seed) } : {}) }")
+> a = s.index('    {t && <><p role="status">', s.index('export function TournamentPanel'))
+> s = s[:a] + '''    <details className="panel playoff-create" open><summary>新赛事季后赛配置</summary><PlayoffSettings value={playoff} change={setPlayoff} bo={Object.fromEntries(['BO_N_PLAYIN', 'BO_N_QF', 'BO_N_SF', 'BO_N_FINAL'].map(k => [k, defaults[k]]))} onError={onError}/></details>
+> ''' + s[a:]
+> a = s.index('        <section className="panel"><h2>季后赛赛图</h2>', s.index('export function TournamentPanel'))
+> b = s.index('      <TournamentReplay', a)
+> s = s[:a] + '''        <section className="panel"><h2>季后赛赛图</h2>
+>           {t.playoff && <p>{playoffLabels[t.playoff.format]} · {drawLabels[t.playoff.draw]}</p>}
+>           {!t.series.length ? <p className="muted">常规赛结束后生成，首场季后赛前自动暂停。</p> : <>
+>             <label>当前赛图显示<select aria-label="当前赛图显示" value={display || t.playoff?.display || 'graph'} onChange={e => setDisplay(e.target.value)}><option value="graph">晋级关系图</option><option value="list">按轮次列表</option></select></label>
+>             {!!t.group_tables?.length && <div className="playoff-groups">{t.group_tables.map((g: Effect) => <div key={g.id}><h3>{g.id} 组{g.complete ? ' · 已结束' : ''}</h3><div className="table-scroll"><table><thead><tr><th>排名</th><th>队伍</th><th>胜／场</th><th>局分</th></tr></thead><tbody>{g.rows.map((r: Effect, i: number) => <tr key={r.id}><td>{i+1}</td><td>{team(r.id)}</td><td>{r.wins}/{r.played}</td><td>{r.game_wins}:{r.game_losses}</td></tr>)}</tbody></table></div></div>)}</div>}
+>             <PlayoffGraph series={t.series} display={display || t.playoff?.display || 'graph'} team={team} selected={selected} onSelect={s => setSelected(s.id)}/>
+>           </>}
+>         </section></div>
+> ''' + s[b:]
+> p.write_text(s, encoding='utf-8')
+> '@ | python -
+> npm --prefix frontend run build`
+> - Wrote `./frontend/src/Expansion.tsx` (+7 -26)
+> - Wrote `./frontend/src/Expansion.tsx` (+8 -1)
+> - Ran `npm --prefix frontend run build; python -m unittest tests.test_ui_tournaments`
+> - Ran `Get-Content -Encoding utf8 frontend/tests/browser/knowledge.cjs -TotalCount 100; Get-Content -Encoding utf8 tests/test_ui.py -TotalCount 85; rg -n 'tournament|BO_N|fields|metadata' tests/test_settings.py tests/test_ui.py; Get-Content -Encoding utf8 frontend/src/Playoffs.tsx -Tail 12; Get-Content -Encoding utf8 frontend/src/styles.css | Select-Object -Skip 660 -First 30`
+> - Ran `rg -n 'bracket-tree|bracket-edges|bracket-stage|series-card' frontend/src; Get-Content -Encoding utf8 tests/test_settings.py -TotalCount 115; Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 8889,8890,5173 } | Select-Object LocalPort,OwningProcess`
+> - Ran `Get-Content -Encoding utf8 ui_server.py -TotalCount 100; rg -n 'Store\(|Management\(|Settings\(|session|root =' ui_server.py | Select-Object -Last 30; Get-Content -Encoding utf8 frontend/src/types.ts -TotalCount 45; rg -n 'VITE|proxy|ui/' frontend/vite.config*`
+> - Wrote `./tests/test_tournament_playoffs.py` (+137 -0)
+> - Ran `python -m unittest tests.test_tournament_playoffs tests.test_settings`
+>
+> </details>
+>
+> System error
+>
+> You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 5:10 AM.
+</details>
+
+> 再另加一个“仿nba规则”——将常规赛赛果平分为两半（随机抽签/分档抽签/按成绩分[奇数偶数]），分别取前六直接晋级，第7到第10（可能是第9）进行三进二的附加赛，组成16强。
+
+<details><summary>1 previous message</summary>
+
+> System error
+>
+> You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 5:10 AM.
+</details>
+
+
+
+
+# 优化2v2和3v3分组表
+
+> 请提供更改2v2,3v3分组表的方案，使得每位角色出场率相等或近似，且能够在强度上大致近似平衡。特殊地，3v3中的二人组、四人组不变。不能有任何两个三人组拥有大于等于两个相同的。
+
+<details><summary>21 previous messages</summary>
+
+> 我先查看项目中的分组表和强度数据，再据此制定调整方案；会保留 3v3 的二人组、四人组，并检查任意两个三人组的重合角色不超过一位。
+>
+> <details><summary>Ran 5 commands</summary>
+>
+> - Ran `Get-ChildItem -Force; rg --files -g AGENTS.md -g '*2v2*' -g '*3v3*' -g '*group*' -g '*分组*' -g '*角色*' -g '*强度*'`
+> - Ran `Get-Content team_tables.py; rg -n 'TEAM|2v2|3v3|分组' combat_defaults.py team_tables.py scripts README.md | Select-Object -First 100; Get-ChildItem .. -Filter AGENTS.md; Get-ChildItem scripts`
+> - Ran `Get-Content combat_defaults.py; Get-Content combat_settings.py -TotalCount 160; Get-Content artifacts/balance_y6_boost/team_final_3v3.json -TotalCount 70; Get-Content sim_parallel.py -TotalCount 160; Get-Content sim.py -TotalCount 130; rg -n 'name|名字' characters_data.py | Select-Object -First 25`
+> - Ran `rg -n 'def battle|return .*winner|return result|def run_table|submit\(' ai_battle.py sim.py; rg --files artifacts | rg '\.py$|\.md$|\.json$' | Select-Object -First 100; Get-Content -Encoding utf8 artifacts/balance_y1_y12/Y1-Y12角色平衡提案与预赛诊断.md -TotalCount 85; Get-Content -Encoding utf8 sim_matrix_1v1.json -TotalCount 40; rg -n 'settings.json|settings_path|Path\(' combat_settings.py`
+> - Ran `Get-Content -Encoding utf8 .ui-runtime/settings.json -TotalCount 45; rg -n 'ALL_CHARACTERS|ENABLED|disabled|enabled' characters_data.py ai_battle.py | Select-Object -Last 35; Get-Content -Encoding utf8 sim.py | Select-Object -Skip 314 -First 100; Get-Content -Encoding utf8 ai_battle.py | Select-Object -Skip 1127 -First 65; Get-ChildItem -Path artifacts/balance_y6_boost -Name; Get-ChildItem -Path artifacts/balance_y17 -Name`
+>
+> </details>
+>
+> “每位角色”是否包括新增角色？当前分组表只覆盖 Y1–Y12，但角色库已有 Y13–Y17 及雪人旧版。
+> - 包括 Y1–Y17，排除雪人旧版（推荐）
+> - 仅调整原表中的 Y1–Y12
+> - 包括全部角色，含雪人旧版
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `Get-Content -Encoding utf8 artifacts/balance_y17/run_team_validation.py -TotalCount 180; Get-Content -Encoding utf8 artifacts/balance_y6_boost/team_check.py -TotalCount 110; Get-Content -Encoding utf8 artifacts/balance_y17/current_evaluation_tournaments10.json -TotalCount 55; python -c "from characters_data import ALL_CHARACTERS; from combat_settings import snapshot; from collections import Counter; print([(c['serial'],c['name']) for c in ALL_CHARACTERS]); s=snapshot(); print({k:s[k] for k in s if k.startswith('TEAM_TABLES')})"`
+>
+> </details>
+>
+> 目前两张表都只覆盖 Y1–Y12，新增
+>
+> **“每位角色”是否包括新增角色？当前分组表只覆盖 Y1–Y12，但角色库已有 Y13–Y17 及雪人旧版。**
+>
+> 包括全部角色，含雪人旧版
+>
+> &#x20;先给方案，再做编辑。\
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> 本地模式本地\
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> 完全访问\
+> \
+> 选择推理强度GPT-6.1 Sol中无极低轻度中高极高MaxUltra持续\
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> \
+> 返回\
+> \
+> 返回\
+> \
+> 返回
+>
+> 已确认纳入全部 18 位角色，包括旧版雪人 Y60；本轮只给方案，不修改分组配置。
+>
+> 有一个数学限制：固定的两个二人组和一个四人组合计占 8 个席位，其余三人组每组增加 3 个席位，因此 3v3 无法让 18 人出场次数完全相等。建议两种赛制均设 18 组：2v2 每人恰好出现 2 次；3v3 中 17 人出现 3 次、1 人出现 2 次。我会进一步结合当前战斗表现选择阵容，并校验三人组之间的重合限制。
+>
+> <details><summary>Created a file, edited a file, ran 5 commands</summary>
+>
+> - Ran `python -c "import importlib.util; print({x:bool(importlib.util.find_spec(x)) for x in ['scipy','numpy','sklearn']})"; Get-Content -Encoding utf8 ai_battle.py -TotalCount 55; Get-Content -Encoding utf8 ai_battle.py | Select-Object -Skip 1054 -First 55; Get-Content -Encoding utf8 combat_settings.py | Select-Object -Skip 240 -First 65; Get-ChildItem .ui-runtime -Name | Select-Object -First 25`
+> - Ran `@'
+> from pathlib import Path
+> import json
+> from characters_data import ALL_CHARACTERS
+> p=Path('artifacts/group_proposal_20261116'); p.mkdir(exist_ok=True)
+> (p/'roster.json').write_text(json.dumps({c['serial']:c['name'] for c in ALL_CHARACTERS}, ensure_ascii=False,indent=2),encoding='utf-8')
+> '@ | python -; Get-Content -Encoding utf8 artifacts/group_proposal_20261116/roster.json; Get-Content -Encoding utf8 ai_battle.py | Select-Object -Skip 1570 -First 60; Get-Content -Encoding utf8 sim_parallel.py -TotalCount 65`
+> - Wrote `./artifacts/group_proposal_20261116/analyze.py` (+174 -0)
+> - Ran `python artifacts/group_proposal_20261116/analyze.py train`
+> - Wrote `./artifacts/group_proposal_20261116/analyze.py` (+7 -2)
+> - Ran `python artifacts/group_proposal_20261116/analyze.py train`
+> - Ran `rg -n 'def _allocate_team_bonus_matches|def _build_rr_pool' ai_battle.py; Get-Content -Encoding utf8 ai_battle.py | Select-Object -Skip 1447 -First 115; Get-Content -Encoding utf8 characters_data.py | Select-Object -Skip 2200 -First 28`
+>
+> </details>
+>
+> 当前队表确实遗漏了新增角色和旧版雪人。另外，加赛算法只平衡各队的场数，因此“队表中出现次数相等”还需要配合赛程安排，才能对应到实际出场次数。
+>
+> 模拟中发现了现有引擎的一处异常：部分涉及罗杰的对局缺少 `ultimate_threshold` 字段。我会记录这些失败，不改动战斗代码；方案会明确区分已经验证的结构约束和仍需复测的强度判断。
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `Get-Content -Encoding utf8 battle_engine.py | Select-Object -Skip 720 -First 20; rg -n 'moon|ultimate_threshold' characters_data.py | Select-Object -Last 15; Get-Content -Encoding utf8 .gitignore; git status --short`
+>
+> </details>
+>
+> 候选方案将遵循“先满足次数与重合限制，再缩小队伍强弱差距”的顺序。强度评估使用当前引擎的 10×10 地图、统一状态 50，并交换双方位置取样，避免仅靠单挑排名搭配。固定的三支特殊队也会参与后续对照，但不会调整成员。
+>
+> <details><summary>Ran 5 commands</summary>
+>
+> - Ran `@'
+> from combat_defaults import DEFAULTS
+> from collections import Counter
+> for fmt in ('2V2','3V3'):
+>  t=DEFAULTS['TEAM_TABLES_'+fmt];c=Counter(s for x in t for s in x)
+>  print(fmt,dict(sorted(c.items(),key=lambda x:int(x[0][1:]))))
+> '@ | python -`
+> - Ran `python artifacts/group_proposal_20261116/analyze.py optimize`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> from collections import Counter
+> p=Path('artifacts/group_proposal_20261116/training.json'); d=json.loads(p.read_text(encoding='utf-8')); print('successful',len(d['rows']),'errors',len(d['errors']));print(Counter(r['error'] for r in d['errors']));print(Counter(r['format'] for r in d['rows']))
+> '@ | python -`
+> - Ran `Get-Content -Encoding utf8 artifacts/group_proposal_20261116/proposal.json -TotalCount 160; python artifacts/group_proposal_20261116/analyze.py validate`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> p=Path('artifacts/group_proposal_20261116'); d=json.loads((p/'proposal.json').read_text(encoding='utf-8')); names=json.loads((p/'roster.json').read_text(encoding='utf-8'))
+> for fmt,x in d.items():
+>  print(fmt)
+>  print([s for s,c in x['appearances'].items() if c==2])
+>  for t in x['teams']: print('+'.join(t))
+> '@ | python -`
+>
+> </details>
+>
+> 已生成一版满足全部结构约束的候选表：2v2 每人 2 次；3v3 中罗杰 2 次，其余 17 人各 3 次，15 个三人组两两最多重合 1 人。
+>
+> 初步强度取样完成了 1,464 场，另有 136 场因现有月能字段异常失败。目前正在对候选队伍做循环对照；强度结果仍会带着这一限制说明，不会把失败对局计作胜负。
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `@'
+> import json
+> from pathlib import Path
+> p=Path('artifacts/group_proposal_20261116');m=json.loads((p/'models.json').read_text(encoding='utf-8'));names=json.loads((p/'roster.json').read_text(encoding='utf-8'))
+> for fmt in m:
+>  print(fmt, [(s,round(v,3)) for s,v in sorted(m[fmt]['character'].items(),key=lambda x:x[1])])
+> '@ | python -`
+>
+> </details>
+>
+> 方案中的公平性还需区分两个层面：队表次数，以及实际赛程。建议将两种赛制的加赛场数分别从 56、65 微调为 54、63，让 18 支队伍获得相同的加赛次数。3v3 少出现一次的名额则可按赛季轮换，使长期出场次数趋于相等。
+>
+> <details><summary>Ran 2 commands</summary>
+>
+> - Ran `@'
+> from collections import Counter
+> from itertools import combinations
+> from pathlib import Path
+> import json
+> p=Path('artifacts/group_proposal_20261116');d=json.loads((p/'proposal.json').read_text(encoding='utf-8'))
+> for fmt,v in d.items():
+>  print(fmt, 'teams',len(v['teams']),'counts',dict(Counter(v['appearances'].values())))
+> t=[set(x) for x in d['3v3']['teams'] if len(x)==3]
+> print('triple comparison count',len(list(combinations(t,2))),'max overlap',max(len(a&b) for a,b in combinations(t,2)))
+> fixed=[frozenset(x) for x in d['3v3']['teams'] if len(x)!=3]
+> print('fixed preserved',set(fixed)=={frozenset(x) for x in [['Y5','Y6','Y7','Y8'],['Y9','Y12'],['Y9','Y3']]})
+> '@ | python -`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> from collections import Counter
+> p=Path('artifacts/group_proposal_20261116'); d=json.loads((p/'summary.json').read_text(encoding='utf-8')); v=json.loads((p/'validation.json').read_text(encoding='utf-8'));tr=json.loads((p/'training.json').read_text(encoding='utf-8'))
+> print('source equal',v['fingerprints']==tr['fingerprints'],'validation',len(v['rows']),'errors',len(v['errors']),Counter(x['error'] for x in v['errors']))
+> for fmt,ts in d.items():
+>  print(fmt)
+>  for s in sorted(ts,key=lambda t:t['rate']):print('+'.join(s['team']),f"{s['rate']:.1%}",s['games'])
+> '@ | python -`
+>
+> </details>
+>
+> 循环对照发现了一个关键限制：这版候选表虽然满足次数和重合要求，但强度尚未达到整体近似平衡。固定四人组胜率约为 90%，固定两个二人组约为 14% 和 22%；仅调整其他三人组，难以消除这三支固定队之间的差距。
+>
+> 我会把这个结果写进方案，并单独复核固定队之间的对局。最终建议会区分可通过改表改善的部分，以及需要赛程配套处理的固定队差距。
+>
+> <details><summary>Edited a file, ran 4 commands</summary>
+>
+> - Wrote `./artifacts/group_proposal_20261116/analyze.py` (+21 -4)
+> - Ran `Copy-Item -LiteralPath artifacts/group_proposal_20261116/proposal.json -Destination artifacts/group_proposal_20261116/proposal_first.json; Copy-Item -LiteralPath artifacts/group_proposal_20261116/models.json -Destination artifacts/group_proposal_20261116/models_first.json; python artifacts/group_proposal_20261116/analyze.py optimize`
+> - Ran `python artifacts/group_proposal_20261116/analyze.py fixed`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> p=Path('artifacts/group_proposal_20261116'); f=p/'proposal.json';d=json.loads(f.read_text(encoding='utf-8'));old=json.loads((p/'proposal_first.json').read_text(encoding='utf-8'));d['3v3']=old['3v3'];f.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8'); print(d['2v2']['teams'])
+> '@ | python -
+> python artifacts/group_proposal_20261116/analyze.py validate2`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> from collections import Counter
+> p=Path('artifacts/group_proposal_20261116');d=json.loads((p/'fixed.json').read_text(encoding='utf-8'));s=Counter()
+> for r in d['rows']:
+>  opponent=r['b'] if len(r['a'])==4 else r['a']; key='+'.join(opponent); s[(key,'games')]+=1;s[(key,'four_wins')]+=int(r['win'] if len(r['a'])==4 else not r['win'])
+> print(dict(s), 'errors',len(d['errors']))
+> '@ | python -`
+>
+> </details>
+>
+> 固定队之间的复核已完成，200 场均正常结束：四人组对两个二人组分别取得了 98 胜／100 场。这说明当前固定队之间存在明显强度差距，修改其他阵容不会改变这些直接对局。
+>
+> 我同时根据首轮结果调整了 2v2 搭配，正在完成第二轮检验。最终方案会给出完整候选表，并注明：常规组继续按强度优化；固定特殊组若也要求接近均衡，需要额外的赛制补偿。
+>
+> <details><summary>Created a file, edited a file, ran 5 commands</summary>
+>
+> - Wrote `./artifacts/group_proposal_20261116/analyze.py` (+23 -1)
+> - Ran `python artifacts/group_proposal_20261116/analyze.py refine3`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> p=Path('artifacts/group_proposal_20261116');d=json.loads((p/'summary2.json').read_text(encoding='utf-8'))
+> for s in sorted(d['2v2'],key=lambda t:t['rate']):print('+'.join(s['team']),f"{s['rate']:.1%}",s['games'])
+> '@ | python -`
+> - Wrote `./artifacts/group_proposal_20261116/analyze.py` (+23 -1)
+> - Ran `python artifacts/group_proposal_20261116/analyze.py refine2`
+> - Ran `@'
+> import json
+> from pathlib import Path
+> p=Path('artifacts/group_proposal_20261116');d=json.loads((p/'validation3_patch.json').read_text(encoding='utf-8'))
+> for t in [['Y6','Y10','Y16'],['Y1','Y4','Y14']]:
+>  rows=[r for r in d['rows'] if r['a']==t or r['b']==t]; wins=sum(r['win'] if r['a']==t else not r['win'] for r in rows); print(t,wins,len(rows),wins/len(rows))
+> print('errors',len(d['errors']))
+> '@ | python -`
+> - Wrote `./artifacts/group_proposal_20261116/build_report.py` (+85 -0)
+> - Ran `python artifacts/group_proposal_20261116/build_report.py; Get-Content -Encoding utf8 artifacts/group_proposal_20261116/方案.md -TotalCount 82`
+>
+> </details>
+</details>
+
+建议采用 **18 支 2v2 队伍、18 支 3v3 队伍**的候选方案。本轮未修改分组配置。
+
+- **2v2：18 位角色各出现 2 次。**
+- **3v3：罗杰 Y16 出现 2 次，其余各出现 3 次**，少一次的名额建议按赛季轮换。
+- 两个二人组、一个四人组保持不变。
+- 已逐对校验：**任意两个三人组最多重合 1 位角色。**
+
+3v3 无法完全等次数：固定队共占 8 个席位，加上三人组后总席位为 `8＋3n`，不可能等于 `18k`。下面将次数差控制在最小的 1 次。
+
+| 序号 | 2v2 候选 | 3v3 候选 |
+|---|---|---|
+| 1 | Y1＋Y2 | **Y5＋Y6＋Y7＋Y8（固定）** |
+| 2 | Y1＋Y6 | **Y9＋Y12（固定）** |
+| 3 | Y2＋Y9 | **Y9＋Y3（固定）** |
+| 4 | Y3＋Y8 | Y1＋Y2＋Y15 |
+| 5 | Y3＋Y9 | Y6＋Y10＋Y16 |
+| 6 | Y4＋Y14 | Y1＋Y9＋Y11 |
+| 7 | Y4＋Y16 | Y2＋Y4＋Y10 |
+| 8 | Y5＋Y10 | Y2＋Y13＋Y14 |
+| 9 | Y5＋Y17 | Y3＋Y6＋Y17 |
+| 10 | Y6＋Y12 | Y3＋Y11＋Y60 |
+| 11 | Y7＋Y13 | Y4＋Y5＋Y17 |
+| 12 | Y7＋Y16 | Y1＋Y4＋Y14 |
+| 13 | Y8＋Y11 | Y5＋Y13＋Y16 |
+| 14 | Y12＋Y14 | Y7＋Y8＋Y17 |
+| 15 | Y10＋Y15 | Y7＋Y15＋Y60 |
+| 16 | Y11＋Y60 | Y8＋Y11＋Y12 |
+| 17 | Y13＋Y17 | Y10＋Y14＋Y15 |
+| 18 | Y15＋Y60 | Y12＋Y13＋Y60 |
+
+其中，**Y6 是新版雪人，Y60 是旧版雪人**。
+
+强度方面，当前引擎试跑的结果是：
+
+| 范围 | 候选队伍胜率范围 |
+|---|---:|
+| 2v2 | 37.3%–69.6% |
+| 3v3 的 15 个三人组 | 42.6%–62.6% |
+| 3v3 全部队伍，含固定组 | 14.7%–90.2% |
+
+**主要限制来自固定特殊组。** 四人组对两个固定二人组分别复核了 100 场，均取得 **98 胜**。调整其他三人组不会改变这些直接对局，因此可以做到常规三人组大致接近，但不能承诺整个 3v3 队表强度接近。2v2 也仍有进一步缩小差距的空间。
+
+建议配套将加赛场数从 **2v2 的 56 改为 54、3v3 的 65 改为 63**，使每支队伍获得相同的加赛次数。另有部分罗杰相关对局触发现有引擎字段异常，已排除出胜负统计；涉及他的强度结果须修复后复测。
+
+完整角色名称、逐队胜率、次数统计及后续实施顺序见[详细方案](./artifacts/group_proposal_20261116/方案.md)。
+
+> y5,6,7,8改成y5,60,7,8。参考单人模式确认总场数均为82.总组数可以不是18，可以更多，但不能更少。
+
+<details><summary>6 previous messages</summary>
+
+> 我会把固定四人组改为 **Y5＋Y60＋Y7＋Y8**，并将两种赛制的队伍数下限设为 18。先核对单人模式的 82 场分配逻辑，再明确多人模式应按角色还是按队伍对齐这一目标。
+>
+> <details><summary>Ran a command</summary>
+>
+> - Ran `rg -n 'TARGET_1V1_MATCHES|_allocate_individual_bonus_matches|_allocate_team_bonus_matches|effective_rr_1v1|RR_ROUNDS_2V2|RR_ROUNDS_3V3' ai_battle.py combat_defaults.py; Get-Content -Encoding utf8 ai_battle.py | Select-Object -Skip 1458 -First 75; Get-Content -Encoding utf8 artifacts/group_proposal_20261116/proposal.json -TotalCount 22`
+>
+> </details>
+>
+> User input response
+>
+> - 多人模式中的“总场数均为 82”，是要求每支队伍打 82 场，还是要求每位角色在该模式下累计出场 82 次？
+>   - 每支队伍 82 场 (Recommended)
+>
+> 已明确：**每支队伍打 82 场预赛**。因此，角色出场次数主要由它在队表中的出现次数决定，后续应改为按队伍补足 82 场。
+>
+> 四人组换入旧版雪人后，上一轮的强度结果已不适用，需要重新测量。增加组数能缩小 3v3 角色出场次数的相对差距，但也会增加比赛量；下面先确定规模取舍。
+>
+> User input response
+>
+> - 你更倾向哪种分组规模？以下均保证每队 82 场，且三人组两两最多重合一人。
+>   - 2v2 27 组，3v3 30 组 (Recommended)
+>
+> System error
+>
+> You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 5:10 AM.
+</details>

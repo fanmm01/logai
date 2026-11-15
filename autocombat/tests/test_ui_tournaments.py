@@ -46,9 +46,12 @@ with tempfile.TemporaryDirectory() as tmp:
             cfg = snapshot()
             if fmt != '1v1':
                 count = len(t['teams'])
-                expected = (count * (count - 1) // 2 * cfg['RR_ROUNDS_' + fmt.upper()]
-                            * len(cfg['MAP_SIZES_' + fmt.upper()]) + cfg['RANDOM_BONUS_' + fmt.upper()])
-                assert len(t['schedule']) == expected
+                assert len(t['schedule']) == count * cfg['TARGET_TEAM_MATCHES'] // 2
+                appearances = [0] * count
+                for match in t['schedule']:
+                    appearances[match['a']] += 1
+                    appearances[match['b']] += 1
+                assert appearances == [cfg['TARGET_TEAM_MATCHES']] * count
             repeat = client.post('/api/ui/tournaments', json={'format': fmt, 'seed': 77}).get_json()
             assert repeat['schedule'] == t['schedule']
             response = client.post('/api/ui/tournaments/' + t['id'] + '/advance',

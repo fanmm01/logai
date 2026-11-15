@@ -27,7 +27,7 @@ function parameter(text: string) {
   return { label: match[1], value: match[2] };
 }
 
-export function EncyclopediaProse({ content }: { content: string | string[] }) {
+export function EncyclopediaProse({ content, sourceKey }: { content: string | string[]; sourceKey?:string }) {
   const lines = (Array.isArray(content) ? content : [content]).flatMap(text => text.split(/\r?\n/));
   const blocks = [];
   for (let i = 0; i < lines.length; i++) {
@@ -46,7 +46,7 @@ export function EncyclopediaProse({ content }: { content: string | string[] }) {
         if (!text) { i++; continue; }
         const entry = parameter(text);
         if (!entry) break;
-        rows.push(<tr key={i}><th scope="row"><Inline text={entry.label}/></th><td><Inline text={entry.value}/></td></tr>);
+        rows.push(<tr key={i} data-definition-source={'prose:'+text}><th scope="row"><Inline text={entry.label}/></th><td><Inline text={entry.value}/></td></tr>);
         i++;
       }
       i--;
@@ -62,17 +62,17 @@ export function EncyclopediaProse({ content }: { content: string | string[] }) {
       while (i < lines.length && listType(lines[i].trim()) === kind) {
         const raw = lines[i].trim();
         const text = kind === 'levels' ? raw : raw.replace(kind === 'ordered' ? /^\d+[.)、]\s+/ : /^[-*+]\s+/, '');
-        items.push(<li key={i}><RuleText text={text}/></li>);
+        items.push(<li key={i} data-definition-source={'prose:'+raw}><RuleText text={text}/></li>);
         i++;
       }
       i--;
       blocks.push(kind === 'ordered' ? <ol key={start} start={Number(line.match(/^\d+/)?.[0])}>{items}</ol>
         : <ul key={start} className={kind === 'levels' ? 'prose-levels' : undefined}>{items}</ul>);
     } else if (line.startsWith('> ')) {
-      blocks.push(<blockquote key={i}><RuleText text={line.slice(2)}/></blockquote>);
+      blocks.push(<blockquote key={i} data-definition-source={'prose:'+line}><RuleText text={line.slice(2)}/></blockquote>);
     } else {
-      blocks.push(<p key={i}><RuleText text={line}/></p>);
+      blocks.push(<p key={i} data-definition-source={'prose:'+line}><RuleText text={line}/></p>);
     }
   }
-  return <div className="encyclopedia-prose">{blocks}</div>;
+  return <div className="encyclopedia-prose" data-definition-source={sourceKey}>{blocks}</div>;
 }

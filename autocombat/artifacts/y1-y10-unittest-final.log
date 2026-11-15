@@ -1,0 +1,99 @@
+[2026-11-16 01:25:18.469] _run_ai_turns: BREAK human turn — 血天使 team=Y
+[2026-11-16 01:25:18.474] _run_ai_turns: BREAK human turn — 斯瑞提卡 team=X
+错误: 不支持的赛制: 4v4。可用: 1v1, 2v2, 3v3 (或 all)
+错误: 不支持的赛制: foo。可用: 1v1, 2v2, 3v3 (或 all)
+错误: --format 需要至少一个赛制, 可用: 1v1, 2v2, 3v3, all
+错误: 轮数必须 > 0, 收到: 0
+错误: workers 必须 > 0, 收到: 0
+错误: season 必须在 0-100 之间, 收到: 101
+错误: season 必须在 0-100 之间, 收到: -1
+错误: 参数 -n 需要一个整数, 收到: abc
+预赛平均战绩: 1轮, 赛制=1v1,2v2,3v3, 8并行线程, seed=84066
+usage: python.exe -m unittest [-h] [--characters Y编号 [Y编号 ...] |
+                              --character Y编号]
+python.exe -m unittest: error: argument --characters: not allowed with argument --character
+Q-Learning AI Trainer
+Generations: 1, Battles/gen: 8
+Alpha=0.1, Gamma=0.9, Temperature=1.0
+
+Training characters: ['Y2', 'Y3']
+Participant pool: ['Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9', 'Y10', 'Y11', 'Y12', 'Y13', 'Y1', 'Y14', 'Y16', 'Y15', 'Y17']
+Training summons: ['使魔']
+Preserved character tables (not trained): ['Y1', 'Y10', 'Y11', 'Y12', 'Y13', 'Y14', 'Y15', 'Y16', 'Y17', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9']
+Preserved summon tables (not trained): ['unrelated', '小雪人', '影之克隆', '生灵', '藤蔓', '虚假之月', '蜂鸟']
+  [12/12] char_battles=8 avg_reward~1.000
+Gen   1: 8 battles, 3 Q-entries, avg_reward=1.125
+       solo:1 team:1 summon:1
+Q-Learning AI Trainer
+Generations: 1, Battles/gen: 8
+Alpha=0.1, Gamma=0.9, Temperature=1.0
+
+Training characters: ['Y2', 'Y3']
+Participant pool: ['Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9', 'Y10', 'Y11', 'Y12', 'Y13', 'Y1', 'Y14', 'Y16', 'Y15', 'Y17']
+Training summons: ['使魔']
+Preserved character tables (not trained): ['Y1', 'Y10', 'Y11', 'Y12', 'Y13', 'Y14', 'Y15', 'Y16', 'Y17', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9']
+Preserved summon tables (not trained): ['unrelated', '小雪人', '影之克隆', '生灵', '藤蔓', '虚假之月', '蜂鸟']
+  [12/12] char_battles=8 avg_reward~1.000
+Gen   1: 8 battles, 5 Q-entries, avg_reward=1.875
+       solo:2 team:2 summon:1
+Saved Q-tables to C:\Users\fanmm\AppData\Local\Temp\tmpexxf3l1e\weights.json
+Q-Learning AI Trainer
+Generations: 1, Battles/gen: 8
+Alpha=0.1, Gamma=0.9, Temperature=1.0
+
+Training characters: ['Y2', 'Y3']
+Participant pool: ['Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9', 'Y10', 'Y11', 'Y12', 'Y13', 'Y1', 'Y14', 'Y16', 'Y15', 'Y17']
+Training summons: ['使魔']
+Preserved character tables (not trained): ['Y1', 'Y10', 'Y11', 'Y12', 'Y13', 'Y14', 'Y15', 'Y16', 'Y17', 'Y4', 'Y5', 'Y6', 'Y60', 'Y7', 'Y8', 'Y9']
+Preserved summon tables (not trained): ['unrelated', '小雪人', '影之克隆', '生灵', '藤蔓', '虚假之月', '蜂鸟']
+  [12/12] char_battles=8 avg_reward~1.000
+Gen   1: 8 battles, 5 Q-entries, avg_reward=1.875
+       solo:2 team:2 summon:1
+Saved Q-tables to C:\Users\fanmm\AppData\Local\Temp\tmpxdk8v64x\weights.json
+[2026-11-16 01:26:17.807] _run_ai_turns: BREAK human turn — 炎焱 team=Y
+======================================================================
+FAIL: test_attributes_and_unselected_characters_unchanged (test_five_balance.FiveBalanceTests.test_attributes_and_unselected_characters_unchanged)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Datastruct\logai\autocombat\tests\test_five_balance.py", line 56, in test_attributes_and_unselected_characters_unchanged
+    self.assertEqual(c['str_attrs'], old['str_attrs'], c['serial'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'伤害值': '1d6+1d4'} != {'伤害值': '1d8+1d4'}
+- {'伤害值': '1d6+1d4'}
+?            ^
+
++ {'伤害值': '1d8+1d4'}
+?            ^
+ : Y6
+
+======================================================================
+FAIL: test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved (test_ui_management.ManagementTests.test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Datastruct\logai\autocombat\tests\test_ui_management.py", line 129, in test_invalid_enabled_membership_is_atomic_and_disabled_drafts_are_preserved
+    self.assertEqual(rejected.status_code, 400)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 200 != 400
+
+======================================================================
+FAIL: test_real_direct_and_step_games_publish_different_live_payloads (test_ui_management.ManagementTests.test_real_direct_and_step_games_publish_different_live_payloads) (operation='game')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Datastruct\logai\autocombat\tests\test_ui_management.py", line 491, in test_real_direct_and_step_games_publish_different_live_payloads
+    self.assertEqual(len(replay['lines']), 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_real_direct_and_step_games_publish_different_live_payloads (test_ui_management.ManagementTests.test_real_direct_and_step_games_publish_different_live_payloads) (operation='turn_game')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Datastruct\logai\autocombat\tests\test_ui_management.py", line 491, in test_real_direct_and_step_games_publish_different_live_payloads
+    self.assertEqual(len(replay['lines']), 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 405 tests in 96.337s
+
+FAILED (failures=4)
