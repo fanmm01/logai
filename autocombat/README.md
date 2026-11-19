@@ -1,4 +1,15 @@
-# autocombat — CoC魔法少女半自动战斗系统 v1.3.0
+# autocombat — CoC魔法少女半自动战斗系统 v1.4.0
+
+[目录结构、开发验证与发布流程](docs/PROJECT_STRUCTURE.md)
+
+剧情模式：从首页或侧栏进入章节选择。示例项目位于本工作区 `story-projects/demo/`，支持自然文本、图形流程编辑、`__LOCK` 初始锁定、UNLOCK／LOCK、多 START／CONTINUE 入口、连续 AI 战斗及战斗中途存读档。详见[剧情创作说明](docs/STORY_AUTHORING.md)与[运行接口](docs/STORY_RUNTIME.md)。
+
+```powershell
+python scripts/run_tests.py
+npm --prefix frontend test
+python scripts/build_release.py
+```
+
 
 SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支持。
 
@@ -10,14 +21,14 @@ SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支�
 
 ## Windows 一键重启
 
-双击项目根目录的 `restart_services.bat`，自动构建前端、重新生成集成后端，随后重启 8889 战斗服务、8890 集成服务及 8892 → 8890 TCP 隧道，并检查两个网页及服务接口。服务在后台运行，关闭脚本窗口不会停止服务；日志保存在 `.ui-runtime/restart-端口-时间戳.*.log`。
+双击项目根目录的 `restart_services.bat`，自动构建前端、重新生成集成后端，随后重启 8889 战斗服务、8890 集成服务及 8892 → 8890 TCP 隧道，并检查两个网页及服务接口。重启完成后脚本持续监测服务进程，按 Ctrl+C 会结束本次启动的所有服务及其子进程；日志保存在 `.ui-runtime/restart-端口-时间戳.*.log`。
 
 也可在 PowerShell 中执行：
 
 ```powershell
-.\restart_services.ps1
+.\scripts\restart_services.ps1
 # 复用已有前端构建，仍会重新生成后端：
-.\restart_services.ps1 -SkipBuild
+.\scripts\restart_services.ps1 -SkipBuild
 ```
 
 脚本使用项目自身目录，不依赖当前工作目录；只停止上述端口上符合预期入口的 Python 服务，端口被其他程序占用时中止。普通内存对局会清空；角色、权重、设置、备份及持久化任务／赛事记录保留，赛事重启后暂停。构建失败时不会停止运行中的服务。此脚本用于现有双实例部署；单实例启动继续使用 `python start_ui.py`。
@@ -28,7 +39,7 @@ SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支�
 - **coc7** 扩展
 - **loganalyser/logutil** v5.0+
 - **Python** 3.10+
-- **Flask**：`pip install flask`
+- **Flask**：`python -m pip install -r requirements.txt`
 
 ## 快速开始
 
@@ -36,15 +47,15 @@ SealDice（海豹骰）插件，提供 CoC 魔法少女半自动战斗规则支�
 
 ```bash
 cd autocombat
-pip install flask
-python autocombat_backend.py
+python -m pip install -r requirements.txt
+python start_ui.py
 ```
 
 后端默认监听 `http://0.0.0.0:8889`，并在 `0.0.0.0:8892` 启动 WebUI TCP 转发入口。可以使用 `--port` 和 `--tcp-port` 分别指定 HTTP 与转发端口；隧道目标设为本机 TCP 8892，浏览器使用隧道提供的 HTTP 地址访问 `/ui/`。
 
 ### 2. 加载 JS 插件
 
-将 `autocombat.js` 放入 SealDice 的插件目录，重载插件。
+将 `plugins/autocombat.js` 放入 SealDice 的插件目录，重载插件。
 
 ### 3. 启用规则
 
@@ -117,7 +128,7 @@ AUX34 `全D100检定奖励骰` 对该单位的所有 D100 检定生效（攻击/
 
 主动技能**堆雪人**：5 MP、1次主动作、冷却4轮，召唤35 HP／12 MP的小雪人，同时最多1只，死亡可重召。小雪人MOV8、敏捷50、闪避35，只能闪避，不能反击或格挡。附近3格有敌人且自身无有效雪带时优先消耗3 MP制造半径3、持续4轮的固定雪带；否则消耗1 MP发送65%成功率、射程8、伤害1d8＋2的雪球，MP不足时使用45%斗殴、1d4近战普攻。其命中和雪带共享本体的冰冻值，第3层即时回复和第6层持续回复均归本体。
 
-本轮增强的候选对照、完整预赛及团队验证见[雪人增强评估](artifacts/balance_y6_boost/评估结果.md)。
+本轮增强的候选对照、完整预赛及团队验证见[雪人增强评估](archive/artifacts/balance_y6_boost/评估结果.md)。
 
 ### 反应命令
 
@@ -231,16 +242,16 @@ AUX34 `全D100检定奖励骰` 对该单位的所有 D100 检定生效（攻击/
 命令行批量对战和预赛支持多进程，使用 `--workers 1` 可指定单进程：
 
 ```powershell
-python sim.py Y1+Y2 vs Y3+Y4 -n 400 -s 31415 --workers 8
-python sim.py --mode prelim --format all -n 10 -s 31415 --workers 8
-python sim.py Y1+Y2 vs Y3+Y4 --verbose -s 31415 --fast
+python backend/sim.py Y1+Y2 vs Y3+Y4 -n 400 -s 31415 --workers 8
+python backend/sim.py --mode prelim --format all -n 10 -s 31415 --workers 8
+python backend/sim.py Y1+Y2 vs Y3+Y4 --verbose -s 31415 --fast
 ```
 
 `--fast` 跳过 verbose 播放等待，保留完整日志。网页端“两队批量对战”和“多轮预赛”提供并发数；锦标赛预赛使用创建赛事时的 `PRELIM_WORKERS` 设置。网页 verbose 和锦标赛逐回合模式已移除“极速”开关，使用正常播放速度。升级后需重启后端。
 
-新版按场次分配独立随机种子，跨并发数可复现；相同种子的赛果可能与旧版不同。短任务的收益受进程启动成本影响。实测与兼容检查见 [加速验证报告](artifacts/performance/report.md)。
+新版按场次分配独立随机种子，跨并发数可复现；相同种子的赛果可能与旧版不同。短任务的收益受进程启动成本影响。实测与兼容检查见 [加速验证报告](archive/artifacts/performance/report.md)。
 
-`.sim` 命令运行快速战斗模拟，支持两种模式。所有参数与 `python sim.py` 完全一致，但 `--` 开头的长参数需去掉双横线（如 `--mode` → `mode`）。
+`.sim` 命令运行快速战斗模拟，支持两种模式。所有参数与 `python backend/sim.py` 完全一致，但 `--` 开头的长参数需去掉双横线（如 `--mode` → `mode`）。
 
 ### 单场模式（默认）
 
@@ -339,23 +350,23 @@ v1.3.0 起，所有 setab=2 命令支持代骰：在命令后 `@另一玩家`，
 
 ## 文件结构
 
-```
+```text
 autocombat/
-├── autocombat.js            # SealDice JS 插件（主文件）
-├── autocombat_backend.py    # 整合后端（独立部署，包含全部功能）
-├── battle_http_server.py    # Flask HTTP 战斗服务器
-├── battle_engine.py         # COC7 战斗引擎核心
-├── ai_battle.py             # AI 战斗模拟 + 锦标赛逻辑
-├── ai_trainer.py            # Q-Learning AI 训练器
-├── ai_trainer_pvp.py        # PVP 训练包装器
-├── characters_data.py       # 角色数据（基础版）
-├── characters_data_pvp.py   # 角色数据（PVP 平衡版）
-├── team_tables.py           # 2v2/3v3 分队表
-├── ai_weights.json          # AI 权重（基础版）
-├── ai_weights_pvp.json      # AI 权重（PVP 版）
-├── result.txt               # 锦标赛结果输出
-├── bracket_info.txt         # 淘汰赛对阵信息
-└── README.md                # 本文档
+├── start_ui.py               # 源码和发布包的统一启动入口
+├── restart_services.bat      # Windows 双实例重启入口
+├── VERSION                  # 发布包版本
+├── requirements.txt         # 运行依赖
+├── backend/                 # 引擎、HTTP/UI、角色数据、权重、字体
+├── frontend/                # React/TypeScript 源码与构建配置
+├── plugins/                 # SealDice JS 插件
+├── scripts/                 # 构建、重启、验证和分析工具
+├── dev/
+│   ├── tests/               # Python 与插件回归测试
+│   └── frontend-tests/      # 前端单测、浏览器测试和批准夹具
+├── docs/                    # 规则、审阅记录、目录和发布文档
+├── archive/                 # 历史参考、旧备份、实验工具与验证产物
+├── .ui-runtime/             # 本地运行数据，Git 忽略
+└── releases/                # 发布 ZIP 与校验文件，Git 忽略
 ```
 
 ---
@@ -529,6 +540,6 @@ ITEM_TEMPLATES = {
 
 浏览器升级与数据统一说明见 [界面使用说明](frontend/README.md)；`characters_data_pvp.py` / `ai_trainer_pvp.py` 现在是基础版的兼容入口，不再维护第二套数值。
 
-WebUI 新增“设置”：集中显示和修改 AI 战斗、模拟、锦标赛及完整队伍表配置，逐回合等待支持即时调整；赛事规则与队表固定在创建时。详见 [设置说明](frontend/README.md#设置) 和 [配置逐项清单与验证](artifacts/settings/配置提取与验证.md)。升级后需重启后端。
+WebUI 新增“设置”：集中显示和修改 AI 战斗、模拟、锦标赛及完整队伍表配置，逐回合等待支持即时调整；赛事规则与队表固定在创建时。详见 [设置说明](frontend/README.md#设置) 和 [配置逐项清单与验证](archive/artifacts/settings/配置提取与验证.md)。升级后需重启后端。
 
-MOV 与主动作数的新公式、变身与飞行规则见 [MOV规则参考](MOV规则参考.md)。
+MOV 与主动作数的新公式、变身与飞行规则见 [MOV规则参考](docs/MOV规则参考.md)。

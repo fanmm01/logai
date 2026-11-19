@@ -1,3 +1,4 @@
+import pageCopy from './data/pageCopy.json';
 import { useEffect, useState } from 'react';
 import { Check, Plus, RotateCcw, Save, Settings2, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { api, type Character, type Effect } from './types';
@@ -85,7 +86,7 @@ export function SettingsPage({ preferences, onPreferences, onSaved, onDirty, cat
   const groups = [...new Set(Object.values(data.fields).map(f => f.group))];
   const sections = ['个人偏好', ...groups, ...(data.can_manage ? ['全局规则', '访问管理'] : [])];
   const saveConfig = () => work(async () => { const result = await api<SettingsResponse>('/settings', {version: data.version, values: draft}); setData(result); setDraft(result.values); onSaved(result.values); setMessage('服务器设置已保存；播放等待立即生效，其余规则用于新任务。'); });
-  return <div className="page settings-page"><div className="section-heading"><div><span className="eyebrow">YOUR TACTICAL PREFERENCES</span><h1><Settings2 size={26}/>设置</h1><p className="muted">统一管理战术室、AI 与赛事参数。{dirty ? '有未保存修改' : '已同步'}</p></div><button className="button" disabled={busy} onClick={() => { if (!dirty || confirm('放弃未保存修改并重新加载？')) { setPersonal(preferences); load(); } }}>重新加载</button></div>
+  return <div className="page settings-page"><div className="section-heading"><div><span className="eyebrow">{pageCopy.settings.eyebrow}</span><h1><Settings2 size={26}/>设置</h1><p className="muted">{pageCopy.settings.description}{dirty ? '有未保存修改' : '已同步'}</p></div><button className="button" disabled={busy} onClick={() => { if (!dirty || confirm('放弃未保存修改并重新加载？')) { setPersonal(preferences); load(); } }}>重新加载</button></div>
     {loadError && <p className="danger-text" role="alert">{loadError}</p>}{message && <p className="save-message" role="status"><Check size={16}/>{message}</p>}
     <div className="settings-layout"><nav className="settings-nav" aria-label="设置分类">{sections.map(s => <button key={s} className={s === section ? 'active' : ''} onClick={() => { setSection(s); setMessage(''); }}>{s}</button>)}</nav>
       <section className="panel settings-content"><h2>{section}</h2>

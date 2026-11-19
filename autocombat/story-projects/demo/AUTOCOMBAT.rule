@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "AUTOCOMBAT",
+  "syntax": "autocombat-v1",
+  "executor": {"kind": "builtin", "target": "AUTOCOMBAT"},
+  "display": "AUTOCOMBAT_DEFAULT",
+  "returns": ["w", "l"],
+  "description": "TEAMS 声明角色队伍，CONTROL 声明可操作队伍或 NONE，BIND 指定视角。KEEP_STATUS 将本场状态传给下一场。"
+}

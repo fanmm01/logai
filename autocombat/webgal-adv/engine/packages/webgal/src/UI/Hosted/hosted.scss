@@ -1,0 +1,47 @@
+.story-hosted {
+  .html-body__title-enter, .title__enter-game-target, #ebg { display: none !important; }
+  body { background: #ece8f2; }
+  #root { width: 100%; height: 100%; font-size: 14px; transform: none !important; }
+  #pixiContianer { width: 100%; height: 100%; }
+  #pixiCanvas { width: 100%; height: 100%; object-fit: contain; object-position: center; }
+  #FullScreenClick { touch-action: manipulation; }
+  [class*="TextBox_Container"] { animation-duration: .15s; }
+  [class*="TextBox_main"] {
+    left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom)); min-height: 120px; max-height: 38%;
+    padding: 22px 28px; border-radius: 12px; font-weight: 400; letter-spacing: .025em;
+    font-family: system-ui, 'Microsoft YaHei', sans-serif !important;
+  }
+  [class*="TextBox_main"] [class*="_text_"] { font-size: var(--story-text-size, clamp(15px, 1.25vw, 19px)) !important; line-height: 1.85 !important; }
+  [class*="TextBox_main"] [class*="_outer_"] { background: none; color: #40394b; }
+  [class*="TextBox_main"] [class*="_inner_"] { visibility: hidden; }
+  [class*="TextBox_Background"] { background: linear-gradient(#fffcf3f5, #eee8f5f2); }
+  [class*="TextBox_showName"] { left: 18px; top: -30px; height: 30px; line-height: 30px; padding: 0 14px; font-size: 13px !important; border: 0; border-radius: 8px 8px 0 0; }
+  [class*="TextBox_ShowName_Background"] { background: #514361ed; box-shadow: none; }
+  [class*="miniAvatarContainer"] { display: none; }
+  [class*="Choose_item"] { border-radius: 8px; font-size: 15px; }
+  #introContainer > div { font-size: clamp(17px, 1.5vw, 23px) !important; }
+  #introContainer > div > div { padding: 15vh max(24px, 8vw) !important; line-height: 1.9; }
+  video { object-fit: contain !important; object-position: center; }
+  .hosted-panel-scrim { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 64px 16px 16px; box-sizing: border-box; background: #241d3066; }
+  .hosted-panel { width: min(580px, 100%); max-height: 100%; display: flex; flex-direction: column; border-radius: 14px; background: #fcfafeee; color: #51465f; overflow: hidden; box-shadow: 0 15px 60px #22152b33; }
+  .hosted-panel header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid #e6deec; }
+  .hosted-panel h2 { margin: 0; font-size: 16px; font-weight: 500; }
+  .hosted-panel button { border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; background: #eee7f4; color: inherit; cursor: pointer; }
+  .hosted-history, .hosted-preferences { overflow: auto; padding: 18px 22px; }
+  .hosted-history article { margin: 0 0 22px; }
+  .hosted-history strong { font-size: 12px; color: #937ca6; }
+  .hosted-history p { font-size: 14px; line-height: 1.8; white-space: pre-wrap; margin: 6px 0; }
+  .hosted-preferences { display: grid; gap: 22px; }
+  .hosted-preferences label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+  .hosted-preferences output, .hosted-preferences select { margin-left: auto; }
+  .hosted-preferences input { width: 100%; accent-color: #8c74a2; min-height: 28px; }
+  .hosted-preferences select { padding: 8px; background: #fff; border: 1px solid #ded3e8; border-radius: 6px; color: inherit; }
+  @media (orientation: portrait) {
+    [class*="TextBox_main"] { min-height: 150px; padding: 20px; bottom: max(18px, env(safe-area-inset-bottom)); }
+  }
+  @media (max-height: 480px) and (orientation: landscape) {
+    [class*="TextBox_main"] { min-height: 90px; padding: 14px 20px; bottom: 8px; }
+    [class*="TextBox_main"] [class*="_text_"] { font-size: var(--story-text-size, 14px) !important; line-height: 1.65 !important; }
+  }
+}

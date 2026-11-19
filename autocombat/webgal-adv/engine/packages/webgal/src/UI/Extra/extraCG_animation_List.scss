@@ -1,0 +1,19 @@
+$initialTransform: scale(1.15, 1.15) translate(-50px, -125px) rotateX(-25deg) rotateY(25deg);
+$endTransform: scale(1, 1) translate3d(0, 0, 0);
+
+@for $deg from -5 through 5 {
+  @keyframes cg_softIn_#{$deg} {
+    0% {
+      opacity: 0;
+      transform: $initialTransform rotate($deg * -2deg);
+    }
+    70% {
+      opacity: 1;
+      transform: $endTransform rotate($deg * 1.4deg);
+    }
+    100% {
+      opacity: 1;
+      transform: $endTransform rotate($deg * 1deg);
+    }
+  }
+}

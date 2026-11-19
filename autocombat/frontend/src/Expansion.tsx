@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Redo2, Undo2 } from 'lucide-react';
-import { api, requestId, type Character, type Effect, type Room } from './types';
+import { api, compareSerials, requestId, sortBySerial, type Character, type Effect, type Room } from './types';
 import { useRuntimeSettings } from './settings';
 import { linkPaneScrolling } from './paneScrolling';
 import { CharacterLink } from './KnowledgeUI';
@@ -219,13 +219,17 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
     setData(next); setDirty(true);
   };
   const characters = data.characters as Effect[];
+  const orderedCharacters = sortBySerial(characters);
   const enabled = new Set<string>(data.enabled_serials);
   const enabledCount = characters.filter(ch => enabled.has(ch.serial)).length;
-  const selectedTrainingTargets = characters.filter(ch => enabled.has(ch.serial) && trainingTargets.includes(ch.serial)).map(ch => ch.serial);
+  const selectedTrainingTargets = orderedCharacters.filter(ch => enabled.has(ch.serial) && trainingTargets.includes(ch.serial)).map(ch => ch.serial);
   const selectedCharacter = characters[index];
   const missingTemplates = [...new Set<string>((selectedCharacter?.spells || []).filter((s: Effect) => !s._disabled).flatMap((s: Effect) => (s.effects || []).filter((e: Effect) => !e._disabled && e['召唤物模板'] && !Object.hasOwn(data.summons, e['召唤物模板'])).map((e: Effect) => e['召唤物模板'])))];
   const addCharacter = () => { const reserved = new Set([...data.reserved, ...characters.map(c => c.serial)]); let n = 1; while (reserved.has('Y' + n)) n++; edit({ ...data, enabled_serials: [...data.enabled_serials, 'Y' + n], characters: [...characters, { name: '新角色', serial: 'Y' + n, attrs: { 体力: 10, 体力上限: 10, 魔力: 10, 魔力上限: 10, 敏捷: 50, 闪避: 25, 斗殴: 50, 行动力: 8, 等级: 1 }, str_attrs: { 伤害值: '1d6' }, inventory: [], spells: [defaultSpell()] }] }); setIndex(characters.length); };
-  const roster = (active: boolean) => characters.map((ch, i) => enabled.has(ch.serial) === active && <button type="button" className={'roster-character ' + (i === index ? 'active' : '')} key={i} onClick={() => setIndex(i)}>{ch.serial} · {ch.name}{!active && <small>已禁用</small>}</button>);
+  const roster = (active: boolean) => orderedCharacters.map(ch => {
+    const i = characters.indexOf(ch);
+    return enabled.has(ch.serial) === active && <button type="button" className={'roster-character ' + (i === index ? 'active' : '')} key={ch.serial} onClick={() => setIndex(i)}>{ch.serial} · {ch.name}{!active && <small>已禁用</small>}</button>;
+  });
   const deleteCharacter = () => {
     const remaining = characters.filter((_, i) => i !== index);
     const nextIndex = Math.max(0, remaining.findIndex(ch => enabled.has(ch.serial)));
@@ -248,12 +252,12 @@ export function DataEditor({ onError, onSaved }: Feedback & { onSaved: () => voi
       : tab === 'backups' ? <section className="panel editor-content"><h2>备份与重新训练</h2><p>保存、恢复和权重替换前自动备份。未保存修改不会进入训练。</p><div className="expansion-toolbar">
         <button className="button" disabled={busy} onClick={() => work(async () => { await api('/backups', {}); setBackups((await api<{ backups: Effect[] }>('/backups')).backups); })}>立即备份</button>
         <button className="button primary" disabled={busy || dirty || training?.status === 'running' || enabledCount < 6} onClick={() => work(async () => setTraining(await api<Effect>('/training', {})))}>重新训练全部启用角色</button></div>
-        <fieldset className="training-selection" disabled={busy || dirty || training?.status === 'running'}><legend>选择重训角色（已选 {selectedTrainingTargets.length} 名）</legend><div className="training-targets">{characters.filter(ch => enabled.has(ch.serial)).map(ch => <label key={ch.serial}><input type="checkbox" checked={selectedTrainingTargets.includes(ch.serial)} onChange={e => setTrainingTargets(old => e.target.checked ? [...old, ch.serial] : old.filter(s => s !== ch.serial))}/>{ch.serial} · {ch.name}</label>)}</div>
+        <fieldset className="training-selection" disabled={busy || dirty || training?.status === 'running'}><legend>选择重训角色（已选 {selectedTrainingTargets.length} 名）</legend><div className="training-targets">{orderedCharacters.filter(ch => enabled.has(ch.serial)).map(ch => <label key={ch.serial}><input type="checkbox" checked={selectedTrainingTargets.includes(ch.serial)} onChange={e => setTrainingTargets(old => e.target.checked ? [...old, ch.serial] : old.filter(s => s !== ch.serial))}/>{ch.serial} · {ch.name}</label>)}</div>
         <p className="muted">所选角色在同一任务中共同训练，从零重建单人、团队及关联召唤物策略。共享召唤物策略更新也会影响其他使用者；其他角色权重保持原值。</p>
         <button className="button primary" disabled={!selectedTrainingTargets.length || enabledCount < 6} onClick={() => work(async () => setTraining(await api<Effect>('/training', { target_serials: selectedTrainingTargets })))}>重训所选角色</button></fieldset>
         {dirty && <p className="muted">请先保存修改，再启动训练。</p>}
         {enabledCount < 6 && <p className="muted">默认训练包含 3 对 3 抽样，需要至少启用 6 名角色。</p>}
-        {training && <><p role="status">训练：{training.status}{training.message && ' · ' + training.message}</p><p>训练目标：{training.params?.target_serials?.map((s: string) => `${s} · ${characters.find(ch => ch.serial === s)?.name || s}`).join('、') || '全部启用角色'}</p>{training.params?.enabled_serials && <p>本次固定参战角色池：{training.params.enabled_serials.map((s: string) => `${s} · ${characters.find(ch => ch.serial === s)?.name || s}`).join('、')}</p>}{training.result?.summons && <p>已重训关联召唤物：{training.result.summons.join('、') || '无'}</p>}{training.status === 'completed' && training.params?.target_serials && <p className="muted">指定角色训练完成；全局待训练标记保留，请在需要时执行全量训练。</p>}{training.result?.preserved_characters?.length > 0 && <p>已保留且未重训的角色表：{training.result.preserved_characters.join('、')}</p>}<pre className="verbose-log">{training.logs?.join('\n')}</pre></>}
+        {training && <><p role="status">训练：{training.status}{training.message && ' · ' + training.message}</p><p>训练目标：{training.params?.target_serials?.slice().sort(compareSerials).map((s: string) => `${s} · ${characters.find(ch => ch.serial === s)?.name || s}`).join('、') || '全部启用角色'}</p>{training.params?.enabled_serials && <p>本次固定参战角色池：{training.params.enabled_serials.slice().sort(compareSerials).map((s: string) => `${s} · ${characters.find(ch => ch.serial === s)?.name || s}`).join('、')}</p>}{training.result?.summons && <p>已重训关联召唤物：{training.result.summons.join('、') || '无'}</p>}{training.status === 'completed' && training.params?.target_serials && <p className="muted">指定角色训练完成；全局待训练标记保留，请在需要时执行全量训练。</p>}{training.result?.preserved_characters?.length > 0 && <p>已保留且未重训的角色表：{training.result.preserved_characters.join('、')}</p>}<pre className="verbose-log">{training.logs?.join('\n')}</pre></>}
         <div className="backup-list">{backups.map(b => <div key={b.id}><span>{new Date(b.time * 1000).toLocaleString()} · {backupReasons[b.reason] || b.reason}</span><a className="button subtle" href={`/api/ui/backups/${b.id}/download`}>下载</a><button className="button" disabled={busy} onClick={() => { if (confirm('恢复此备份？当前版本会先自动备份。')) work(async () => { await api(`/backups/${b.id}/restore`, {}); await load(); onSaved(); setMessage('备份已恢复'); }); }}>恢复</button></div>)}</div></section>
         : tab === 'allowlist' ? <section className="panel editor-content"><h2>数据管理访问白名单</h2><p>每行填写 IP 地址或 CIDR。调试时输入 *.*.*.* 可允许所有 IPv4/IPv6 地址，请勿在公网长期启用。</p><label className="allowlist-editor">白名单<textarea rows={8} spellCheck={false} value={allowlist} onChange={e => setAllowlist(e.target.value)} placeholder={'192.168.1.6\\n*.*.*.*'}/></label><div className="expansion-toolbar"><button className="button primary" disabled={allowlistBusy} onClick={saveAllowlist}>保存白名单</button></div></section>
         : <section className="panel editor-content"><Fields value={data[tab]} name={tab} enums={data.enums} samples={samples} change={next => edit({ ...data, [tab]: next })}/></section>}

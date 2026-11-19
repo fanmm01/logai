@@ -1,0 +1,13 @@
+@START:
+\m starlight.wav
+\bg observatory.svg
+->chapter2 <arrival
+if(time(arrival)==1) signal=1;
+\m battle.wav
+->gauntlet{
+'w': signal=signal+1;
+'l': ->RETRY;
+}
+UNLOCK@MC2
+\m dawn.wav
+->CONTINUE-A

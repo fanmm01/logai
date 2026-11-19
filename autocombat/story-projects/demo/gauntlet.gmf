@@ -1,0 +1,10 @@
+rule AUTOCOMBAT
+set TEAMS:Y{Y5,Y60,Y7,Y8},X{Y9},Z{Y12};
+set CONTROL:NONE;
+set BIND:Y;
+set CARRY:FULL;
+battle Y vs X KEEP_STATUS;
+battle Y vs Z;
+if (isAlive(Y)) return "w";
+else return "l";
+DISPLAY:AUTOCOMBAT_DEFAULT

@@ -1,0 +1,14 @@
+import { ISentence } from '@/Core/controller/scene/sceneInterface';
+import { createNonePerform, IPerform } from '@/Core/Modules/perform/performInterface';
+import { changeScene } from '../controller/scene/changeScene';
+
+/**
+ * 切换场景。在场景结束后不会回到父场景。
+ * @param sentence
+ */
+export const changeSceneScript = (sentence: ISentence): IPerform => {
+  const sceneNameArray: Array<string> = sentence.content.split('/');
+  const sceneName = sceneNameArray[sceneNameArray.length - 1];
+  changeScene(sentence.content, sceneName);
+  return createNonePerform({ isHoldOn: true });
+};

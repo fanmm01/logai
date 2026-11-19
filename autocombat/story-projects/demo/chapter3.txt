@@ -1,0 +1,7 @@
+\mem 春晌，环花暖
+春晌：“你把信号带来了。”
+：这一章没有 START。它来自第二章 CONTINUE-A 留下的状态。
+say:收到的信号强度：{signal};
+changeFigure:healer.svg -id=story-1 -transform={"alpha":0.8} -next;
+环花暖：“让最后一束光，也抵达庭院吧。”
+\b黎明之后，故事仍会继续。

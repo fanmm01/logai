@@ -1,0 +1,449 @@
+import cloneDeep from 'lodash/cloneDeep';
+import { WebGAL } from '@/Core/WebGAL';
+import { isUndefined, omitBy } from 'lodash';
+import { commandType } from '@/Core/controller/scene/sceneInterface';
+import { STAGE_KEYS } from '@/Core/constants';
+import { baseBlinkParam, baseFocusParam } from '@/Core/live2DCore';
+import {
+  baseTransform,
+  FIGURE_KEYS,
+  FIGURE_POSITIONS,
+  figureStateKeyByPosition,
+  ICharacterFigure,
+  IEffect,
+  IFigureMetadata,
+  IFreeFigure,
+  ILive2DBlink,
+  ILive2DExpression,
+  ILive2DFocus,
+  ILive2DMotion,
+  IRunPerform,
+  ISetGameVar,
+  IStageState,
+  IUpdateAnimationSettingPayload,
+} from '@/Core/Modules/stage/stageInterface';
+
+type StageStateListener = (stageState: IStageState) => void;
+export interface IStageCommitOptions {
+  syncPixiStage?: boolean;
+  applyPixiEffects?: boolean;
+  notifyReact?: boolean;
+  skipAnimation?: boolean;
+}
+
+export interface IResolvedStageCommitOptions {
+  syncPixiStage: boolean;
+  applyPixiEffects: boolean;
+  notifyReact: boolean;
+  skipAnimation: boolean;
+}
+
+type StageCommitHandler = (stageState: IStageState, options: IResolvedStageCommitOptions) => void;
+
+export const initState: IStageState = {
+  oldBgName: '',
+  bgName: '',
+  figName: '',
+  figNameLeft: '',
+  figNameRight: '',
+  figNameLeft13: '',
+  figNameRight13: '',
+  figNameLeft14: '',
+  figNameRight14: '',
+  freeFigure: [],
+  characterFigures: [],
+  figureAssociatedAnimation: [],
+  isRead: false,
+  showText: '',
+  showTextSize: -1,
+  showName: '',
+  command: '',
+  choose: [],
+  vocal: '',
+  playVocal: '',
+  vocalVolume: 100,
+  bgm: {
+    src: '',
+    enter: 0,
+    volume: 100,
+  },
+  uiSe: '',
+  miniAvatar: '',
+  GameVar: {},
+  effects: [
+    {
+      target: 'stage-main',
+      transform: baseTransform,
+    },
+  ],
+  animationSettings: [],
+  bgFilter: '',
+  bgTransform: '',
+  PerformList: [],
+  currentDialogKey: 'initial',
+  live2dMotion: [],
+  live2dExpression: [],
+  live2dBlink: [],
+  live2dFocus: [],
+  currentConcatDialogPrev: '',
+  currentDialogSegments: [],
+  isDialogNotend: false,
+  enableFilm: '',
+  isDisableTextbox: false,
+  replacedUIlable: {},
+  figureMetaData: {},
+};
+
+/**
+ * WebGAL 5 stage state machine.
+ *
+ * calculationStageState is mutated by script execution during forward.
+ * viewStageState is the committed state observed by React/Pixi/audio views.
+ */
+export class StageStateManager {
+  private calculationStageState: IStageState = cloneDeep(initState);
+  private viewStageState: IStageState = cloneDeep(initState);
+  private listeners = new Set<StageStateListener>();
+  private commitHandler: StageCommitHandler | null = null;
+
+  public getCalculationStageState(): IStageState {
+    return this.calculationStageState;
+  }
+
+  public getViewStageState(): IStageState {
+    return this.viewStageState;
+  }
+
+  public setStage<K extends keyof IStageState>(key: K, value: IStageState[K]) {
+    this.calculationStageState[key] = value;
+  }
+
+  public setStageAndCommit<K extends keyof IStageState>(key: K, value: IStageState[K]) {
+    this.setStage(key, value);
+    this.commit();
+  }
+
+  public setStageVar(payload: ISetGameVar) {
+    this.calculationStageState.GameVar[payload.key] = payload.value;
+  }
+
+  public setStageVarAndCommit(payload: ISetGameVar) {
+    this.setStageVar(payload);
+    this.commit();
+  }
+
+  public replaceCalculationStageState(stageState: IStageState) {
+    // 读档、回溯与场景重建只恢复普通状态，不能携带上一次演算的换图意图。
+    WebGAL.figureDiffManager.clear();
+    this.calculationStageState = cloneDeep(stageState);
+    this.calculationStageState.characterFigures ??= [];
+  }
+
+  public replaceAllStageState(stageState: IStageState, options?: IStageCommitOptions) {
+    this.replaceCalculationStageState(stageState);
+    this.commit(options);
+  }
+
+  public resetCalculationStageState(stageState: IStageState) {
+    this.replaceCalculationStageState(stageState);
+  }
+
+  public resetAllStageState(stageState: IStageState, options?: IStageCommitOptions) {
+    this.replaceAllStageState(stageState, options);
+  }
+
+  public updateEffect(payload: IEffect) {
+    const { target, transform } = payload;
+    WebGAL.figureDiffManager.clear(target);
+    const state = this.calculationStageState;
+    const activeTargets = [
+      STAGE_KEYS.STAGE_MAIN,
+      STAGE_KEYS.BGMAIN,
+      ...FIGURE_KEYS,
+      ...state.freeFigure.map((figure) => figure.key),
+      ...(state.characterFigures ?? []).map((character) => character.key),
+    ];
+    if (!activeTargets.includes(target)) return;
+
+    const effectIndex = state.effects.findIndex((e) => e.target === target);
+    if (effectIndex >= 0) {
+      if (!state.effects[effectIndex].transform) {
+        state.effects[effectIndex].transform = transform;
+      } else if (transform) {
+        const targetScale = state.effects[effectIndex].transform!.scale || {};
+        const targetPosition = state.effects[effectIndex].transform!.position || {};
+        if (transform.scale) Object.assign(targetScale, omitBy(transform.scale, isUndefined));
+        if (transform.position) Object.assign(targetPosition, omitBy(transform.position, isUndefined));
+        Object.assign(state.effects[effectIndex].transform!, omitBy(transform, isUndefined));
+        state.effects[effectIndex].transform!.scale = targetScale;
+        state.effects[effectIndex].transform!.position = targetPosition;
+      }
+    } else {
+      state.effects.push({
+        target,
+        transform: transform ? { ...baseTransform, ...transform } : { ...baseTransform },
+      });
+    }
+  }
+
+  public updateEffectAndCommit(payload: IEffect) {
+    this.updateEffect(payload);
+    this.commit();
+  }
+
+  public removeEffectByTargetId(target: string) {
+    const index = this.calculationStageState.effects.findIndex((e) => e.target === target);
+    if (index >= 0) {
+      this.calculationStageState.effects.splice(index, 1);
+    }
+  }
+
+  public updateAnimationSettings(payload: IUpdateAnimationSettingPayload) {
+    const { target, key, value } = payload;
+    // 后续普通换图或自定义过渡覆盖了目标；差分指令会在自身状态更新完毕后重新打标。
+    WebGAL.figureDiffManager.clear(target);
+    const state = this.calculationStageState;
+    const animationIndex = state.animationSettings.findIndex((a) => a.target === target);
+    if (animationIndex >= 0) {
+      state.animationSettings[animationIndex] = {
+        ...state.animationSettings[animationIndex],
+        [key]: value,
+      };
+    } else {
+      state.animationSettings.push({
+        target,
+        [key]: value,
+      });
+    }
+  }
+
+  public removeAnimationSettingsByTarget(target: string) {
+    const state = this.calculationStageState;
+    const index = state.animationSettings.findIndex((a) => a.target === target);
+    if (index >= 0) {
+      const prev = state.animationSettings[index];
+      state.animationSettings.splice(index, 1);
+
+      if (prev.exitAnimationName || prev.exitDuration !== undefined) {
+        const prevTarget = `${target}-off`;
+        const prevSetting = {
+          ...prev,
+          target: prevTarget,
+        };
+        const prevIndex = state.animationSettings.findIndex((a) => a.target === prevTarget);
+        if (prevIndex >= 0) {
+          state.animationSettings.splice(prevIndex, 1, prevSetting);
+        } else {
+          state.animationSettings.push(prevSetting);
+        }
+      }
+    }
+  }
+
+  public removeAnimationSettingsByTargetOff(target: string) {
+    const index = this.calculationStageState.animationSettings.findIndex((a) => a.target === target);
+    if (index >= 0) {
+      this.calculationStageState.animationSettings.splice(index, 1);
+    }
+  }
+
+  public addPerform(performToAdd: IRunPerform) {
+    const dupId = performToAdd.id;
+    this.calculationStageState.PerformList = this.calculationStageState.PerformList.filter((p) => p.id !== dupId);
+    this.calculationStageState.PerformList.push(performToAdd);
+  }
+
+  public removePerformByName(name: string) {
+    this.calculationStageState.PerformList = this.calculationStageState.PerformList.filter(
+      (performItem) => performItem.id !== name && !performItem.id.startsWith(name + '#'),
+    );
+  }
+
+  public removePerformByPrefix(prefix: string) {
+    this.calculationStageState.PerformList = this.calculationStageState.PerformList.filter(
+      (performItem) => !performItem.id.startsWith(prefix),
+    );
+  }
+
+  public removeAllPerform() {
+    this.calculationStageState.PerformList.splice(0, this.calculationStageState.PerformList.length);
+  }
+
+  public removeAllPixiPerforms() {
+    this.calculationStageState.PerformList = this.calculationStageState.PerformList.filter(
+      (performItem) => performItem.script.command !== commandType.pixi,
+    );
+  }
+
+  public setFreeFigureByKey(newFigure: IFreeFigure) {
+    const state = this.calculationStageState;
+    const currentFreeFigures = state.freeFigure;
+    const index = currentFreeFigures.findIndex((figure) => figure.key === newFigure.key);
+    if (index >= 0) {
+      if (newFigure.name === '') {
+        currentFreeFigures.splice(index, 1);
+        const figureAssociatedAnimationIndex = state.figureAssociatedAnimation.findIndex(
+          (a) => a.targetId === newFigure.key,
+        );
+        if (figureAssociatedAnimationIndex >= 0) {
+          state.figureAssociatedAnimation.splice(figureAssociatedAnimationIndex, 1);
+        }
+      } else {
+        currentFreeFigures[index].basePosition = newFigure.basePosition;
+        currentFreeFigures[index].name = newFigure.name;
+      }
+    } else if (newFigure.name !== '') {
+      currentFreeFigures.push(newFigure);
+    }
+  }
+
+  public setCharacterFigureByKey(character: ICharacterFigure): void {
+    const current = (this.calculationStageState.characterFigures ??= []);
+    const next: ICharacterFigure = {
+      key: character.key,
+      name: character.name,
+      basePosition: character.basePosition,
+      ...(character.preset !== undefined ? { preset: character.preset } : {}),
+      ...(character.components !== undefined ? { components: [...character.components] } : {}),
+    };
+    const index = current.findIndex((entry) => entry.key === character.key);
+    if (index >= 0) current[index] = next;
+    else current.push(next);
+  }
+
+  public removeCharacterFigureByKey(key: string): void {
+    const current = (this.calculationStageState.characterFigures ??= []);
+    const index = current.findIndex((entry) => entry.key === key);
+    if (index >= 0) current.splice(index, 1);
+  }
+
+  public clearStandardFigureSlotByKey(key: string): void {
+    const state = this.calculationStageState;
+    const pos = FIGURE_POSITIONS.find((p) => `fig-${p}` === key);
+    if (pos) state[figureStateKeyByPosition[pos]] = '';
+    this.setFreeFigureByKey({ key, name: '', basePosition: 'center' });
+    state.figureAssociatedAnimation = state.figureAssociatedAnimation.filter((item) => item.targetId !== key);
+  }
+
+  public setLive2dMotion(payload: ILive2DMotion) {
+    const { target, motion, skin, overrideBounds } = payload;
+    const index = this.calculationStageState.live2dMotion.findIndex((e) => e.target === target);
+    if (index < 0) {
+      this.calculationStageState.live2dMotion.push({ target, motion, skin, overrideBounds });
+    } else {
+      this.calculationStageState.live2dMotion[index].motion = motion;
+      this.calculationStageState.live2dMotion[index].skin = skin;
+      // 绘制范围参与立绘身份判定，没指定就沿用旧值，否则只改动作也会被当成换了一张立绘
+      if (overrideBounds !== undefined) {
+        this.calculationStageState.live2dMotion[index].overrideBounds = overrideBounds;
+      }
+    }
+  }
+
+  public setLive2dExpression(payload: ILive2DExpression) {
+    const { target, expression } = payload;
+    const index = this.calculationStageState.live2dExpression.findIndex((e) => e.target === target);
+    if (index < 0) {
+      this.calculationStageState.live2dExpression.push({ target, expression });
+    } else {
+      this.calculationStageState.live2dExpression[index].expression = expression;
+    }
+  }
+
+  public setLive2dBlink(payload: ILive2DBlink) {
+    const { target, blink } = payload;
+    const index = this.calculationStageState.live2dBlink.findIndex((e) => e.target === target);
+    if (index < 0) {
+      this.calculationStageState.live2dBlink.push({ target, blink: { ...baseBlinkParam, ...blink } });
+    } else {
+      this.calculationStageState.live2dBlink[index].blink = {
+        ...this.calculationStageState.live2dBlink[index].blink,
+        ...blink,
+      };
+    }
+  }
+
+  public setLive2dFocus(payload: ILive2DFocus) {
+    const { target, focus } = payload;
+    const index = this.calculationStageState.live2dFocus.findIndex((e) => e.target === target);
+    if (index < 0) {
+      this.calculationStageState.live2dFocus.push({ target, focus: { ...baseFocusParam, ...focus } });
+    } else {
+      this.calculationStageState.live2dFocus[index].focus = {
+        ...this.calculationStageState.live2dFocus[index].focus,
+        ...focus,
+      };
+    }
+  }
+
+  public replaceUIlable(payload: [string, string]) {
+    this.calculationStageState.replacedUIlable[payload[0]] = payload[1];
+  }
+
+  public setFigureMetaData(payload: [string, keyof IFigureMetadata, any, undefined | boolean]) {
+    if (payload[3]) {
+      if (this.calculationStageState.figureMetaData[payload[0]]) {
+        delete this.calculationStageState.figureMetaData[payload[0]];
+      }
+    } else {
+      if (!this.calculationStageState.figureMetaData[payload[0]]) {
+        this.calculationStageState.figureMetaData[payload[0]] = {};
+      }
+      this.calculationStageState.figureMetaData[payload[0]][payload[1]] = payload[2];
+    }
+  }
+
+  public clearUncommittedNonHoldPerforms() {
+    // 快速预览丢弃演出时，一并丢弃其尚未上屏的差分标记。
+    WebGAL.figureDiffManager.clear();
+    this.calculationStageState.PerformList = this.calculationStageState.PerformList.filter(
+      (perform) => perform.isHoldOn,
+    );
+  }
+
+  public removeNonHoldPerformsAndCommit() {
+    this.clearUncommittedNonHoldPerforms();
+    this.commit();
+  }
+
+  public commit(options: IStageCommitOptions = {}) {
+    const resolvedOptions: IResolvedStageCommitOptions = {
+      syncPixiStage: options.syncPixiStage ?? true,
+      applyPixiEffects: options.applyPixiEffects ?? true,
+      notifyReact: options.notifyReact ?? true,
+      skipAnimation: options.skipAnimation ?? false,
+    };
+    this.viewStageState = cloneDeep(this.calculationStageState);
+    this.commitHandler?.(this.viewStageState, resolvedOptions);
+    if (resolvedOptions.notifyReact) {
+      this.notify();
+    }
+  }
+
+  public applyCommittedPixiEffects() {
+    this.commitHandler?.(this.viewStageState, {
+      syncPixiStage: false,
+      applyPixiEffects: true,
+      notifyReact: false,
+      skipAnimation: false,
+    });
+  }
+
+  public setCommitHandler(handler: StageCommitHandler | null) {
+    this.commitHandler = handler;
+  }
+
+  public subscribe(listener: StageStateListener) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify() {
+    const stageState = this.viewStageState;
+    this.listeners.forEach((listener) => listener(stageState));
+  }
+}
+
+export const stageStateManager = new StageStateManager();

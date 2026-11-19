@@ -1,0 +1,20 @@
+{
+  "name": "@webgal/base",
+  "version": "4.6.7",
+  "description": "A brand new web Visual Novel engine.",
+  "repository": "https://github.com/OpenWebGAL/WebGAL.git",
+  "author": "Mahiru <Mahiru_@outlook.com>",
+  "scripts": {
+    "build": "node scripts/build-parser.cjs && npm run build --workspace=webgal-engine",
+    "test:parser": "npm run test --workspace=webgal-parser -- --run"
+  },
+  "license": "MPL-2.0",
+  "workspaces": [
+    "packages/parser",
+    "packages/webgal"
+  ],
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

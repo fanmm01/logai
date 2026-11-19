@@ -1,7 +1,7 @@
 @echo off
 setlocal
 pushd "%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0restart_services.ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\restart_services.ps1" %*
 set "restart_exit=%errorlevel%"
 popd
 echo.

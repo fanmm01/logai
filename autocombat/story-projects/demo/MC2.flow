@@ -1,0 +1,6 @@
+@MC1.CONTINUE-A:
+\bg dawn.svg
+\m dawn.wav
+->chapter3
+->finale{'w':->;'l':->RETRY;}
+->END

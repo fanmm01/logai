@@ -1,0 +1,13 @@
+@START:
+\m starlight.wav
+\bg courtyard.svg
+LOCK@crossroads[1]
+->opening.webm
+->chapter1
+UNLOCK@crossroads[1]
+->crossroads{
+1: route=1;
+2: route=2;
+}
+->training{'w':->;'l':->RETRY;}
+->END

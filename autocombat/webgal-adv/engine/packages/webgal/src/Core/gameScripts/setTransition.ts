@@ -1,0 +1,29 @@
+import { ISentence } from '@/Core/controller/scene/sceneInterface';
+import { createNonePerform, IPerform } from '@/Core/Modules/perform/performInterface';
+import { getBooleanArgByKey, getStringArgByKey } from '@/Core/util/getSentenceArg';
+import { stageStateManager } from '@/Core/Modules/stage/stageStateManager';
+
+/**
+ * 设置转场效果
+ * @param sentence
+ */
+export const setTransition = (sentence: ISentence): IPerform => {
+  // 根据参数设置指定位置
+  let key = getStringArgByKey(sentence, 'target') ?? '0';
+  const enterAnimation = getStringArgByKey(sentence, 'enter');
+  const exitAnimation = getStringArgByKey(sentence, 'exit');
+  const ignoreDefault = getBooleanArgByKey(sentence, 'ignoreDefault') ?? false;
+  if (enterAnimation) {
+    stageStateManager.updateAnimationSettings({ target: key, key: 'enterAnimationName', value: enterAnimation });
+    stageStateManager.updateAnimationSettings({
+      target: key,
+      key: 'enterAnimationIgnoreDefault',
+      value: ignoreDefault,
+    });
+  }
+  if (exitAnimation) {
+    stageStateManager.updateAnimationSettings({ target: key, key: 'exitAnimationName', value: exitAnimation });
+    stageStateManager.updateAnimationSettings({ target: key, key: 'exitAnimationIgnoreDefault', value: ignoreDefault });
+  }
+  return createNonePerform({ blockingAuto: false });
+};

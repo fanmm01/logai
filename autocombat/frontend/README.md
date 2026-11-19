@@ -1,5 +1,9 @@
 # 星序 · 浏览器战术室
 
+## 页面宣传文案
+
+页面宣传语统一维护在 `src/data/pageCopy.json`，按页面分组：`home`（首页）、`setup`（作战准备）、`library`（图鉴）、`battle`（对战）、`settings`（设置）、`storyChapters`（章节选择）、`storyEditor`（创作室）、`storyPlayer`（剧情播放）。中文宣传语和英文装饰标题均在此修改；数组中的每一项对应一行文字。保留字段名，只修改文字内容。修改后运行 `npm run build:app`，刷新页面即可。角色技能说明仍维护在 `src/data/encyclopedia.json`。
+
 明亮卡牌风的 autocombat 界面，连接原有 CoC 战斗引擎。角色图鉴自动读取当前角色数据，不要求角色立绘。
 
 ## 启动
@@ -7,7 +11,7 @@
 在项目根目录运行：
 
 ```powershell
-pip install flask
+python -m pip install -r requirements.txt
 python start_ui.py
 ```
 
@@ -28,8 +32,8 @@ cd frontend
 npm ci
 npm run build
 cd ..
-python merge_backend.py
-python autocombat_backend.py --host 127.0.0.1 --port 8889
+python scripts/merge_backend.py
+python backend/autocombat_backend.py --host 127.0.0.1 --port 8889
 ```
 
 开发时先启动 Python 后端（8889），再在 frontend 运行 `npm run dev`。代理会转发 `/api` 并设置同源 Origin；界面默认路径为 `/ui/`。正常使用推荐 Python 同源入口。
@@ -68,7 +72,7 @@ python autocombat_backend.py --host 127.0.0.1 --port 8889
 
 角色专属被动参数维护在 `../characters_data.py` 各角色的 `passive_rules` 中；冰冻循环、卡带资源、火鼠裘、写作收益和月能门槛不再散落在引擎计算中。血术月相表归入夜诏明的 `blood_rules.moon_phases`，初始武器使用 `initial_weapon`。这是数据归位，不是一次数值平衡调整。
 
-18 个角色徽记与 106 个技能 SVG 资源位于 `public/icons/`，可用 `python scripts/generate_library_icons.py`（在项目根目录执行）重新生成。新增角色时先补充资料和徽记路径；改动源码后重新构建前端，改动引擎后运行 `python merge_backend.py`，重启服务以载入新的 Python 模块。
+18 个角色徽记与 106 个技能 SVG 资源位于 `public/icons/`，可用 `python scripts/generate_library_icons.py`（在项目根目录执行）重新生成。新增角色时先补充资料和徽记路径；改动源码后重新构建前端，改动引擎后运行 `python scripts/merge_backend.py`，重启服务以载入新的 Python 模块。
 
 在 `public/portraits/` 放置 `Y1.webp` 等竖版图片、`Y1-avatar.webp` 等头像，再重新构建。没有图片时使用统一配色的徽记。推荐 3:4 竖版立绘与方形头像。界面设置可关闭动效。
 
@@ -85,8 +89,8 @@ python autocombat_backend.py --host 127.0.0.1 --port 8889
 ```powershell
 npm run build
 cd ..
-python -m unittest tests.test_ui tests.test_battle_execution tests.test_summon_groups tests.test_support_balance
-node tests/js_rules_check.js
+python scripts/run_tests.py tests.test_ui tests.test_battle_execution tests.test_summon_groups tests.test_support_balance
+node dev/tests/js_rules_check.js
 ```
 
 
@@ -162,7 +166,7 @@ WebUI 配置中的地图边长支持 8–16，允许长宽不同；命令行显�
 
 服务器保存支持版本冲突检查、类型与范围校验、原子替换和保存前备份。设置加入备份恢复；任务目录中的 `settings-snapshot.json` 记录创建时的配置。恢复旧版备份时，也会迁移原 Python 队伍表。分组恢复默认值需保存后生效，离开页面或刷新会提示未保存修改。
 
-配置逐项清单与核对结果见 [配置提取与验证](../artifacts/settings/配置提取与验证.md)。
+配置逐项清单与核对结果见 [配置提取与验证](../archive/artifacts/settings/配置提取与验证.md)。
 
 ## 帮助与角色资料
 
@@ -173,3 +177,10 @@ WebUI 配置中的地图边长支持 8–16，允许长宽不同；命令行显�
 页面地址采用 `/ui/home`、`/ui/library`、`/ui/tournament` 等路径，支持刷新、前进后退及 `?character=Y1` 角色详情链接。旧 `/ui/?room=...` 邀请链接继续可用；打开其他页面时，后台恢复房间不会强制跳转。
 
 验证：`npm test` 与 `npm run build`。交互回归使用 `npm run test:browser`，默认连接 `http://127.0.0.1:8890` 的已构建页面及本机 Edge；可设置 `UI_BASE_URL`、`UI_BROWSER_CHANNEL`，以及截图目录 `UI_TEST_ARTIFACTS`。测试中的角色保存、白名单和赛事请求均被拦截，不写入真实数据。
+# 剧情模式
+
+首页／侧栏“剧情模式”进入章节列表；“创作工作区”可打开服务端目录，默认是仓库内 `story-projects/demo/`。源码与流程图联动，Ctrl+S 保存，预览使用独立进度，发布固定不可变版本。
+
+`npm run build` 同时构建主界面与独立 WebGAL 播放器。首次构建会安装播放器依赖。`npm test` 包含既有单测与剧情核心单测；`npm run test:story:coverage` 输出剧情核心覆盖率。浏览器测试使用独立服务并设置 `UI_BASE_URL`。
+
+完整语法、权限及连续战斗见 [STORY_AUTHORING.md](../docs/STORY_AUTHORING.md)。

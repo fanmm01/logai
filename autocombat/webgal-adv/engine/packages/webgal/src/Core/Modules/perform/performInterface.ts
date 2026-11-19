@@ -1,0 +1,64 @@
+import { WEBGAL_NONE } from '@/Core/constants';
+
+/**
+ * 描述演出的接口，主要用于控制演出，而不是执行（在演出开始时被调用演出的执行器返回）
+ * @interface IPerform
+ */
+export interface IPerform {
+  // 演出名称，用于在后面手动清除演出，如果没有标识，则代表不是保持演出，给予一个随机字符串
+  performName: string;
+  // 持续时间，单位为ms，持续时间到后自动回收演出
+  duration: number;
+  // 演出是不是一个保持类型的演出
+  isHoldOn: boolean;
+  // 启动演出的函数；只在状态 commit 后调用
+  startFunction?: () => void;
+  // 演出是否已经启动；未 commit 的演出被清理时不调用卸载函数
+  isStarted?: boolean;
+  // 卸载演出的函数
+  stopFunction: () => void;
+  // 是否阻塞用户/内部继续推进。为 true 时，next/forward/continue 都不能执行下一条语句。
+  blockingNext: () => boolean;
+  // 是否阻塞自动播放计时器触发下一步；只影响 autoPlay，不影响用户点击或内部继续推进。
+  blockingAuto: () => boolean;
+  // 是否阻塞同一轮 -next 继续演算；只有需要外部输入才能确定后续状态的演出需要覆盖。
+  blockingStateCalculation?: () => boolean;
+  // 演出自然结束或被卸载后触发内部继续推进；推进前仍会等待 blockingNext 解除。
+  goNextWhenOver?: boolean;
+  // 跳过由 nextSentence/continueSentence 引发的非 hold 演出回收。
+  skipNextCollect?: boolean;
+}
+
+// next之后，可以被打断的演出会被打断，不能被打断的演出会继续，阻塞next的演出会阻止next被响应。
+// 被打断或执行完毕的演出会移出演出列表
+// 只有所有演出都完成，或者仅存在不阻塞auto的演出，才允许auto
+
+/**
+ * 初始化的演出
+ */
+export const initPerform: IPerform = {
+  performName: '',
+  duration: 100,
+  // isOver: false,
+  isHoldOn: false,
+  stopFunction: () => {},
+  blockingNext: () => false,
+  blockingAuto: () => true,
+};
+
+export interface INonePerformOptions {
+  isHoldOn?: boolean;
+  blockingAuto?: boolean;
+}
+
+export function createNonePerform(options: INonePerformOptions = {}): IPerform {
+  const { isHoldOn = false, blockingAuto = true } = options;
+  return {
+    performName: WEBGAL_NONE,
+    duration: 0,
+    isHoldOn,
+    stopFunction: () => {},
+    blockingNext: () => false,
+    blockingAuto: () => blockingAuto,
+  };
+}

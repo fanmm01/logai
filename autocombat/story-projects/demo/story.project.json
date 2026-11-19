@@ -1,0 +1,16 @@
+{
+  "id": "astral-demo",
+  "name": "星序 · 灯塔来信",
+  "figures": {
+    "春晌": "guide.svg",
+    "葬火": "partner.svg",
+    "知夏": "scout.svg",
+    "环花暖": "healer.svg",
+    "观测员": "observer.svg"
+  },
+  "chapters": {
+    "XU": {"title": "01 · 风从庭院来", "description": "一封来信，一次练习。熟悉对话、选择与剧情战斗。", "order": 1},
+    "MC1": {"title": "02 · 穿过长夜", "description": "两场连续战斗。将眼前的状态，带往下一次相遇。", "order": 2},
+    "MC2": {"title": "03 · 黎明的回声", "description": "承接第二章的灯塔信号。每一次选择，都留下回声。", "order": 3}
+  }
+}

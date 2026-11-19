@@ -1,0 +1,113 @@
+{
+  "home": {
+    "intro": {
+      "eyebrow": "READY FOR YOUR NEXT BATTLE",
+      "welcome": "欢迎回来，",
+      "description": "组建队伍，准备开始下一场对战。",
+      "badge": "星序 · 战术大厅"
+    },
+    "hero": {
+      "tag": "魔法少女 · 战术演习",
+      "title": [
+        "搭配你的阵容，",
+        "尝试不同战术"
+      ],
+      "punctuation": "。",
+      "description": [
+        "了解角色特点，搭配技能与站位，",
+        "在对战中检验你的策略。"
+      ],
+      "button": "进入锦标赛",
+      "features": "CoC 规则驱动 · 自由组队 · 回合制策略",
+      "backCard": {
+        "name": "环花暖",
+        "caption": "CHARACTER SPOTLIGHT"
+      },
+      "frontCard": {
+        "name": "比哈米",
+        "caption": "CHARACTER SPOTLIGHT"
+      },
+      "caption": "Explore different team combinations."
+    },
+    "modes": {
+      "story": {
+        "title": "剧情模式",
+        "en": "STORY MODE",
+        "desc": "选择章节，体验剧情与战斗。"
+      },
+      "local": {
+        "title": "自由对战",
+        "en": "FREE BATTLE",
+        "desc": "自行操作双方，也可将角色交给 AI。"
+      },
+      "lan": {
+        "title": "好友联机",
+        "en": "PLAY TOGETHER",
+        "desc": "创建局域网房间，邀请好友一起对战。"
+      },
+      "watch": {
+        "title": "AI 观战",
+        "en": "AI SPECTATOR",
+        "desc": "观看 AI 对战，比较阵容与技能搭配。"
+      }
+    },
+    "roster": {
+      "eyebrow": "EXPLORE THE ROSTER",
+      "title": "了解你的队员",
+      "button": "浏览角色图鉴"
+    },
+    "footer": {
+      "tagline": "星序 · 组队、对战与剧情",
+      "join": "已有房间码？加入好友"
+    }
+  },
+  "battle": {
+    "result": {
+      "eyebrow": "BATTLE COMPLETE",
+      "tagline": "回顾战斗过程，为下一场调整阵容。"
+    },
+    "tagline": "留意站位与技能配合",
+    "emptyGraveyard": "暂无阵亡单位",
+    "reactionEyebrow": "DEFENSIVE REACTION",
+    "localEyebrow": "LOCAL EXERCISE",
+    "lanEyebrow": "LAN BATTLE ROOM",
+    "reviewEyebrow": "BATTLE REVIEW",
+    "liveEyebrow": "LIVE BATTLE"
+  },
+  "setup": {
+    "eyebrow": "PREPARE YOUR TEAM",
+    "title": "组建队伍，准备对战。",
+    "description": "选择角色，搭配阵容，设置对战方式。",
+    "formationEyebrow": "BUILD YOUR TEAM",
+    "formationTitle": "选择你的阵容"
+  },
+  "library": {
+    "eyebrow": "CHARACTER ROSTER",
+    "description": "查看角色定位、技能与专属机制，寻找适合的搭配。",
+    "encyclopediaEyebrow": "CHARACTER ENCYCLOPEDIA"
+  },
+  "settings": {
+    "eyebrow": "YOUR TACTICAL PREFERENCES",
+    "description": "统一管理战术室、AI 与赛事参数。"
+  },
+  "storyChapters": {
+    "eyebrow": "CHOOSE YOUR CHAPTER",
+    "title": "选择章节，开始剧情。",
+    "description": "查看章节与解锁条件，也可以继续已有进度。",
+    "emptyTitle": "选择一个章节，开始剧情。"
+  },
+  "storyEditor": {
+    "eyebrow": "CREATE YOUR STORY",
+    "description": "编辑剧情文本，查看分支流程，预览运行效果。"
+  },
+  "storyPlayer": {
+    "loading": "正在加载剧情…",
+    "retryEyebrow": "ANOTHER CHANCE",
+    "retryTitle": "可以重试本次挑战。",
+    "continueEyebrow": "TO BE CONTINUED",
+    "continueTitle": "继续下一章节。",
+    "completeEyebrow": "CHAPTER COMPLETE",
+    "completeTitle": "本章已完成。",
+    "battleTitle": "剧情战斗进行中。"
+  }
+}

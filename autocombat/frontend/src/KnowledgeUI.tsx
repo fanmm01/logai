@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Character } from './types';
+import { sortBySerial, type Character } from './types';
 import { buildDefinitions, definitionHelpAnchor, mechanicsSections, overview, specialistDefinitions, splitTerms, termsFor, type Definition } from './knowledge';
 import { pageUrl } from './navigation';
 import { EncyclopediaProse } from './EncyclopediaProse';
@@ -164,7 +164,7 @@ export function HelpPage({tab,catalog,navigate,anchor=''}:{tab:string;catalog:Ch
   },[target,tab,catalog,query]);
   const matches=(text:string)=>text.toLocaleLowerCase().includes(query);
   const sections=mechanicsSections.map(s=>({...s,entries:s.entries.filter(entry=>matches(s.title+' '+entry.names.join(' ')+' '+entry.content))})).filter(s=>s.entries.length);
-  const characters=[...catalog].sort((a,b)=>a.serial.localeCompare(b.serial,undefined,{numeric:true}));
+  const characters=sortBySerial(catalog);
   const local=characters.map(c=>{
     const terms=specialistDefinitions(definitions,c.serial);
     if(linked?.serial===c.serial&&!terms.some(d=>d.id===linked.id))terms.push(linked);

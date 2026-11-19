@@ -21,7 +21,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "limits": "敌方单体",
         "description": "向同一目标连续发射{{spell.effects|count|cn}}枚火球，每枚分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。",
         "facts": [
           "目标仅可格挡。"
@@ -131,7 +131,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "limits": "敌方单体",
         "description": "向同一目标连续发动{{spell.effects|count|cn}}段星闪攻击，每段分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，各获得 {{spell.effects.0.成功率奖惩骰|bonus}} 颗攻击奖励骰，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害。",
         "facts": [
           "目标仅可格挡。",
@@ -197,7 +197,6 @@
         "description": "对敌方单体发动吸血攻击，以自身最佳近战技能检定，造成 {{spell.effects.0.伤害骰}} 伤害，并按伤害的 {{spell.effects.0.吸血比例|percent}}% 回复自身生命。",
         "facts": [
           "目标：敌方单体",
-          "射程：基础 {{spell.effects.0.射程}} 格；当前全局射程覆盖启用时为 99 格",
           "防御反应：反击、格挡",
           "护盾后仍有伤害时，按护盾吸收前的修正伤害吸血。"
         ],
@@ -268,7 +267,6 @@
         "description": "向同一敌人连续投出{{spell.effects|count|cn}}枚雪球。每枚分别以 {{spell.effects.*.成功率|unique|join:、}} 的技能值检定，依次造成 {{spell.effects.*.伤害骰|join:、}} 伤害，命中后增加 {{character.attrs.冰冻雪球命中层数}} 层冰冻。",
         "facts": [
           "目标：敌方单体",
-          "射程：{{spell.effects.0.射程}} 格",
           "防御反应：闪避、格挡",
           "命中后的冰冻独立于实际生命损失，伤害被护盾完全吸收或被一次伤害免疫抵消时，仍可增加冰冻层数。"
         ],
@@ -360,7 +358,7 @@
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
         "limits": "固定雪带半径 {{spell.effects.0.作用半径}} 格；同一施法者同时维持 {{spell.effects.0.领域同时上限}} 处",
-        "description": "在自身所在位置创建固定雪带，使范围内敌方单位行动力降低 {{spell.effects.0.属性削减|modifier:行动力|abs}}、斗殴降低 {{spell.effects.0.属性削减|modifier:斗殴|abs}}；同时对基础射程 {{spell.effects.1.射程}} 格内的所有敌方单位各发动一次攻击，以技能值 {{spell.effects.1.成功率}} 检定，基础伤害为 {{spell.effects.1.伤害骰}}。目标可闪避或格挡，不可反击。",
+        "description": "在自身所在位置创建固定雪带，使范围内敌方单位行动力降低 {{spell.effects.0.属性削减|modifier:行动力|abs}}、斗殴降低 {{spell.effects.0.属性削减|modifier:斗殴|abs}}；同时对敌方单位各发动一次攻击，以技能值 {{spell.effects.1.成功率}} 检定，基础伤害为 {{spell.effects.1.伤害骰}}。目标可闪避或格挡，不可反击。",
         "facts": [
           "雪带半径 {{spell.effects.0.作用半径}} 格，第{{spell.effects.0.持续回合|cn}}次轮首消失；前{{spell.effects.0.持续回合|minus:1|cn}}次轮首各造成 {{spell.effects.0.每回合伤害骰}} 持续伤害。",
           "固定在创建位置，同时限 {{spell.effects.0.领域同时上限}} 处；隔离单位不受影响。"
@@ -389,7 +387,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "敌方单体；基础射程 {{spell.effects.0.射程}} 格",
+        "limits": "敌方单体",
         "description": "向一名敌人投出一枚雪球，以技能值 {{spell.effects.0.成功率}} 检定，基础伤害为 {{spell.effects.0.伤害骰}}。目标可闪避或格挡，不可反击。",
         "facts": [],
         "icon": "/ui/icons/Y60-s3.svg"
@@ -786,7 +784,7 @@
           "攻击伤害：{{summonSkills.藤蔓.鞭.dice}}",
           "闪避：{{summons.藤蔓.闪避}}",
           "防御反应：闪避、反击",
-          "藤蔓持续处于禁锢状态，无法移动或自动接近目标；可以在射程内攻击，攻击射程为 99 格。",
+          "藤蔓持续处于禁锢状态，无法移动或自动接近目标；可以攻击敌方单位。",
           "同一施法者的藤蔓组成召唤组，共享位置、先攻位置和行动额度，各自保留生命与状态。每次组行动，由当次能够行动的存活藤蔓分别攻击一次。未受其他效果影响时，每轮拥有 2 次组行动。",
           "藤蔓死亡或持续时间结束后退场；主人死亡时随之退场。退场返还同时存在名额，但不返还本场累计召唤次数。任一上限已满时无法施放，不消耗魔力。",
           "藤蔓提供的不可指定保护不阻挡领域效果。蜂鸟不提供此项保护。"
@@ -1100,7 +1098,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "limits": "敌方单体",
         "description": "发动一次火焰攻击，以自身最佳近战技能检定，造成 {{spell.effects.0.伤害骰}} 伤害。目标可以闪避、反击或格挡。",
         "facts": [
           "命中后附加灼烧，每轮造成 {{spell.effects.0.每回合伤害骰}} 伤害，持续 {{spell.effects.0.持续回合}} 轮。多次命中产生的灼烧分别生效。"
@@ -1393,7 +1391,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "音速索尼克卡带｜其他存活同队友方｜基础射程 {{spell.effects.0.射程}} 格，启用全局射程覆盖时 99 格｜护盾持续 {{spell.effects.1.持续回合}} 轮",
+        "limits": "音速索尼克卡带｜其他存活同队友方｜护盾持续 {{spell.effects.1.持续回合}} 轮",
         "description": "传送到所选友方周围最近的合法空格，再以自身最终位置为中心，为半径 {{spell.effects.1.作用半径}} 格内的自身、友方与敌方分别生成 {{spell.effects.1.护盾值}} 点护盾。",
         "facts": [
           "落点按距离由近到远搜索，斜向一步也算一格；同距按列、行升序选择。没有合法空格或目标不合法时，不消耗 MP 或行动。",
@@ -1590,7 +1588,7 @@
         "timing": "主动",
         "reviewed": true,
         "cost": "{{spell.消耗mp}} MP",
-        "limits": "弓形态｜吟唱 {{spell.吟唱回合}} 轮｜敌方单体｜射程 {{spell.effects.0.射程}} 格",
+        "limits": "弓形态｜吟唱 {{spell.吟唱回合}} 轮｜敌方单体",
         "description": "支付费用并开始吟唱，在下一轮开始时对施放时选定的敌人发动攻击，以基础检定值 {{spell.effects.0.成功率}} 造成 {{spell.effects.0.伤害骰}} 伤害，另叠加「幻造兵武」的 {{skills.幻造兵武.effects.0.辅助效果值|unsigned}} 伤害及写作检定调整。",
         "facts": [
           "目标不能闪避、反击或格挡。",
