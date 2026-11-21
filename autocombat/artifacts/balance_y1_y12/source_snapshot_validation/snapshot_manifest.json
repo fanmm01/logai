@@ -1,9 +1,0 @@
-{
-  "characters_data.py": "ae4adc35f4f2003f1cfa4e9f62cf6a62608efe7ff945e829cec5f76851dd00c9",
-  "characters_data_pvp.py": "1ed7cdb07845fc6f96521a41668348aacb98ce68934c68871f6bd5b54457912a",
-  "battle_engine.py": "12358d6a3c8845780b3b459b8e69261b3422c72d01be9d35e41bd6ef0a85cd54",
-  "ai_battle.py": "6fb99fc33a9b5217ba68ecc0de00f4f436ab999986bc69cafca96ea78f228a07",
-  "ai_trainer.py": "4e152de3ccf499ee207f86f5243f564dc8042f84c127ef241b25c75290970159",
-  "ai_weights.json": "1a6c555f84a761acfb56afc765d7a2b442415ca8b59e540a97e9b4401066829d",
-  "team_tables.py": "90a051ec1ad7e57f23b2a792bff14721413f1ade12f8b34a97fe1684a66b0968"
-}

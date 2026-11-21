@@ -1,0 +1,3 @@
+[submodule "autocombat"]
+	path = autocombat
+	url = https://github.com/fanmm01/autocombat.git

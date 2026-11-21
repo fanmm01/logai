@@ -11,6 +11,14 @@ fwlog功能部分原作者：@chaye2333
 
 ---
 
+## Autocombat 子模块
+
+本仓库通过 `autocombat/` 子模块引用 [Autocombat 独立仓库](https://github.com/fanmm01/autocombat)。在 logai 根目录运行以下命令，检出本仓库记录的 Autocombat 版本：
+
+```sh
+git submodule update --init --recursive
+```
+
 ## 使用方法：
 1. 完整地解压整个压缩包；
 2. 将前端 `logai_logutil_frontend.js` 文件导入海豹插件列表中；
